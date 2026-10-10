@@ -138,7 +138,10 @@ class WebLinkInbox internal constructor(
      * Per browser, a send whose last attempt ended without an answer (it may have landed): the next send to that browser reuses
      * its id, so it replaces that send instead of adding a second one (review S6).
      */
-    private val unsure = HashMap<String, String>()
+    private val unsure = HashMap<String, UnsureSend>()
+
+    /** A send whose outcome isn't known: its id, which document (exportedAt aside), and the sealed parts, sent again as they are (R-N9). */
+    private class UnsureSend(val sendId: String, val doc: String, val epoch: Int, val envs: List<SyncEnvelope>)
 
     private val _sends = MutableStateFlow<List<IncomingSend>>(emptyList())
 
@@ -198,8 +201,18 @@ class WebLinkInbox internal constructor(
             val name = store.roster().firstOrNull { it.deviceId == to }?.displayName ?: return@guard SendOutcome.Failed(GONE)
             // A document over the receiver's cap would be refused there (sync-v1 §5.5): say so before anything goes up.
             if (documentJson.length > MAX_SEND_PLAIN || documentJson.toByteArray(Charsets.UTF_8).size > MAX_SEND_PLAIN) return@guard SendOutcome.Failed(TOO_BIG)
-            val sendId = unsure[to] ?: newSendId()
-            val envs = try {
+            // Only a retry of the same document (whatever its exportedAt) reuses the id (review S12).
+            val doc = documentHash(documentJson)
+            val stale = unsure[to]?.takeIf { it.doc != doc }
+            if (stale != null) {
+                // Another document now: the earlier one that may have landed is taken back (best effort), never reused.
+                api.deleteInbox(DeviceAuth(id.deviceId, id.token), sp.spaceId, stale.sendId)
+                unsure.remove(to)
+            }
+            val again = unsure[to]
+            val sendId = again?.sendId ?: newSendId()
+            // The same document again under the same key: the very bytes of the first try, so a reader can't mix two sealings.
+            val envs = again?.takeIf { it.epoch == sp.epoch }?.envs ?: try {
                 SyncCrypto.sealParts(SyncCrypto.dataKey(sp.k, sp.spaceId), sp.spaceId, sp.epoch, { i, n -> SyncCrypto.Place.inbox(to, sendId, i, n) }, documentJson, partBytes)
             } catch (e: SyncCryptoException) {
                 return@guard SendOutcome.Failed(TOO_BIG) // more than 16 parts
@@ -213,6 +226,12 @@ class WebLinkInbox internal constructor(
                     failure = r
                     break
                 }
+                // The last part must close the send (sync-v1 §5.5): "complete: false" there means the server no longer holds
+                // all of it (an unfinished send idle for an hour is dropped), so it counts as failed.
+                if (i == envs.size - 1 && !r.value.complete) {
+                    failure = SyncResult.Error(409, INCOMPLETE)
+                    break
+                }
                 put++
             }
             if (failure == null) {
@@ -223,8 +242,13 @@ class WebLinkInbox internal constructor(
             // Take back whatever may have gone up, even when no part was confirmed: a PUT whose answer was lost may have landed.
             val taken = api.deleteInbox(auth, sp.spaceId, sendId)
             val gone = taken is SyncResult.Ok || (taken is SyncResult.Error && taken.code == SyncErrorCode.NOT_FOUND)
-            if (failure is SyncResult.Unreachable && !gone) unsure[to] = sendId else unsure.remove(to)
             val e = failure as? SyncResult.Error
+            if (attempt == 0 && e?.code == INCOMPLETE) {
+                // Taken back; the same id and the same bytes go again at once.
+                unsure[to] = UnsureSend(sendId, doc, sp.epoch, envs)
+                return@repeat
+            }
+            if (failure is SyncResult.Unreachable && !gone) unsure[to] = UnsureSend(sendId, doc, sp.epoch, envs) else unsure.remove(to)
             if (attempt == 0 && e != null && e.code == SyncErrorCode.EXISTS) {
                 unsure.remove(to) // an earlier send under this id had another size: start a fresh one
                 return@repeat
@@ -397,6 +421,9 @@ class WebLinkInbox internal constructor(
         parts[0] to parts.getOrElse(1) { CANT_READ }
     }
 
+    /** Choose was closed without adding: the read send (up to 16 MiB) isn't kept in memory (review N22). */
+    suspend fun release(sendId: String) = lock.withLock { opened.remove(sendId); Unit }
+
     /** Add: opens the send (unless it is already), merges it as a file import does (only [selection]), then deletes it on the server. */
     suspend fun add(sendId: String, selection: ImportSelection = ImportSelection.ALL): AddOutcome {
         val o = when (val r = open(sendId)) {
@@ -488,10 +515,19 @@ class WebLinkInbox internal constructor(
         const val GONE = "That browser isn't linked any more."
         const val TRY_AGAIN = "Couldn't send. Try again."
         const val CANT_READ = "This send can't be read."
+
+        /** The last part was answered `complete: false` (sync-v1 §5.5). */
+        private const val INCOMPLETE = "incomplete"
         /** Every refusal of a send that is too big or too dense to read says what any unreadable send says (sync-v1 §5.5). */
         const val TOO_BIG_TO_OPEN = CANT_READ
         const val GONE_SEND = "That send isn't here any more."
         const val TRY_LATER = "This send can't be opened yet. Try again in a moment."
+
+        private val EXPORTED_AT = Regex("\"exportedAt\"\\s*:\\s*\"[^\"]*\"")
+
+        /** What a document holds, whatever its `exportedAt` (every tap stamps a new one): SHA-256, base64url. */
+        fun documentHash(json: String): String =
+            Base64Url.encode(SyncCrypto.sha256(json.replace(EXPORTED_AT, "").toByteArray(Charsets.UTF_8)))
 
         /** `x_` + 16 random bytes in base64url (sync-v1 §1). */
         fun newSendId(): String = "x_" + Base64Url.encode(SyncCrypto.randomBytes(16))
