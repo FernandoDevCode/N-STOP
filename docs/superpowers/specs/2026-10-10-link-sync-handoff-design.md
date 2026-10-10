@@ -275,7 +275,7 @@ The server stamps each slot write with its own time (`serverAt`); readers use `s
 2. **QR:** `https://stashfm.app/link#1.<pairId>.<pairSecret>.<eB.pub, 65 bytes uncompressed>` in base64url (~170 characters, QR version 9–10 at level M).
 3. **Phone** reads the browser label from the slot (decrypts with the QR's secret), shows the confirm sheet. On *Link*: ephemeral `eP`; `Kpair = HKDF(ECDH(eP, eB.pub), salt = pairSecret, info = "stash-sync pair v1|<pairId>|<eB.pub>|<eP.pub>|<browser deviceId>|<browser pub>")`, the browser's id and long-term key taken from its pairing label, so a label swapped in the slot changes the code; posts `eP.pub`, its own device record in clear (`id`, `tokenHash`, `pub`, `labelCt`: the server needs the token hash when the browser is the sponsor) and `AES-GCM(Kpair, { label, deviceId, devicePub, space?: { id, k, epoch } })` to the slot. The **phone mints the space id** with `K` when it creates a space: the id is the data key's HKDF salt and part of every AAD, and it goes into this answer before the server could return one.
 4. **Browser** (long-polling the slot) derives `Kpair`, decrypts. The phone always sends a space (its own, or one it minted with `K` before step 3), so the browser now holds `K`; a browser in a phone-less space joins the phone's and leaves its old one (it never hands its key to a phone; Phase 3 review). When the phone minted it, the phone creates it (step 5).
-5. **Server** completes membership in one call made by the device that holds the space (the "sponsor"): `POST /v1/spaces { pairId, spaceId }` (new; the server takes both device records from the answered slot and burns the `pairId`) or `POST /v1/spaces/{id}/devices { pairId }` (join; sponsor-authenticated, adds the other device of that code, also burns it). The sponsor is always the phone. Each device then writes its label under the data key (`label:<deviceId>`): the pairing labels are under the pair secret. A slot answers once; a second answer gets `409 used` and the phone shows "This code was already used. Show a new one on your computer." The exact flows: `player/docs/sync-v1.md` §3.4.
+5. **Server** completes membership in one call made by the device that holds the space (the "sponsor"): `POST /v1/spaces { pairId, spaceId }` (new; the phone mints `spaceId` = `s_` + 16 random bytes, since it is sealed into the answer; the server takes both device records from the answered slot and burns the `pairId` only once the space exists) or `POST /v1/spaces/{id}/devices { pairId, epoch, envelope? }` (join; sponsor-authenticated, adds the other device of that code, also burns it; `epoch` is the key epoch the newcomer was handed, and if the space has rotated since, the sponsor adds the newcomer's key envelope for the current epoch, else a retryable `409 epoch` before the code is used). The sponsor is always the phone. Each device then writes its label under the data key (`label:<deviceId>`): the pairing labels are under the pair secret. A slot answers once; a second answer gets `409 used` and the phone shows "This code was already used. Show a new one on your computer." The exact flows: `player/docs/sync-v1.md` §3.4.
 
 **Nothing is kept before the reply.** After its user confirms the code, the browser always posts a `stash-pair-reply` under `Kpair` (with `space` only when it grants its own space). The phone opens it under its own `Kpair`, which binds the browser label it was served, before it joins, creates the space, re-seals a label or pins a key; a label swapped by someone who photographed the QR (with the server's help) makes the reply fail to open, so nothing is joined or pinned. The browser likewise keeps nothing from the answer until its user confirms.
 
@@ -285,7 +285,7 @@ The server stamps each slot write with its own time (`serverAt`); readers use `s
 
 ### 5.2 Key rotation
 
-On any device removal, the remover (or, if a device removed itself, the next remaining device to connect, told by `rotationDue: true`) mints `K'` with `epoch + 1`, encrypts it to every remaining device's public key (ECIES: ephemeral P-256 ECDH + HKDF + AES-GCM), uploads the envelopes and a fresh snapshot under `K'` in one `POST /rotate`. The server then deletes the old log, snapshot, slots and envelopes. Writes under an old epoch get `409 epoch` (the client fetches its envelope and retries). A removed device already can't read (its token is gone); rotation also protects against a removed device that kept `K` plus a later server-side leak.
+On any device removal, the remover (or, if a device removed itself, the next remaining device to connect, told by `rotationDue: true`) mints `K'` with `epoch + 1`, encrypts it to every remaining device's public key (ECIES: ephemeral P-256 ECDH + HKDF + AES-GCM), uploads the envelopes and a fresh snapshot under `K'` in one `POST /rotate`. The server then deletes the old log, snapshot, slots and envelopes. Writes under an old epoch get `409 epoch` (the client fetches its envelope and retries). If the device list changed since the rotator read it, the server answers `409 devices_changed` with the current devices and epoch, and the rotator seals for that list and retries. A snapshot bigger than one request (1 MiB) can't travel in `/rotate`: the space is then `compactDue`, refuses new log batches (`409 compact`) and keeps the old-key log only until any device uploads a whole-log snapshot under `K'` in parts, which deletes it. While `rotationDue` is set, writes sealed under the current key (log, snapshot, slots, inbox, own label) get `409 rotation_due`: the device rotates first. Key envelopes are kept per device for every epoch it hasn't fetched (at most 32), so a device several rotations behind walks them in order. A removed device already can't read (its token is gone); rotation also protects against a removed device that kept `K` plus a later server-side leak.
 
 - **Proof.** Each key envelope's document carries `members` and an HMAC under a key derived from the **previous** `K` over the space, new epoch, device, new key and members. A device accepts only the next epoch, only as a member, only with a valid proof. The server never holds a `K`, so it can't mint a rotation and hand devices a key it knows.
 - **Keys from labels only.** Rotators seal only to public keys found in a `stash-label` they decrypted (pairing label, or `label:<id>` under the data key); a key the server lists that differs, or a device without a sealed label, gets no envelope. So the server can't substitute its own key for a browser's.
@@ -314,11 +314,11 @@ On any device removal, the remover (or, if a device removed itself, the next rem
 | `POST /v1/pair` | player | Opens a slot: `{ device: { id, tokenHash, pub, labelCt } }` → `{ pairId, expiresAt }`. |
 | `GET /v1/pair/{pairId}` | player (browser token) | Long-poll ≤ 25 s: `204` pending, `200 { phonePub, ct }`, `410 expired`. |
 | `GET /v1/pair/{pairId}/label` | phone | `{ labelCt }` for the confirm sheet. 10/min per IP. |
-| `POST /v1/pair/{pairId}/answer` | phone | `{ phonePub, ct }`; one answer per slot. |
+| `POST /v1/pair/{pairId}/answer` | phone | `{ phonePub, ct, device: { id, tokenHash, pub, labelCt } }`; one answer per slot. |
 | `POST /v1/pair/{pairId}/reply` and `GET …/reply` | browser / phone | The browser's encrypted reply when it holds the space (§5.1 step 4). |
 | `POST /v1/spaces` | phone | Creates a space from an answered pair: `{ pairId, spaceId }` (the phone minted the id; both device records come from the slot) → `{ spaceId, epoch: 1 }`. |
-| `POST /v1/spaces/{sid}/devices` | member (sponsor) | Adds a device from a completed pair. Enforces 1 phone + 4 browsers. |
-| `GET /v1/spaces/{sid}` | member | `{ devices: [{ id, type, pub, labelCt, addedAt, lastSeenAt }], epoch, rotationDue, head, snapshot: { uptoSeq, parts }, serverTime }`. Updates caller's `lastSeenAt` (at most hourly write). |
+| `POST /v1/spaces/{sid}/devices` | member (sponsor) | Adds a device from a completed pair: `{ pairId, epoch, envelope? }` (§5.1 step 5). Enforces 1 phone + 4 browsers. |
+| `GET /v1/spaces/{sid}` | member | `{ devices: [{ id, type, pub, labelCt, addedAt, lastSeenAt }], epoch, rotationDue, compactDue, head, snapshot: { uptoSeq, parts, epoch }, serverTime }`. Updates caller's `lastSeenAt` (at most hourly write). |
 | `PUT /v1/spaces/{sid}/devices/me/label` | member | New encrypted label. |
 | `DELETE /v1/spaces/{sid}/devices/{did}` | member | Removes a device (self = unlink). Sets `rotationDue`. |
 | `DELETE /v1/spaces/{sid}` | member | Unlink everything: `deleteAll()`. |
@@ -340,7 +340,7 @@ The player Worker forwards exactly these paths under `/api/sync/…` (an allow-l
 
 ### 6.3 DO storage (SQLite)
 
-`meta(spaceId, createdAt, epoch, rotationDue, bytesUsed, writesToday, day)`, `devices(id, type, tokenHash, pub, labelCt, addedAt, lastSeenAt)`, `envelopes(deviceId, epoch, ct)`, `log(seq INTEGER PRIMARY KEY, deviceId, epoch, serverAt, body BLOB)`, `snapshot(part, count, uptoSeq, epoch, body BLOB)`, `slots(name PRIMARY KEY, deviceId, epoch, serverAt, body BLOB)`, `inbox(sendId, toDevice, part, count, serverAt, body BLOB)`. Each blob ≤ 1 MiB (the platform row limit is 2 MB).
+`meta(spaceId, createdAt, epoch, rotationDue, compactDue, bytesUsed, head, snapUpto)`, `devices(id, type, tokenHash, pub, labelCt, addedAt, lastSeenAt, writesToday, day)`, `envelopes(deviceId, epoch, ct)`, `log(seq INTEGER PRIMARY KEY, deviceId, epoch, serverAt, body BLOB)`, `snapshot(part, count, uptoSeq, epoch, body BLOB)`, `slots(name PRIMARY KEY, deviceId, epoch, serverAt, body BLOB)`, `inbox(sendId, toDevice, part, count, serverAt, body BLOB)`. Each blob ≤ 1 MiB (the platform row limit is 2 MB).
 
 ### 6.4 Limits and abuse resistance
 
@@ -351,9 +351,10 @@ The player Worker forwards exactly these paths under `/api/sync/…` (an allow-l
 | Snapshot / one send | 16 parts × 1 MiB |
 | Space total stored | 32 MiB → over: `413 space_full` (client compacts; a send says "Too big to send. Save it as a file instead.") |
 | Log | client compacts at 500 batches or 4 MiB; server refuses new batches past 2,000 (`409 compact`) |
-| Writes per space per day | 3,000; reads 20,000 (counters in `meta`) |
+| Writes per device per day | 3,000; reads 20,000 (writes on the device row, reads in memory). Never refused by these caps: reading the space and its key, removing a device, unlinking everything, rotating (they have their own 10/min per device), so a flooding device can always be removed |
 | Per IP (`[[ratelimits]]`) | pairing label/answer 10/min; space API 240/min |
-| Pair slots | created only through the player (a signed-in session); 6 per session per 10 min at the player; 3-minute life; one answer |
+| Pair slots | created only through the player (a signed-in session); 6 per session per 10 min (a small `Quota` Durable Object per session, since ratelimit bindings stop at 60 s); 3-minute life; one answer |
+| New spaces | 10 per player session and 20 per phone IP per day (`Quota`) |
 
 No open relay: nothing can be stored without a device token; a device token only comes from a pairing that started in a gated browser session; every space is capped and expires. The DO keeps no IP addresses.
 
@@ -528,7 +529,7 @@ On app foreground (at most every 30 s) and on web load / tab visible (at most ev
 | Clock skew | HLC with server offset (§7.4); handoff uses `serverAt`. A phone set an hour ahead can't win every conflict, and its card isn't "newer" by mistake. |
 | Conflicting edits | §7: likes by HLC, plays never conflict, playlists three-way merge, config LWW with `If-Match`. |
 | Song missing on one side | Mirrored: kept as an item (refs-less songs resolve by words when played; failures are skipped at play time, not deleted). Handoff: skipped by the player. `phoneOnly`: dimmed on the web, left out of a web handoff with the one-line note. |
-| Revoked / removed device | Next call gets `401 revoked`: the device deletes its sync state, keeps its library, shows "Unlinked from Pixel 6" once. Space deleted → `404 gone`, same. |
+| Revoked / removed device | Next call gets `401 revoked`: the device deletes its sync state, keeps its library, shows "Unlinked from Pixel 6" once. A deleted space answers the same `401 revoked` (one answer for both, so nobody can probe which spaces exist). A browser's token works only through the player. |
 | Key rotated meanwhile | `409 epoch` → fetch envelope, retry. No envelope for me → treated as revoked. |
 | Two browsers | Both are members; mirroring reaches all three; the card offers the newest other device. Two tabs of one browser are one device: Web Locks makes one tab the sync runner; whichever tab plays publishes. |
 | Pairing code used twice / expired | "This code was already used" / "This code expired. Show a new one." |
@@ -568,7 +569,7 @@ On app foreground (at most every 30 s) and on web load / tab visible (at most ev
 10. Second browser (Firefox): link from the phone; mirror settings arrive; first-merge question for each kind that's on.
 11. Remove Firefox from the phone → Firefox shows "Unlinked" on its next call; Chrome keeps syncing (after key rotation, verify epoch bumped in diagnostics).
 12. Airplane mode on the phone, change a like, kill the app, reopen online → change syncs (WorkManager).
-13. Unlink everything → both sides unlinked, libraries intact; `GET` the space id → 404.
+13. Unlink everything → both sides unlinked, libraries intact; `GET` the space id → 401 `revoked`.
 14. Battery: an hour of playback with handoff on vs off, Battery Historian / `dumpsys batterystats`: no wake locks or alarms attributable to sync beyond the network calls.
 15. Crypto on real providers: `./gradlew :core:data:connectedDebugAndroidTest --tests '*SyncCryptoAndroidTest*'` (or `-Pandroid.testInstrumentationRunnerArguments.class=com.stash.core.data.weblink.SyncCryptoAndroidTest`) on an API 26 emulator and on the Pixel 6 (API 31+: the Keystore ECDH case runs). The JVM unit tests use SunEC; this proves Conscrypt and the Keystore agree with the fixtures.
 16. Pairing code: photograph the browser's QR, answer it from the Pixel 5 first. The Pixel 6 then gets "already used" but keeps showing its code; the browser asks "Link Pixel 5?" with the Pixel 5's code, which differs from the code on the Pixel 6. Cancel on the browser leaves both libraries and spaces as they were.
