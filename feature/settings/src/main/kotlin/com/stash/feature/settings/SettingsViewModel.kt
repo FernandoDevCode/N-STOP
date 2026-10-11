@@ -898,6 +898,9 @@ class SettingsViewModel @Inject constructor(
                     } else {
                         // We need the user to re-grant permission for the restored folder
                         // BEFORE we restart, so that the startup migrations can see the files.
+                        // The screen MUST answer with [onRestoreFolderRegrantResult] whatever
+                        // the picker's outcome — the files are already swapped.
+                        restoreAwaitingFolderGrant = restoredTreeUri
                         _localState.update { it.copy(databaseBackupState = DatabaseBackupState.Idle) }
                         onExternalPermissionNeeded(restoredTreeUri)
                     }
@@ -931,20 +934,75 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    private suspend fun finishImportAndRestart() {
-        _localState.update {
-            it.copy(databaseBackupState = DatabaseBackupState.Success("Database imported. Restarting..."))
-        }
-        kotlinx.coroutines.delay(1500)
+    /**
+     * The restored library folder the screen is asking the user to re-grant,
+     * between [onConfirmImportDatabase] handing it off and
+     * [onRestoreFolderRegrantResult] answering. Null when no re-grant is pending.
+     */
+    private var restoreAwaitingFolderGrant: Uri? = null
 
-        // Re-launch the activity and kill the current process to ensure all
-        // components (Room, DataStore, Tink) re-initialize with the restored data.
+    /**
+     * Answers the folder re-grant that [onConfirmImportDatabase] asked for, for
+     * EVERY outcome of the picker: [pickedUri] is null when the user cancelled
+     * (or no picker could be shown).
+     *
+     * Always restarts. By the time the picker is up the import has already
+     * closed Room and swapped the `datastore/` files under the live DataStore
+     * singletons, so this process must not keep running: a cancel used to just
+     * return to Settings, where live lists stopped updating and the next
+     * settings toggle wrote the stale in-memory prefs back over the restored
+     * files. Without a grant, the restarted app simply lacks access to the
+     * folder until the user picks it again in Library & Storage.
+     *
+     * A folder other than the restored one is handed over through
+     * [RestoredFolderHandoff] and applied after the restart, never written
+     * through [StoragePreference] here: that DataStore still holds its
+     * pre-restore copy, and an edit would overwrite the restored
+     * `storage_preferences` file with it (racing the process kill besides).
+     */
+    fun onRestoreFolderRegrantResult(pickedUri: Uri?) {
+        val restored = restoreAwaitingFolderGrant
+        restoreAwaitingFolderGrant = null
+        if (pickedUri != null && pickedUri != restored) {
+            RestoredFolderHandoff.record(appContext, pickedUri)
+        }
+        finishImportAndRestart(
+            if (pickedUri == null) {
+                "Database imported. Restarting… Choose your library folder again in Library & Storage."
+            } else {
+                "Database imported. Restarting..."
+            },
+        )
+    }
+
+    /**
+     * Relaunches the app and kills this process so every component (Room,
+     * DataStore, Tink) re-initializes with the restored data. A `var` only so
+     * tests can observe the restart without killing the test JVM.
+     */
+    internal var restartProcess: () -> Unit = {
         val intent = appContext.packageManager.getLaunchIntentForPackage(appContext.packageName)
         if (intent != null) {
             intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
             appContext.startActivity(intent)
         }
         android.os.Process.killProcess(android.os.Process.myPid())
+    }
+
+    private fun finishImportAndRestart(message: String = "Database imported. Restarting...") {
+        _localState.update {
+            it.copy(databaseBackupState = DatabaseBackupState.Success(message))
+        }
+        // Deliberately NOT viewModelScope: the files are already swapped, so the
+        // restart must happen even if this ViewModel is cleared first. Backing
+        // out of Settings during the 1.5 s message used to cancel the restart and
+        // leave the app running on the swapped files.
+        kotlinx.coroutines.CoroutineScope(
+            kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main,
+        ).launch {
+            kotlinx.coroutines.delay(1500)
+            restartProcess()
+        }
     }
 
     /**

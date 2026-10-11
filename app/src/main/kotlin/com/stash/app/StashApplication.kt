@@ -44,6 +44,7 @@ import com.stash.core.media.streaming.SquidCookieAutoRefresher
 import com.stash.data.download.lossless.LosslessRetryScheduler
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.ytdlp.YtDlpUpdateWorker
+import com.stash.feature.settings.RestoredFolderHandoff
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -251,6 +252,10 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var syncPreferencesManager: com.stash.core.data.sync.SyncPreferencesManager
 
+    /** Only to apply a library folder re-granted during a restore, see [RestoredFolderHandoff]. */
+    @Inject
+    lateinit var storagePreference: com.stash.core.data.prefs.StoragePreference
+
     /** Application-scoped coroutine scope for one-shot startup tasks. */
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -325,6 +330,20 @@ class StashApplication : Application(), Configuration.Provider {
             },
         )
         losslessConfigFetcher.start(applicationScope)
+        // A restore whose user picked a different library folder than the
+        // backup's: it could not be written before the restart (the live
+        // DataStore still held pre-restore values), so apply it now, through
+        // the DataStore that just loaded the restored file.
+        applicationScope.launch {
+            val folder = RestoredFolderHandoff.consume(this@StashApplication) ?: return@launch
+            try {
+                storagePreference.setExternalTreeUri(folder)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("StashStartup", "applying the restored library folder failed", e)
+            }
+        }
         // YouTube PO tokens: learn a visitor id and boot BotGuard now, so the
         // first play's InnerTube URL passes the GVS wall instead of falling to
         // yt-dlp (13.8 s measured 2026-09-06). Best-effort; failures log only.
