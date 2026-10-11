@@ -20,7 +20,12 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import androidx.lifecycle.viewModelScope
+import com.stash.core.model.DownloadFailureType
+import com.stash.core.model.DownloadStatus
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,6 +37,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -119,6 +125,7 @@ class FailedMatchesApproveVideoIdTest {
 
     @Test fun `a real video id is approved and downloaded under its own name`() = runTest {
         val vm = makeVm()
+        vm.approvedDownloadScope = backgroundScope
 
         vm.approveMatch(trackId = 1L, queueEntryId = 1L, candidate = candidate("dQw4w9WgXcQ"))
         advanceUntilIdle()
@@ -133,5 +140,67 @@ class FailedMatchesApproveVideoIdTest {
                 any(),
             )
         }
+    }
+
+    // -- Approved downloads outlive the screen, two at a time (A9) ------------------
+
+    /**
+     * Approve hides the row at once, so the user taps Back: that cleared the
+     * ViewModel and cancelled the download, while the queue row already said
+     * COMPLETED — the track was never downloaded and nothing retried it.
+     */
+    @Test fun `an approved download still finishes after the screen is closed`() = runTest {
+        coEvery { downloadExecutor.download(any(), any(), any(), any(), any()) } returns
+            DownloadResult.Success(java.io.File("approve_dQw4w9WgXcQ.opus"))
+        val vm = makeVm()
+        vm.approvedDownloadScope = backgroundScope
+
+        vm.approveMatch(trackId = 1L, queueEntryId = 1L, candidate = candidate("dQw4w9WgXcQ"))
+        vm.viewModelScope.cancel() // the user leaves Failed Matches
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { trackDao.markAsDownloaded(1L, any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) {
+            downloadQueueDao.updateStatus(1L, DownloadStatus.FAILED, any(), any(), any(), any())
+        }
+    }
+
+    @Test fun `an approved download that fails goes back to Failed Matches`() = runTest {
+        val vm = makeVm()
+        vm.approvedDownloadScope = backgroundScope
+
+        vm.approveMatch(trackId = 1L, queueEntryId = 1L, candidate = candidate("dQw4w9WgXcQ"))
+        advanceUntilIdle()
+
+        coVerify(exactly = 0) { trackDao.markAsDownloaded(any(), any(), any(), any(), any(), any()) }
+        coVerify(exactly = 1) {
+            downloadQueueDao.updateStatus(1L, DownloadStatus.FAILED, any(), any(), DownloadFailureType.NO_MATCH, any())
+        }
+    }
+
+    /** Approve All used to start one yt-dlp process per approved row, all at once. */
+    @Test fun `approved downloads run at most two at a time`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        var running = 0
+        var mostAtOnce = 0
+        coEvery { downloadExecutor.download(any(), any(), any(), any(), any()) } coAnswers {
+            running++
+            mostAtOnce = maxOf(mostAtOnce, running)
+            gate.await()
+            running--
+            DownloadResult.Error("test-stop")
+        }
+        val vm = makeVm()
+        vm.approvedDownloadScope = backgroundScope
+
+        listOf("dQw4w9WgXcQ", "aaaaaaaaaaa", "bbbbbbbbbbb", "ccccccccccc").forEachIndexed { i, id ->
+            vm.approveMatch(trackId = i + 1L, queueEntryId = i + 1L, candidate = candidate(id))
+        }
+        advanceUntilIdle()
+        assertEquals(2, mostAtOnce)
+
+        gate.complete(Unit) // release the shared slots for the other tests
+        advanceUntilIdle()
+        coVerify(exactly = 4) { downloadExecutor.download(any(), any(), any(), any(), any()) }
     }
 }
