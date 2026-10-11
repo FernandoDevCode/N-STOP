@@ -16,14 +16,11 @@ import org.junit.Test
 
 /**
  * The foreground (tap) [LosslessUrlPrefetcher.lookup] must resolve with
- * `bypassRateLimit = true` so a preview isn't throttled behind speculative
- * background prefetches, while the background [LosslessUrlPrefetcher.warmUp]
- * stays rate-limited (`bypassRateLimit = false`).
+ * `bypassRateLimit = true` so a preview isn't throttled.
  *
- * warmUp is speculative: a row the user may never tap. It runs only when the
- * user's OWN Qobuz account is live, because every other lossless path is a
- * shared, capped budget (the relay's per-account caps)
- * that browsing must not spend. A tap still resolves either way.
+ * [LosslessUrlPrefetcher.warmUp] spends nothing at all: its only reader is the
+ * unreachable preview path, so a warm-up was a search and a signed file-URL
+ * request against the user's own Qobuz account that nothing ever read.
  */
 class LosslessUrlPrefetcherTest {
     private val registry: LosslessSourceRegistry = mockk(relaxed = true)
@@ -54,15 +51,16 @@ class LosslessUrlPrefetcherTest {
         coVerify { registry.resolve(match { it.album == "Alive!" }, any()) }
     }
 
-    @Test fun `warmUp resolves with bypassRateLimit false when the user's own account is live`() = runTest {
+    @Test fun `warmUp spends nothing even when the user's own account is live`() = runBlocking {
         coEvery { availability.ownAccountLiveNow() } returns true
         coEvery { registry.resolve(any(), any()) } returns null
 
-        LosslessUrlPrefetcher(registry, availability, losslessPrefs).warmUp(item)
+        // Fifteen rows of an album page entering composition.
+        val prefetcher = LosslessUrlPrefetcher(registry, availability, losslessPrefs)
+        repeat(15) { prefetcher.warmUp(item.copy(videoId = "v$it")) }
 
-        // warmUp dispatches onto the prefetcher's own Dispatchers.IO scope (NOT the
-        // runTest scheduler), so poll with a timeout rather than racing a bare verify.
-        coVerify(timeout = 1000) { registry.resolve(any(), bypassRateLimit = false) }
+        delay(300) // real time: any warm-up would run on the prefetcher's own IO scope
+        coVerify(exactly = 0) { registry.resolve(any(), any()) }
     }
 
     @Test fun `warmUp spends nothing when the user's own account is not live`() = runBlocking {
