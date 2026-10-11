@@ -1169,7 +1169,12 @@ class SettingsViewModel @Inject constructor(
      * manual paste flow does.
      */
     fun onSpotifyWebLoginCookieExtracted(spDcCookie: String) {
-        _localState.update { it.copy(showSpotifyWebLogin = false) }
+        // Validation reports through the paste dialog's state, so show that
+        // dialog: its spinner covers the multi-second check, and a rejected
+        // cookie (stale TOTP, anonymous session, no network) shows its error.
+        // With the dialog hidden, a failed web sign-in just dropped the user
+        // back on "Not connected" with no message. Success closes it again.
+        _localState.update { it.copy(showSpotifyWebLogin = false, showSpotifyCookieDialog = true) }
         onConnectSpotifyWithCookie(spDcCookie)
     }
 
@@ -1281,7 +1286,10 @@ class SettingsViewModel @Inject constructor(
      * the manual paste path uses.
      */
     fun onYouTubeWebLoginCookieExtracted(cookies: String) {
-        _localState.update { it.copy(showYouTubeWebLogin = false) }
+        // Shown for the same reason as Spotify's (see
+        // onSpotifyWebLoginCookieExtracted): the pre-checks and the save report
+        // only through the dialog, which the web path used to leave hidden.
+        _localState.update { it.copy(showYouTubeWebLogin = false, showYouTubeCookieDialog = true) }
         onConnectYouTubeWithCookie(cookies)
     }
 
@@ -1401,7 +1409,8 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun onDiscordWebLoginTokenExtracted(token: String) {
-        _localState.update { it.copy(showDiscordWebLogin = false) }
+        // Shown so a rejected token is reported (see onSpotifyWebLoginCookieExtracted).
+        _localState.update { it.copy(showDiscordWebLogin = false, showDiscordTokenDialog = true) }
         onConnectDiscordWithToken(token)
     }
 
