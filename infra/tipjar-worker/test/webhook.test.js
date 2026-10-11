@@ -72,6 +72,19 @@ test("a donation still lands at the top of the supporters list exactly as before
     assert.deepEqual(list.slice(1), SUPPORTERS.supporters);
 });
 
+test("a private donation (is_public: false) is listed as Anonymous with no message, and its name and message are never stored", async () => {
+    const e = env();
+    const res = await worker.fetch(kofiPost(donation({ is_public: false, from_name: "Secret Sam", message: "keep this quiet" })), e);
+    assert.equal(res.status, 200);
+    assert.deepEqual(supportersOf(e)[0], { name: "Anonymous", amountUsd: 5, message: "", timestamp: "2026-10-04T12:00:00Z" });
+    const stored = e.STASH_KV.map.get("supporters").value;
+    assert.ok(!stored.includes("Secret Sam") && !stored.includes("keep this quiet"));
+    // A payload without the field (older Ko-fi posts) stays public, as before.
+    const { is_public: _, ...legacy } = donation({ message_id: "m2", kofi_transaction_id: "tx-2" });
+    await worker.fetch(kofiPost(legacy), e);
+    assert.equal(supportersOf(e)[0].name, "Ann");
+});
+
 test("early access lives in ACCESS_KV by email hash, never the email; STASH_KV keeps only the tip jar's own keys", async () => {
     const e = env();
     await worker.fetch(kofiPost(donation()), e);

@@ -123,12 +123,17 @@ async function handleKofiWebhook(request, env, ctx) {
     return new Response("OK", { status: 200 });
 }
 
-/** Prepends the supporter to the list the app reads, exactly as before 2026-10. */
+/**
+ * Prepends the supporter to the list the app reads, exactly as before 2026-10. A donor who ticked Ko-fi's "make
+ * this private" (`is_public: false`) is listed as "Anonymous" with no message: the list is public (every Stash
+ * install's Home ticker, and `Access-Control-Allow-Origin: *`), so their name and message are never stored at all.
+ */
 async function addSupporter(env, payload) {
+    const isPublic = payload.is_public !== false;
     const newSupporter = {
-        name: (payload.from_name || "Anonymous").slice(0, 40),
+        name: (isPublic && payload.from_name ? payload.from_name : "Anonymous").slice(0, 40),
         amountUsd: Math.max(0, Math.floor(parseFloat(payload.amount) || 0)),
-        message: (payload.message || "").slice(0, 280),
+        message: (isPublic ? payload.message || "" : "").slice(0, 280),
         timestamp: payload.timestamp || new Date().toISOString(),
     };
 
