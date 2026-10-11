@@ -2219,6 +2219,12 @@ interface TrackDao {
      * "0:00" durations on first paint; metadata only filled in
      * incidentally when the player resolved a queue window at play time
      * (conversation 2026-05-28).
+     *
+     * Newest first. Unordered, SQLite handed back the same oldest rows every
+     * run, and stubs Last.fm can't fill (no duration is common) never leave
+     * the set, so once 500 of them piled up the stubs a mix refresh had just
+     * created never got art or a duration. Newest-first keeps the stubs that
+     * triggered this pass at the front; the stuck ones sink behind them.
      */
     @Query(
         """
@@ -2229,6 +2235,7 @@ interface TrackDao {
           AND (album_art_url IS NULL OR album_art_url = '' OR duration_ms = 0)
           AND artist != ''
           AND title != ''
+        ORDER BY id DESC
         LIMIT :limit
         """
     )
@@ -2434,6 +2441,30 @@ interface TrackDao {
         LIMIT 1
     """)
     suspend fun findDownloadedByCanonical(canonicalTitle: String, canonicalArtist: String): TrackEntity?
+
+    /**
+     * Batched [findDownloadedByCanonical] for DiffWorker's auto-reconciliation:
+     * every downloaded track whose lowercased `title|artist` key is in
+     * [canonicalKeys]. The single-row form ran once per undownloaded existing
+     * track of every playlist, every sync, and each call is a full table scan
+     * (LOWER() rules out an index). An Online-mode user, with nothing
+     * downloaded, paid ~one scan per playlist membership inside the diff's
+     * write transactions. This is one scan per playlist.
+     *
+     * The `|`-joined key can collide ("a|b" + "c" vs "a" + "b|c"), so callers
+     * must re-check title and artist separately. Use
+     * [findDownloadedByCanonicalKeys], which chunks for the bind cap.
+     */
+    @Query("""
+        SELECT * FROM tracks
+        WHERE is_downloaded = 1
+          AND (LOWER(canonical_title) || '|' || LOWER(canonical_artist)) IN (:canonicalKeys)
+    """)
+    suspend fun findDownloadedByCanonicalKeysRaw(canonicalKeys: List<String>): List<TrackEntity>
+
+    /** Bind-safe wrapper for [findDownloadedByCanonicalKeysRaw]. Empty input runs no query. */
+    suspend fun findDownloadedByCanonicalKeys(canonicalKeys: List<String>): List<TrackEntity> =
+        canonicalKeys.chunkedForBind { findDownloadedByCanonicalKeysRaw(it) }
 
     /**
      * Returns the canonical-key set ("$canonicalArtist|$canonicalTitle")

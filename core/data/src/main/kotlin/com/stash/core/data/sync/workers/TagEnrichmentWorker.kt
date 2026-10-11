@@ -13,7 +13,7 @@ import com.stash.core.data.db.dao.TrackTagDao
 import com.stash.core.data.db.entity.TrackTagEntity
 import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.lastfm.LastFmCredentials
-import com.stash.core.data.lastfm.LastFmTag
+import com.stash.core.data.lastfm.isTransientLastFmFailure
 import com.stash.core.data.sync.enqueueUniquePeriodicWorkReviving
 import com.stash.core.model.DownloadNetworkMode
 import dagger.assisted.Assisted
@@ -57,6 +57,9 @@ class TagEnrichmentWorker @AssistedInject constructor(
         private const val REQUEST_INTERVAL_MS = 220L // ~4.5 req/sec target
         private const val MAX_TAGS_PER_TRACK = 5
 
+        /** Transient failures in a row that end the batch early (Last.fm or the network is down). */
+        private const val MAX_CONSECUTIVE_ERRORS = 5
+
         /**
          * Schedule / re-schedule the periodic enrichment with [mode]'s
          * constraints. `UPDATE` policy so a preference change replaces
@@ -92,11 +95,28 @@ class TagEnrichmentWorker @AssistedInject constructor(
 
         var processed = 0
         var errors = 0
+        var consecutiveErrors = 0
         for (trackId in candidates) {
             val track = trackDao.getById(trackId) ?: continue
             if (track.artist.isBlank() || track.title.isBlank()) continue
 
             val tags = fetchTagsWithFallback(track.artist, track.title)
+            if (tags == null) {
+                // Last.fm couldn't be asked (network drop, 5xx, 429, all keys
+                // throttled). Write NOTHING: the sentinel below is permanent,
+                // and stamping it here used to poison every track a short
+                // outage touched. The track stays untagged for the next pass.
+                errors++
+                if (++consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                    // The rest of the batch would fail the same way; stop
+                    // spending requests and let the next periodic run resume.
+                    Log.w(TAG, "stopping early after $consecutiveErrors consecutive Last.fm failures")
+                    break
+                }
+                delay(REQUEST_INTERVAL_MS)
+                continue
+            }
+            consecutiveErrors = 0
             // Persist AT LEAST a sentinel (empty with source=ARTIST) so this
             // track isn't re-tried on every pass when Last.fm truly has no
             // data. We use a synthetic "__untaggable__" row with weight 0
@@ -139,27 +159,34 @@ class TagEnrichmentWorker @AssistedInject constructor(
 
     /**
      * Try track-level first, fall back to artist-level. Returns an empty
-     * list only when BOTH calls yield no usable tags (or both threw).
+     * list only when Last.fm DEFINITIVELY has no usable tags for either
+     * (an answer, or its "not found" error), and null when either call
+     * failed transiently, since then we don't know. A transient track-level
+     * failure counts even if the artist answered empty: the track itself
+     * may well have tags.
      */
     private suspend fun fetchTagsWithFallback(
         artist: String,
         title: String,
-    ): List<TaggedResult> {
-        val trackTags = runCatching {
-            lastFmApiClient.getTrackTopTags(artist = artist, track = title).getOrNull()
-        }.getOrNull().orEmpty()
+    ): List<TaggedResult>? {
+        val trackResult = lastFmApiClient.getTrackTopTags(artist = artist, track = title)
+        val trackTags = trackResult.getOrNull().orEmpty()
         if (trackTags.isNotEmpty()) {
             return trackTags.map {
                 TaggedResult(it.name, it.weight, TrackTagEntity.SOURCE_TRACK)
             }
         }
-        val artistTags = runCatching {
-            lastFmApiClient.getArtistTopTags(artist).getOrNull()
-        }.getOrNull().orEmpty()
-        return artistTags.map {
-            TaggedResult(it.name, it.weight, TrackTagEntity.SOURCE_ARTIST)
+        val artistResult = lastFmApiClient.getArtistTopTags(artist)
+        val artistTags = artistResult.getOrNull().orEmpty()
+        if (artistTags.isNotEmpty()) {
+            return artistTags.map {
+                TaggedResult(it.name, it.weight, TrackTagEntity.SOURCE_ARTIST)
+            }
         }
+        // isTransientLastFmFailure also rethrows a captured cancellation.
+        if (trackResult.isTransientLastFmFailure() || artistResult.isTransientLastFmFailure()) {
+            return null
+        }
+        return emptyList()
     }
 }
-
-private fun List<LastFmTag>.orEmpty(): List<LastFmTag> = this

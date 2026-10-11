@@ -192,9 +192,18 @@ class SyncNotificationManager @Inject constructor(
      * @param title    Updated title.
      * @param text     Updated body text.
      * @param progress Current progress as a float in [0.0, 1.0].
+     * @param cancelIntent The worker's cancel intent. Pass it whenever the
+     *                 notification being replaced had one: this posts under the
+     *                 same id, so without it the first update strips the
+     *                 foreground notification's "Cancel" action.
      */
-    fun updateProgress(title: String, text: String, progress: Float) {
-        val notification = buildProgressNotification(title, text, progress)
+    fun updateProgress(
+        title: String,
+        text: String,
+        progress: Float,
+        cancelIntent: PendingIntent? = null,
+    ) {
+        val notification = buildProgressNotification(title, text, progress, cancelIntent)
         notificationManager.notify(NOTIFICATION_ID_PROGRESS, notification)
     }
 

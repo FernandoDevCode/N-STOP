@@ -223,6 +223,11 @@ class TrackDownloadWorker @AssistedInject constructor(
             // when the app is backgrounded (see safeSetForeground).
             syncStateManager.onDownloading(downloaded = 0, total = total)
             safeSetForeground(createForegroundInfo(downloaded = 0, total = total))
+            // Every per-track update reposts the progress notification under
+            // the same id, so it must carry the Cancel action too or the first
+            // update strips it from the foreground notification.
+            val progressCancelIntent = WorkManager.getInstance(applicationContext)
+                .createCancelPendingIntent(id)
 
             // ── Parallel download loop ──────────────────────────────────
             //
@@ -575,6 +580,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                                 "Downloaded $completed of $total"
                             },
                             progress = 0.25f + 0.70f * (resolved.toFloat() / total),
+                            cancelIntent = progressCancelIntent,
                         )
 
                         // Flush sync history tallies every 10 tracks for crash resilience.
@@ -658,16 +664,28 @@ class TrackDownloadWorker @AssistedInject constructor(
             // IN_PROGRESS queue rows will be reset to PENDING by the next
             // run's resetStaleInProgress() sweep.
             Log.i(TAG, "Sync cancelled by user or system")
-            syncHistoryDao.updateStatus(
-                id = syncId,
-                status = SyncState.CANCELLED,
-                completedAt = System.currentTimeMillis(),
-                errorMessage = "Cancelled",
-            )
+            // NonCancellable: this coroutine is already cancelled, so a plain
+            // suspend DAO call throws on entry and the row stayed DOWNLOADING
+            // ("Running") until the next startup flipped it to Interrupted.
+            withContext(NonCancellable) {
+                syncHistoryDao.updateStatus(
+                    id = syncId,
+                    status = SyncState.CANCELLED,
+                    completedAt = System.currentTimeMillis(),
+                    errorMessage = "Cancelled",
+                )
+            }
             syncStateManager.reset()
+            // Only SyncFinalizeWorker dismissed the progress notification, and a
+            // stopped chain never reaches it. When the run was not foreground
+            // (a scheduled sync with the app in the background) the per-track
+            // updates had posted a plain ongoing notification, so "Downloaded
+            // 37 of 120" stuck around, undismissable, until a later sync ended.
+            syncNotificationManager.cancelProgress()
             throw ce
         } catch (e: Exception) {
             Log.e(TAG, "Download worker failed", e)
+            syncNotificationManager.cancelProgress()
             syncHistoryDao.updateStatus(
                 id = syncId,
                 status = SyncState.FAILED,

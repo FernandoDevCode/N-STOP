@@ -236,6 +236,35 @@ class PlaylistFetchWorker @AssistedInject constructor(
     }
 
     /**
+     * An Empty answer from a library-level YouTube listing (library
+     * playlists, Liked Songs, saved albums) is NOT proof the library is empty:
+     * an expired cookie makes InnerTube answer as a logged-out user, whose
+     * library browses come back empty rather than failing (see
+     * [YoutubeAuthHealthProbe]), and the logged-out home feed still returns
+     * mixes, so the run looks like a success. Counting that Empty as a
+     * complete inventory let REFRESH hide every user playlist, saved album
+     * and Liked Songs until the user re-authed. So when we already hold
+     * ACTIVE rows of that kind, the Empty marks the inventory incomplete
+     * (deactivation is skipped, nothing is lost); with no such rows there is
+     * nothing to hide and the run stays complete.
+     *
+     * Trade-off: a user who really emptied that whole section keeps the old
+     * rows until a listing returns something again, the same fail-closed
+     * choice #343 made for tracks.
+     *
+     * @return true when the inventory was marked incomplete.
+     */
+    private suspend fun markIncompleteIfEmptyListingHidesRows(
+        listing: String,
+        type: PlaylistType,
+        savedAlbums: Boolean = false,
+    ): Boolean {
+        if (!playlistDao.hasActiveYouTubeRows(type, savedAlbums)) return false
+        markYoutubeIncomplete("$listing returned Empty while active rows exist (logged out?)")
+        return true
+    }
+
+    /**
      * The "Fetching your library…" foreground notification, used by
      * [promoteToForeground] so the system doesn't stop the fetch at the
      * ~10-minute background-job limit on huge libraries (3000+ liked songs can
@@ -451,7 +480,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
         // applies to those. Defaults to true — see SyncPreferencesManager.
         val discoverMixes = runCatching {
             syncPreferencesManager.discoverAutoMixes.first()
-        }.getOrDefault(true)
+        }.onFailure { if (it is CancellationException) throw it }.getOrDefault(true)
 
         // Fetch Daily Mixes (sp_dc dependent -- may return empty if GraphQL fails).
         if (!discoverMixes) {
@@ -581,6 +610,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
         } catch (e: SpotifyApiException) {
             throw e // Let doWork handle retries
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Log.e(TAG, "fetchSpotifyPlaylists: daily mixes enumeration failed (sp_dc issue), continuing", e)
             diagnostics.add(SyncStepResult("SPOTIFY", "getDailyMixes", StepStatus.ERROR, errorMessage = e.message))
         }
@@ -1000,6 +1030,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     is SyncResult.Empty -> {
                         diagnostics.add(SyncStepResult("YOUTUBE", "getUserPlaylists", StepStatus.EMPTY, errorMessage = result.reason))
                         Log.d(TAG, "fetchYouTubePlaylists: user playlists empty: ${result.reason}")
+                        markIncompleteIfEmptyListingHidesRows("getUserPlaylists", PlaylistType.CUSTOM)
                     }
                     is SyncResult.Error -> {
                         diagnostics.add(SyncStepResult("YOUTUBE", "getUserPlaylists", StepStatus.ERROR, errorMessage = result.message))
@@ -1013,6 +1044,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 albumsDeferred.await()
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Log.e(TAG, "YouTube Music fetch failed, continuing with other services", e)
             diagnostics.add(SyncStepResult("YOUTUBE", "fetchYouTubePlaylists", StepStatus.ERROR, errorMessage = e.message))
             markYoutubeIncomplete("top-level exception: ${e.message}")
@@ -1081,6 +1113,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 }
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Log.e(TAG, "fetchAndSnapshotMix: exception for '${mix.title}'", e)
             markYoutubeIncomplete("mix '${mix.title}' exception: ${e.message}")
         }
@@ -1105,7 +1138,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     // even though the outer try/catch would also handle a thrown exception.
                     val studioOnly = runCatching {
                         syncPreferencesManager.youtubeLikedStudioOnly.first()
-                    }.getOrDefault(false)
+                    }.onFailure { if (it is CancellationException) throw it }.getOrDefault(false)
                     val likedSongs = if (studioOnly) filterStudioOnly(rawTracks) else rawTracks
                     val filteredCount = rawTracks.size - likedSongs.size
 
@@ -1177,6 +1210,10 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 is SyncResult.Empty -> {
                     diagnostics.add(SyncStepResult("YOUTUBE", "getLikedSongs", StepStatus.EMPTY, errorMessage = result.reason))
                     Log.d(TAG, "fetchAndSnapshotLikedSongs: liked songs empty: ${result.reason}")
+                    if (markIncompleteIfEmptyListingHidesRows("getLikedSongs", PlaylistType.LIKED_SONGS)) {
+                        reportPlaylistFetched()
+                        return false
+                    }
                 }
                 is SyncResult.Error -> {
                     diagnostics.add(SyncStepResult("YOUTUBE", "getLikedSongs", StepStatus.ERROR, errorMessage = result.message))
@@ -1186,6 +1223,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 }
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Log.e(TAG, "fetchAndSnapshotLikedSongs: exception", e)
             diagnostics.add(SyncStepResult("YOUTUBE", "getLikedSongs", StepStatus.ERROR, errorMessage = e.message))
             reportPlaylistFetched()
@@ -1235,6 +1273,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
             is SyncResult.Empty -> {
                 diagnostics.add(SyncStepResult("YOUTUBE", "getSavedAlbums", StepStatus.EMPTY, errorMessage = result.reason))
                 Log.d(TAG, "fetchAndSnapshotSavedAlbums: no saved albums: ${result.reason}")
+                markIncompleteIfEmptyListingHidesRows("getSavedAlbums", PlaylistType.CUSTOM, savedAlbums = true)
             }
             is SyncResult.Error -> {
                 diagnostics.add(SyncStepResult("YOUTUBE", "getSavedAlbums", StepStatus.ERROR, errorMessage = result.message))
@@ -1362,6 +1401,12 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 }
                 is SyncResult.Empty -> {
                     Log.d(TAG, "fetchAndSnapshotUserPlaylist: no tracks for '${playlist.title}': ${tracksResult.reason}")
+                    // Still snapshot it: a playlist the library listing returned
+                    // but this run wrote no row for is "missing" to DiffWorker,
+                    // and REFRESH hid every genuinely empty user playlist on
+                    // every sync. See emptyYouTubePlaylistSnapshot for why this
+                    // can't mirror-clear a playlist that does have tracks.
+                    remoteSnapshotDao.insertPlaylistSnapshot(emptyYouTubePlaylistSnapshot(playlist, syncId))
                 }
                 is SyncResult.Error -> {
                     Log.e(TAG, "fetchAndSnapshotUserPlaylist: failed tracks for '${playlist.title}': ${tracksResult.message}")
@@ -1369,12 +1414,39 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 }
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Log.e(TAG, "fetchAndSnapshotUserPlaylist: exception for '${playlist.title}'", e)
             markYoutubeIncomplete("playlist '${playlist.title}' exception: ${e.message}")
         }
         reportPlaylistFetched()
     }
 }
+
+/**
+ * The snapshot row for a YouTube library playlist whose track fetch came back
+ * Empty. Written so the playlist stays in this run's inventory (otherwise
+ * REFRESH hides every genuinely empty playlist), and shaped so DiffWorker can
+ * never mirror-clear real tracks off the back of it:
+ *  - the listing said N > 0 tracks: trackCount = N with zero track rows is
+ *    DiffWorker's `suspiciousEmpty` shape, so local tracks are kept;
+ *  - the listing said 0: genuinely empty, mirrored as such;
+ *  - the listing gave no count: we can't tell an empty playlist from a failed
+ *    browse, so it is marked partial (kept, nothing cleared).
+ */
+internal fun emptyYouTubePlaylistSnapshot(
+    playlist: YTMusicPlaylist,
+    syncId: Long,
+): RemotePlaylistSnapshotEntity = RemotePlaylistSnapshotEntity(
+    syncId = syncId,
+    source = MusicSource.YOUTUBE,
+    sourcePlaylistId = playlist.playlistId,
+    playlistName = playlist.title,
+    playlistType = PlaylistType.CUSTOM,
+    trackCount = playlist.trackCount ?: 0,
+    artUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(playlist.thumbnailUrl),
+    partial = playlist.trackCount == null,
+    expectedCount = playlist.trackCount,
+)
 
 /**
  * Filters out UGC and PODCAST_EPISODE tracks. Used by the
