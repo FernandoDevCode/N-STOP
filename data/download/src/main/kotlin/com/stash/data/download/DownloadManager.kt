@@ -375,7 +375,7 @@ class DownloadManager @Inject constructor(
 
         // Step 3: Download via yt-dlp
         val tempDir = fileOrganizer.getTempDir()
-        val tempFilename = "dl_${track.id}"
+        val tempFilename = "dl_${track.id}_${attemptTag()}"
 
         val dlResult = downloadExecutor.download(
             url = youtubeUrl,

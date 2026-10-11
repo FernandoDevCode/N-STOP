@@ -170,8 +170,22 @@ class FileOrganizer @Inject constructor(
         return if (suffix == null) "${location.baseName}.$format" else "${location.baseName}-$suffix.$format"
     }
 
-    /** Temporary download directory inside the cache. Cleaned by the OS as needed. */
-    fun getTempDir(): File = File(context.cacheDir, "downloads").also { it.mkdirs() }
+    /**
+     * Temporary download directory inside the cache. Cleaned by the OS as
+     * needed, and of files a day old once per process: each download attempt
+     * names its temp files apart, so what a cancelled or crashed attempt
+     * leaves is never reused, and would otherwise sit there.
+     */
+    fun getTempDir(): File {
+        val dir = File(context.cacheDir, "downloads").also { it.mkdirs() }
+        if (tempDirSwept.compareAndSet(false, true)) {
+            val cutoff = System.currentTimeMillis() - STALE_TEMP_AGE_MS
+            dir.listFiles { file -> file.isFile && file.lastModified() < cutoff }?.forEach { it.delete() }
+        }
+        return dir
+    }
+
+    private val tempDirSwept = java.util.concurrent.atomic.AtomicBoolean(false)
 
     /**
      * One-pass existence checker: whether a track's file still exists, and
@@ -503,6 +517,8 @@ class FileOrganizer @Inject constructor(
         private val KNOWN_AUDIO_FORMATS = listOf("opus", "m4a", "flac", "mp3", "ogg", "wav")
         // Highest `-N` a new file's name tries before the commit gives up.
         private const val MAX_COPY_NUMBER = 999
+        // A temp download older than this is no attempt's any more; no download takes a day.
+        private const val STALE_TEMP_AGE_MS = 24L * 60 * 60 * 1000
         // A library file being written, before one rename puts it in place.
         private const val PART_SUFFIX = ".part"
         // Names a SAF document written to replace one: `<name>.stash-part.<ext>`.

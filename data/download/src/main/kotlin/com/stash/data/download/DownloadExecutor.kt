@@ -84,6 +84,19 @@ class DownloadExecutor @Inject constructor(
             return template.absolutePath.takeIf { resolved.parentFile == dir }
         }
 
+        /**
+         * Deletes what an earlier run left at [filename] in [outputDir]
+         * (`<filename>.<ext>`, `.part`, `.ytdl`): a run that was cancelled,
+         * crashed, or whose commit threw. None of it is this run's, but yt-dlp
+         * skipped a finished one as "already downloaded" (after a re-pick in
+         * Failed Matches, the old wrong video's audio), resumed a stale
+         * `.part`, and with another extension the output listing could pick
+         * the stale file over the fresh one.
+         */
+        internal fun deleteStaleOutputs(outputDir: File, filename: String) {
+            outputDir.listFiles { file -> file.name.startsWith("$filename.") }?.forEach { it.delete() }
+        }
+
         /** True when [url] is an https URL with a host. */
         internal fun isAcceptedUrl(url: String): Boolean {
             val uri = runCatching { URI(url) }.getOrNull() ?: return false
@@ -120,6 +133,7 @@ class DownloadExecutor @Inject constructor(
             Log.e(TAG, "download: refused an unsafe output name or URL (name ok=${outputTemplate != null})")
             return@withContext DownloadResult.Error("Refused an unsafe download name or URL")
         }
+        deleteStaleOutputs(outputDir, filename)
 
         // Gate on a freshened (latest-nightly) yt-dlp + warmed EJS solver
         // before the first download in a session. YouTube's signature /
