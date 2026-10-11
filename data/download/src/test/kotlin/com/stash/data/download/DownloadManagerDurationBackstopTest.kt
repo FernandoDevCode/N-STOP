@@ -169,4 +169,33 @@ class DownloadManagerDurationBackstopTest {
         // …and we re-resolved to reach the good second source.
         coVerify(exactly = 2) { losslessRegistry.resolve(any()) }
     }
+
+    /**
+     * Two downloads of one track at once (a double tap on Find in FLAC) each
+     * get a temp file of their own: a shared one was truncated under the first
+     * by the second, and the interleaved FLAC was committed.
+     */
+    @Test
+    fun `two downloads of one track never share a temp file`() = runTest {
+        val tempDir = File.createTempFile("tmp", "").apply { delete(); mkdirs() }
+        coEvery { fileOrganizer.getTempDir() } returns tempDir
+        coEvery { losslessRegistry.resolve(any()) } returns match("squid_qobuz")
+        val destinations = mutableListOf<File>()
+        coEvery { losslessUrlDownloader.download(any(), any(), any()) } answers {
+            val destination = secondArg<File>()
+            destinations += destination
+            destination.writeText("fake-flac-bytes")
+            Result.success(destination)
+        }
+        every { audioDurationExtractor.extractMs(any()) } returns 240_000L
+        coEvery { trackFinalizer.finalizeFile(any(), any(), any()) } returns
+            TrackFinalizer.FinalizeResult.Success(FileOrganizer.CommittedTrack("/library/x.flac", 1L), meta = null)
+
+        newSubject().tryLosslessDownload(stubTrack())
+        newSubject().tryLosslessDownload(stubTrack())
+
+        assertThat(destinations).hasSize(2)
+        assertThat(destinations[0]).isNotEqualTo(destinations[1])
+        assertThat(destinations.map { it.name }.all { it.startsWith("lossless_42_") }).isTrue()
+    }
 }

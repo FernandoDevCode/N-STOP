@@ -167,6 +167,16 @@ class DownloadManager @Inject constructor(
         internal const val MAX_LOSSLESS_FAILOVER_ATTEMPTS = 3
 
         /**
+         * A short random tag that gives each download attempt a temp file of
+         * its own. Named by track id alone, two downloads of one track at
+         * once (a double tap on Find in FLAC, or a tap while the FLAC upgrade
+         * sweep reaches the same song) shared one file: the second open
+         * truncated it under the first, and the interleaved FLAC, whose header
+         * still probed fine, was committed as the download.
+         */
+        internal fun attemptTag(): String = java.util.UUID.randomUUID().toString().substring(0, 8)
+
+        /**
          * The least a real JioSaavn file at [expectedKbps] measures: a fifth under
          * its nominal rate (96 → 77, 160 → 128, 320 → 256); real files measure just
          * over it. Rejects a lower variant or an error page. A 96 kbps preview
@@ -489,7 +499,7 @@ class DownloadManager @Inject constructor(
         } ?: return null
 
         emitProgress(track.id, 0.1f, DownloadStatus.DOWNLOADING)
-        val tempFile = File(fileOrganizer.getTempDir(), "jiosaavn_${track.id}.m4a")
+        val tempFile = File(fileOrganizer.getTempDir(), "jiosaavn_${track.id}_${attemptTag()}.m4a")
         val fetched = losslessUrlDownloader.download(
             source = match,
             destination = tempFile,
@@ -615,7 +625,7 @@ class DownloadManager @Inject constructor(
         // "mp3", etc. and the file organizer just plumbs through.
         val ext = match.format.fileExtension.lowercase()
             .ifBlank { match.format.codec.lowercase().ifBlank { "flac" } }
-        val tempFile = File(fileOrganizer.getTempDir(), "lossless_${track.id}.$ext")
+        val tempFile = File(fileOrganizer.getTempDir(), "lossless_${track.id}_${attemptTag()}.$ext")
 
         val fetched = losslessUrlDownloader.download(
             source = match,

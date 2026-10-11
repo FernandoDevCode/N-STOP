@@ -664,7 +664,10 @@ class FileOrganizer @Inject constructor(
      * refuses a name that is taken, even one that appeared since it was picked.
      */
     private fun writeInternalFile(tempFile: File, finalFile: File, replace: Boolean) {
-        val part = File(finalFile.parentFile, "${finalFile.name}$PART_SUFFIX")
+        // Its own name per call: two commits of one track at once (a double
+        // tap on Find in FLAC) must not write into one part file.
+        val tag = java.util.UUID.randomUUID().toString().substring(0, 8)
+        val part = File(finalFile.parentFile, "${finalFile.name}.$tag$PART_SUFFIX")
         try {
             tempFile.copyTo(part, overwrite = true)
             if (replace) {
