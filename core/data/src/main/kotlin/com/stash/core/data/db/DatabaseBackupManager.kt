@@ -198,69 +198,129 @@ class DatabaseBackupManager @Inject constructor(
     /**
      * Writes a backup ZIP to [targetUri], carrying whatever [scope] says.
      *
-     * [BackupExportScope.LIKES_ONLY] stages a copy of the checkpointed
-     * database, deletes everything that is not a liked track or a liked
-     * playlist, and vacuums it — so the archive is small and holds nothing
-     * the user did not ask to move. The copy is what gets pruned; the live
-     * database is never written to.
+     * The database is never zipped straight from the live file. A consistent
+     * snapshot is staged first ([stageConsistentSnapshot]) and checked with
+     * `integrity_check`, all before [targetUri] is opened — so a backup that
+     * would be rejected at import is caught now, while the library it came
+     * from still exists, and no half-written archive is left behind.
+     *
+     * [BackupExportScope.LIKES_ONLY] then deletes everything in that snapshot
+     * that is not a liked track or a liked playlist, and vacuums it — so the
+     * archive is small and holds nothing the user did not ask to move. The
+     * copy is what gets pruned; the live database is never written to.
      */
     suspend fun exportDatabase(
         targetUri: Uri,
         scope: BackupExportScope = BackupExportScope.EVERYTHING,
     ): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
-            // 1. Force a checkpoint to ensure the .db file is up to date
-            database.openHelper.writableDatabase.query(
-                SimpleSQLiteQuery("PRAGMA wal_checkpoint(FULL)")
-            ).use { it.moveToFirst() }
+        val dbFile = context.getDatabasePath(StashDatabase.DATABASE_NAME)
+        val snapshot = File(context.cacheDir, "export-${System.nanoTime()}.db")
+        try {
+            runCatching {
+                // 1. Stage, verify (and for likes-only, prune) the database
+                //    BEFORE the target is opened.
+                val stagedDb = if (scope.includesDatabase && dbFile.exists()) {
+                    stageConsistentSnapshot(dbFile, snapshot)
+                    if (scope.likesOnly) pruneToLikes(snapshot)
+                    snapshot
+                } else null
 
-            val dbFile = context.getDatabasePath(StashDatabase.DATABASE_NAME)
-            val datastoreDir = File(context.filesDir, "datastore")
-            val appVersionName = runCatching {
-                context.packageManager.getPackageInfo(context.packageName, 0).versionName
-            }.getOrNull()
+                val datastoreDir = File(context.filesDir, "datastore")
+                val appVersionName = runCatching {
+                    context.packageManager.getPackageInfo(context.packageName, 0).versionName
+                }.getOrNull()
 
-            context.contentResolver.openOutputStream(targetUri)?.use { outputStream ->
-                ZipOutputStream(outputStream).use { zipOut ->
-                    // 2. Add Manifest first so import can validate it early
-                    val manifest = BackupManifest(
-                        dbSchemaVersion = database.openHelper.readableDatabase.version,
-                        exportTimestamp = System.currentTimeMillis(),
-                        appVersionName = appVersionName,
-                        scope = scope.name,
-                    )
-                    zipOut.putNextEntry(ZipEntry("manifest.json"))
-                    zipOut.write(json.encodeToString(manifest).toByteArray())
-                    zipOut.closeEntry()
+                context.contentResolver.openOutputStream(targetUri)?.use { outputStream ->
+                    ZipOutputStream(outputStream).use { zipOut ->
+                        // 2. Add Manifest first so import can validate it early
+                        val manifest = BackupManifest(
+                            dbSchemaVersion = database.openHelper.readableDatabase.version,
+                            exportTimestamp = System.currentTimeMillis(),
+                            appVersionName = appVersionName,
+                            scope = scope.name,
+                        )
+                        zipOut.putNextEntry(ZipEntry("manifest.json"))
+                        zipOut.write(json.encodeToString(manifest).toByteArray())
+                        zipOut.closeEntry()
 
-                    // 3. Add DB — pruned first when the scope asks for it.
-                    if (scope.includesDatabase && dbFile.exists()) {
-                        if (scope.likesOnly) {
-                            val pruned = File(context.cacheDir, "export-likes-${System.nanoTime()}.db")
-                            try {
-                                dbFile.copyTo(pruned, overwrite = true)
-                                pruneToLikes(pruned)
-                                addToZip(zipOut, pruned, "stash.db")
-                            } finally {
-                                pruned.delete()
-                                File(pruned.path + "-wal").delete()
-                                File(pruned.path + "-shm").delete()
-                            }
-                        } else {
-                            addToZip(zipOut, dbFile, "stash.db")
-                        }
-                    }
+                        // 3. Add the verified snapshot.
+                        if (stagedDb != null) addToZip(zipOut, stagedDb, "stash.db")
 
-                    // 4. Add all DataStore files (settings, tokens, etc.) but the Community key
-                    if (scope.includesSettings && datastoreDir.exists()) {
-                        datastoreDir.listFiles()?.forEach { file ->
-                            if (file.isFile && !file.name.startsWith(COMMUNITY_KEY_FILE)) {
-                                addToZip(zipOut, file, "datastore/${file.name}")
+                        // 4. Add all DataStore files (settings, tokens, etc.) but the Community key
+                        if (scope.includesSettings && datastoreDir.exists()) {
+                            datastoreDir.listFiles()?.forEach { file ->
+                                if (file.isFile && !file.name.startsWith(COMMUNITY_KEY_FILE)) {
+                                    addToZip(zipOut, file, "datastore/${file.name}")
+                                }
                             }
                         }
                     }
-                }
-            } ?: throw IllegalStateException("Could not open output stream for URI: $targetUri")
+                } ?: throw IllegalStateException("Could not open output stream for URI: $targetUri")
+            }
+        } finally {
+            snapshot.delete()
+            File(snapshot.path + "-wal").delete()
+            File(snapshot.path + "-shm").delete()
+            File(snapshot.path + "-journal").delete()
+        }
+    }
+
+    /**
+     * Copies the live database into [target] as one self-contained, verified
+     * SQLite file holding a single committed state.
+     *
+     * Export used to `wal_checkpoint(FULL)` and then byte-copy `stash.db` with
+     * nothing stopping a sync or download from committing meanwhile. SQLite
+     * auto-checkpoints on commit once the WAL passes ~1000 pages, rewriting
+     * pages of `stash.db` while it was being read, so the archive could hold a
+     * torn mix of old and new pages that `integrity_check` only rejected at
+     * import — possibly after the old phone was gone. And a commit landing
+     * between the checkpoint and the copy lived only in the WAL, which was
+     * never copied.
+     *
+     * Now the main file AND its WAL are copied inside a write transaction.
+     * Every write in this process — and so every auto-checkpoint, which runs
+     * on the committing connection — goes through Room's single writer
+     * connection, so while the transaction holds it neither file can change,
+     * and together they are exactly the last committed state. The transaction
+     * writes nothing and is held only for the copy. (`VACUUM INTO` would do
+     * this in one statement, but needs SQLite 3.27 / API 30; minSdk is 26.)
+     *
+     * The copied pair is then opened on its own: SQLite recovers the WAL, a
+     * TRUNCATE checkpoint folds it into [target], and [verifyDatabaseIntegrity]
+     * runs `integrity_check`. After that [target] alone is the whole database.
+     */
+    private fun stageConsistentSnapshot(dbFile: File, target: File) {
+        val liveWal = File(dbFile.path + "-wal")
+        val stagedWal = File(target.path + "-wal")
+        File(target.path + "-shm").delete() // a stale index must never describe the copied WAL
+        // Not needed for consistency; it keeps the WAL — and the locked copy — short.
+        database.openHelper.writableDatabase.query(
+            SimpleSQLiteQuery("PRAGMA wal_checkpoint(FULL)")
+        ).use { it.moveToFirst() }
+        database.runInTransaction(
+            Runnable {
+                dbFile.copyTo(target, overwrite = true)
+                if (liveWal.exists()) liveWal.copyTo(stagedWal, overwrite = true) else stagedWal.delete()
+            },
+        )
+
+        android.database.sqlite.SQLiteDatabase.openDatabase(
+            target.path, null, android.database.sqlite.SQLiteDatabase.OPEN_READWRITE,
+        ).use { db ->
+            db.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", null).use { it.moveToFirst() }
+        }
+        // Zipping [target] alone while frames were left in its WAL would
+        // silently drop those commits — refuse rather than write a short backup.
+        if (stagedWal.exists() && stagedWal.length() > 0L) {
+            throw IllegalStateException("Could not prepare a consistent copy of your library for backup.")
+        }
+        try {
+            verifyDatabaseIntegrity(target)
+        } catch (e: IllegalStateException) {
+            throw IllegalStateException(
+                "Your library failed its integrity check, so no backup was written.", e,
+            )
         }
     }
 
