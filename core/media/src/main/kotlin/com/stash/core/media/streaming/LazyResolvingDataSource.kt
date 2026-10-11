@@ -63,6 +63,27 @@ fun stashResolveUri(
     .build()
 
 /**
+ * Query param marking a placeholder whose `yt` / `isrc` / `d` must win over the
+ * track's own Room row — see [withRowOverride].
+ */
+private const val ROW_OVERRIDE_PARAM = "pin"
+
+/**
+ * Marks [this] placeholder so [LazyResolvingDataSource] resolves it from the ids
+ * and length in its query params even when the track has a Room row, and keeps
+ * the result out of [StreamUrlCache].
+ *
+ * Listen Together plays the HOST's recording on a listener whose exact-matched
+ * row is a different edit: the item carries the host's ids, but the row exists,
+ * so the resolve used to read the row's own `youtubeId` / ISRC / length (and any
+ * URL already cached for the row) — the listener heard their own edit, the
+ * version-mismatch badge lit and drift correction kept seeking. Uncached both
+ * ways: the cache is keyed by track id alone, and the host's edit must not be
+ * served later when this row plays on its own.
+ */
+fun Uri.withRowOverride(): Uri = buildUpon().appendQueryParameter(ROW_OVERRIDE_PARAM, "1").build()
+
+/**
  * DataSource that turns a `stash-resolve://track/<id>` placeholder into a
  * playable stream at open time: [StreamUrlCache] first (the next-up
  * prefetch usually has it warm), then a full [StreamSourceRegistry.resolve]
@@ -132,7 +153,7 @@ class LazyResolvingDataSource(
         } else {
             // StreamUrlCache.get() checks expiry internally (evicts + returns null
             // when stale — see its monotonic-TTL KDoc), so no freshness re-check here.
-            val next = urlCache.get(trackId)
+            val next = (if (overridesRow(uri)) null else urlCache.get(trackId))
                 ?: resolveBlocking(trackId, uri)
                 ?: throw IOException("stream resolve failed for track $trackId")
             if (pin != null && !next.isSameFileAs(pin)) {
@@ -187,16 +208,27 @@ class LazyResolvingDataSource(
             withTimeout(resolveDeadlineMs) {
                 // DAO first; a track with no Room row (search-surface synthetic
                 // id) falls back to the resolver inputs carried in the URI's
-                // query params — see [stashResolveUri].
-                val entity = trackDao.getById(trackId)
+                // query params — see [stashResolveUri]. An override item's
+                // params win over its row ([withRowOverride]).
+                val row = trackDao.getById(trackId)
+                val entity = (if (row != null && overridesRow(uri)) row.withIdsFrom(uri) else row)
                     ?: entityFromUri(trackId, uri)
                     ?: return@withTimeout null
                 resolver.resolve(entity, allowYouTube = true, allowYtDlp = true)
             }
-        }?.also { urlCache.put(trackId, it) }
+        }?.also { if (!overridesRow(uri)) urlCache.put(trackId, it) }
     } catch (e: TimeoutCancellationException) {
         throw IOException("stream resolve deadline (${resolveDeadlineMs}ms) for track $trackId", e)
     }
+
+    private fun overridesRow(uri: Uri): Boolean = uri.getQueryParameter(ROW_OVERRIDE_PARAM) == "1"
+
+    /** The row, with the recording ids and length the override URI names. */
+    private fun TrackEntity.withIdsFrom(uri: Uri): TrackEntity = copy(
+        youtubeId = uri.getQueryParameter("yt") ?: youtubeId,
+        isrc = uri.getQueryParameter("isrc") ?: isrc,
+        durationMs = uri.getQueryParameter("d")?.toLongOrNull() ?: durationMs,
+    )
 
     /**
      * Rebuilds a resolver-input [TrackEntity] from the placeholder URI's query

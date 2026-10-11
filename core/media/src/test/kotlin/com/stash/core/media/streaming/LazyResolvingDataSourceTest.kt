@@ -117,6 +117,30 @@ class LazyResolvingDataSourceTest {
     }
 
     @Test
+    fun `an override item resolves the ids it carries, not its row's, and stays out of the url cache`() {
+        // Listen Together: the listener's row 7 is another edit of the host's song.
+        coEvery { trackDao.getById(7L) } returns TrackEntity(
+            id = 7L, title = "Song", artist = "Artist", youtubeId = "mine", isrc = "MYISRC", durationMs = 200_000L,
+        )
+        val entity = slot<TrackEntity>()
+        coEvery { resolver.resolve(capture(entity), any(), any()) } returns stream("https://yt/host.webm", "youtube")
+        every { httpSource.open(any()) } returns 100L
+
+        val uri = stashResolveUri(
+            trackId = 7L, youtubeId = "host", title = "Song", artist = "Artist",
+            durationMs = 260_000L, isrc = "HOSTISRC",
+        ).withRowOverride()
+        source().open(DataSpec.Builder().setUri(uri).build())
+
+        assertThat(entity.captured.youtubeId).isEqualTo("host")
+        assertThat(entity.captured.isrc).isEqualTo("HOSTISRC")
+        assertThat(entity.captured.durationMs).isEqualTo(260_000L)
+        // The row's own cached URL is the wrong edit; the host's must not become it.
+        verify(exactly = 0) { urlCache.get(any()) }
+        verify(exactly = 0) { urlCache.put(any(), any()) }
+    }
+
+    @Test
     fun `failed resolve throws IOException so the cascade guard owns the failure`() {
         every { urlCache.get(42L) } returns null
         coEvery { trackDao.getById(42L) } returns null
