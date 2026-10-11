@@ -150,15 +150,9 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                             // the next track's scheduling and lets the test
                             // harness observe the insert without an extra
                             // dispatcher round-trip.
-                            runCatching {
-                                trackSkipEventDao.insert(
-                                    TrackSkipEventEntity(
-                                        trackId = previousPending.track.id,
-                                        skippedAt = System.currentTimeMillis(),
-                                        positionMs = position,
-                                    ),
-                                )
-                            }.onFailure { Log.w(TAG, "skip insert failed", it) }
+                            if (!playedThrough(previousPending.track, position)) {
+                                recordSkip(previousPending.track, position)
+                            }
                         }
                     }
                     if (trackChanged) pending = null
@@ -310,6 +304,31 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         return session.positionAtScheduleMs + session.playedMs + running
     }
 
+    /**
+     * The session reached the song's end (allowing for a crossfade, up to 12 s,
+     * which moves the transition before it): not a skip, though no listen was
+     * recorded either. A song of 30 s or less never reaches its threshold (see
+     * [thresholdFor]), so an interlude that played out was recorded as a skip at
+     * a 100% skip rate — the heavy mix penalty, and the early-skip ban after three
+     * plays. Last.fm doesn't count such a song as a play; that doesn't make it a
+     * skip.
+     */
+    private fun playedThrough(track: Track, positionMs: Long): Boolean =
+        track.durationMs > 0 && positionMs >= track.durationMs - TRACK_END_SLACK_MS
+
+    /** Records a skip of [track] at [positionMs]. */
+    private suspend fun recordSkip(track: Track, positionMs: Long) {
+        runCatching {
+            trackSkipEventDao.insert(
+                TrackSkipEventEntity(
+                    trackId = track.id,
+                    skippedAt = System.currentTimeMillis(),
+                    positionMs = positionMs,
+                ),
+            )
+        }.onFailure { Log.w(TAG, "skip insert failed", it) }
+    }
+
     /** Enough listening time has played: record the listen, unless a transition claimed it first. */
     private suspend fun recordListen(session: PendingFire) {
         val track = session.track
@@ -352,5 +371,8 @@ class ListeningRecorder @VisibleForTesting internal constructor(
 
     companion object {
         private const val TAG = "ListeningRecorder"
+
+        /** The longest crossfade (12 s) plus a little for the play-time estimate. */
+        private const val TRACK_END_SLACK_MS = 15_000L
     }
 }
