@@ -84,6 +84,12 @@ class LyricsModeModelTest {
         assertFalse(lyricsMenuItemsFor(LyricsViewState.Plain("x"), offsetMs = 0L, canSaveToFile = false).offset)
     }
 
+    @Test fun `offset is there for a stream once the output is known, to calibrate it`() {
+        val synced = LyricsViewState.Synced(lines, "")
+        assertTrue(lyricsMenuItemsFor(synced, offsetMs = null, canSaveToFile = false, outputKnown = true).offset)
+        assertFalse(lyricsMenuItemsFor(LyricsViewState.Plain("x"), offsetMs = null, canSaveToFile = false, outputKnown = true).offset)
+    }
+
     @Test fun `save with song file needs a download and lyrics on screen`() {
         assertTrue(lyricsMenuItemsFor(LyricsViewState.Plain("x"), null, canSaveToFile = true).saveToFile)
         assertTrue(lyricsMenuItemsFor(LyricsViewState.Synced(lines, ""), null, canSaveToFile = true).saveToFile)

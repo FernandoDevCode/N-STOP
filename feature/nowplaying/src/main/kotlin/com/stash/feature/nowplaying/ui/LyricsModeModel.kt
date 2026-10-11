@@ -49,7 +49,10 @@ internal fun lyricsBodyFor(state: LyricsViewState): LyricsBody = when (state) {
 
 /** The lyrics menu's items for the current state (the "Live line" switch is always there). */
 internal data class LyricsMenuItems(
-    /** Offset: synced lyrics with a lyrics row to store the offset on. */
+    /**
+     * Offset: synced lyrics with somewhere to keep an offset: the song's lyrics row, or the output
+     * playing now (so a stream, which has no row, can still calibrate the headphones).
+     */
     val offset: Boolean,
     /** Save with song file: a downloaded track with lyrics on screen. */
     val saveToFile: Boolean,
@@ -59,8 +62,9 @@ internal fun lyricsMenuItemsFor(
     state: LyricsViewState,
     offsetMs: Long?,
     canSaveToFile: Boolean,
+    outputKnown: Boolean = false,
 ): LyricsMenuItems = LyricsMenuItems(
-    offset = state is LyricsViewState.Synced && offsetMs != null,
+    offset = state is LyricsViewState.Synced && (offsetMs != null || outputKnown),
     saveToFile = canSaveToFile && (state is LyricsViewState.Synced || state is LyricsViewState.Plain),
 )
 

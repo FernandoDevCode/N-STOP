@@ -319,6 +319,7 @@ fun NowPlayingScreen(
     val playerPosition = viewModel.positionMs.collectAsStateWithLifecycle()
     val liveLyricsEnabled by viewModel.liveLyricsBarEnabled.collectAsStateWithLifecycle()
     val lyricsSyncOffsetMs by viewModel.lyricsSyncOffsetMs.collectAsStateWithLifecycle()
+    val lyricsOutputOffset by viewModel.lyricsOutputOffset.collectAsStateWithLifecycle()
     val reading = lyricsMode && track != null
     androidx.activity.compose.BackHandler(enabled = reading) { viewModel.onDismissLyrics() }
 
@@ -940,7 +941,7 @@ fun NowPlayingScreen(
                             val headerAccent = npAccent(uiState.vibrantColor)
                             val headerLiked = uiState.currentTrack?.stashLikedAt != null
                             val sleepTimerActive = sleepTimerState != SleepTimerController.State.Off
-                            val lyricsMenuItems = lyricsMenuItemsFor(lyricsState, lyricsSyncOffsetMs, canSaveToFile = track?.isDownloaded == true)
+                            val lyricsMenuItems = lyricsMenuItemsFor(lyricsState, lyricsSyncOffsetMs, canSaveToFile = track?.isDownloaded == true, outputKnown = lyricsOutputOffset != null)
                             val savingLyrics = exportingLyricsTrackId != null
                             val rise = with(LocalDensity.current) { RiseDistance.roundToPx() }
                             val headerTextEnter = remember(this@AnimatedContent, rise) {
@@ -993,8 +994,10 @@ fun NowPlayingScreen(
                                     items = lyricsMenuItems,
                                     liveEnabled = liveLyricsEnabled,
                                     onLiveToggle = { viewModel.setLiveLyricsBarEnabled(it) },
-                                    offsetMs = lyricsSyncOffsetMs ?: 0L,
+                                    offsetMs = lyricsSyncOffsetMs,
                                     onOffsetChange = { viewModel.setLyricsSyncOffsetMs(it) },
+                                    outputOffset = lyricsOutputOffset,
+                                    onOutputOffsetChange = { viewModel.setLyricsOutputOffsetMs(it) },
                                     savingToFile = savingLyrics,
                                     onSaveToFile = { viewModel.exportLyricsForCurrentTrack() },
                                     ink = headerInk,

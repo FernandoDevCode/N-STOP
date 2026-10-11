@@ -21,7 +21,11 @@ import com.stash.core.model.Track
 import com.stash.data.lyrics.LyricsRepository
 import com.stash.data.lyrics.sidecar.LyricsSidecarWriter
 import com.stash.data.lyrics.source.LyricsQuery
+import com.stash.feature.nowplaying.ui.LyricsOutputOffset
 import com.stash.feature.nowplaying.ui.LyricsViewState
+import com.stash.feature.nowplaying.ui.clampOutputOffsetMs
+import com.stash.feature.nowplaying.ui.effectiveLyricsOffsetMs
+import com.stash.feature.nowplaying.ui.lyricsPositionMs
 import com.stash.feature.nowplaying.ui.lyricsViewStateFor
 import com.stash.feature.nowplaying.ui.lyricsViewStateForResult
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -99,6 +103,9 @@ class NowPlayingViewModel @Inject constructor(
     // Runs user-asked writes past this screen's lifetime (see [launchUserAction]). Hilt binds the
     // process-wide scope; tests leave the default, which runs on their Main test dispatcher.
     private val userActionScope: UserActionScope = UserActionScope.OnMain,
+    // The output lyrics are heard through and its own lyrics offset (Bluetooth latency). Hilt
+    // binds the routed output; tests leave the default, which knows no output.
+    private val lyricsOutputOffsets: LyricsOutputOffsets = LyricsOutputOffsets.None,
 ) : ViewModel() {
 
     /**
@@ -649,7 +656,8 @@ class NowPlayingViewModel @Inject constructor(
     /**
      * Raw per-track sync offset (signed ms; positive delays lyrics), for the lyrics menu's Offset dialog
      * to show the current value. Null when there's nothing to store an offset on — a streaming
-     * track (id == 0L) or a track with no lyrics row yet — so the lyrics menu hides its Offset item.
+     * track (id == 0L) or a track with no lyrics row yet — so the sync dialog offers no song offset
+     * (only the output's, [lyricsOutputOffset], when that's known; else the menu hides the item).
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     val lyricsSyncOffsetMs: StateFlow<Long?> = lyricsTargets
@@ -659,13 +667,35 @@ class NowPlayingViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), null)
 
     /**
-     * Position fed to the lyrics view + live bar, with [lyricsSyncOffsetMs] baked in. Everything
-     * else (the progress bar, `onSeekTo`, etc.) keeps using the player's raw position untouched.
+     * The output playing now and the lyrics offset set for it (the sync dialog's "Apply to all
+     * songs on <device>"), or null while the output isn't known (nothing has played yet). It adds
+     * to the song's own [lyricsSyncOffsetMs] for every song on that output, streams included.
+     * Declared before [currentPositionMs], which combines it.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val lyricsOutputOffset: StateFlow<LyricsOutputOffset?> = lyricsOutputOffsets.output
+        .flatMapLatest { output ->
+            if (output == null) {
+                flowOf<LyricsOutputOffset?>(null)
+            } else {
+                lyricsOutputOffsets.offsetMs(output).map { LyricsOutputOffset(output, it) }
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), null)
+
+    /**
+     * Position fed to the lyrics view + live bar, with the effective lyrics offset baked in: the
+     * song's [lyricsSyncOffsetMs] plus the output's [lyricsOutputOffset]
+     * ([effectiveLyricsOffsetMs]). Everything else (the progress bar, `onSeekTo`, etc.) keeps
+     * using the player's raw position untouched.
      */
     val currentPositionMs: StateFlow<Long> = combine(
         playerRepository.currentPosition,
         lyricsSyncOffsetMs,
-    ) { pos, offsetMs -> (pos - (offsetMs ?: 0L)).coerceAtLeast(0L) }
+        lyricsOutputOffset,
+    ) { pos, songOffsetMs, output ->
+        lyricsPositionMs(pos, effectiveLyricsOffsetMs(songOffsetMs, output?.offsetMs))
+    }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000L),
@@ -1260,6 +1290,16 @@ class NowPlayingViewModel @Inject constructor(
         val track = _uiState.value.currentTrack ?: return
         if (_uiState.value.currentTrackStored != true) return
         viewModelScope.launch { lyricsRepository.setSyncOffsetMs(track.id, offsetMs) }
+    }
+
+    /**
+     * Adjust sync for every song on the output playing now ("Apply to all songs on <device>"),
+     * held within [com.stash.feature.nowplaying.ui.OUTPUT_OFFSET_CAP_MS]. No-op while the output
+     * isn't known — see [lyricsOutputOffset].
+     */
+    fun setLyricsOutputOffsetMs(offsetMs: Long) {
+        val output = lyricsOutputOffset.value?.output ?: return
+        viewModelScope.launch { lyricsOutputOffsets.setOffsetMs(output, clampOutputOffsetMs(offsetMs)) }
     }
 
     /**

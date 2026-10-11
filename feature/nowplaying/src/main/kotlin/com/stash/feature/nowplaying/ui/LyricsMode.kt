@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -336,19 +337,23 @@ internal fun CompactCover(
 
 /**
  * The lyrics mode's small menu (the lyrics sheet's controls, moved): Sync offset (synced
- * lyrics with a row to store it on), the Live line switch for the cover view's lyrics bar, and
- * Save with song file (a downloaded track with lyrics showing).
+ * lyrics with a row or a known output to store it on), the Live line switch for the cover view's
+ * lyrics bar, and Save with song file (a downloaded track with lyrics showing).
  */
 @Composable
 internal fun LyricsMenuButton(
     items: LyricsMenuItems,
     liveEnabled: Boolean,
     onLiveToggle: (Boolean) -> Unit,
-    offsetMs: Long,
+    /** The song's own offset; null when it has no lyrics row to keep one on (a stream). */
+    offsetMs: Long?,
     onOffsetChange: (Long) -> Unit,
     savingToFile: Boolean,
     onSaveToFile: () -> Unit,
     ink: Color,
+    /** The output playing now and its offset, or null while the output isn't known. */
+    outputOffset: LyricsOutputOffset? = null,
+    onOutputOffsetChange: (Long) -> Unit = {},
 ) {
     var open by remember { mutableStateOf(false) }
     var showOffsetDialog by remember { mutableStateOf(false) }
@@ -356,9 +361,13 @@ internal fun LyricsMenuButton(
         OffsetAdjustDialog(
             currentOffsetMs = offsetMs,
             onOffsetChange = onOffsetChange,
+            output = outputOffset,
+            onOutputOffsetChange = onOutputOffsetChange,
             onDismiss = { showOffsetDialog = false },
         )
     }
+    // What the lyrics actually run on: the song's offset plus the output's.
+    val heardOffsetMs = effectiveLyricsOffsetMs(offsetMs, outputOffset?.offsetMs)
     Box {
         IconButton(onClick = { open = true }) {
             // Tune, not a second "more": this is the lyrics' own settings, beside the row's ⋮.
@@ -375,9 +384,9 @@ internal fun LyricsMenuButton(
                     text = { Text("Sync offset") },
                     leadingIcon = { Icon(Icons.Default.SyncAlt, contentDescription = null) },
                     trailingIcon = {
-                        if (offsetMs != 0L) {
+                        if (heardOffsetMs != 0L) {
                             Text(
-                                text = "%+.1fs".format(Locale.ROOT, offsetMs / 1000f),
+                                text = "%+.1fs".format(Locale.ROOT, heardOffsetMs / 1000f),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -416,6 +425,13 @@ internal fun LyricsMenuButton(
  * Sync-adjustment popup: ±5s slider in 0.1s steps, plus a text field for anything further out
  * (hard-capped ±60s).
  *
+ * With the output playing now known ([output]), "Apply to all songs on <device>" switches what
+ * the slider edits from this song's offset to that output's (Bluetooth latency: set once, right
+ * for every song on those headphones, and left alone on wired or the speaker). The switch only
+ * picks the target, it never moves a value, and a line under the slider names the other offset
+ * whenever it's also shifting these lyrics. A stream has no row for a song offset
+ * ([currentOffsetMs] null), so there it edits the output's only.
+ *
  * The slider only PERSISTS on release ([Slider.onValueChangeFinished]) — writing to Room on every
  * tick meant the just-written value flowed back down through [currentOffsetMs] mid-drag and
  * visibly snapped the slider backward. Dragging still moves the displayed number instantly via
@@ -423,19 +439,29 @@ internal fun LyricsMenuButton(
  */
 @Composable
 private fun OffsetAdjustDialog(
-    currentOffsetMs: Long,
+    currentOffsetMs: Long?,
     onOffsetChange: (Long) -> Unit,
+    output: LyricsOutputOffset?,
+    onOutputOffsetChange: (Long) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var sliderSeconds by remember(currentOffsetMs) {
-        mutableStateOf((currentOffsetMs / 1000f).coerceIn(-OFFSET_SLIDER_RANGE_S, OFFSET_SLIDER_RANGE_S))
+    val songScope = currentOffsetMs != null
+    var applyToOutput by remember { mutableStateOf(false) }
+    val toOutput = output != null && (applyToOutput || !songScope)
+    val editedMs = if (toOutput && output != null) output.offsetMs else currentOffsetMs ?: 0L
+    var sliderSeconds by remember(editedMs, toOutput) {
+        mutableStateOf((editedMs / 1000f).coerceIn(-OFFSET_SLIDER_RANGE_S, OFFSET_SLIDER_RANGE_S))
     }
-    var customText by remember(currentOffsetMs) {
-        mutableStateOf("%.1f".format(Locale.ROOT, currentOffsetMs / 1000f))
+    var customText by remember(editedMs, toOutput) {
+        mutableStateOf("%.1f".format(Locale.ROOT, editedMs / 1000f))
     }
 
     fun apply(seconds: Float) {
-        onOffsetChange((seconds.coerceIn(-OFFSET_HARD_CAP_S, OFFSET_HARD_CAP_S) * 1000f).roundToLong())
+        val ms = (seconds.coerceIn(-OFFSET_HARD_CAP_S, OFFSET_HARD_CAP_S) * 1000f).roundToLong()
+        when {
+            toOutput -> onOutputOffsetChange(clampOutputOffsetMs(ms))
+            songScope -> onOffsetChange(ms)
+        }
     }
 
     AlertDialog(
@@ -448,6 +474,33 @@ private fun OffsetAdjustDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (output != null) {
+                    Spacer(Modifier.height(4.dp))
+                    if (songScope) {
+                        // The whole row toggles; the switch inside is display-only.
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .toggleable(value = applyToOutput, role = Role.Switch, onValueChange = { applyToOutput = it })
+                                .padding(vertical = 8.dp),
+                        ) {
+                            Text(
+                                text = "Apply to all songs on ${output.output.name}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            com.stash.core.ui.components.StashSwitch(checked = applyToOutput, onCheckedChange = null)
+                        }
+                    } else {
+                        Text(
+                            text = "For all songs on ${output.output.name}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(vertical = 8.dp),
+                        )
+                    }
+                }
                 Spacer(Modifier.height(12.dp))
                 Text(
                     text = "%+.1f s".format(Locale.ROOT, sliderSeconds),
@@ -464,6 +517,22 @@ private fun OffsetAdjustDialog(
                     valueRange = -OFFSET_SLIDER_RANGE_S..OFFSET_SLIDER_RANGE_S,
                     steps = OFFSET_SLIDER_STEPS,
                 )
+                // The other offset, when it shifts these lyrics too, so the total never surprises.
+                // (The device name is never a format string: it can hold a "%".)
+                val otherNote = when {
+                    toOutput -> currentOffsetMs?.takeIf { it != 0L }
+                        ?.let { "This song adds ${signedSeconds(it)} of its own." }
+                    output != null && output.offsetMs != 0L ->
+                        "${output.output.name} adds ${signedSeconds(output.offsetMs)} to every song."
+                    else -> null
+                }
+                if (otherNote != null) {
+                    Text(
+                        text = otherNote,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Spacer(Modifier.height(8.dp))
                 Text(
                     text = "Further out:",
@@ -500,6 +569,9 @@ private fun OffsetAdjustDialog(
         confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
     )
 }
+
+/** An offset as the dialog writes it: "+0.3 s". */
+private fun signedSeconds(ms: Long): String = "%+.1f s".format(Locale.ROOT, ms / 1000f)
 
 private const val OFFSET_SLIDER_RANGE_S = 5f
 private const val OFFSET_SLIDER_STEPS = 99
