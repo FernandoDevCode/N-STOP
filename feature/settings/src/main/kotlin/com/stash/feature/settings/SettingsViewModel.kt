@@ -1158,6 +1158,17 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Closes every sign-in WebView. Called when the Accounts screen leaves for
+     * good: these flags outlive it (this ViewModel is scoped to the Settings
+     * graph), so a sign-in left open would otherwise greet the next visit.
+     */
+    fun onWebLoginsClosed() {
+        _localState.update {
+            it.copy(showSpotifyWebLogin = false, showYouTubeWebLogin = false, showDiscordWebLogin = false)
+        }
+    }
+
     /** Dismisses the WebView login screen. */
     fun onDismissSpotifyWebLogin() {
         _localState.update { it.copy(showSpotifyWebLogin = false) }

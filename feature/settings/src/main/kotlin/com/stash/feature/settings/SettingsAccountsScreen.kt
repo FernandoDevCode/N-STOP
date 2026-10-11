@@ -45,6 +45,17 @@ fun SettingsAccountsScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val extendedColors = com.stash.core.ui.theme.StashTheme.extendedColors
 
+    // The sign-in flags live in the Settings-wide ViewModel, which outlives this
+    // screen: leaving Accounts with a sign-in open (any route Back doesn't
+    // cover, e.g. switching tabs) would otherwise reopen it on the next visit.
+    // Not on rotation, which disposes this too but should keep the sign-in up.
+    val activity = androidx.activity.compose.LocalActivity.current
+    androidx.compose.runtime.DisposableEffect(viewModel) {
+        onDispose {
+            if (activity?.isChangingConfigurations != true) viewModel.onWebLoginsClosed()
+        }
+    }
+
     // Spotify WebView login (full-screen overlay). Replaces the screen content
     // while active — the connect flow on the Spotify card flips this flag.
     if (uiState.showSpotifyWebLogin) {

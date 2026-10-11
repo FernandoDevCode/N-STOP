@@ -8,6 +8,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -87,6 +88,16 @@ fun YouTubeLoginWebView(
 ) {
     var isLoading by remember { mutableStateOf(true) }
     var cookieFound by remember { mutableStateOf(false) }
+    var webViewRef by remember { mutableStateOf<WebView?>(null) }
+
+    // System Back steps back through the sign-in pages, then closes the
+    // sign-in. Without this, Back popped the whole Accounts screen while the
+    // ViewModel's "show sign-in" flag stayed set, so the next visit to
+    // Accounts & Sync reopened this sign-in instead of the accounts page.
+    BackHandler {
+        val wv = webViewRef
+        if (wv != null && wv.canGoBack()) wv.goBack() else onDismiss()
+    }
 
     Column(modifier = modifier.fillMaxSize()) {
         TopAppBar(
@@ -198,7 +209,7 @@ fun YouTubeLoginWebView(
                         }
 
                         loadUrl(LOGIN_URL)
-                    }
+                    }.also { webViewRef = it }
                 },
                 modifier = Modifier.fillMaxSize(),
             )
