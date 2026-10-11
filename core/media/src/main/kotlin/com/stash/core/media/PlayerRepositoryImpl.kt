@@ -646,6 +646,9 @@ class PlayerRepositoryImpl @Inject constructor(
      * parameter. [resumeLastQueue] uses this to continue from the saved
      * position AND the saved source.
      */
+    /** Bumped by every [setQueueInternal]; a build that finishes behind a newer one is dropped. */
+    private val setQueueGeneration = java.util.concurrent.atomic.AtomicInteger()
+
     private suspend fun setQueueInternal(
         tracks: List<Track>,
         startIndex: Int,
@@ -663,6 +666,7 @@ class PlayerRepositoryImpl @Inject constructor(
         radioSession = null
         _radioSeedLabel.value = null
         currentSource = source
+        val generation = setQueueGeneration.incrementAndGet()
 
         val controller = ensureController() ?: return
         if (tracks.isEmpty()) return
@@ -684,6 +688,13 @@ class PlayerRepositoryImpl @Inject constructor(
                     validateLocalFile = index == safeStart,
                 )?.let { Triple(index, track, it) }
             }
+        }
+        // A later setQueue started while this one built (two quick taps, each its own
+        // viewModelScope.launch): the first tap's selected-item SAF probe can be the slow one,
+        // and without this its build landed last and replaced the song the user tapped second.
+        if (generation != setQueueGeneration.get()) {
+            Log.i(TAG, "setQueue: superseded by a later one while building, dropped")
+            return
         }
         // Every built item is accepted: streaming is always allowed, so a
         // stash-resolve:// placeholder is as legitimate a queue entry as a
