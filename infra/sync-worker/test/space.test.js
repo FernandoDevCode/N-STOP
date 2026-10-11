@@ -543,16 +543,28 @@ test("join checks the epoch the newcomer was given: stale without its envelope i
     assert.deepEqual((await call(laptop, "key", { epoch: 2 })).body, { epoch: 2, ct: env });
     assert.equal((await call(laptop, "get")).body.rotationDue, false);
 
-    // A rotation that lands while the code is being claimed: the device is added and the next rotation must include it.
+    // A rotation that lands while the code is being claimed: the newcomer never got the new key, so it isn't added (it
+    // would be stuck: the next rotation seals its key under one it never had). The code is released and the answer is the
+    // same retryable 409 epoch, which the retry answers with the newcomer's envelope for the current key.
     await call(phone, "removeDevice", { target: laptop.id });
     await call(phone, "rotate", {}, { epoch: 3, envelopes: { [phone.id]: keyBox(3, phone), [browser.id]: keyBox(3, browser) } });
+    const releases = [];
+    so.space.releasePair = async (id) => releases.push(id);
     beforeClaim = async () => {
+        beforeClaim = async () => {};
         await call(phone, "rotate", {}, { epoch: 4, envelopes: { [phone.id]: keyBox(4, phone), [browser.id]: keyBox(4, browser) } });
     };
     const raced = await call(phone, "join", {}, { pairId, epoch: 3, labelCt: box(3) });
-    assert.equal(raced.status, 201);
+    assert.equal(raced.status, 409);
+    assert.equal(code(raced), "epoch");
     assert.equal(raced.body.epoch, 4);
-    assert.equal((await call(phone, "get")).body.rotationDue, true);
+    assert.deepEqual(releases, [pairId], "the code wasn't used up");
+    assert.equal((await call(laptop, "get")).status, 401, "not added");
+    assert.equal((await call(phone, "get")).body.rotationDue, false);
+    const env4 = keyBox(4, laptop);
+    const retried = await call(phone, "join", {}, { pairId, epoch: 3, envelope: env4, labelCt: box(4) });
+    assert.deepEqual(retried.body, { device: laptop.id, type: "web", epoch: 4 });
+    assert.deepEqual((await call(laptop, "key", { epoch: 4 })).body, { epoch: 4, ct: env4 });
 });
 
 test("after a removal, writes sealed under the old key wait for the rotation (409 rotation_due); reads, removals and rotate don't", async () => {

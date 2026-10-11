@@ -81,13 +81,15 @@ const parse = (text) => JSON.parse(text);
 export class Space {
     /**
      * @param {{ sql: { exec(q: string, ...b: unknown[]): { toArray(): object[] } }, transaction?: (fn: () => unknown) => unknown,
-     *           now?: () => number, claimPair?: (pairId: string, caller: object, mode: string) => Promise<object> }} deps
+     *           now?: () => number, claimPair?: (pairId: string, caller: object, mode: string) => Promise<object>,
+     *           releasePair?: (pairId: string) => Promise<unknown> }} deps
      */
-    constructor({ sql, transaction, now, claimPair }) {
+    constructor({ sql, transaction, now, claimPair, releasePair }) {
         this.sql = sql;
         this.tx = transaction ?? ((fn) => fn());
         this.now = now ?? (() => Date.now());
         this.claimPair = claimPair;
+        this.releasePair = releasePair;
         /**
          * Reads per device are counted in memory: a brake on floods (a flood keeps the object awake, which is when it matters),
          * not an exact daily quota, since the count starts over when the object is evicted.
@@ -264,8 +266,9 @@ export class Space {
      * newcomer's key envelope for the current epoch (sealed to its device key: the browser's is in the slot's label, the
      * phone's in its answer); without one the answer is a retryable `409 epoch` with the current epoch, before the code is
      * used. The caller is already a member; the slot is burned by the claim. The caps are checked before the claim (so a
-     * full space doesn't waste the code) and again after it. If the key changes while the code is being claimed, the device
-     * is still added and `rotationDue` is set, so the next rotation gives it the key.
+     * full space doesn't waste the code) and again after it. If the key changes while the code is being claimed, the claim
+     * is released (the code isn't used up) and the answer is the same retryable `409 epoch`: the newcomer was never sent the
+     * new key, and adding it anyway left it stuck, since the next rotation seals its key under one it never had.
      */
     async join(me, body) {
         const pairId = body?.pairId;
@@ -292,18 +295,22 @@ export class Space {
         const r = await this.claimPair(pairId, { deviceId: me.id, tokenHash: me.tokenHash }, "join");
         if (r.status !== 200) return r;
         const add = r.body.add;
-        return this.tx(() => {
+        const done = this.tx(() => {
             const m = this.meta();
             if (!m) return gone();
             if (!this.one("SELECT id FROM devices WHERE id = ?", me.id)) return revoked();
             if (this.one("SELECT id FROM devices WHERE id = ?", add.id)) return err(409, "member", "That device is already linked");
+            // Rotated during the claim: neither the newcomer's key nor its label is under the current key any more.
+            if (labelCt.e !== m.epoch || (given !== m.epoch && envelope?.e !== m.epoch)) return { rotated: m.epoch };
             const full = this.capFor(add.type);
             if (full) return full;
             this.insertDevice({ ...add, labelCt }, this.now());
             if (envelope && envelope.e === m.epoch) this.sql.exec("INSERT OR REPLACE INTO envelopes VALUES (?, ?, ?)", add.id, m.epoch, JSON.stringify(envelope));
-            else if (given !== m.epoch) this.sql.exec("UPDATE meta SET rotationDue = 1 WHERE id = 1"); // rotated during the claim
             return { status: 201, body: { device: add.id, type: add.type, epoch: m.epoch } };
         });
+        if (done.rotated === undefined) return done;
+        if (this.releasePair) await this.releasePair(pairId);
+        return { status: 409, body: { error: { code: "epoch", message: "The key changed: send the new device its key" }, epoch: done.rotated } };
     }
 
     capFor(type) {

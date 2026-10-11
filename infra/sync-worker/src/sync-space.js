@@ -16,6 +16,7 @@ export class SyncSpace {
             transaction: (fn) => ctx.storage.transactionSync(fn),
             now: this.now,
             claimPair: (pairId, caller, mode) => rpc(env.PAIRS.get(env.PAIRS.idFromName(pairId)), "claim", { caller, mode }),
+            releasePair: (pairId) => rpc(env.PAIRS.get(env.PAIRS.idFromName(pairId)), "release"),
         });
     }
 
