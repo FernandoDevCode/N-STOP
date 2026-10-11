@@ -98,11 +98,19 @@ class ArtBackfillWorker @AssistedInject constructor(
          * v0.9.38 — re-fire the backfill after each
          * [StashMixRefreshWorker] cycle so freshly-created stream-only
          * stubs gain art + duration within one refresh. Distinct work
-         * name + `REPLACE` policy so the install-time one-shot
-         * ([enqueueOneTime]) keeps its KEEP semantics and the two never
-         * compete. Both pass paths are idempotent — every UPDATE guards
-         * on "still missing" — so concurrent runs would no-op cleanly
-         * anyway, but separate names keep the WorkManager log clear.
+         * name so the install-time one-shot ([enqueueOneTime]) keeps its
+         * own semantics and the two never compete. Both pass paths are
+         * idempotent — every UPDATE guards on "still missing" — so
+         * concurrent runs would no-op cleanly anyway, but separate names
+         * keep the WorkManager log clear.
+         *
+         * `KEEP`, not `REPLACE`: a mix refresh runs on every cold start and
+         * after every discovery drain, and a pass over a full batch is
+         * minutes of rate-limited Last.fm calls, so REPLACE cancelled the
+         * in-flight pass each time and it could never finish. A refresh
+         * that lands while a pass is running leaves it be; its new stubs
+         * are the newest rows, which the next pass serves first
+         * ([TrackDao.findStreamableMetadataBackfillCandidates]).
          */
         fun enqueueFromMixRefresh(context: Context) {
             val constraints = Constraints.Builder()
@@ -113,7 +121,7 @@ class ArtBackfillWorker @AssistedInject constructor(
                 .build()
             WorkManager.getInstance(context).enqueueUniqueWork(
                 MIX_REFRESH_WORK_NAME,
-                ExistingWorkPolicy.REPLACE,
+                ExistingWorkPolicy.KEEP,
                 work,
             )
         }

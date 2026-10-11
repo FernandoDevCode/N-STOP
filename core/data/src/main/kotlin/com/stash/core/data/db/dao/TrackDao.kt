@@ -2173,6 +2173,12 @@ interface TrackDao {
      * "0:00" durations on first paint; metadata only filled in
      * incidentally when the player resolved a queue window at play time
      * (conversation 2026-05-28).
+     *
+     * Newest first. Unordered, SQLite handed back the same oldest rows every
+     * run, and stubs Last.fm can't fill (no duration is common) never leave
+     * the set, so once 500 of them piled up the stubs a mix refresh had just
+     * created never got art or a duration. Newest-first keeps the stubs that
+     * triggered this pass at the front; the stuck ones sink behind them.
      */
     @Query(
         """
@@ -2183,6 +2189,7 @@ interface TrackDao {
           AND (album_art_url IS NULL OR album_art_url = '' OR duration_ms = 0)
           AND artist != ''
           AND title != ''
+        ORDER BY id DESC
         LIMIT :limit
         """
     )

@@ -353,6 +353,21 @@ class TrackDaoStreamableTest {
         return id
     }
 
+    // ── findStreamableMetadataBackfillCandidates ────────────────────────
+
+    /**
+     * Stubs Last.fm can't fill never leave the candidate set. Unordered, the
+     * same oldest batch came back every run and a just-created stub could sit
+     * behind it forever; newest-first serves the fresh stubs.
+     */
+    @Test fun `stream-only metadata backfill serves the newest stubs first`() = runTest {
+        (1L..5L).forEach { insertStreamableOnly(id = it, album = "Album", artist = "Artist") }
+
+        val batch = dao.findStreamableMetadataBackfillCandidates(limit = 2)
+
+        assertEquals(listOf(5L, 4L), batch.map { it.id })
+    }
+
     private suspend fun insertStreamableOnly(
         id: Long,
         album: String,
