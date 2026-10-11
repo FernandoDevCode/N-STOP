@@ -208,4 +208,25 @@ class QueueDisplayTest {
     )
     assertThat(target).isEqualTo(2)
   }
+
+  // ---- walkWithInserted ----
+
+  @Test
+  fun `Play next lands right after the current song in the walk`() {
+    // Walk 2 -> 0 -> 3 -> 1, slot 2 playing, one song inserted at slot 3.
+    assertThat(QueueDisplay.walkWithInserted(listOf(2, 0, 3, 1), at = 3, count = 1, currentIndex = 2, afterCurrent = true))
+      .containsExactly(2, 3, 0, 4, 1).inOrder()
+  }
+
+  @Test
+  fun `Add to queue lands at the end of the walk, in tap order`() {
+    assertThat(QueueDisplay.walkWithInserted(listOf(2, 0, 3, 1), at = 4, count = 2, currentIndex = 2, afterCurrent = false))
+      .containsExactly(2, 0, 3, 1, 4, 5).inOrder()
+  }
+
+  @Test
+  fun `an unshuffled walk is a masking timeline, not a shuffle - nothing is sent`() {
+    assertThat(QueueDisplay.walkWithInserted(listOf(0, 1, 2, 3), at = 2, count = 1, currentIndex = 1, afterCurrent = true))
+      .isNull()
+  }
 }

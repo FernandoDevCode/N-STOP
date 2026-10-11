@@ -1213,6 +1213,46 @@ class PlayerRepositoryImpl @Inject constructor(
      */
     private fun Track.isPlayableForQueueAppend(): Boolean = !isUnavailableForDisplay
 
+    /**
+     * The controller's shuffle walk (timeline indexes in play order), or null with
+     * shuffle off. Read BEFORE an insert, for [placeInShuffleOrder].
+     */
+    private fun shuffleWalk(controller: MediaController): List<Int>? {
+        val count = controller.mediaItemCount
+        if (!controller.shuffleModeEnabled || count == 0) return null
+        val timeline = controller.currentTimeline
+        return QueueDisplay.walkShuffleOrder(count, timeline.getFirstWindowIndex(true)) {
+            timeline.getNextWindowIndex(it, Player.REPEAT_MODE_OFF, true)
+        }.takeIf { it.size == count }
+    }
+
+    /**
+     * Under shuffle, ExoPlayer's DefaultShuffleOrder gives every inserted item a
+     * uniformly random slot in the PLAY order (cloneAndInsert), whatever its
+     * timeline position: a "Play next" landed behind the current song about half
+     * the time and, with repeat off, never played; an "Add to queue" played at
+     * some arbitrary point. Re-sends the walk with the [count] items inserted at
+     * timeline [at] placed where the user asked (see
+     * [QueueDisplay.walkWithInserted]) through the service's
+     * COMMAND_SET_SHUFFLE_ORDER, which checks it against the player's timeline.
+     * [walk] and [currentIndex] are from before the insert.
+     */
+    private fun placeInShuffleOrder(
+        controller: MediaController,
+        walk: List<Int>?,
+        at: Int,
+        count: Int,
+        currentIndex: Int,
+        afterCurrent: Boolean,
+    ) {
+        walk ?: return
+        val order = QueueDisplay.walkWithInserted(walk, at, count, currentIndex, afterCurrent) ?: return
+        controller.sendCustomCommand(
+            SessionCommand(StashPlaybackService.COMMAND_SET_SHUFFLE_ORDER, Bundle.EMPTY),
+            Bundle().apply { putIntArray(StashPlaybackService.EXTRA_SHUFFLE_ORDER, order.toIntArray()) },
+        )
+    }
+
     override suspend fun addNext(track: Track): Boolean {
         val controller = ensureController() ?: return false
         val playable = track.takeIf {
@@ -1247,8 +1287,11 @@ class PlayerRepositoryImpl @Inject constructor(
         // Instant add: stream tracks enter as stash-resolve:// placeholders
         // (resolved at play time), so the queue grows immediately instead of
         // waiting out a slow resolve.
-        val insertIndex = controller.currentMediaItemIndex + 1
+        val currentIndex = controller.currentMediaItemIndex
+        val insertIndex = currentIndex + 1
+        val walk = if (wasEmpty) null else shuffleWalk(controller)
         controller.addMediaItem(insertIndex, queueTrack.toQueueMediaItem())
+        placeInShuffleOrder(controller, walk, insertIndex, 1, currentIndex, afterCurrent = true)
         // If the queue was empty, the user tapped "Play next" with nothing
         // playing — they expect the song to actually start, not just sit
         // silently in a queue they can't see. Prepare and play.
@@ -1277,7 +1320,10 @@ class PlayerRepositoryImpl @Inject constructor(
         val wasEmpty = controller.mediaItemCount == 0
         // The logical queue first, as in addNext: the add is reported during addMediaItem.
         currentQueueTracks = if (wasEmpty) listOf(queueTrack) else currentQueueTracks + queueTrack
+        val walk = if (wasEmpty) null else shuffleWalk(controller)
+        val at = controller.mediaItemCount
         controller.addMediaItem(queueTrack.toQueueMediaItem())
+        placeInShuffleOrder(controller, walk, at, 1, controller.currentMediaItemIndex, afterCurrent = false)
         if (wasEmpty) {
             controller.prepare()
             controller.play()
@@ -1310,7 +1356,10 @@ class PlayerRepositoryImpl @Inject constructor(
         // for streams), preserving tap order — no resolve fan-out, no dropped
         // rows, "Added N tracks" is finally literally true.
         currentQueueTracks = if (wasEmpty) queueTracks else currentQueueTracks + queueTracks
+        val walk = if (wasEmpty) null else shuffleWalk(controller)
+        val at = controller.mediaItemCount
         controller.addMediaItems(items)
+        placeInShuffleOrder(controller, walk, at, items.size, controller.currentMediaItemIndex, afterCurrent = false)
         if (wasEmpty) {
             controller.prepare()
             controller.play()

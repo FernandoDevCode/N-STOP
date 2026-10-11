@@ -123,6 +123,23 @@ internal object QueueDisplay {
     return out
   }
 
+  /**
+   * The shuffle walk (timeline indexes in play order) after [count] items were inserted at
+   * timeline index [at]: the old [walk]'s indexes shifted past the insert, with the new ones, in
+   * order, right after [currentIndex] (pre-insert) when [afterCurrent] ("Play next"), else at
+   * the end ("Add to queue"). Null when [walk] is the identity order: right after any queue
+   * change the MediaController's masking timeline answers an UNSHUFFLED order until the
+   * session's real one arrives, and building on that would unshuffle the queue.
+   */
+  fun walkWithInserted(walk: List<Int>, at: Int, count: Int, currentIndex: Int, afterCurrent: Boolean): List<Int>? {
+    if (walk.withIndex().all { (i, v) -> i == v }) return null
+    val shifted = walk.map { if (it >= at) it + count else it }
+    val inserted = (at until at + count).toList()
+    val pos = if (afterCurrent) walk.indexOf(currentIndex) else -1
+    if (pos < 0) return shifted + inserted
+    return shifted.subList(0, pos + 1) + inserted + shifted.subList(pos + 1, shifted.size)
+  }
+
   fun moveTimelineTarget(
     newLogical: List<Track>,
     toIndex: Int,
