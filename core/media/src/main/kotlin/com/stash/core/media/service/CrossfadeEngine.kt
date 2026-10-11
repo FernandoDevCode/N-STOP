@@ -267,8 +267,8 @@ class CrossfadeEngine(
     /**
      * Copies [from]'s queue around [to]'s current item so the promoted player
      * has the full timeline (history + future) with the same current index and
-     * the position it has been playing. Matches by mediaId so it is shuffle- and
-     * repeat-order safe.
+     * the position it has been playing, and the same shuffle (play) order.
+     * Matches by mediaId so it is shuffle- and repeat-order safe.
      */
     private fun transferQueue(from: ExoPlayer, to: ExoPlayer) {
         val currentId = to.currentMediaItem?.mediaId ?: return
@@ -281,6 +281,15 @@ class CrossfadeEngine(
         to.playbackParameters = from.playbackParameters
         if (history.isNotEmpty()) to.addMediaItems(0, history) // shifts `to`'s current index up
         if (future.isNotEmpty()) to.addMediaItems(future)
+        // Carry the PLAY order over too. Each addMediaItems above lands the inserted indexes at
+        // random points of `to`'s fresh one-item shuffle order (DefaultShuffleOrder.cloneAndInsert),
+        // so under shuffle the current track sat at a random spot of a brand-new walk after every
+        // fade: songs already heard came back, and with repeat off about half the playlist ended up
+        // "behind" the current one and never played. A browser handoff's custom order
+        // (COMMAND_SET_SHUFFLE_ORDER) was lost at the first fade the same way. The timeline is now
+        // index-for-index the outgoing's, so its (immutable) order applies as is; the count check
+        // only keeps setShuffleOrder's length precondition from throwing should they ever differ.
+        if (to.mediaItemCount == from.mediaItemCount) to.shuffleOrder = from.shuffleOrder
     }
 
     /** Abort a pending/in-flight fade and restore the master; spare is reset. */
