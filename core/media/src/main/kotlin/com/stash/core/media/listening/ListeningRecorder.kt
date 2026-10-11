@@ -142,9 +142,8 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                     val previousPending = pending
                     if (trackChanged && previousPending != null) {
                         if (previousPending.claimed.compareAndSet(false, true)) {
+                            val position = positionReached(previousPending)
                             previousPending.job?.cancel()
-                            val skipAt = System.currentTimeMillis()
-                            val position = previousPending.positionAtScheduleMs
                             // Inline (rather than `scope.launch { ... }`) so
                             // the suspend insert completes within the collect
                             // tick — keeps the skip ordered with respect to
@@ -155,7 +154,7 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                                 trackSkipEventDao.insert(
                                     TrackSkipEventEntity(
                                         trackId = previousPending.track.id,
-                                        skippedAt = skipAt,
+                                        skippedAt = System.currentTimeMillis(),
                                         positionMs = position,
                                     ),
                                 )
@@ -293,6 +292,22 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         job.cancel()
         session.job = null
         session.playedMs += wallToMediaMs(nowMs() - session.playingSinceMs, session.speed)
+    }
+
+    /**
+     * How far into the song [session] got when it ended: where its countdown
+     * started plus the song time played since, the stretch still running included.
+     *
+     * The skip used to record [PendingFire.positionAtScheduleMs] alone — the
+     * position at the first play edge, usually 0 — so 1:50 of a 4:00 song read as
+     * a skip at 0:00. The early-skip ban (`position_ms <= 30 s`, three times in 90
+     * days) then dropped songs from discovery that the user had listened to half
+     * of every time. A seek within the session is not counted: this is listening
+     * time, which is what "skipped early" means.
+     */
+    private fun positionReached(session: PendingFire): Long {
+        val running = if (session.job != null) wallToMediaMs(nowMs() - session.playingSinceMs, session.speed) else 0L
+        return session.positionAtScheduleMs + session.playedMs + running
     }
 
     /** Enough listening time has played: record the listen, unless a transition claimed it first. */

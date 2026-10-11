@@ -517,6 +517,31 @@ class ListeningRecorderSkipTest {
     }
 
     @Test
+    fun `a skip records how far the song got, not where its session started`() = runTest {
+        // 1:50 of a 4:00 song (threshold 2:00), across a pause, then Next. Recorded at
+        // 0:00 this was an "early skip", and three of them banned the song from discovery.
+        val song = trackA.copy(durationMs = 240_000)
+        val playing = PlayerState(isPlaying = true, currentTrack = song)
+        val playerRepo = FakePlayerRepository(playing)
+        val listeningDao = mockk<ListeningEventDao>(relaxed = true)
+        val skipDao = mockk<TrackSkipEventDao>(relaxed = true)
+        recorderFor(playerRepo, listeningDao, skipDao).start()
+        runCurrent()
+
+        advanceTimeBy(50_000)
+        playerRepo.setState(playing.copy(isPlaying = false))
+        runCurrent()
+        advanceTimeBy(5 * 60_000L)
+        playerRepo.setState(playing)
+        runCurrent()
+        advanceTimeBy(60_000)
+        playerRepo.setState(PlayerState(isPlaying = true, currentTrack = trackB))
+        runCurrent()
+
+        coVerify(exactly = 1) { skipDao.insert(match { it.trackId == song.id && it.positionMs == 110_000L }) }
+    }
+
+    @Test
     fun `listening time adds up across a pause and the listen lands at 90 s of play`() = runTest {
         // A 3-minute song needs 90 s of play.
         val playing = PlayerState(isPlaying = true, currentTrack = trackA)
