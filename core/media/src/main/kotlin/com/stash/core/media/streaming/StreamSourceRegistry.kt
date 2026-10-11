@@ -157,6 +157,22 @@ class StreamSourceRegistry internal constructor(
     }
 
     /**
+     * Re-resolves a YouTube-origin item for [RefreshingDataSource]'s 403 refresh:
+     * the YouTube rung ONLY, never the chain.
+     *
+     * The refresh re-opens at the byte offset the dead URL failed on, into an
+     * extractor (and a stream-cache key) set up for the YouTube file. The full chain
+     * puts qbdlx and JioSaavn first, so a source that missed at the first resolve and
+     * hits now handed FLAC or AAC/MP4 bytes from offset N to a WebM extractor, and
+     * read a JioSaavn URL through the redirect-following HTTP client that host must
+     * never get. The caller still checks the result is the same file
+     * ([isSameFileAs] / [sameUrlFileParams]); this only stops it asking the wrong
+     * sources.
+     */
+    suspend fun resolveYouTubeRefresh(track: TrackEntity): StreamUrl? =
+        youtube.resolve(track, allowYtDlp = true)
+
+    /**
      * Shared scope for in-flight resolves. Mirrors
      * [com.stash.data.download.preview.PreviewUrlExtractor]'s `extractorScope`
      * deliberately: a resolve has to outlive any ONE caller's cancellation, or
