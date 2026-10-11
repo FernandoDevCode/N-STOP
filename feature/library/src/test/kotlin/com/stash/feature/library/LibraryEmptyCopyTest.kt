@@ -33,4 +33,26 @@ class LibraryEmptyCopyTest {
         assertNull(sourceFilterLabel(SourceFilter.ALL))
         assertEquals("YouTube", sourceFilterLabel(SourceFilter.YOUTUBE))
     }
+
+    // ── A library with nothing downloaded ─────────────────────────────
+
+    @Test fun `with a service connected the empty library leads with Sync`() {
+        val prompt = emptyLibraryPrompt(anyServiceConnected = true)
+        assertEquals(false, prompt.connectFirst)
+        assertEquals("Sync your playlists", prompt.primaryLabel)
+    }
+
+    @Test fun `with nothing connected it leads with connecting a service`() {
+        val prompt = emptyLibraryPrompt(anyServiceConnected = false)
+        assertEquals(true, prompt.connectFirst)
+        assertEquals("Connect a music service", prompt.primaryLabel)
+    }
+
+    @Test fun `either way it names Search and importing from the phone`() {
+        for (connected in listOf(true, false)) {
+            val body = emptyLibraryPrompt(connected).body
+            assertEquals(true, "Search" in body)
+            assertEquals(true, "import audio files from this phone" in body)
+        }
+    }
 }

@@ -34,6 +34,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -60,12 +61,16 @@ import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -74,6 +79,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -99,6 +105,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -146,6 +154,11 @@ fun LibraryScreen(
     onNavigateToAlbum: (albumId: String, name: String, artUrl: String?, artistName: String) -> Unit = { _, _, _, _ -> },
     onNavigateToRemoteAlbum: (albumId: String, name: String, artUrl: String?, artistName: String) -> Unit = { _, _, _, _ -> },
     onSelectionModeChanged: (Boolean) -> Unit = {},
+    // An empty library's ways in (see LibraryEmptyState): the Sync tab, the Search tab, and
+    // Settings › Accounts to connect a service.
+    onNavigateToSync: () -> Unit = {},
+    onNavigateToSearch: () -> Unit = {},
+    onNavigateToAccounts: () -> Unit = {},
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -281,6 +294,9 @@ fun LibraryScreen(
             onSelectLikedSource = viewModel::setLikedFilter,
             onPlayLikedTrack = viewModel::playLiked,
             deepLinkFocusTab = deepLinkFocusTab,
+            onOpenSync = onNavigateToSync,
+            onOpenSearch = onNavigateToSearch,
+            onOpenAccounts = onNavigateToAccounts,
         )
 
         // ── Selection chrome — meaningful on the Tracks and Liked tabs. Selection
@@ -554,6 +570,9 @@ private fun LibraryContent(
     onSelectLikedSource: (LikedFilter) -> Unit,
     onPlayLikedTrack: (Track) -> Unit,
     deepLinkFocusTab: LibraryTab? = null,
+    onOpenSync: () -> Unit = {},
+    onOpenSearch: () -> Unit = {},
+    onOpenAccounts: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -799,6 +818,10 @@ private fun LibraryContent(
                         noMatch = noMatchMessage("songs", state.searchQuery, state.sourceFilter),
                         onClearFilters = clearSearchAndFilter,
                         alphabetical = alphabetical,
+                        onImport = { importPicker.launch(arrayOf("audio/*")) },
+                        onOpenSync = onOpenSync,
+                        onOpenSearch = onOpenSearch,
+                        onOpenAccounts = onOpenAccounts,
                     )
                     LibraryTab.LIKED -> LikedTab(
                         tracks = likedTracks,
@@ -1741,16 +1764,28 @@ private fun TracksTab(
     onClearFilters: () -> Unit = {},
     /** Sorted A–Z: the scrollbar shows a letter bubble while dragged. */
     alphabetical: Boolean = false,
+    // The empty library's ways in (see LibraryEmptyState).
+    onImport: () -> Unit = {},
+    onOpenSync: () -> Unit = {},
+    onOpenSearch: () -> Unit = {},
+    onOpenAccounts: () -> Unit = {},
 ) {
     if (tracks.isEmpty()) {
         Column {
             header()
-            EmptyTabMessage(
-                noMatch = noMatch,
-                fallback = if (anyServiceConnected) "Sync your library to see tracks here"
-                else "Connect a service in Settings to see your tracks",
-                onClear = onClearFilters,
-            )
+            if (noMatch != null) {
+                // The listener's own search or filter emptied it: one tap undoes that.
+                EmptyTabMessage(noMatch, onClearFilters)
+            } else {
+                // Nothing narrows the list, so nothing is downloaded at all: say how music gets here.
+                LibraryEmptyState(
+                    anyServiceConnected = anyServiceConnected,
+                    onOpenSync = onOpenSync,
+                    onOpenAccounts = onOpenAccounts,
+                    onOpenSearch = onOpenSearch,
+                    onImport = onImport,
+                )
+            }
         }
         return
     }
@@ -2558,6 +2593,85 @@ private fun EmptyTabMessage(message: String, onClear: (() -> Unit)? = null) {
             if (onClear != null) {
                 TextButton(onClick = onClear) { Text("Show everything") }
             }
+        }
+    }
+}
+
+/**
+ * The Songs tab with nothing downloaded at all (a first run, or every download removed). The
+ * library is downloads-only, so a bare "Sync your library" line left a new listener guessing; this
+ * names the three real ways music arrives and makes each one a button:
+ *
+ * - Sync: with a service connected, the Sync tab (Sync now, and what each playlist keeps); with
+ *   none, Settings › Accounts to connect Spotify or YouTube Music first. Leading with Sync when
+ *   nothing is connected would land on a Sync now that has nothing to fetch.
+ * - Search: find any song, stream it, download it.
+ * - Import: audio files already on this phone (the same picker as the header's + button).
+ *
+ * Scrolls when it doesn't fit (a small phone at a large font size) and pads its end clear of the
+ * glass mini player and tab bar.
+ */
+@Composable
+private fun LibraryEmptyState(
+    anyServiceConnected: Boolean,
+    onOpenSync: () -> Unit,
+    onOpenAccounts: () -> Unit,
+    onOpenSearch: () -> Unit,
+    onImport: () -> Unit,
+) {
+    val prompt = emptyLibraryPrompt(anyServiceConnected)
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(start = 32.dp, end = 32.dp, top = 48.dp, bottom = bottomChromePadding(24.dp)),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(
+            imageVector = Icons.Default.LibraryMusic,
+            contentDescription = null,
+            modifier = Modifier.size(72.dp),
+            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "Your library is empty",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onBackground,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.semantics { heading() },
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = prompt.body,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        Button(onClick = if (prompt.connectFirst) onOpenAccounts else onOpenSync) {
+            Icon(
+                imageVector = if (prompt.connectFirst) Icons.Default.Link else Icons.Default.Sync,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(prompt.primaryLabel)
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedButton(onClick = onOpenSearch) {
+            Icon(
+                imageVector = Icons.Default.Search,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Find songs in Search")
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        TextButton(onClick = onImport) {
+            Text("Import from this phone")
         }
     }
 }

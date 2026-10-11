@@ -32,3 +32,34 @@ internal fun noMatchMessage(noun: String, query: String, filter: SourceFilter = 
         else -> null
     }
 }
+
+/**
+ * What the Songs tab says with nothing downloaded at all (LibraryEmptyState in LibraryScreen):
+ * the body copy and where its main button leads. The three ways music arrives are always named
+ * (sync, Search, import from the phone); the main button is Sync once a service is connected and
+ * connecting one before that, because Sync now with nothing connected has nothing to fetch.
+ *
+ * @property connectFirst True: the main button opens Settings › Accounts. False: the Sync tab.
+ */
+internal data class EmptyLibraryPrompt(
+    val body: String,
+    val primaryLabel: String,
+    val connectFirst: Boolean,
+)
+
+internal fun emptyLibraryPrompt(anyServiceConnected: Boolean): EmptyLibraryPrompt =
+    if (anyServiceConnected) {
+        EmptyLibraryPrompt(
+            body = "Songs you download show up here. Sync your playlists, find songs in Search, " +
+                "or import audio files from this phone.",
+            primaryLabel = "Sync your playlists",
+            connectFirst = false,
+        )
+    } else {
+        EmptyLibraryPrompt(
+            body = "Songs you download show up here. Connect Spotify or YouTube Music to bring " +
+                "your playlists over, find songs in Search, or import audio files from this phone.",
+            primaryLabel = "Connect a music service",
+            connectFirst = true,
+        )
+    }
