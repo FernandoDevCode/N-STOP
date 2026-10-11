@@ -205,11 +205,16 @@ class HomeViewModel @Inject constructor(
         musicRepository.getAllPlaylists(),
         recipeDao.observeAll(),
         discoveryQueueDao.observeNonFailedCountsByRecipe(),
-        // Builtin ids are a one-shot suspend read wrapped as a flow.
-        flow { emit(recipeDao.getBuiltinPlaylistIds()) },
         // Orders the rails by what actually changed — see freshestFirst.
         playlistDao.observeLatestAdditionPerPlaylist(),
-    ) { playlists, recipes, discoveryCounts, builtinIdList, recency ->
+    ) { playlists, recipes, discoveryCounts, recency ->
+        // Builtin ids come from the OBSERVED recipes. They used to be a one-shot
+        // read, which on a fresh install ran before the first mix refresh wrote
+        // Daily Discover's playlist_id: the read returned nothing and never
+        // re-ran, so the hero never appeared and Daily Discover was filed under
+        // "Your mixes" as if the user had built it, until the process restarted.
+        // By id, the order the old `getBuiltinPlaylistIds` table scan returned.
+        val builtinIdList = recipes.filter { it.isBuiltin }.sortedBy { it.id }.mapNotNull { it.playlistId }
         val builtinIds = builtinIdList.toSet()
         val customRecipes = recipes.filter { !it.isBuiltin && it.playlistId != null }
         val customMixPlaylistIds = customRecipes.mapNotNull { it.playlistId }.toSet()
