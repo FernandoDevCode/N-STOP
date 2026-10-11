@@ -9,6 +9,7 @@ import com.stash.data.spotify.model.SpotifyTrackObject
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -229,29 +230,42 @@ fun sortLikedSongsByAddedAtDesc(items: List<SpotifyTrackItem>): List<SpotifyTrac
  * `data.me.libraryTracks.items` is accepted as a second path: the private API
  * has renamed this node before and the cost of tolerating both is one `?:`.
  *
- * Returns an empty list for any unrecognised shape rather than throwing —
- * callers treat empty as `SyncResult.Empty` and stop paginating.
+ * Returns an empty list for any unrecognised shape rather than throwing.
+ * Pagination uses [parseLibraryTracksPage], which also reports the raw item
+ * count and tells an unrecognised shape apart from a genuinely empty page.
  */
-internal fun parseLibraryTracksResponse(responseJson: JsonObject): List<SpotifyTrackItem> {
+internal fun parseLibraryTracksResponse(responseJson: JsonObject): List<SpotifyTrackItem> =
+    parseLibraryTracksPage(responseJson)?.tracks ?: emptyList()
+
+/**
+ * Parses one `fetchLibraryTracks` page — see [parseLibraryTracksResponse] for
+ * the shape — into a [SpotifyLikedSongsPage].
+ *
+ * Returns null when the response carries no recognisable `items` array (an
+ * errors-only body, a renamed node). That is a FAILED page, not an empty one:
+ * mid-walk it means the rest of the library was never read, so the caller must
+ * not mistake it for the end of Liked Songs.
+ */
+internal fun parseLibraryTracksPage(responseJson: JsonObject): SpotifyLikedSongsPage? {
     return try {
         // Log top-level keys for debugging
         val dataObj = responseJson["data"]?.jsonObject
         if (dataObj == null) {
             Log.w(TAG, "parseLibraryTracksResponse: no 'data' key, responseKeys=${responseJson.keys}")
-            return emptyList()
+            return null
         }
         Log.d(TAG, "parseLibraryTracksResponse: data keys: ${dataObj.keys}")
 
         // Try multiple possible response paths
-        val items = dataObj["me"]
+        val tracksContainer = dataObj["me"]
             ?.jsonObject?.get("library")
             ?.jsonObject?.get("tracks")
-            ?.jsonObject?.get("items")
-            ?.jsonArray
+            ?.jsonObject
             ?: dataObj["me"]
                 ?.jsonObject?.get("libraryTracks")
-                ?.jsonObject?.get("items")
-                ?.jsonArray
+                ?.jsonObject
+        val items = tracksContainer?.get("items")?.jsonArray
+        val totalCount = (tracksContainer?.get("totalCount") as? JsonPrimitive)?.intOrNull
 
         if (items == null) {
             // Log what we DID find so we can fix the path
@@ -262,7 +276,7 @@ internal fun parseLibraryTracksResponse(responseJson: JsonObject): List<SpotifyT
                 val subKeys = meObj[key]?.jsonObject?.keys
                 Log.d(TAG, "parseLibraryTracksResponse: me.$key keys: $subKeys")
             }
-            return emptyList()
+            return null
         }
 
         Log.d(TAG, "parseLibraryTracksResponse: found ${items.size} items")
@@ -339,11 +353,12 @@ internal fun parseLibraryTracksResponse(responseJson: JsonObject): List<SpotifyT
                 Log.w(TAG, "parseLibraryTracksResponse: failed to parse item", e)
                 null
             }
-        }.also { tracks ->
-            Log.d(TAG, "parseLibraryTracksResponse: parsed ${tracks.size} tracks")
+        }.let { tracks ->
+            Log.d(TAG, "parseLibraryTracksResponse: parsed ${tracks.size}/${items.size} tracks")
+            SpotifyLikedSongsPage(tracks = tracks, rawItemCount = items.size, totalCount = totalCount)
         }
     } catch (e: Exception) {
         Log.e(TAG, "parseLibraryTracksResponse: failed", e)
-        emptyList()
+        null
     }
 }
