@@ -31,3 +31,16 @@ internal fun seekArrived(progress: Float, target: Float): Boolean =
 /** The position [deltaMs] away from [elapsedMs], kept inside a [totalMs] track. */
 internal fun seekStepMs(elapsedMs: Long, totalMs: Long, deltaMs: Long): Long =
     (elapsedMs + deltaMs).coerceIn(0L, totalMs.coerceAtLeast(0L))
+
+/**
+ * Left edge of the scrub bubble (the target time shown above the thumb while dragging) for a
+ * thumb at [thumbX] on a bar [barWidth] wide: centred on the thumb, slid inward near either end so
+ * the whole bubble stays over the bar, and with it inside the screen's margins. A bubble wider
+ * than the bar (a huge font on a narrow phone) centres on the bar instead.
+ */
+internal fun scrubBubbleLeft(thumbX: Float, bubbleWidth: Float, barWidth: Float): Float =
+    if (bubbleWidth >= barWidth) {
+        (barWidth - bubbleWidth) / 2f
+    } else {
+        (thumbX - bubbleWidth / 2f).coerceIn(0f, barWidth - bubbleWidth)
+    }
