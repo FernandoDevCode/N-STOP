@@ -44,6 +44,9 @@ fun SettingsAccountsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val extendedColors = com.stash.core.ui.theme.StashTheme.extendedColors
+    // The last sync's verdict on each stored sign-in: an expired card leads with
+    // Reconnect (the Sync tab's "Re-authenticate" lands here).
+    val authExpiry by viewModel.authExpiry.collectAsStateWithLifecycle()
 
     // The sign-in flags live in the Settings-wide ViewModel, which outlives this
     // screen: leaving Accounts with a sign-in open (any route Back doesn't
@@ -164,6 +167,7 @@ fun SettingsAccountsScreen(
             icon = Icons.Rounded.MusicNote,
             accentColor = extendedColors.spotifyGreen,
             authState = uiState.spotifyAuthState,
+            expired = authExpiry.spotifyExpired,
             onConnect = viewModel::onConnectSpotify,
             onDisconnect = {
                 // Also sign the WebView out, or the next Connect re-submits the old sp_dc.
@@ -188,6 +192,7 @@ fun SettingsAccountsScreen(
             icon = Icons.Rounded.PlayCircle,
             accentColor = extendedColors.youtubeRed,
             authState = uiState.youTubeAuthState,
+            expired = authExpiry.youtubeExpired,
             onConnect = viewModel::onConnectYouTube,
             onDisconnect = {
                 // Also sign the WebView out of Google, so the account isn't left behind in it.

@@ -142,6 +142,12 @@ class SettingsViewModel @Inject constructor(
      * source card appears (or disappears) immediately, not next launch.
      */
     private val lastFmRecommendationSource: com.stash.core.data.mix.LastFmRecommendationSource,
+    /**
+     * Which connected accounts the last sync found signed out, so Accounts can
+     * offer Reconnect on that card; a fresh sign-in or a disconnect clears the
+     * source's flag (see [SyncStateManager.clearAuthExpiry]).
+     */
+    private val syncStateManager: com.stash.core.data.sync.SyncStateManager,
 ) : ViewModel() {
 
     // ── ListenBrainz ────────────────────────────────────────────────────────
@@ -1138,6 +1144,14 @@ class SettingsViewModel @Inject constructor(
         _localState.update { it.copy(lastScrobbleDrainResult = null) }
     }
 
+    /**
+     * Per-source "session expired" flags from the last sync's auth probe. Kept
+     * out of the big [uiState] combine for the same reason as ListenBrainz: one
+     * screen (Accounts) reads it. Only meaningful for a source whose auth state
+     * is still Connected: the stored credential is there, the service rejected it.
+     */
+    val authExpiry: StateFlow<com.stash.core.data.sync.AuthExpiryState> = syncStateManager.authExpiry
+
     // -- Spotify actions ------------------------------------------------------
 
     /**
@@ -1219,6 +1233,8 @@ class SettingsViewModel @Inject constructor(
             val success = connectGuarded { tokenManager.connectSpotifyWithCookie(cookie, username) }
 
             if (success == true) {
+                // A fresh sp_dc renews the session the last sync found expired.
+                syncStateManager.clearAuthExpiry(spotify = true)
                 _localState.update {
                     it.copy(
                         showSpotifyCookieDialog = false,
@@ -1261,6 +1277,8 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             musicRepository.cancelPendingDownloadsForSource("SPOTIFY")
             tokenManager.clearAuth(AuthService.SPOTIFY)
+            // Nothing left to re-authenticate: the Sync tab's banner stops asking.
+            syncStateManager.clearAuthExpiry(spotify = true)
         }
     }
 
@@ -1377,6 +1395,7 @@ class SettingsViewModel @Inject constructor(
             val success = connectGuarded { tokenManager.connectYouTubeWithCookie(cookie) }
 
             if (success == true) {
+                syncStateManager.clearAuthExpiry(youtube = true)
                 _localState.update {
                     it.copy(
                         showYouTubeCookieDialog = false,
@@ -1419,6 +1438,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             musicRepository.cancelPendingDownloadsForSource("YOUTUBE")
             tokenManager.clearAuth(AuthService.YOUTUBE_MUSIC)
+            syncStateManager.clearAuthExpiry(youtube = true)
             // yt-dlp cookie files left by runs that died mid-way each hold the
             // full YouTube session; they must not outlive the disconnect.
             withContext(Dispatchers.IO) { YtCookieFiles.sweep(appContext.noBackupFilesDir) }

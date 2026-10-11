@@ -282,8 +282,17 @@ private fun StashNavGraph(
                 onNavigateToDownloads = {
                     navController.navigate(DownloadManagementRoute)
                 },
-                onNavigateToSettings = {
+                // "Re-authenticate" opens Accounts itself, where the expired card
+                // leads with Reconnect, instead of the Settings hub one tap short.
+                // Settings goes under it first: Accounts shares the ViewModel
+                // scoped to the SettingsRoute entry (getBackStackEntry throws
+                // without it), as the captcha deep link does. Back from Accounts
+                // lands on Settings, then Sync.
+                onNavigateToAccounts = {
                     navController.navigate(SettingsRoute) {
+                        launchSingleTop = true
+                    }
+                    navController.navigate(SettingsAccountsRoute) {
                         launchSingleTop = true
                     }
                 },

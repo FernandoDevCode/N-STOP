@@ -102,6 +102,7 @@ class SettingsViewModelTest {
         relayClient = relayClient,
         lastFmRecommendationSource = mockk(relaxed = true),
         discordRpcCoordinator = mockk(relaxed = true),
+        syncStateManager = com.stash.core.data.sync.SyncStateManager(),
     )
 
     @Test fun `refreshStorageUsage requests a fresh filesystem calculation`() {

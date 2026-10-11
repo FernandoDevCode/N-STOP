@@ -81,7 +81,8 @@ fun SyncScreen(
     onNavigateToBlockedSongs: () -> Unit = {},
     onNavigateToFailedDownloads: () -> Unit = {},
     onNavigateToDownloads: () -> Unit = {},
-    onNavigateToSettings: () -> Unit = {},
+    // Settings › Accounts, where an expired sign-in's card offers Reconnect.
+    onNavigateToAccounts: () -> Unit = {},
     onManageSource: (SyncSource) -> Unit = {},
     viewModel: SyncViewModel = hiltViewModel(),
 ) {
@@ -116,7 +117,7 @@ fun SyncScreen(
         item {
             AuthExpiredBanner(
                 state = authState,
-                onReauth = onNavigateToSettings,
+                onReauth = onNavigateToAccounts,
             )
         }
 

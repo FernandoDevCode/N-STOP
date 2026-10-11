@@ -3,6 +3,7 @@ package com.stash.core.data.sync
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -11,6 +12,17 @@ data class AuthExpiryState(
     val youtubeExpired: Boolean,
 ) {
     val anyExpired: Boolean get() = spotifyExpired || youtubeExpired
+
+    /**
+     * This state with the named sources no longer flagged; the others keep
+     * their flag. Used when a source is signed into again (or disconnected),
+     * which settles its expiry without waiting for the next sync's probe.
+     */
+    fun cleared(spotify: Boolean = false, youtube: Boolean = false): AuthExpiryState =
+        AuthExpiryState(
+            spotifyExpired = spotifyExpired && !spotify,
+            youtubeExpired = youtubeExpired && !youtube,
+        )
 }
 
 /**
@@ -55,6 +67,16 @@ class SyncStateManager @Inject constructor() {
     /** Probed at sync start by PlaylistFetchWorker. */
     fun onAuthExpiryProbed(state: AuthExpiryState) {
         _authExpiry.value = state
+    }
+
+    /**
+     * A fresh sign-in (or a disconnect) of a source settles its expired flag
+     * at once. The probe only runs at the head of a sync, so without this the
+     * Sync tab kept asking to re-authenticate, and Accounts kept offering
+     * Reconnect, for a session the user had just renewed, until the next sync.
+     */
+    fun clearAuthExpiry(spotify: Boolean = false, youtube: Boolean = false) {
+        _authExpiry.update { it.cleared(spotify = spotify, youtube = youtube) }
     }
 
     /** Transition to [SyncPhase.Authenticating]. */
