@@ -7,8 +7,11 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.prefs.LibraryLayout
 import com.stash.core.data.prefs.StoragePreference
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
@@ -46,6 +49,13 @@ class FileOrganizer @Inject constructor(
 ) {
     /** Root directory for all internally-stored downloaded music files. */
     private val musicDir: File get() = File(context.filesDir, "music").also { it.mkdirs() }
+
+    /**
+     * Internal library paths that commits in this process have picked, by
+     * absolute path (see [claimInternalFile]). Guarded by [claimLock].
+     */
+    private val claims = HashMap<String, PathClaim>()
+    private val claimLock = Mutex()
 
     /**
      * The absolute internal music root, exposed so bulk coordinators
@@ -519,6 +529,9 @@ class FileOrganizer @Inject constructor(
         private const val MAX_COPY_NUMBER = 999
         // A temp download older than this is no attempt's any more; no download takes a day.
         private const val STALE_TEMP_AGE_MS = 24L * 60 * 60 * 1000
+        // How long a written file stays claimed for its track (see releaseInternalFile):
+        // far longer than any worker takes from the commit to its row write.
+        private const val CLAIM_HOLD_NANOS = 10L * 60 * 1_000_000_000
         // A library file being written, before one rename puts it in place.
         private const val PART_SUFFIX = ".part"
         // Names a SAF document written to replace one: `<name>.stash-part.<ext>`.
@@ -580,12 +593,20 @@ class FileOrganizer @Inject constructor(
             } else {
                 File(musicDir, location.segments.joinToString("/")).also { it.mkdirs() }
             }
-            val finalFile = if (asNewFile) {
-                freeInternalFile(dir, location, format, nameSuffix, trackId)
-            } else {
-                ownInternalFile(dir, location, format, replaceSuffixes(nameSuffix, album, trackId), trackId)
+            val finalFile = claimInternalFile(trackId) { claimed ->
+                if (asNewFile) {
+                    freeInternalFile(dir, location, format, nameSuffix, trackId, claimed)
+                } else {
+                    ownInternalFile(dir, location, format, replaceSuffixes(nameSuffix, album, trackId), trackId, claimed)
+                }
             }
-            writeInternalFile(tempFile, finalFile, replace = !asNewFile)
+            var written = false
+            try {
+                writeInternalFile(tempFile, finalFile, replace = !asNewFile)
+                written = true
+            } finally {
+                releaseInternalFile(finalFile, written)
+            }
             tempFile.delete()
             CommittedTrack(finalFile.absolutePath, size)
         } else {
@@ -637,24 +658,30 @@ class FileOrganizer @Inject constructor(
     private suspend fun recordedByAnotherTrack(path: String, trackId: Long?): Boolean =
         trackDao.countOtherTracksWithFilePath(path, trackId ?: 0L) > 0
 
-    /** The first name in [dir] with no file on disk and no track recording it. */
+    /**
+     * The first name in [dir] with no file on disk, no track recording it and
+     * no other commit's claim on it ([claimed]).
+     */
     private suspend fun freeInternalFile(
         dir: File,
         location: LibraryLayoutResolver.ResolvedLocation,
         format: String,
         nameSuffix: String?,
         trackId: Long?,
+        claimed: (File) -> Boolean,
     ): File {
         for (suffix in newFileSuffixes(nameSuffix)) {
             val file = File(dir, fileNameFor(location, format, suffix))
+            if (claimed(file)) continue
             if (!file.exists() && !recordedByAnotherTrack(file.absolutePath, trackId)) return file
         }
         error("No free file name for '${location.baseName}.$format' in $dir")
     }
 
     /**
-     * The first of [suffixes]' names in [dir] that no other track records: a
-     * file there that is this track's own, or nobody's, is replaced.
+     * The first of [suffixes]' names in [dir] that no other track records and
+     * no other commit claims ([claimed]): a file there that is this track's
+     * own, or nobody's, is replaced.
      */
     private suspend fun ownInternalFile(
         dir: File,
@@ -662,12 +689,73 @@ class FileOrganizer @Inject constructor(
         format: String,
         suffixes: Sequence<String?>,
         trackId: Long?,
+        claimed: (File) -> Boolean,
     ): File {
         for (suffix in suffixes) {
             val file = File(dir, fileNameFor(location, format, suffix))
+            if (claimed(file)) continue
             if (!recordedByAnotherTrack(file.absolutePath, trackId)) return file
         }
         error("No free file name for '${location.baseName}.$format' in $dir")
+    }
+
+    /**
+     * Picks an internal file with [pick] and claims it for this commit, so a
+     * concurrent commit for another track names its file apart. A track's row
+     * is what tells commits apart ([recordedByAnotherTrack]), and the worker
+     * writes it seconds after the commit: two downloads whose names slug
+     * alike (a studio and a live "Intro") both found the name free and the
+     * second replaced the first one's file, leaving both rows on one file.
+     * [pick] is given the claim check for each candidate and runs under
+     * [claimLock], so picks happen one at a time. Commits of the SAME track
+     * share a claim and may replace each other's file, as they always could.
+     * Release with [releaseInternalFile].
+     */
+    private suspend fun claimInternalFile(
+        trackId: Long?,
+        pick: suspend (claimed: (File) -> Boolean) -> File,
+    ): File = claimLock.withLock {
+        val now = System.nanoTime()
+        claims.values.removeAll { !it.isLive(now) }
+        val file = pick { candidate ->
+            val claim = claims[candidate.absolutePath]
+            claim != null && (claim.trackId == null || claim.trackId != trackId)
+        }
+        claims.getOrPut(file.absolutePath) { PathClaim(trackId) }.inFlight++
+        file
+    }
+
+    /**
+     * Ends one commit's write of [file]. The claim outlives a write that
+     * [written] the file by [CLAIM_HOLD_NANOS]: until the worker's row
+     * records the file, a later commit would otherwise still see it as
+     * nobody's and replace it. NonCancellable: a release skipped by a cancel
+     * would hold the name for the rest of the process.
+     */
+    private suspend fun releaseInternalFile(file: File, written: Boolean) {
+        withContext(NonCancellable) {
+            claimLock.withLock {
+                val path = file.absolutePath
+                val claim = claims[path] ?: return@withLock
+                claim.inFlight--
+                val now = System.nanoTime()
+                if (written) claim.writtenAtNanos = now
+                if (!claim.isLive(now)) claims.remove(path)
+            }
+        }
+    }
+
+    /**
+     * A commit's claim on an internal path for track [trackId] (null: no row
+     * yet, so it conflicts with every other commit). [inFlight] counts the
+     * commits writing it now; [writtenAtNanos] is when one last wrote it.
+     */
+    private class PathClaim(val trackId: Long?) {
+        var inFlight = 0
+        var writtenAtNanos: Long? = null
+
+        fun isLive(nowNanos: Long): Boolean =
+            inFlight > 0 || writtenAtNanos?.let { nowNanos - it < CLAIM_HOLD_NANOS } == true
     }
 
     /**

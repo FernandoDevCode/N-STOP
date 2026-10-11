@@ -64,6 +64,7 @@ class DiscoveryDownloadWorkerTest {
         appContext, workerParams,
         downloadQueueDao, trackDao, trackDownloader,
         audioDurationExtractor, blocklistGuard, syncNotificationManager, downloadJobs,
+        fileReplacement = mockk(relaxed = true),
     )
 
     @Test fun `empty queue returns success and does not invoke TrackDownloader`() = runTest {

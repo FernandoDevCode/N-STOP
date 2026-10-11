@@ -2,9 +2,8 @@ package com.stash.data.download
 
 import android.util.Log
 import com.stash.core.data.db.dao.DownloadQueueDao
-import com.stash.core.data.db.dao.TrackDao
-import com.stash.core.data.db.dao.fileUsedByAnotherTrack
 import com.stash.core.data.files.LocalFileOps
+import com.stash.core.data.files.TrackFileReplacement
 import com.stash.core.data.sync.TrackDownloadOutcome
 import com.stash.core.data.sync.TrackDownloader
 import com.stash.core.model.Track
@@ -23,7 +22,7 @@ class TrackDownloaderImpl @Inject constructor(
     private val downloadManager: DownloadManager,
     private val downloadQueueDao: DownloadQueueDao,
     private val localFileOps: LocalFileOps,
-    private val trackDao: TrackDao,
+    private val fileReplacement: TrackFileReplacement,
 ) : TrackDownloader {
 
     override suspend fun downloadTrack(track: Track, preResolvedUrl: String?): TrackDownloadOutcome {
@@ -37,8 +36,10 @@ class TrackDownloaderImpl @Inject constructor(
                 // acceptDownloadOrDelete deletes the junk + returns false, so the
                 // track stays not-downloaded (and therefore streamable); the
                 // worker routes Failed through its normal bounded-retry handling.
+                // The track's previous file is NOT deleted here: the worker
+                // deletes it once the row records the new one (see
+                // TrackFileReplacement.deleteReplacedFile).
                 if (localFileOps.acceptDownloadOrDelete(result.filePath)) {
-                    deleteReplacedFile(track, result.filePath)
                     TrackDownloadOutcome.Success(result.filePath)
                 } else {
                     Log.w(TAG, "discarded too-small download for '${track.artist} - ${track.title}': ${result.filePath}")
@@ -54,33 +55,19 @@ class TrackDownloaderImpl @Inject constructor(
             // [TrackDownloadOutcome.Deferred] outcome tells [TrackDownloadWorker]
             // not to increment retries, not to mark FAILED, and not to fail
             // the worker chain.
+            //
+            // A track handed back for a better copy with its file kept
+            // (TrackDao.markForReplacement) gets that file back as its download
+            // meanwhile, or it would vanish from the Library while it waits.
             TrackDownloadResult.Deferred -> {
                 val queueEntry = downloadQueueDao.getByTrackId(track.id)
                 queueEntry?.let {
                     downloadQueueDao.deferIfInProgress(it.id)
                 }
+                fileReplacement.restoreKeptFile(track.id, track.filePath)
                 TrackDownloadOutcome.Deferred
             }
         }
-    }
-
-    /**
-     * Deletes the file [track] had before this download, now that the new one
-     * at [newPath] has passed validation: a re-download whose name changed
-     * (the canonicalizer retitled the track, or the library layout changed)
-     * or that came from another source (a FLAC replacing an opus). The YouTube
-     * path used to delete it itself, before validation, so a junk new body
-     * left the track with neither file; with `File.delete`, which never
-     * removed an SD-card (`content://`) document; and lossless or JioSaavn
-     * re-downloads never cleaned up at all. A file another track still plays
-     * from stays, and so does the new file itself (a same-name re-download).
-     */
-    private suspend fun deleteReplacedFile(track: Track, newPath: String) {
-        val oldPath = track.filePath?.takeIf { it.isNotBlank() } ?: return
-        if (localFileOps.isSameFile(oldPath, newPath)) return
-        if (trackDao.fileUsedByAnotherTrack(oldPath, track.id)) return
-        val deleted = localFileOps.delete(oldPath)
-        Log.d(TAG, "deleted the replaced file $oldPath for trackId=${track.id}: $deleted")
     }
 
     private companion object {

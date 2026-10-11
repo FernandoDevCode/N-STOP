@@ -436,34 +436,50 @@ class DownloadManager @Inject constructor(
             }
         }
 
-        // Embed clean Stash-side tags + cover art into the file before
-        // commit. yt-dlp's --embed-metadata leaves YouTube-flavoured tags
-        // (uploader, video title); our pass overwrites them with the clean
-        // Spotify/YT-Music identity already on the Track row. Failure is
-        // non-fatal: the file remains playable and yt-dlp's fallback tags
-        // stay in place.
-        val art = runCatching { albumArtCache.resolveArt(effectiveTrack) }.getOrNull()
-        runCatching { metadataEmbedder.embedMetadata(downloadedFile, effectiveTrack, art) }
-            .onFailure { Log.w(TAG, "metadata embed failed for ${track.id}: ${it.message}") }
+        // From here until the commit moves it into the library, the temp file
+        // is this attempt's alone: every attempt names its own, so one that a
+        // failed commit or a cancel left behind was never reused or cleaned,
+        // one leftover per retry. The finally deletes it unless the commit
+        // took it (commitDownload deletes it then). File.delete doesn't
+        // suspend, so it runs even when the coroutine is cancelled.
+        var committedFile = false
+        val committed = try {
+            // Embed clean Stash-side tags + cover art into the file before
+            // commit. yt-dlp's --embed-metadata leaves YouTube-flavoured tags
+            // (uploader, video title); our pass overwrites them with the clean
+            // Spotify/YT-Music identity already on the Track row. Failure is
+            // non-fatal: the file remains playable and yt-dlp's fallback tags
+            // stay in place. A cancel is not a failure: it propagates.
+            val art = runCatching { albumArtCache.resolveArt(effectiveTrack) }
+                .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+                .getOrNull()
+            runCatching { metadataEmbedder.embedMetadata(downloadedFile, effectiveTrack, art) }
+                .onFailure {
+                    if (it is kotlinx.coroutines.CancellationException) throw it
+                    Log.w(TAG, "metadata embed failed for ${track.id}: ${it.message}")
+                }
 
-        // Metadata + cover art written above by MetadataEmbedder. yt-dlp's
-        // --embed-metadata still runs as a fallback layer (see toYtDlpArgs).
+            // Metadata + cover art written above by MetadataEmbedder. yt-dlp's
+            // --embed-metadata still runs as a fallback layer (see toYtDlpArgs).
 
-        emitProgress(track.id, 0.9f, DownloadStatus.PROCESSING)
+            emitProgress(track.id, 0.9f, DownloadStatus.PROCESSING)
 
-        // Step 4: Move to organized destination (internal or user-selected SAF target).
-        val committed = fileOrganizer.commitDownload(
-            tempFile = downloadedFile,
-            artist = effectiveTrack.artist,
-            album = effectiveTrack.album.ifEmpty { null },
-            title = effectiveTrack.title,
-            format = downloadedFile.extension,
-            trackId = track.id,
-        )
+            // Step 4: Move to organized destination (internal or user-selected SAF target).
+            fileOrganizer.commitDownload(
+                tempFile = downloadedFile,
+                artist = effectiveTrack.artist,
+                album = effectiveTrack.album.ifEmpty { null },
+                title = effectiveTrack.title,
+                format = downloadedFile.extension,
+                trackId = track.id,
+            ).also { committedFile = true }
+        } finally {
+            if (!committedFile) runCatching { downloadedFile.delete() }
+        }
 
         // The previous file, when the canonicalizer renamed the track (new
-        // title → new path), is deleted by TrackDownloaderImpl once the new
-        // file has passed validation, for every source, not only this one.
+        // title → new path), is deleted by the download worker once the row
+        // records the new file (TrackFileReplacement), for every source.
 
         Log.i(TAG, "Downloaded: ${effectiveTrack.artist} - ${effectiveTrack.title} → ${committed.filePath}")
         runCatching { trackDao.setMetadataEmbeddedAt(track.id, System.currentTimeMillis()) }

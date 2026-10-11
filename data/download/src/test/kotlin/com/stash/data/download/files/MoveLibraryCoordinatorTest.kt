@@ -124,6 +124,49 @@ class MoveLibraryCoordinatorTest {
     }
 
     /**
+     * A legacy library can have two rows on one internal file. Moving one of
+     * them used to delete the file unconditionally, leaving the other row on
+     * nothing. It stays until the last row that records it has moved.
+     */
+    @Test fun `an internal file another track still records is kept`() = runBlocking {
+        val tree = FakeSafTree(resolver, storagePreference)
+        val download = internalTrack(1, "Album A", "the song")
+        val sharedFile = File(download.filePath!!)
+        // The import took the download's file; its move did not run (failed, or
+        // not reached yet).
+        recorded[1L] = sharedFile.absolutePath
+        recorded[2L] = sharedFile.absolutePath
+        coEvery { trackDao.getDownloadedTracksWithPathPrefix(any()) } returns listOf(download)
+
+        coordinator.start(tree.treeUri)
+        withTimeout(10_000) { coordinator.state.first { it is MoveLibraryState.Done } }
+
+        assertThat(recorded[1L]).isEqualTo(tree.uriOf("artist-intro.opus"))
+        assertThat(sharedFile.exists()).isTrue()
+        assertThat(recorded[2L]).isEqualTo(sharedFile.absolutePath)
+    }
+
+    /** Both rows move, each to its own document; the last one deletes the file. */
+    @Test fun `a shared internal file goes with the last row that records it`() = runBlocking {
+        val tree = FakeSafTree(resolver, storagePreference)
+        val download = internalTrack(1, "Album A", "the song")
+        val import = download.copy(id = 2, album = "Imported")
+        val sharedFile = File(download.filePath!!)
+        recorded[1L] = sharedFile.absolutePath
+        recorded[2L] = sharedFile.absolutePath
+        coEvery { trackDao.getDownloadedTracksWithPathPrefix(any()) } returns listOf(download, import)
+
+        coordinator.start(tree.treeUri)
+        val done = withTimeout(10_000) { coordinator.state.first { it is MoveLibraryState.Done } }
+
+        assertThat(done).isEqualTo(MoveLibraryState.Done(moved = 2, failed = 0))
+        assertThat(recorded[1L]).isNotEqualTo(recorded[2L])
+        assertThat(tree.written[recorded[1L]]).isEqualTo("the song".toByteArray())
+        assertThat(tree.written[recorded[2L]]).isEqualTo("the song".toByteArray())
+        assertThat(sharedFile.exists()).isFalse()
+    }
+
+    /**
      * Cancel used to be swallowed as one failed track: the loop copied the
      * rest of the library and then overwrote Idle with Done.
      */

@@ -12,6 +12,8 @@ import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.sync.DownloadJobRegistry
 import com.stash.core.data.sync.TrackDownloadOutcome
 import com.stash.core.data.sync.TrackDownloader
+import com.stash.core.data.files.LocalFileOps
+import com.stash.core.data.files.TrackFileReplacement
 import com.stash.core.model.DownloadStatus
 import com.stash.core.model.MusicSource
 import io.mockk.coEvery
@@ -90,6 +92,7 @@ class DiscoveryDownloadWorkerAskedForTest {
                 blocklistGuard = mockk { coEvery { isBlocked(any(), any(), any(), any()) } returns false },
                 syncNotificationManager = mockk(relaxed = true),
                 downloadJobs = DownloadJobRegistry(),
+                fileReplacement = TrackFileReplacement(db.trackDao(), LocalFileOps(context)),
             )
         })
         .build()

@@ -2332,15 +2332,40 @@ interface TrackDao {
      * Hands a downloaded track back to the download pipeline for a better
      * copy while KEEPING its file: `is_downloaded = 0` lets the download
      * worker pick it up, and file_path / file_size stay. That file is the
-     * user's only copy until a replacement is committed and validated;
-     * TrackDownloaderImpl deletes it then (a same-name download replaces it
-     * in place). [resetForReDownload] cleared the path while its caller
+     * user's only copy until a replacement is committed and validated; the
+     * download worker deletes it once the row records the new file (a
+     * same-name download replaces it in place), and [restoreKeptFile] makes
+     * it the download again when no replacement comes. [resetForReDownload]
+     * cleared the path while its caller
      * deleted the file, so a download that deferred or failed (no lossless
      * copy with the YouTube fallback off, a video taken down) left the track
      * with nothing.
      */
     @Query("UPDATE tracks SET is_downloaded = 0 WHERE id = :trackId")
     suspend fun markForReplacement(trackId: Long)
+
+    /**
+     * Undoes [markForReplacement] when the better copy isn't coming: the
+     * download deferred (no lossless copy, YouTube fallback off) or failed for
+     * good. The kept file goes back to being the track's download, or the song
+     * stays out of the Library and downloaded views with its file unseen on
+     * disk. Only while the row still records [keptPath] and is not downloaded:
+     * every other un-marking clears file_path, so that pair is what
+     * [markForReplacement] leaves, and a download that recorded a new file
+     * meanwhile is not touched. The caller checks that the file is still there.
+     *
+     * @return rows updated: 1, or 0 when the row moved on.
+     */
+    @Query(
+        """
+        UPDATE tracks
+        SET is_downloaded = 1
+        WHERE id = :trackId
+          AND is_downloaded = 0
+          AND file_path = :keptPath
+        """
+    )
+    suspend fun restoreKeptFile(trackId: Long, keptPath: String): Int
 
     /**
      * All `is_downloaded=1` rows with their stored `file_path`. Drives the

@@ -71,6 +71,7 @@ class TrackDownloadWorker @AssistedInject constructor(
     private val syncLog: com.stash.core.data.sync.SyncLog,
     private val flacUpgradeSweeper: com.stash.core.data.lossless.FlacUpgradeSweeper,
     private val downloadJobs: DownloadJobRegistry,
+    private val fileReplacement: com.stash.core.data.files.TrackFileReplacement,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -264,6 +265,11 @@ class TrackDownloadWorker @AssistedInject constructor(
                         if (downloadQueueDao.getStatusById(queueItem.id) == DownloadStatus.SKIPPED) {
                             return@launch
                         }
+                        // The track's file before this download, read before it
+                        // starts: a re-download deletes it once the row records the
+                        // new file, and one that fails for good restores it
+                        // (TrackFileReplacement).
+                        var keptPath: String? = null
                         try {
                             val trackEntity = trackDao.getById(queueItem.trackId)
                             if (trackEntity == null) {
@@ -313,6 +319,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                                 return@launch
                             }
 
+                            keptPath = trackEntity.filePath
                             val track = trackEntity.toDomain()
                             val outcome = trackDownloader.downloadTrack(
                                 track = track,
@@ -328,12 +335,18 @@ class TrackDownloadWorker @AssistedInject constructor(
                                     // the user said stop don't get to stay on disk.
                                     // NonCancellable because cancel() also cancels this
                                     // job — without it the status read throws instead of
-                                    // answering, and the file leaks.
+                                    // answering, and the file leaks. A new file that
+                                    // replaced the track's own in place is its only copy
+                                    // and stays (see discardCancelledDownload).
                                     val cancelledMidFlight = withContext(NonCancellable) {
                                         if (downloadQueueDao.getStatusById(queueItem.id) != DownloadStatus.SKIPPED) {
                                             false
                                         } else {
-                                            runCatching { File(outcome.filePath).delete() }
+                                            fileReplacement.discardCancelledDownload(
+                                                trackId = queueItem.trackId,
+                                                keptPath = trackEntity.filePath,
+                                                newPath = outcome.filePath,
+                                            )
                                             true
                                         }
                                     }
@@ -349,13 +362,23 @@ class TrackDownloadWorker @AssistedInject constructor(
                                     // is final, not a temp path.
                                     val meta = audioDurationExtractor.extract(outcome.filePath)
 
-                                    trackDao.markAsDownloaded(
+                                    val recorded = trackDao.markAsDownloaded(
                                         trackId = queueItem.trackId,
                                         filePath = outcome.filePath,
                                         fileSizeBytes = fileSize,
                                         sampleRateHz = meta?.sampleRateHz,
                                         bitsPerSample = meta?.bitsPerSample,
                                     )
+                                    // Only now that the row records the new file may the
+                                    // old one go: a cancel or a dead process before this
+                                    // write left the row on a deleted file.
+                                    if (recorded > 0) {
+                                        fileReplacement.deleteReplacedFile(
+                                            trackId = queueItem.trackId,
+                                            oldPath = trackEntity.filePath,
+                                            newPath = outcome.filePath,
+                                        )
+                                    }
 
                                     if (meta != null) {
                                         // Format: source-of-truth for Library Health.
@@ -431,6 +454,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                                         rejectedVideoId = outcome.rejectedVideoId,
                                         completedAt = System.currentTimeMillis(),
                                     )
+                                    fileReplacement.restoreKeptFile(queueItem.trackId, trackEntity.filePath)
                                     firstError.compareAndSet(null, err)
                                     failedCount.incrementAndGet()
                                 }
@@ -460,6 +484,9 @@ class TrackDownloadWorker @AssistedInject constructor(
                                             failureType = type,
                                             completedAt = System.currentTimeMillis(),
                                         )
+                                        // Failed for good: a file kept for this
+                                        // re-download is the track's download again.
+                                        fileReplacement.restoreKeptFile(queueItem.trackId, trackEntity.filePath)
                                         firstError.compareAndSet(null, truncated)
                                         failedCount.incrementAndGet()
                                     } else {
@@ -542,6 +569,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                                     failureType = type,
                                     completedAt = System.currentTimeMillis(),
                                 )
+                                fileReplacement.restoreKeptFile(queueItem.trackId, keptPath)
                                 failedCount.incrementAndGet()
                             } else {
                                 // Interruption — leave row at PENDING so next sync
@@ -829,6 +857,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                 failureType = type,
                 completedAt = System.currentTimeMillis(),
             )
+            fileReplacement.restoreKeptFile(entry.trackId, track.filePath)
             // Catastrophe is handled; don't ask WorkManager to retry this row.
             return Result.success()
         }
@@ -841,7 +870,11 @@ class TrackDownloadWorker @AssistedInject constructor(
                     if (downloadQueueDao.getStatusById(entry.id) != DownloadStatus.SKIPPED) {
                         false
                     } else {
-                        runCatching { File(outcome.filePath).delete() }
+                        fileReplacement.discardCancelledDownload(
+                            trackId = entry.trackId,
+                            keptPath = track.filePath,
+                            newPath = outcome.filePath,
+                        )
                         true
                     }
                 }
@@ -855,13 +888,17 @@ class TrackDownloadWorker @AssistedInject constructor(
                 // disk. (Pre-v0.9.63 single-track mode skipped this entirely.)
                 val fileSize = try { File(outcome.filePath).length() } catch (_: Exception) { 0L }
                 val meta = audioDurationExtractor.extract(outcome.filePath)
-                trackDao.markAsDownloaded(
+                val recorded = trackDao.markAsDownloaded(
                     trackId = entry.trackId,
                     filePath = outcome.filePath,
                     fileSizeBytes = fileSize,
                     sampleRateHz = meta?.sampleRateHz,
                     bitsPerSample = meta?.bitsPerSample,
                 )
+                // The old file goes only once the row records the new one.
+                if (recorded > 0) {
+                    fileReplacement.deleteReplacedFile(entry.trackId, track.filePath, outcome.filePath)
+                }
                 if (meta != null && meta.format != "unknown") {
                     runCatching {
                         trackDao.setFormatAndQuality(
@@ -893,6 +930,8 @@ class TrackDownloadWorker @AssistedInject constructor(
                     failureType = type,
                     completedAt = System.currentTimeMillis(),
                 )
+                // Failed for good: a kept file is the track's download again.
+                fileReplacement.restoreKeptFile(entry.trackId, track.filePath)
                 Log.w(
                     TAG,
                     "Single-track mode: Failed for queue ${entry.id} (type=$type): ${truncated.take(120)}",
@@ -907,6 +946,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                     failureType = DownloadFailureType.NO_MATCH,
                     rejectedVideoId = outcome.rejectedVideoId,
                 )
+                fileReplacement.restoreKeptFile(entry.trackId, track.filePath)
                 Log.w(TAG, "Single-track mode: Unmatched for queue ${entry.id}")
             }
             is TrackDownloadOutcome.Deferred -> {

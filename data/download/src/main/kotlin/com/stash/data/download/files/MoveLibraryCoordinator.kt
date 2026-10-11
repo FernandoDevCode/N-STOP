@@ -5,6 +5,7 @@ import android.net.Uri
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.db.dao.fileUsedByAnotherTrack
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.prefs.LibraryLayout
 import com.stash.core.data.prefs.StoragePreference
@@ -66,6 +67,8 @@ sealed interface MoveLibraryState {
  *    atomic unit, and a cancelled coroutine stops at track boundaries.
  *  - A document another track records is never replaced: a name clash
  *    gives the moved file a distinct name instead (see [createTarget]).
+ *  - An internal file another track still records is never deleted (see
+ *    [moveOne]).
  */
 @Singleton
 class MoveLibraryCoordinator @Inject constructor(
@@ -253,7 +256,13 @@ class MoveLibraryCoordinator @Inject constructor(
         // DB write first so a crash before delete leaves a duplicate (harmless)
         // rather than a dangling DB pointer.
         trackDao.markAsDownloaded(track.id, target.uri.toString(), localFile.length())
-        localFile.delete()
+        // A legacy library can have two rows on one internal file (an import
+        // that took a downloaded song's name). The file stays while another row
+        // records it: that row moves later in this pass to its own copy, and
+        // the last row to leave deletes it. Repointing those rows at this copy
+        // instead would keep them sharing one file, and a row whose move then
+        // ran with its stale path would fail as "missing".
+        if (!trackDao.fileUsedByAnotherTrack(path, track.id)) localFile.delete()
     }
 
     /**
