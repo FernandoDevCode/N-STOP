@@ -181,6 +181,60 @@ class DiffWorkerTest {
         assertEquals(originalAddedAt, crossRef?.addedAt)
     }
 
+    // ── REFRESH preserves addedAt too ────────────────────────────────────
+
+    /**
+     * The cross-ref preload used to run AFTER the REFRESH clear, so it never saw
+     * the synced rows the clear had just deleted and every re-linked track was
+     * stamped addedAt = now: each REFRESH sync re-dated the whole playlist.
+     */
+    @Test
+    fun `REFRESH preserves original addedAt when a track is re-linked`() = runBlocking {
+        val trackId = db.trackDao().insert(
+            TrackEntity(
+                title = "Borderline", artist = "Tame Impala",
+                canonicalTitle = "borderline", canonicalArtist = "tame impala",
+                spotifyUri = "spotify:track:xyz",
+            )
+        )
+        val playlistId = db.playlistDao().insert(
+            PlaylistEntity(
+                name = "Liked Songs", source = MusicSource.SPOTIFY,
+                sourceId = "spotify:collection:tracks", type = PlaylistType.LIKED_SONGS,
+                syncEnabled = true,
+            )
+        )
+        val originalAddedAt = Instant.parse("2024-03-01T00:00:00Z")
+        db.playlistDao().insertCrossRef(
+            PlaylistTrackCrossRef(
+                playlistId = playlistId, trackId = trackId, position = 3,
+                addedAt = originalAddedAt, removedAt = null,
+            )
+        )
+
+        every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.REFRESH)
+
+        val playlistSnapshot = RemotePlaylistSnapshotEntity(
+            id = 3L, syncId = 1L, source = MusicSource.SPOTIFY,
+            sourcePlaylistId = "spotify:collection:tracks",
+            playlistName = "Liked Songs", playlistType = PlaylistType.LIKED_SONGS,
+        )
+        coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns listOf(playlistSnapshot)
+        coEvery { remoteSnapshotDao.getTrackSnapshotsByPlaylistId(3L) } returns listOf(
+            RemoteTrackSnapshotEntity(
+                syncId = 1L, snapshotPlaylistId = 3L,
+                title = "Borderline", artist = "Tame Impala",
+                spotifyUri = "spotify:track:xyz", position = 0,
+            )
+        )
+
+        buildWorker().doWork()
+
+        val crossRef = db.playlistDao().getCrossRef(playlistId, trackId)
+        assertEquals(originalAddedAt, crossRef?.addedAt)
+        assertEquals("position follows the new snapshot", 0, crossRef?.position)
+    }
+
     @Test
     fun `ACCUMULATE does not requeue an already downloaded track`() = runBlocking {
         val trackId = db.trackDao().insert(downloadedTrack("Track A", "spotify:track:a", "/music/a.flac"))

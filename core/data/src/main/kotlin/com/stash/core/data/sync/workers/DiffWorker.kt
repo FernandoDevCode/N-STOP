@@ -555,6 +555,17 @@ class DiffWorker @AssistedInject constructor(
         syncId: Long,
         streamingMode: Boolean,
     ): Int {
+        // Preload every current cross-ref for this playlist ONCE instead of
+        // one getCrossRef() SELECT per track. This MUST run before the
+        // REFRESH clear below: the clear deletes every synced membership row,
+        // so a preload taken after it saw only local adds and tombstones, and
+        // every re-linked track fell through to addedAt = now. Each REFRESH
+        // sync re-dated the whole playlist (the recency sort, Liked Songs'
+        // liked_at = MIN(added_at), mix ordering). Same transaction, so the
+        // map is exactly the state the clear removes.
+        val existingCrossRefs = playlistDao.getCrossRefsForPlaylist(localPlaylist.id)
+            .associateBy { it.trackId }
+
         if (syncMode == SyncMode.REFRESH) {
             // #343: NEVER mirror-clear against a fetch that admits (or looks
             // like) incompleteness — one flaky API call was emptying whole
@@ -703,11 +714,6 @@ class DiffWorker @AssistedInject constructor(
                 batchTrack.entity = batchTrack.entity.copy(albumArtUrl = snapshotArt)
             }
         }
-
-        // Preload every current cross-ref for this playlist ONCE instead of
-        // one getCrossRef() SELECT per track.
-        val existingCrossRefs = playlistDao.getCrossRefsForPlaylist(localPlaylist.id)
-            .associateBy { it.trackId }
 
         val newTracks = mutableListOf<BatchTrack>()
         val newOccurrences = mutableListOf<Pair<BatchTrack, RemoteTrackSnapshotEntity>>()
