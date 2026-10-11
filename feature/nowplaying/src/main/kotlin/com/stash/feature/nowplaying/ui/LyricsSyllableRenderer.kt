@@ -262,7 +262,12 @@ private fun LineItem(
                 .fillMaxWidth()
                 .graphicsLayer { alpha = alphaAnim.value }
                 .then(if (blur > 0.25f) Modifier.blur(blur.dp, BlurredEdgeTreatment.Rectangle) else Modifier)
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onTap)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClickLabel = LYRIC_LINE_CLICK_LABEL,
+                    onClick = onTap,
+                )
                 .padding(horizontal = ctx.look.sidePadding, vertical = ctx.look.lineGap)
                 .clearAndSetSemantics { contentDescription = description },
         ) {

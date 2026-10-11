@@ -26,6 +26,7 @@ import com.stash.feature.nowplaying.ui.LyricsViewState
 import com.stash.feature.nowplaying.ui.clampOutputOffsetMs
 import com.stash.feature.nowplaying.ui.effectiveLyricsOffsetMs
 import com.stash.feature.nowplaying.ui.lyricsPositionMs
+import com.stash.feature.nowplaying.ui.lyricsSeekTargetMs
 import com.stash.feature.nowplaying.ui.lyricsViewStateFor
 import com.stash.feature.nowplaying.ui.lyricsViewStateForResult
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -1309,10 +1310,12 @@ class NowPlayingViewModel @Inject constructor(
      */
     fun onLyricsLineSeek(timestampMs: Long) {
         // currentPositionMs (what a tapped line's timestamp is measured against) is the raw player
-        // position MINUS the sync offset — undo that here so seeking lands the DISPLAYED position,
-        // not the raw one, on the tapped line. With a non-zero offset, seeking to the raw timestamp
-        // alone lights up the wrong line.
-        onSeekTo(timestampMs + (lyricsSyncOffsetMs.value ?: 0L))
+        // position MINUS the effective offset (the song's plus the output's) — undo that here so
+        // seeking lands the DISPLAYED position, not the raw one, on the tapped line. With a
+        // non-zero offset, seeking to the raw timestamp alone lights up the wrong line, and on
+        // Bluetooth starts the song ahead of or behind the words.
+        val offsetMs = effectiveLyricsOffsetMs(lyricsSyncOffsetMs.value, lyricsOutputOffset.value?.offsetMs)
+        onSeekTo(lyricsSeekTargetMs(timestampMs, offsetMs))
     }
 
     /**

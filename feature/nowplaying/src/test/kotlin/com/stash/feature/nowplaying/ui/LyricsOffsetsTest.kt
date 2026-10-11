@@ -46,6 +46,24 @@ class LyricsOffsetsTest {
         assertEquals(0L, lyricsPositionMs(playerPositionMs = 100L, offsetMs = 300L))
     }
 
+    // ── lyricsSeekTargetMs ───────────────────────────────────────────────────────────────────
+
+    @Test fun `a tapped line seeks to where it is heard`() {
+        assertEquals(20_300L, lyricsSeekTargetMs(lineMs = 20_000L, offsetMs = 300L))
+        assertEquals(19_500L, lyricsSeekTargetMs(lineMs = 20_000L, offsetMs = -500L))
+    }
+
+    @Test fun `seeking to a tapped line makes it the line the lyrics are on`() {
+        for (offset in listOf(-2_000L, -300L, 0L, 300L, 1_300L)) {
+            val target = lyricsSeekTargetMs(lineMs = 20_000L, offsetMs = offset)
+            assertEquals(20_000L, lyricsPositionMs(playerPositionMs = target, offsetMs = offset))
+        }
+    }
+
+    @Test fun `a seek never goes before the start`() {
+        assertEquals(0L, lyricsSeekTargetMs(lineMs = 200L, offsetMs = -500L))
+    }
+
     // ── lyricsOutputOf ───────────────────────────────────────────────────────────────────────
 
     @Test fun `an output is keyed by its kind and name and shows its name`() {

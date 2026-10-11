@@ -1,11 +1,14 @@
 package com.stash.feature.nowplaying
 
+import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.PlayerState
 import com.stash.core.model.Track
+import com.stash.data.lyrics.LyricsRepository
 import com.stash.feature.nowplaying.ui.LyricsOutput
 import com.stash.feature.nowplaying.ui.LyricsOutputOffset
 import com.stash.feature.nowplaying.ui.OUTPUT_OFFSET_CAP_MS
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
@@ -62,15 +65,19 @@ class NowPlayingLyricsOffsetTest {
         every { currentPosition } returns positionFlow
     }
 
-    private fun newViewModel(outputs: LyricsOutputOffsets): NowPlayingViewModel = NowPlayingViewModel(
-        playerRepository = playerRepository,
-        musicRepository = mockk(relaxed = true) {
+    private fun newViewModel(
+        outputs: LyricsOutputOffsets,
+        musicRepository: MusicRepository = mockk(relaxed = true) {
             every { observeTrackById(any()) } returns flowOf(null)
             every { observeTrackByYoutubeId(any()) } returns flowOf(null)
         },
+        lyricsRepository: LyricsRepository = mockk(relaxed = true),
+    ): NowPlayingViewModel = NowPlayingViewModel(
+        playerRepository = playerRepository,
+        musicRepository = musicRepository,
         likeCoordinator = mockk(relaxed = true) { every { mirrorFailures } returns MutableSharedFlow() },
         losslessUpgrader = mockk(relaxed = true),
-        lyricsRepository = mockk(relaxed = true),
+        lyricsRepository = lyricsRepository,
         lyricsPreference = mockk(relaxed = true),
         nowPlayingPreference = mockk(relaxed = true),
         lyricsSidecarWriter = mockk(relaxed = true),
@@ -112,6 +119,28 @@ class NowPlayingLyricsOffsetTest {
         vm.setLyricsOutputOffsetMs(30_000L)
         runCurrent()
         assertEquals(OUTPUT_OFFSET_CAP_MS, outputs.stored.value[headphones.key])
+    }
+
+    @Test fun `tapping a line lands where it is heard, the song's and the output's offsets undone`() = runTest(dispatcher) {
+        // A library song with its own +0.5 s, on headphones calibrated to +0.3 s.
+        val outputs = FakeOutputs(headphones).apply { stored.value = mapOf(headphones.key to 300L) }
+        val vm = newViewModel(
+            outputs,
+            musicRepository = mockk(relaxed = true) {
+                every { observeTrackById(any()) } returns flowOf(Track(id = 7L, title = "song", artist = "artist"))
+                every { observeTrackByYoutubeId(any()) } returns flowOf(null)
+            },
+            lyricsRepository = mockk(relaxed = true) {
+                every { observeSyncOffsetMs(7L) } returns flowOf(500L)
+            },
+        )
+        backgroundScope.launch { vm.currentPositionMs.collect {} }
+        runCurrent()
+        assertEquals(9_200L, vm.currentPositionMs.value)
+
+        vm.onLyricsLineSeek(20_000L)
+        runCurrent()
+        coVerify { playerRepository.seekTo(20_800L) }
     }
 
     @Test fun `with no output known there is nothing to set`() = runTest(dispatcher) {

@@ -48,3 +48,11 @@ internal fun effectiveLyricsOffsetMs(songOffsetMs: Long?, outputOffsetMs: Long?)
 /** Where the lyrics are at [playerPositionMs] under [offsetMs]: a positive offset holds them back. */
 internal fun lyricsPositionMs(playerPositionMs: Long, offsetMs: Long): Long =
     (playerPositionMs - offsetMs).coerceAtLeast(0L)
+
+/**
+ * Where to seek the player so a tapped line at [lineMs] starts as it's heard under [offsetMs]:
+ * the inverse of [lyricsPositionMs]. Seeking to the bare timestamp would light the line before it
+ * with a positive offset (or skip into it with a negative one).
+ */
+internal fun lyricsSeekTargetMs(lineMs: Long, offsetMs: Long): Long =
+    (lineMs + offsetMs).coerceAtLeast(0L)

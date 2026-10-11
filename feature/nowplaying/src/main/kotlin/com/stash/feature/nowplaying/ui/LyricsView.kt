@@ -158,7 +158,11 @@ internal fun LyricsLineRenderer(
                 .fillMaxWidth()
                 .graphicsLayer { this.alpha = alpha }
                 .then(if (blur > 0.25f) Modifier.blur(blur.dp, BlurredEdgeTreatment.Unbounded) else Modifier)
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClickLabel = LYRIC_LINE_CLICK_LABEL,
+                ) {
                     onLineTap(line.timestampMs)
                 }
                 .padding(horizontal = look.sidePadding, vertical = look.lineGap)
@@ -351,6 +355,9 @@ private const val BREAK_NOTE_SPACING = 0.45f
 
 /** One slow breath of the ♪ row (a resting pulse, not a beat). */
 private const val BREAK_BREATH_MS = 2_400
+
+/** TalkBack's action on a lyric line ("Double-tap to play from this line"): tap-to-seek. */
+internal const val LYRIC_LINE_CLICK_LABEL = "Play from this line"
 
 /** The edge fades over the lyrics area: the web's 24px top, 120px bottom. */
 internal val LYRICS_FADE_TOP = 24.dp
