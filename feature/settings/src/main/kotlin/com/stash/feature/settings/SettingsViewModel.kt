@@ -34,6 +34,7 @@ import com.stash.core.data.db.BackupImportResult
 import com.stash.core.data.db.BackupImportScope
 import com.stash.core.data.db.DatabaseBackupManager
 import com.stash.core.data.db.dao.ListeningEventDao
+import com.stash.data.download.YtCookieFiles
 import com.stash.data.download.files.LibrarySizeBreakdown
 import com.stash.data.download.files.LibrarySizeHolder
 import com.stash.data.download.files.MoveLibraryCoordinator
@@ -56,6 +57,7 @@ import com.stash.core.data.repository.MusicRepository
 import com.stash.core.model.QualityTier
 import com.stash.core.model.ThemeMode
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -67,6 +69,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -1311,6 +1314,9 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             musicRepository.cancelPendingDownloadsForSource("YOUTUBE")
             tokenManager.clearAuth(AuthService.YOUTUBE_MUSIC)
+            // yt-dlp cookie files left by runs that died mid-way each hold the
+            // full YouTube session; they must not outlive the disconnect.
+            withContext(Dispatchers.IO) { YtCookieFiles.sweep(appContext.noBackupFilesDir) }
         }
     }
 

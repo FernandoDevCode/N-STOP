@@ -5,6 +5,7 @@ import android.util.Log
 import com.stash.core.auth.TokenManager
 import com.stash.core.model.YouTubeVideoId
 import com.stash.data.download.CookieFileWriter
+import com.stash.data.download.YtCookieFiles
 import com.stash.data.download.ytdlp.YtDlpManager
 import com.stash.data.ytmusic.InnerTubeClient
 import com.yausername.youtubedl_android.YoutubeDL
@@ -31,7 +32,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -776,7 +776,7 @@ class PreviewUrlExtractor @Inject constructor(
      * — the caller already owns the cap-1 [ytDlpSemaphore] permit.
      */
     private suspend fun runYtDlp(videoId: String, playerClient: String?, lowestQuality: Boolean = false): YtDlpStream? {
-        val cookieFile = File(context.noBackupFilesDir, "yt_preview_cookies_${System.nanoTime()}.txt")
+        val cookieFile = YtCookieFiles.newFile(context.noBackupFilesDir, YtCookieFiles.PREVIEW_PREFIX)
         return try {
             val url = YouTubeVideoId.watchUrl(videoId) ?: return null
 

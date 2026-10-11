@@ -143,21 +143,24 @@ class DownloadExecutor @Inject constructor(
         // LOGIN_INFO, etc.). It is written only for the duration of the yt-dlp call and
         // deleted in the finally block. File permissions are restricted to owner-only
         // read/write to prevent other apps on rooted devices from reading it.
-        val cookieFile = File(context.noBackupFilesDir, "yt_cookies_${System.nanoTime()}.txt")
+        // A run cut short by process death skips the finally; YtCookieFiles.sweep
+        // removes those leftovers at the next yt-dlp initialisation.
+        val cookieFile = YtCookieFiles.newFile(context.noBackupFilesDir, YtCookieFiles.DOWNLOAD_PREFIX)
         val cookie = tokenManager.getYouTubeCookie()
-        if (cookie != null) {
-            CookieFileWriter.write(cookie, cookieFile)
-            cookieFile.setReadable(false, false)
-            cookieFile.setReadable(true, true)
-            cookieFile.setWritable(false, false)
-            cookieFile.setWritable(true, true)
-            Log.i(TAG, "download: cookies attached (len=${cookie.length})")
-        } else {
-            Log.w(TAG, "download: NO COOKIE attached — yt-dlp will run anonymously")
-        }
-        val cookiePath = if (cookie != null) cookieFile.absolutePath else null
-
         try {
+            // Written inside the try, so a write that fails part-way is deleted too.
+            if (cookie != null) {
+                CookieFileWriter.write(cookie, cookieFile)
+                cookieFile.setReadable(false, false)
+                cookieFile.setReadable(true, true)
+                cookieFile.setWritable(false, false)
+                cookieFile.setWritable(true, true)
+                Log.i(TAG, "download: cookies attached (len=${cookie.length})")
+            } else {
+                Log.w(TAG, "download: NO COOKIE attached — yt-dlp will run anonymously")
+            }
+            val cookiePath = if (cookie != null) cookieFile.absolutePath else null
+
             // Fast path: pin a single client — a direct download format with no
             // player-JS fetch, no QuickJS n-sig/JS challenge solve and no m3u8
             // probe, ~8s vs ~30s for the default multi-client path under 8-way
