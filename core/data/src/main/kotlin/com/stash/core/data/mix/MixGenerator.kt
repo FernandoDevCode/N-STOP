@@ -162,8 +162,9 @@ class MixGenerator @Inject constructor(
             pool = pool.filter { it.id !in recentlyPlayedIds }
         }
 
-        // Step 5b: era filter.
+        // Step 5b: era and mood filters.
         pool = filterByEra(pool, recipe)
+        pool = filterByMood(pool, recipe)
 
         if (pool.isEmpty()) return emptyList()
 
@@ -474,6 +475,23 @@ class MixGenerator @Inject constructor(
         if (decadeTags.isEmpty()) return pool
         val inEraIds = trackTagDao.getTrackIdsByTags(decadeTags).toSet()
         return pool.filter { it.id in inEraIds }.ifEmpty { pool }
+    }
+
+    /**
+     * Keeps the tracks tagged with any of the recipe's mood tags
+     * ([MoodTagMap.expand]: "chill" covers chillout, mellow, downtempo...).
+     * Moods used to steer only discovery seeding, so a "Chill" mix at the
+     * "Familiar" end of the slider was the user's heaviest rotation whatever
+     * its mood. Relaxed like [filterByEra] when nothing left matches.
+     */
+    private suspend fun filterByMood(
+        pool: List<TrackEntity>,
+        recipe: StashMixRecipeEntity,
+    ): List<TrackEntity> {
+        val moodTags = MoodTagMap.expand(recipe.moodKeysCsv)
+        if (moodTags.isEmpty() || pool.isEmpty()) return pool
+        val moodIds = trackTagDao.getTrackIdsByTags(moodTags).toSet()
+        return pool.filter { it.id in moodIds }.ifEmpty { pool }
     }
 
     /**

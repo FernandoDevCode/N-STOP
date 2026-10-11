@@ -20,6 +20,7 @@ import java.time.Instant
  * A Mix Builder era chip ("80s") means music *released* in that decade. The
  * library slice used to compare it with the year each track was added to
  * Stash, so on any library built recently an era mix kept no library tracks.
+ * Moods (below) were not applied to the library slice at all.
  */
 class MixGeneratorEraTest {
 
@@ -67,7 +68,24 @@ class MixGeneratorEraTest {
         assertEquals(10, result.size)
     }
 
-    private fun eraRecipe(start: Int, end: Int) = StashMixRecipeEntity(
+    /** Moods used to steer only discovery: a "Chill" library slice was just heavy rotation. */
+    @Test fun `a mood keeps the library tracks tagged with it`() = runTest {
+        coEvery { trackTagDao.getTrackIdsByTags(MoodTagMap.expand("chill")) } returns listOf(5L, 6L)
+
+        val result = generator.generate(eraRecipe(null, null).copy(moodKeysCsv = "chill"))
+
+        assertEquals(setOf(5L, 6L), result.map { it.id }.toSet())
+    }
+
+    @Test fun `a mood nothing in the library is tagged with is dropped`() = runTest {
+        coEvery { trackTagDao.getTrackIdsByTags(any()) } returns emptyList()
+
+        val result = generator.generate(eraRecipe(null, null).copy(moodKeysCsv = "focus"))
+
+        assertEquals(10, result.size)
+    }
+
+    private fun eraRecipe(start: Int?, end: Int?) = StashMixRecipeEntity(
         id = 1L,
         name = "Era",
         eraStartYear = start,
