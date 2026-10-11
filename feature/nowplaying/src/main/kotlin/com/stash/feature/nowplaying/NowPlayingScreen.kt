@@ -94,6 +94,8 @@ import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -904,7 +906,7 @@ fun NowPlayingScreen(
                                     track = track,
                                     resolvingArtist = resolvingArtist,
                                     onTrackInfoTapped = viewModel::onTrackInfoTapped,
-                                    sleepTimerActive = sleepTimerState != SleepTimerController.State.Off,
+                                    sleepTimerState = sleepTimerState,
                                     onSleepTimerClick = { showSleepTimerSheet = true },
                                     accent = npAccent(uiState.vibrantColor),
                                     isLiked = uiState.currentTrack?.stashLikedAt != null,
@@ -979,7 +981,6 @@ fun NowPlayingScreen(
                             val headerInk = npInk()
                             val headerAccent = npAccent(uiState.vibrantColor)
                             val headerLiked = uiState.currentTrack?.stashLikedAt != null
-                            val sleepTimerActive = sleepTimerState != SleepTimerController.State.Off
                             val lyricsMenuItems = lyricsMenuItemsFor(lyricsState, lyricsSyncOffsetMs, canSaveToFile = track?.isDownloaded == true)
                             val savingLyrics = exportingLyricsTrackId != null
                             val rise = with(LocalDensity.current) { RiseDistance.roundToPx() }
@@ -1014,15 +1015,15 @@ fun NowPlayingScreen(
                                 actionsModifier = headerActionsEnter,
                             ) {
                                 // The sleep timer, as on the art view (and in the web's header);
-                                // accented while a timer is armed.
-                                IconButton(onClick = { showSleepTimerSheet = true }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Bedtime,
-                                        contentDescription = if (sleepTimerActive) "Sleep timer active" else "Set sleep timer",
-                                        tint = if (sleepTimerActive) headerAccent else headerInk.copy(alpha = 0.7f),
-                                        modifier = Modifier.size(22.dp),
-                                    )
-                                }
+                                // accented, with its live countdown under the moon, while armed.
+                                SleepTimerButton(
+                                    state = sleepTimerState,
+                                    onClick = { showSleepTimerSheet = true },
+                                    activeTint = headerAccent,
+                                    idleTint = headerInk.copy(alpha = 0.7f),
+                                    buttonSize = 48.dp,
+                                    iconSize = 22.dp,
+                                )
                                 com.stash.core.ui.components.LikeButton(
                                     isLiked = headerLiked,
                                     onTap = { viewModel.onLikeTap() },
@@ -1243,7 +1244,7 @@ private fun TrackInfoBlock(
     track: com.stash.core.model.Track?,
     resolvingArtist: Boolean,
     onTrackInfoTapped: () -> Unit,
-    sleepTimerActive: Boolean,
+    sleepTimerState: SleepTimerController.State,
     onSleepTimerClick: () -> Unit,
     accent: Color,
     isLiked: Boolean,
@@ -1332,22 +1333,19 @@ private fun TrackInfoBlock(
         }
         // Sleep timer — floated to the leading edge, mirroring the
         // Like heart's placement on the trailing edge. Accented
-        // while a timer is armed so the state is visible at a
+        // while a timer is armed, with the time left under the moon
+        // ("23m", "0:45", "End"), so the state is visible at a
         // glance without opening the sheet.
         if (track != null) {
-            IconButton(
+            SleepTimerButton(
+                state = sleepTimerState,
                 onClick = onSleepTimerClick,
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .size(26.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Bedtime,
-                    contentDescription = if (sleepTimerActive) "Sleep timer active" else "Set sleep timer",
-                    tint = if (sleepTimerActive) accent else npInk().copy(alpha = 0.7f),
-                    modifier = Modifier.size(20.dp),
-                )
-            }
+                activeTint = accent,
+                idleTint = npInk().copy(alpha = 0.7f),
+                buttonSize = 26.dp,
+                iconSize = 20.dp,
+                modifier = Modifier.align(Alignment.CenterStart),
+            )
         }
 
         // Like heart — floated to the trailing edge and vertically centred
@@ -1647,7 +1645,7 @@ private fun QualityLine(
 
 /**
  * Sleep-timer picker, opened from the icon beside the track title. Shows
- * the current countdown/end-of-track status (if armed), then the preset
+ * the live countdown (to the second) or the end-of-track status (if armed), then the preset
  * durations, a Custom entry, End of Track, and — only while a timer is
  * running — a Cancel row.
  */
@@ -1684,17 +1682,22 @@ private fun SleepTimerSheet(
 
             when (currentState) {
                 is SleepTimerController.State.Countdown -> {
-                    val minutesLeft = ((currentState.endsAtMs - System.currentTimeMillis()) / 60_000L)
-                        .coerceAtLeast(0) + 1
+                    // Live, to the second, while the sheet is open (it used to be worked out once,
+                    // when the sheet opened, and sat still).
+                    val remainingMs = rememberSleepTimerRemainingMs(currentState, everySecond = true) ?: 0L
+                    val spoken = "Music pauses in ${sleepTimerSpoken(remainingMs, withSeconds = true)}"
                     Text(
-                        text = "Music pauses in about $minutesLeft min",
+                        text = "Music pauses in ${sleepTimerClock(remainingMs)}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(bottom = 12.dp),
+                        modifier = Modifier
+                            .padding(bottom = 12.dp)
+                            // "22 minutes 41 seconds", not a "22:41" read as a time of day.
+                            .semantics { contentDescription = spoken },
                     )
                 }
                 SleepTimerController.State.EndOfTrack -> Text(
-                    text = "Music pauses when the current track ends",
+                    text = "End of track: music pauses when this song ends",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(bottom = 12.dp),
