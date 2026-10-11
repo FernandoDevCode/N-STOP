@@ -1326,8 +1326,10 @@ private fun PlaylistsGrid(
                                 )
                             }
                         }
-                    }
-                    if (playlist.pinned) {
+                        // Inside the artwork Box, so TopEnd is the card's corner. It used to sit
+                        // after the Box, straight in the grid item, where align() resolved to an
+                        // outer BoxScope, did nothing, and the pin landed at the cell's top-start.
+                        if (playlist.pinned) {
                             Icon(
                                 imageVector = Icons.Default.PushPin,
                                 contentDescription = "Pinned",
@@ -1338,6 +1340,7 @@ private fun PlaylistsGrid(
                                     .size(16.dp),
                             )
                         }
+                    }
                 } else {
                     // No artwork: keep the original GlassCard look
                     GlassCard(
@@ -1349,13 +1352,27 @@ private fun PlaylistsGrid(
                             ),
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(
-                                text = playlist.name,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onBackground,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                            // A pinned playlist without art showed no pin at all.
+                            Row(verticalAlignment = Alignment.Top) {
+                                Text(
+                                    text = playlist.name,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                if (playlist.pinned) {
+                                    Icon(
+                                        imageVector = Icons.Default.PushPin,
+                                        contentDescription = "Pinned",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier
+                                            .padding(start = 4.dp)
+                                            .size(16.dp),
+                                    )
+                                }
+                            }
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
