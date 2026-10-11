@@ -95,6 +95,8 @@ class PlaybackResumerTest {
 
         assertThat(plan.tracks.map { it.id }).containsExactly(10L, 30L).inOrder()
         assertThat(plan.startIndex).isEqualTo(1) // coerced from 5 into [0, 1]
+        // 5 s was the deleted track's position, not track 30's: start 30 from the top.
+        assertThat(plan.positionMs).isEqualTo(0L)
         assertThat(plan.isShuffled).isTrue()
     }
 

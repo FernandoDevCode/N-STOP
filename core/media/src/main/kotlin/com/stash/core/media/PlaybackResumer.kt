@@ -65,7 +65,11 @@ class PlaybackResumer @Inject constructor(
         return ResumePlan(
             tracks = ordered,
             startIndex = startIndex,
-            positionMs = saved.positionMs.coerceAtLeast(0),
+            // The saved position belongs to the saved track. When that track is
+            // gone the start is whatever now sits at its index (under shuffle a
+            // walk index, so possibly anything): starting THAT song 3:40 in, or
+            // auto-advancing past it when it is shorter, was the old result.
+            positionMs = if (ordered[startIndex].id == saved.trackId) saved.positionMs.coerceAtLeast(0) else 0L,
             isShuffled = saved.isShuffled,
             repeatMode = saved.repeatMode,
             source = saved.source,
