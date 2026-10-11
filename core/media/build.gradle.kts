@@ -63,6 +63,10 @@ dependencies {
     implementation(libs.compose.runtime)
     implementation(libs.compose.ui.graphics)
 
+    // DocumentFile — PlayerRepositoryImpl sizes SAF (content://) downloads. Declared
+    // directly: it used to arrive transitively through palette-ktx, now removed.
+    implementation("androidx.documentfile:documentfile:1.0.1")
+
     // Serialization — EqState + future JSON-persisted state.
     implementation(libs.kotlinx.serialization.json)
 
