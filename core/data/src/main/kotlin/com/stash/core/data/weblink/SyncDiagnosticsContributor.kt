@@ -9,6 +9,7 @@ import com.stash.core.data.weblink.mirror.MirrorWire
 import com.stash.core.data.weblink.store.WebLinkStore
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 
 /**
  * The diagnostics bundle's "Link Stash on the web" section (spec §9, §11): whether this phone is linked, how many devices and of
@@ -29,12 +30,12 @@ class SyncDiagnosticsContributor @Inject constructor(
 
     override suspend fun section(): String = buildString {
         appendLine("Feature: ${if (config.enabled) "on" else "off"}")
-        val space = runCatching { store.space() }.getOrNull()
+        val space = orNull { store.space() }
         if (space == null) {
             appendLine("Linked: no")
             return@buildString
         }
-        val roster = runCatching { store.roster() }.getOrDefault(emptyList())
+        val roster = orNull { store.roster() }.orEmpty()
         appendLine("Linked: yes · this phone + ${roster.count { it.type == "web" }} browser(s) · key epoch ${space.epoch}")
         appendLine("Pick up where you left off: ${if (handoff.enabled.value) "on" else "off"}")
         val r = engine.record()
@@ -57,6 +58,18 @@ class SyncDiagnosticsContributor @Inject constructor(
             appendLine("In the space: ${r.view.likes.count { it.on }} likes, ${r.view.plays.size} plays, ${r.view.playlists.size} playlists")
             appendLine("Last run: ${ago(r.lastRunAt)} (${r.lastResult ?: "never"}); last sent: ${ago(r.lastPushAt)}")
         }
+    }
+
+    /**
+     * [block], or null when the store can't be read just now. Not `runCatching`: the store's reads suspend (a lock, Room), and a
+     * cancelled bundle must stop there, not go on to report a linked phone as "Linked: no".
+     */
+    private suspend inline fun <T> orNull(block: () -> T): T? = try {
+        block()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
     }
 
     private fun ago(t: Long): String {
