@@ -877,9 +877,21 @@ interface PlaylistDao {
     )
     fun getPickablePlaylists(): Flow<List<PlaylistEntity>>
 
-    /** Soft-delete a single track from a playlist. */
-    @Query("UPDATE playlist_tracks SET removed_at = CURRENT_TIMESTAMP WHERE playlist_id = :playlistId AND track_id = :trackId AND removed_at IS NULL")
-    suspend fun softDeleteTrackFromPlaylist(playlistId: Long, trackId: Long)
+    /**
+     * Soft-delete a single track from a playlist.
+     *
+     * `removed_at` is an epoch-millis [java.time.Instant] column. This used to
+     * write SQL `CURRENT_TIMESTAMP`, i.e. TEXT like '2026-10-11 12:34:56',
+     * which Room reads back with getLong as the leading digits —
+     * `Instant.ofEpochMilli(2026)` — and which was copied verbatim into undo
+     * points and backups. Only `IS NULL` reads it today; anything ordering or
+     * windowing on it would have been wrong.
+     */
+    suspend fun softDeleteTrackFromPlaylist(playlistId: Long, trackId: Long) =
+        softDeleteTrackFromPlaylistAt(playlistId, trackId, System.currentTimeMillis())
+
+    @Query("UPDATE playlist_tracks SET removed_at = :removedAtMs WHERE playlist_id = :playlistId AND track_id = :trackId AND removed_at IS NULL")
+    suspend fun softDeleteTrackFromPlaylistAt(playlistId: Long, trackId: Long, removedAtMs: Long)
 
     /**
      * Returns DISTINCT track ids that appear in any of the given playlists.
