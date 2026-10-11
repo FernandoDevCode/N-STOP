@@ -65,7 +65,7 @@ class LoudnessBackfillWorkerTest {
         )
 
     @Test fun `empty queue returns success with KEY_DONE true and zeroes remaining`() = runTest {
-        coEvery { trackDao.tracksNeedingLoudness(any()) } returns emptyList()
+        coEvery { trackDao.tracksNeedingLoudness(any(), any()) } returns emptyList()
 
         val result = newWorker().doWork()
 
@@ -80,7 +80,7 @@ class LoudnessBackfillWorkerTest {
 
     @Test fun `batch of three all-success writes three updateLoudness rows and records progress`() = runTest {
         val tracks = (1L..3L).map { stubTrack(it, tempAudioFile().absolutePath) }
-        coEvery { trackDao.tracksNeedingLoudness(any()) } returns tracks
+        coEvery { trackDao.tracksNeedingLoudness(any(), any()) } returns tracks
         coEvery { measurer.measure(any()) } returns LoudnessMeasurer.Result.Success(
             lufs = -12.5f, truePeakDbfs = -0.8f,
         )
@@ -106,7 +106,7 @@ class LoudnessBackfillWorkerTest {
         val ok1 = stubTrack(1L, tempAudioFile().absolutePath)
         val bad = stubTrack(2L, tempAudioFile().absolutePath)
         val ok2 = stubTrack(3L, tempAudioFile().absolutePath)
-        coEvery { trackDao.tracksNeedingLoudness(any()) } returns listOf(ok1, bad, ok2)
+        coEvery { trackDao.tracksNeedingLoudness(any(), any()) } returns listOf(ok1, bad, ok2)
         // Order-sensitive responses — measurer.measure() in the order tracks are iterated.
         coEvery { measurer.measure(File(ok1.filePath!!)) } returns LoudnessMeasurer.Result.Success(-14f, -1f)
         coEvery { measurer.measure(File(bad.filePath!!)) } returns LoudnessMeasurer.Result.Failed("bad")
@@ -127,7 +127,7 @@ class LoudnessBackfillWorkerTest {
         val t1 = stubTrack(1L, tempAudioFile().absolutePath)
         val t2 = stubTrack(2L, tempAudioFile().absolutePath)
         val t3 = stubTrack(3L, tempAudioFile().absolutePath)
-        coEvery { trackDao.tracksNeedingLoudness(any()) } returns listOf(t1, t2, t3)
+        coEvery { trackDao.tracksNeedingLoudness(any(), any()) } returns listOf(t1, t2, t3)
         coEvery { measurer.measure(any()) } returns LoudnessMeasurer.Result.Success(-14f, -1f)
 
         // stoppedAfter=1 → isStopped flips to true after the first track's
@@ -144,6 +144,29 @@ class LoudnessBackfillWorkerTest {
         coVerify(exactly = 1) {
             progressStore.recordBatchComplete(completed = 1, at = any())
         }
+    }
+
+    /**
+     * Unmeasurable rows (missing file, SAF `content://` path) stay unstamped
+     * so a re-download still gets measured. With a plain LIMIT they were the
+     * same first page every run, and 250 of them meant nothing was ever
+     * measured. The worker now pages past them by id.
+     */
+    @Test fun `a full page of unmeasurable rows does not starve the rows behind it`() = runTest {
+        val unmeasurable = (1L..250L).map {
+            stubTrack(it, if (it % 2 == 0L) "content://tree/doc/$it" else "/missing/$it.flac")
+        }
+        val real = stubTrack(900L, tempAudioFile().absolutePath)
+        coEvery { trackDao.tracksNeedingLoudness(0L, 250) } returns unmeasurable
+        coEvery { trackDao.tracksNeedingLoudness(250L, 250) } returns listOf(real)
+        coEvery { measurer.measure(any()) } returns LoudnessMeasurer.Result.Success(-14f, -1f)
+
+        newWorker().doWork()
+
+        coVerify(exactly = 1) { trackDao.updateLoudness(id = 900L, lufs = any(), peak = any(), now = any()) }
+        // Skipped rows are not stamped as failed: a later download must still be measured.
+        coVerify(exactly = 0) { trackDao.markLoudnessFailed(any(), any()) }
+        coVerify(exactly = 1) { progressStore.recordBatchComplete(completed = 1, at = any()) }
     }
 
     /**

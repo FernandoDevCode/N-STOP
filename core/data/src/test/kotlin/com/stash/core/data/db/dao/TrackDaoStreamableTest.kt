@@ -120,7 +120,55 @@ class TrackDaoStreamableTest {
         assertFalse("Travis unavailable must not appear", artists.any { it.artist == "Travis" })
     }
 
+    @Test fun `getAllArtists art is a stable non-null pick, not whichever row came last`() = runTest {
+        dao.insert(
+            TrackEntity(
+                id = 1L, title = "With Art", artist = "Drake", album = "A",
+                canonicalTitle = "with art", canonicalArtist = "drake",
+                isDownloaded = true, albumArtUrl = "https://art/1.jpg",
+            ),
+        )
+        insertDownloaded(id = 2L, album = "B", artist = "Drake") // no art, visited last
+
+        val drake = dao.getAllArtists(includeStreamable = false).first().single()
+
+        assertEquals("https://art/1.jpg", drake.artUrl)
+    }
+
     // ── getByPlaylist ───────────────────────────────────────────────────
+
+    @Test fun `getByPlaylist breaks position ties deterministically`() = runTest {
+        val later = insertDownloaded(id = 5L, album = "A", artist = "Drake")
+        val earlier = insertDownloaded(id = 3L, album = "A", artist = "Drake")
+        val playlistId = playlistDao.insert(customPlaylist())
+        // REFRESH keeps a user-added row at its old position while the sync
+        // renumbers from 0, so two members can share a position.
+        playlistDao.insertCrossRef(crossRef(playlistId, later, position = 0))
+        playlistDao.insertCrossRef(crossRef(playlistId, earlier, position = 0))
+
+        val tracks = dao.getByPlaylist(playlistId, includeStreamable = false).first()
+
+        assertEquals(listOf(3L, 5L), tracks.map { it.id })
+    }
+
+    @Test fun `countByPlaylist matches getByPlaylist in every mode`() = runTest {
+        val downloaded = insertDownloaded(id = 1L, album = "A", artist = "Drake")
+        val streamable = insertStreamableOnly(id = 2L, album = "B", artist = "Drake")
+        val unchecked = insertUnchecked(id = 3L, album = "D", artist = "Drake")
+        for (playlist in listOf(customPlaylist(), stashMixPlaylist())) {
+            val playlistId = playlistDao.insert(playlist)
+            listOf(downloaded, streamable, unchecked).forEachIndexed { i, id ->
+                playlistDao.insertCrossRef(crossRef(playlistId, id, position = i))
+            }
+            for (includeStreamable in listOf(false, true)) {
+                assertEquals(
+                    "${playlist.type} includeStreamable=$includeStreamable",
+                    dao.getByPlaylist(playlistId, includeStreamable).first().size,
+                    dao.countByPlaylist(playlistId, includeStreamable),
+                )
+            }
+        }
+    }
 
     @Test fun `getByPlaylist excludes streamable by default`() = runTest {
         val downloaded = insertDownloaded(id = 1L, album = "A", artist = "Drake")

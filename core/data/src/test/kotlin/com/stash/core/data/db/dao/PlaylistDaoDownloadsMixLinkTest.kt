@@ -69,6 +69,19 @@ class PlaylistDaoDownloadsMixLinkTest {
         assertEquals(playlistId, playlistDao.findBySourceId(DOWNLOADS_SOURCE_ID)?.id)
     }
 
+    @Test
+    fun `soft delete stamps removed_at in epoch millis`() = runTest {
+        trackDao.insert(track())
+        val playlistId = playlistDao.ensurePlaylistAndActiveCrossRef(downloadsMix(), TRACK_ID)
+        val before = System.currentTimeMillis()
+
+        playlistDao.softDeleteTrackFromPlaylist(playlistId, TRACK_ID)
+
+        // CURRENT_TIMESTAMP used to land here as TEXT and read back as epoch 2026 ms.
+        val removedAt = playlistDao.getCrossRef(playlistId, TRACK_ID)!!.removedAt!!.toEpochMilli()
+        assertTrue("removed_at was $removedAt", removedAt >= before && removedAt <= System.currentTimeMillis())
+    }
+
     private fun track() = TrackEntity(
         id = TRACK_ID,
         title = "OPUS track",

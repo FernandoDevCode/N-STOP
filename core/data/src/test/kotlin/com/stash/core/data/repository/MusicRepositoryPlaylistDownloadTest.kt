@@ -104,7 +104,7 @@ class MusicRepositoryPlaylistDownloadTest {
     @Test fun `a batch added to a kept playlist queues once, after the adds`() = runTest {
         val repo = repo()
         repo.addTracksToPlaylist(listOf(1L, 2L, 3L), KEPT)
-        coVerify(exactly = 3) { playlistDao.insertCrossRef(any()) }
+        coVerify(exactly = 1) { playlistDao.insertAllCrossRefs(match { it.size == 3 }) }
         coVerify(exactly = 1) { repo.queueKeptPlaylist(KEPT) }
     }
 

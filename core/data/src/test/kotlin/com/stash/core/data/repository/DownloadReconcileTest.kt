@@ -31,6 +31,10 @@ class DownloadReconcileTest {
         assertEquals(listOf(2L, 3L, 5L), result.resetIds)
         assertEquals(listOf("/junk.webm"), result.junkPaths)
         assertEquals(1, result.nullPath)
+        // The reset is guarded on the path found unusable, so a file recorded
+        // for the row while classification ran (FLAC upgrade, swap) survives.
+        // The null-path row has no path to guard on.
+        assertEquals(mapOf(2L to "/junk.webm", 3L to "/gone.flac"), result.checkedPaths)
     }
 
     @Test fun `INCONCLUSIVE rows are never reset or deleted (flaky SAF cold-start safety)`() {

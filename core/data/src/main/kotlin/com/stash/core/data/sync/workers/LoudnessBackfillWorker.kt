@@ -75,43 +75,62 @@ open class LoudnessBackfillWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         val deadline = System.currentTimeMillis() + MAX_RUN_MS
-        val batch = trackDao.tracksNeedingLoudness(limit = BATCH_SIZE)
-        if (batch.isEmpty()) {
+        var page = trackDao.tracksNeedingLoudness(afterId = 0L, limit = BATCH_SIZE)
+        if (page.isEmpty()) {
             progressStore.setRemaining(0)
             Log.i(TAG, "LoudnessBackfill: nothing to do")
             return Result.success(workDataOf(KEY_DONE to true))
         }
-        Log.i(TAG, "LoudnessBackfill: ${batch.size} tracks to measure")
+        Log.i(TAG, "LoudnessBackfill: up to $BATCH_SIZE tracks to measure")
         var batchCompleted = 0
-        for (track in batch) {
-            if (shouldStop() || System.currentTimeMillis() > deadline) break
-            val path = track.filePath ?: continue
-            val file = File(path).takeIf { it.exists() } ?: continue
-            when (val r = measurer.measure(file)) {
-                is LoudnessMeasurer.Result.Success ->
-                    trackDao.updateLoudness(
-                        id = track.id,
-                        lufs = r.lufs,
-                        peak = r.truePeakDbfs,
-                        now = System.currentTimeMillis(),
-                    )
-                is LoudnessMeasurer.Result.Failed -> {
-                    Log.w(TAG, "LoudnessBackfill: measurement failed for trackId=${track.id}: ${r.reason}")
-                    trackDao.markLoudnessFailed(
-                        id = track.id,
-                        now = System.currentTimeMillis(),
-                    )
+        var skipped = 0
+        // Rows it cannot measure (missing file, SAF content:// path) are left
+        // unstamped so a re-download still gets measured, so the worker pages
+        // past them by id instead of re-reading one fixed first page. Before,
+        // 250 such rows at the front meant every run measured nothing.
+        paging@ while (page.isNotEmpty()) {
+            for (track in page) {
+                if (batchCompleted >= BATCH_SIZE || shouldStop() ||
+                    System.currentTimeMillis() > deadline
+                ) break@paging
+                val file = track.filePath?.let { File(it) }?.takeIf { it.exists() }
+                if (file == null) {
+                    skipped++
+                    continue
                 }
+                measureOne(track.id, file)
+                batchCompleted++
+                onTrackProcessed()
             }
-            batchCompleted++
-            onTrackProcessed()
+            if (page.size < BATCH_SIZE) break
+            page = trackDao.tracksNeedingLoudness(afterId = page.last().id, limit = BATCH_SIZE)
         }
         progressStore.recordBatchComplete(
             completed = batchCompleted,
             at = System.currentTimeMillis(),
         )
-        Log.i(TAG, "LoudnessBackfill complete: processed $batchCompleted/${batch.size}")
+        Log.i(TAG, "LoudnessBackfill complete: processed $batchCompleted, skipped $skipped unmeasurable")
         return Result.success()
+    }
+
+    /** Measures one file and writes the result, or the failed stamp, back. */
+    private suspend fun measureOne(trackId: Long, file: File) {
+        when (val r = measurer.measure(file)) {
+            is LoudnessMeasurer.Result.Success ->
+                trackDao.updateLoudness(
+                    id = trackId,
+                    lufs = r.lufs,
+                    peak = r.truePeakDbfs,
+                    now = System.currentTimeMillis(),
+                )
+            is LoudnessMeasurer.Result.Failed -> {
+                Log.w(TAG, "LoudnessBackfill: measurement failed for trackId=$trackId: ${r.reason}")
+                trackDao.markLoudnessFailed(
+                    id = trackId,
+                    now = System.currentTimeMillis(),
+                )
+            }
+        }
     }
 
     /**
