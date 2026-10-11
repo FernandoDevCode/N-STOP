@@ -31,7 +31,7 @@ export async function readLabel(w, pairId) {
 }
 
 /** The whole first link (§5.1, neither device has a space): browser code, phone answer, phone creates the space. */
-export async function linkNew(w, { headers } = {}) {
+export async function linkNew(w, { headers, ip } = {}) {
     const phone = await makeDevice("p");
     const browser = await makeDevice("w");
     const { pairId } = await openCode(w, browser, headers);
@@ -39,7 +39,7 @@ export async function linkNew(w, { headers } = {}) {
     const spaceId = newSpaceId();
     assert.equal((await w.fetch(req("POST", `/v1/pair/${pairId}/answer`, { body: answerBody(phone) }))).status, 201);
     await confirm(w, pairId, browser);
-    const created = await w.fetch(req("POST", "/v1/spaces", { device: phone, body: { pairId, spaceId, labels: { [phone.id]: box(1), [browser.id]: box(1) } } }));
+    const created = await w.fetch(req("POST", "/v1/spaces", { device: phone, ip, body: { pairId, spaceId, labels: { [phone.id]: box(1), [browser.id]: box(1) } } }));
     assert.equal(created.status, 201);
     assert.deepEqual(await created.json(), { spaceId, epoch: 1 });
     return { phone, browser, spaceId, pairId };

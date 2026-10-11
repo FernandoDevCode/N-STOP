@@ -76,7 +76,7 @@ Unknown fields are dropped; every stored value is rebuilt from the fields above.
 | `OPEN_RL` (2033) | opening the space and reading a key envelope: 60/min per presented token |
 
 `SAFE_RL` and `OPEN_RL` are keyed on the SHA-256 of the token in the request, never on the device id it claims: ids are known to members, to removed devices and (the browser's) to anyone who saw the QR, so an id key would let a forger fill a real device's bucket. A forged token fills a bucket of its own and is then refused as revoked. Every other key is either the IP (`PAIR_RL`, `API_RL`, the per-IP space quota; the forwarded IP only behind a valid player key) or the player session (only behind a valid player key, hashed by the player from its verified sign-in cookie; the per-session space quota uses the session stored in the slot by that same call).
-| `Quota` objects | pairing codes: 6 per player session per 10 minutes; new spaces: 10 per player session and 20 per phone IP per day (a binding's period is at most 60 s, so these live in a small Durable Object per session or IP, deleted a day after its last use) |
+| `Quota` objects | pairing codes: 6 per player session per 10 minutes; new spaces: 10 per player session, and 20 per phone IPv6 /64 or 100 per phone IPv4 address (often a shared NAT) per day (a binding's period is at most 60 s, so these live in a small Durable Object per session or IP, deleted a day after its last use) |
 | `API_RL` (2032) | every space call and the browser's pairing calls: 240/min per IP (IPv6 by /64; the browser's IP as the player forwards it) |
 
 The ratelimit `namespace_id`s are unique in the account (1001 relay, 2001–2009 share, 2020–2021 mailer).
