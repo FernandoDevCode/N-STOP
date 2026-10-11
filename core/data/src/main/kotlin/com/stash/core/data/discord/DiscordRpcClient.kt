@@ -53,8 +53,9 @@ class DiscordRpcClient(
     private val userToken: String,
     private val onUnauthorized: (() -> Unit)? = null,
     private val onNeedsConsent: (() -> Unit)? = null,
+    /** Overridable so tests can answer Discord's endpoints without the network. */
+    private val http: OkHttpClient = OkHttpClient(),
 ) {
-    private val http = OkHttpClient()
     private val rateLimiter = DiscordRateLimiter()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -104,7 +105,8 @@ class DiscordRpcClient(
         scope.launch { runCatching { getAccessToken() } }
     }
 
-    private suspend fun sendNow(activity: DiscordActivity?) {
+    // Internal, not private, so tests can drive one send without the debounce.
+    internal suspend fun sendNow(activity: DiscordActivity?) {
         if (activity == null) {
             deleteSession()
         } else {
@@ -165,18 +167,12 @@ class DiscordRpcClient(
     }
 
     private suspend fun post(session: DiscordSession) {
-        val auth = getAccessToken()
-        val req = Request.Builder().url("https://discord.com/api/v9/users/@me/headless-sessions")
-        DiscordHeaders.apply(req, token = auth, bearer = true)
-        req.post(Json.encodeToString(DiscordSession.serializer(), session).toRequestBody("application/json".toMediaType()))
-
-        rateLimiter.awaitReady()
-        http.newCall(req.build()).await().use { res ->
-            rateLimiter.observe(res)
-            if (res.code == 401) {
-                Log.w("DiscordRpc", "headless-sessions POST got 401 — clearing auth")
-                accessToken = null; onUnauthorized?.invoke(); return
-            }
+        val payload = Json.encodeToString(DiscordSession.serializer(), session)
+        sendAuthorized { auth ->
+            val req = Request.Builder().url("https://discord.com/api/v9/users/@me/headless-sessions")
+            DiscordHeaders.apply(req, token = auth, bearer = true)
+            req.post(payload.toRequestBody("application/json".toMediaType())).build()
+        }.use { res ->
             if (!res.isSuccessful) {
                 val body = runCatching { res.body?.string() }.getOrNull()
                 Log.w("DiscordRpc", "headless-sessions POST failed: ${res.code} ${res.message} — body: $body")
@@ -189,19 +185,49 @@ class DiscordRpcClient(
 
     private suspend fun deleteSession() {
         val token = activityToken ?: return
-        val auth = getAccessToken()
-        val req = Request.Builder().url("https://discord.com/api/v9/users/@me/headless-sessions/delete")
-        DiscordHeaders.apply(req, token = auth, bearer = true)
-        req.post(
-            JsonObject(mapOf("token" to JsonPrimitive(token)))
-                .toString().toRequestBody("application/json".toMediaType()),
-        )
-        rateLimiter.awaitReady()
+        val payload = JsonObject(mapOf("token" to JsonPrimitive(token))).toString()
         // Runs on every pause, so an unclosed body here leaked a connection per pause.
-        http.newCall(req.build()).await().use { res ->
-            rateLimiter.observe(res)
+        sendAuthorized { auth ->
+            val req = Request.Builder().url("https://discord.com/api/v9/users/@me/headless-sessions/delete")
+            DiscordHeaders.apply(req, token = auth, bearer = true)
+            req.post(payload.toRequestBody("application/json".toMediaType())).build()
+        }.use { res ->
             if (res.isSuccessful) activityToken = null
         }
+    }
+
+    /**
+     * Sends a request made with the OAuth access token, and on a 401 mints a new
+     * access token and sends it once more.
+     *
+     * A 401 here only says the *access token* is no longer accepted. Discord's
+     * access tokens expire (after 7 days by default) while the user token that
+     * mints them stays valid, and a media app's process can outlive one. This
+     * 401 used to be reported through [onUnauthorized], which deletes the stored
+     * user token, so the user was silently disconnected and had to log in to
+     * Discord again. Only `oauth2/authorize`, which presents the user token, can
+     * prove that token was revoked, and [getAccessToken] reports that 401 itself.
+     * A second 401 reaches the caller as an ordinary failed response.
+     *
+     * @param build makes the request for the given access token. It runs again
+     *   for the retry, with the new token.
+     */
+    private suspend fun sendAuthorized(build: (accessToken: String) -> Request): Response {
+        val auth = getAccessToken()
+        val res = execute(build(auth))
+        if (res.code != 401) return res
+        res.close()
+        Log.w("DiscordRpc", "${res.request.url.encodedPath} got 401 — minting a new access token")
+        if (accessToken == auth) accessToken = null
+        return execute(build(getAccessToken()))
+    }
+
+    /** Sends one request through [rateLimiter]. The caller closes the response. */
+    private suspend fun execute(request: Request): Response {
+        rateLimiter.awaitReady()
+        val res = http.newCall(request).await()
+        rateLimiter.observe(res)
+        return res
     }
 
     companion object {
