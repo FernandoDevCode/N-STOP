@@ -2390,6 +2390,30 @@ interface TrackDao {
     suspend fun findDownloadedByCanonical(canonicalTitle: String, canonicalArtist: String): TrackEntity?
 
     /**
+     * Batched [findDownloadedByCanonical] for DiffWorker's auto-reconciliation:
+     * every downloaded track whose lowercased `title|artist` key is in
+     * [canonicalKeys]. The single-row form ran once per undownloaded existing
+     * track of every playlist, every sync, and each call is a full table scan
+     * (LOWER() rules out an index). An Online-mode user, with nothing
+     * downloaded, paid ~one scan per playlist membership inside the diff's
+     * write transactions. This is one scan per playlist.
+     *
+     * The `|`-joined key can collide ("a|b" + "c" vs "a" + "b|c"), so callers
+     * must re-check title and artist separately. Use
+     * [findDownloadedByCanonicalKeys], which chunks for the bind cap.
+     */
+    @Query("""
+        SELECT * FROM tracks
+        WHERE is_downloaded = 1
+          AND (LOWER(canonical_title) || '|' || LOWER(canonical_artist)) IN (:canonicalKeys)
+    """)
+    suspend fun findDownloadedByCanonicalKeysRaw(canonicalKeys: List<String>): List<TrackEntity>
+
+    /** Bind-safe wrapper for [findDownloadedByCanonicalKeysRaw]. Empty input runs no query. */
+    suspend fun findDownloadedByCanonicalKeys(canonicalKeys: List<String>): List<TrackEntity> =
+        canonicalKeys.chunkedForBind { findDownloadedByCanonicalKeysRaw(it) }
+
+    /**
      * Returns the canonical-key set ("$canonicalArtist|$canonicalTitle")
      * for every downloaded track. Used by [com.stash.core.data.sync.workers.StashMixRefreshWorker]'s
      * discovery pre-filter to drop Last.fm candidates that would dedup

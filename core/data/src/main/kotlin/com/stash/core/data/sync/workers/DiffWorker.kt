@@ -829,15 +829,35 @@ class DiffWorker @AssistedInject constructor(
         // Enrichment writes (youtubeId backfill, art refresh, auto-
         // reconciliation) stay per-row — they're targeted single-column
         // UPDATEs, not the insert flood that caused the slowdown.
+        //
+        // Auto-reconciliation candidates are looked up ONCE per playlist: the
+        // per-track findDownloadedByCanonical was a full table scan for every
+        // undownloaded existing track (every membership, for an Online-mode
+        // user) on every sync, inside this write transaction. Lowest id per key
+        // reproduces that query's unordered LIMIT 1 (scan order is rowid), and
+        // the separate title/artist key rejects a `|`-join collision.
+        fun reconcileKey(track: TrackEntity) =
+            CanonicalKey(track.canonicalTitle.lowercase(), track.canonicalArtist.lowercase())
+        val reconcileKeys = existingPairs
+            .map { it.first.entity }
+            .filter { !it.isDownloaded && !it.matchDismissed }
+            .map { reconcileKey(it) }
+            .distinct()
+        val downloadedByKey: Map<CanonicalKey, TrackEntity> = if (reconcileKeys.isEmpty()) {
+            emptyMap()
+        } else {
+            val wanted = reconcileKeys.toSet()
+            trackDao.findDownloadedByCanonicalKeys(reconcileKeys.map { "${it.title}|${it.artist}" })
+                .filter { reconcileKey(it) in wanted }
+                .groupBy(::reconcileKey)
+                .mapValues { (_, rows) -> rows.minBy { it.id } }
+        }
         for ((batchTrack, snapshot) in existingPairs) {
             val existingTrack = batchTrack.entity
             addCrossRefIfNotSoftDeleted(localPlaylist.id, existingTrack.id, snapshot.position, existingCrossRefs, crossRefsToInsert)
 
             if (!existingTrack.isDownloaded && !existingTrack.matchDismissed) {
-                val downloadedMatch = trackDao.findDownloadedByCanonical(
-                    canonicalTitle = existingTrack.canonicalTitle.lowercase(),
-                    canonicalArtist = existingTrack.canonicalArtist.lowercase(),
-                )
+                val downloadedMatch = downloadedByKey[reconcileKey(existingTrack)]
                 if (downloadedMatch != null && downloadedMatch.id != existingTrack.id) {
                     addCrossRefIfNotSoftDeleted(localPlaylist.id, downloadedMatch.id, snapshot.position, existingCrossRefs, crossRefsToInsert)
                     val failedEntry = downloadQueueDao.getFailedByTrackId(existingTrack.id)
