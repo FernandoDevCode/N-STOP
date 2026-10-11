@@ -5,12 +5,16 @@ import com.stash.core.auth.discord.DiscordHeaders
 import com.stash.core.auth.discord.DiscordRateLimiter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -66,16 +70,17 @@ class DiscordRpcClient(
     private var nonceCounter = 0L
     private val pending = MutableStateFlow<PendingUpdate?>(null)
 
-    init {
-        // collectLatest cancels the in-flight delay for any update superseded
-        // before it fires — this is the actual fix for #15's repro (fast
-        // skips), not just a retry-after-the-fact patch.
-        scope.launch {
-            pending.collectLatest { update ->
-                if (update == null) return@collectLatest
-                delay(DEBOUNCE_MS)
-                runCatching { sendNow(update.activity) }
-            }
+    /** One OAuth exchange at a time; see [getAccessToken]. */
+    private val tokenLock = Mutex()
+
+    // collectLatest cancels the in-flight delay for any update superseded
+    // before it fires — this is the actual fix for #15's repro (fast
+    // skips), not just a retry-after-the-fact patch.
+    private val collector: Job = scope.launch {
+        pending.collectLatest { update ->
+            if (update == null) return@collectLatest
+            delay(DEBOUNCE_MS)
+            runCatching { sendNow(update.activity) }
         }
     }
 
@@ -88,9 +93,16 @@ class DiscordRpcClient(
      * Clears the status, then stops this client for good (disconnect, logout,
      * revoked token). The clear runs first: cancelling straight away would
      * leave "Listening to…" on the profile.
+     *
+     * The debounced collector is stopped before the clear, and a post it has
+     * in flight is waited for (an HTTP call in flight is not abandoned): a
+     * disconnect within the debounce of a track change otherwise let that
+     * post land after the clear and create a session nothing ever deleted,
+     * leaving "Listening to…" on the profile after disconnecting.
      */
     fun close() {
         scope.launch {
+            collector.cancelAndJoin()
             runCatching { sendNow(null) }
             scope.cancel()
         }
@@ -115,8 +127,17 @@ class DiscordRpcClient(
         }
     }
 
-    private suspend fun getAccessToken(): String {
-        accessToken?.let { return it }
+    /**
+     * The cached access token, minting one when there is none. Serialised by
+     * [tokenLock]: [connect] and the first presence update both arrive here
+     * right after linking, and without the lock each ran its own authorize
+     * and token exchange.
+     */
+    private suspend fun getAccessToken(): String = tokenLock.withLock {
+        accessToken ?: mintAccessToken()
+    }
+
+    private suspend fun mintAccessToken(): String {
         val verifier = randomVerifier()
         val challenge = codeChallenge(verifier)
 

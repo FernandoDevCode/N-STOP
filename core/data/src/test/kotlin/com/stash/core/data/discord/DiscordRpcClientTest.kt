@@ -1,5 +1,7 @@
 package com.stash.core.data.discord
 
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
@@ -12,6 +14,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -28,10 +32,14 @@ class DiscordRpcClientTest {
         val sessionCodes = ArrayDeque<Int>()
         private val tokensMinted = AtomicInteger()
 
+        /** Runs before answering a request, on OkHttp's thread (to hold one in flight). */
+        @Volatile var beforeAnswer: (path: String) -> Unit = {}
+
         override fun intercept(chain: Interceptor.Chain): Response {
             val req = chain.request()
             synchronized(requests) { requests += req }
             val path = req.url.encodedPath
+            beforeAnswer(path)
             val (code, body) = when {
                 path.endsWith("/oauth2/authorize") ->
                     authorizeCode to """{"location":"https://example.invalid/?code=abc&state=undefined"}"""
@@ -93,6 +101,52 @@ class DiscordRpcClientTest {
 
         assertFalse(unauthorized)
         assertEquals("one retry, not a loop", 2, fake.sessionPosts().size)
+    }
+
+    /**
+     * A disconnect right after a track change: the debounced post is in flight
+     * when close() runs. The clear must wait for it, or the session it creates
+     * is never deleted and "Listening to" stays on the profile.
+     */
+    @Test
+    fun `close clears a presence whose post was still in flight`() {
+        val fake = FakeDiscord()
+        val postInFlight = CountDownLatch(1)
+        val releasePost = CountDownLatch(1)
+        fake.beforeAnswer = { path ->
+            if (path.endsWith("/headless-sessions")) {
+                postInFlight.countDown()
+                releasePost.await(5, TimeUnit.SECONDS)
+            }
+        }
+        val client = client(fake) {}
+
+        client.requestActivity(activity)
+        assertTrue(postInFlight.await(5, TimeUnit.SECONDS)) // after the 1.2 s debounce
+        client.close()
+        Thread.sleep(200) // the old close() cleared (with no token yet) and quit here
+        releasePost.countDown()
+
+        val deadline = System.currentTimeMillis() + 5_000
+        while (fake.paths().none { it.endsWith("/delete") } && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20)
+        }
+        val paths = fake.paths()
+        assertTrue("presence was never cleared: $paths", paths.any { it.endsWith("/delete") })
+        assertTrue(paths.indexOfLast { it.endsWith("/headless-sessions") } < paths.indexOfFirst { it.endsWith("/delete") })
+    }
+
+    @Test
+    fun `connecting and the first update share one OAuth exchange`() = runBlocking {
+        val fake = FakeDiscord()
+        fake.beforeAnswer = { path -> if (path.endsWith("/oauth2/authorize")) Thread.sleep(300) }
+        val client = client(fake) {}
+
+        client.connect()
+        delay(50) // connect() is inside its exchange
+        client.sendNow(activity)
+
+        assertEquals(1, fake.paths().count { it.endsWith("/oauth2/token") })
     }
 
     @Test
