@@ -469,8 +469,13 @@ class MusicRepositoryImpl @Inject constructor(
         trackDao.insert(track.toEntity())
 
     override suspend fun ensureTrackPersisted(track: Track): Long {
-        // Quick exit: real DB row already.
-        if (track.id > 0L) {
+        // Quick exit: real DB row already. Not for a synthetic stream id
+        // (`videoId.hashCode().toLong()`, e.g. RadioStationGenerator): it is
+        // positive half the time, and one equal to an unrelated row's id would
+        // land the like / listen on that other song. It falls through to the
+        // youtube_id lookup below instead.
+        val syntheticId = !track.youtubeId.isNullOrBlank() && track.id == track.youtubeId.hashCode().toLong()
+        if (track.id > 0L && !syntheticId) {
             val existing = trackDao.getById(track.id)
             if (existing != null) {
                 backfillFrom(existing, track)
@@ -510,7 +515,7 @@ class MusicRepositoryImpl @Inject constructor(
         }
 
         // Insert a fresh stub — id = 0 so Room autogens.
-        return trackDao.insert(
+        return insertOrAdopt(
             track.toEntity().copy(
                 id = 0L,
                 canonicalTitle = cTitle,
@@ -519,6 +524,26 @@ class MusicRepositoryImpl @Inject constructor(
             )
         )
     }
+
+    /**
+     * Inserts [entity], or returns the row a concurrent caller inserted for
+     * the same song first. The lookups above and this insert are not atomic:
+     * ListeningRecorder recording a listen and a heart tap (or the queue's
+     * identity pass) can persist the same streamed track at once, both miss,
+     * and the second insert ABORTs on the UNIQUE youtube_id / spotify_uri
+     * index. That SQLiteConstraintException used to escape — in
+     * ListeningRecorder's handler-less scope it crashed the app and lost the
+     * listen. The winner's row is the one we wanted, so adopt it; a conflict
+     * with no such row is a real error and is rethrown.
+     */
+    private suspend fun insertOrAdopt(entity: com.stash.core.data.db.entity.TrackEntity): Long =
+        try {
+            trackDao.insert(entity)
+        } catch (e: android.database.sqlite.SQLiteConstraintException) {
+            val winner = entity.youtubeId?.takeIf { it.isNotBlank() }?.let { trackDao.findByYoutubeId(it) }
+                ?: entity.spotifyUri?.takeIf { it.isNotBlank() }?.let { trackDao.findBySpotifyUri(it) }
+            winner?.id ?: throw e
+        }
 
     override suspend fun ensureExactTrackPersisted(track: com.stash.core.model.share.SharedTrack): Long {
         // Blank ids from a peer become null, so no row gets youtube_id = "" or "spotify:track:".
@@ -536,7 +561,7 @@ class MusicRepositoryImpl @Inject constructor(
             backfillFrom(existing, incoming) // an exact match is the same recording, so its ISRC is trusted
             return existing.id
         }
-        return trackDao.insert(
+        return insertOrAdopt(
             incoming.toEntity().copy(
                 id = 0L,
                 canonicalTitle = canonicalizeIdentity(incoming.title),
