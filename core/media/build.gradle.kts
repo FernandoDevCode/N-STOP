@@ -2,7 +2,8 @@ plugins {
     id("stash.android.library")
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
-    // Compose compiler plugin required for compose-ui-graphics Color usage in ColorExtractor.
+    // Compose compiler plugin: added for ColorExtractor, which is gone. No source here uses
+    // Compose now; drop this, buildFeatures.compose and the Compose deps below together.
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlin.serialization)
 }
@@ -56,14 +57,11 @@ dependencies {
     // DataStore
     implementation(libs.datastore.preferences)
 
-    // Compose BOM + ui-graphics + runtime — needed for androidx.compose.ui.graphics.Color in ColorExtractor.
+    // Compose BOM + ui-graphics + runtime — added for ColorExtractor (removed; see the plugin note).
     // The runtime artifact satisfies the Compose compiler's classpath requirement.
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.runtime)
     implementation(libs.compose.ui.graphics)
-
-    // Palette — color extraction from album artwork bitmaps.
-    implementation(libs.palette.ktx)
 
     // Serialization — EqState + future JSON-persisted state.
     implementation(libs.kotlinx.serialization.json)

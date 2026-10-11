@@ -11,6 +11,7 @@ import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_D
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_ID
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_YOUTUBE_ID
 import com.stash.core.media.service.toAutoMediaItem
+import com.stash.core.media.streaming.withRowOverride
 import com.stash.core.media.trackIdentity
 import com.stash.core.model.share.ShareConfig
 import com.stash.core.model.share.SharedTrack
@@ -72,7 +73,13 @@ class DefaultSessionCatalog @Inject constructor(
                 isrc = track.isrc ?: row.isrc,
                 durationMs = hostMs ?: row.durationMs,
             )
-            playable.toAutoMediaItem()
+            val item = playable.toAutoMediaItem()
+            val overridden = !fileOk && (playable.youtubeId != row.youtubeId || playable.isrc != row.isrc ||
+                playable.durationMs != row.durationMs)
+            // The placeholder resolves by row id, and the row exists, so without the
+            // override flag the resolver read the row's own ids and length (and its
+            // cached URL) and the copy above never reached it.
+            if (overridden) item.buildUpon().setUri(item.localConfiguration!!.uri.withRowOverride()).build() else item
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

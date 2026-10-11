@@ -517,6 +517,93 @@ class ListeningRecorderSkipTest {
     }
 
     @Test
+    fun `a skip records how far the song got, not where its session started`() = runTest {
+        // 1:50 of a 4:00 song (threshold 2:00), across a pause, then Next. Recorded at
+        // 0:00 this was an "early skip", and three of them banned the song from discovery.
+        val song = trackA.copy(durationMs = 240_000)
+        val playing = PlayerState(isPlaying = true, currentTrack = song)
+        val playerRepo = FakePlayerRepository(playing)
+        val listeningDao = mockk<ListeningEventDao>(relaxed = true)
+        val skipDao = mockk<TrackSkipEventDao>(relaxed = true)
+        recorderFor(playerRepo, listeningDao, skipDao).start()
+        runCurrent()
+
+        advanceTimeBy(50_000)
+        playerRepo.setState(playing.copy(isPlaying = false))
+        runCurrent()
+        advanceTimeBy(5 * 60_000L)
+        playerRepo.setState(playing)
+        runCurrent()
+        advanceTimeBy(60_000)
+        playerRepo.setState(PlayerState(isPlaying = true, currentTrack = trackB))
+        runCurrent()
+
+        coVerify(exactly = 1) { skipDao.insert(match { it.trackId == song.id && it.positionMs == 110_000L }) }
+    }
+
+    @Test
+    fun `a short interlude that plays to its end is neither a listen nor a skip`() = runTest {
+        // Its 30 s threshold is longer than the song, so the countdown never fires;
+        // auto-advance used to record a skip — a 100% skip rate for a fully played song.
+        val interlude = trackA.copy(durationMs = 25_000)
+        val playerRepo = FakePlayerRepository(PlayerState(isPlaying = true, currentTrack = interlude))
+        val listeningDao = mockk<ListeningEventDao>(relaxed = true)
+        val skipDao = mockk<TrackSkipEventDao>(relaxed = true)
+        recorderFor(playerRepo, listeningDao, skipDao).start()
+        runCurrent()
+
+        advanceTimeBy(25_000)
+        playerRepo.setState(PlayerState(isPlaying = true, currentTrack = trackB))
+        runCurrent()
+
+        coVerify(exactly = 0) { skipDao.insert(any()) }
+        coVerify(exactly = 0) { listeningDao.recordCompletedListen(any()) }
+    }
+
+    @Test
+    fun `a short interlude skipped early is still a skip`() = runTest {
+        val interlude = trackA.copy(durationMs = 25_000)
+        val playerRepo = FakePlayerRepository(PlayerState(isPlaying = true, currentTrack = interlude))
+        val skipDao = mockk<TrackSkipEventDao>(relaxed = true)
+        recorderFor(playerRepo, mockk(relaxed = true), skipDao).start()
+        runCurrent()
+
+        advanceTimeBy(3_000)
+        playerRepo.setState(PlayerState(isPlaying = true, currentTrack = trackB))
+        runCurrent()
+
+        coVerify(exactly = 1) { skipDao.insert(match { it.trackId == interlude.id && it.positionMs == 3_000L }) }
+    }
+
+    @Test
+    fun `a skip of a radio track is stored against its persisted row`() = runTest {
+        // Radio ids are videoId.hashCode() with no Room row: inserting the skip under
+        // that id broke the foreign key and the skip was silently dropped.
+        val radioTrack = Track(id = -987L, title = "R", artist = "Z", durationMs = 200_000, youtubeId = "radio-vid")
+        val playerRepo = FakePlayerRepository(PlayerState(isPlaying = true, currentTrack = radioTrack))
+        val musicRepository = mockk<MusicRepository>()
+        coEvery { musicRepository.ensureTrackPersisted(radioTrack) } returns 77L
+        val skipDao = mockk<TrackSkipEventDao>(relaxed = true)
+        ListeningRecorder(
+            playerRepository = playerRepo,
+            musicRepository = musicRepository,
+            listeningEventDao = mockk(relaxed = true),
+            trackSkipEventDao = skipDao,
+            scrobbler = mockk(relaxed = true),
+            listenSinks = mockk(relaxed = true),
+            scope = backgroundScope,
+            nowMs = { testScheduler.currentTime },
+        ).start()
+        runCurrent()
+
+        advanceTimeBy(10_000)
+        playerRepo.setState(PlayerState(isPlaying = true, currentTrack = trackB))
+        runCurrent()
+
+        coVerify(exactly = 1) { skipDao.insert(match { it.trackId == 77L }) }
+    }
+
+    @Test
     fun `listening time adds up across a pause and the listen lands at 90 s of play`() = runTest {
         // A 3-minute song needs 90 s of play.
         val playing = PlayerState(isPlaying = true, currentTrack = trackA)

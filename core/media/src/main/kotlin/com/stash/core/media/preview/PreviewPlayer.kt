@@ -122,6 +122,15 @@ class PreviewPlayer @Inject constructor(
     private var attemptErrorListener: Player.Listener? = null
 
     /**
+     * The current [playUrl] attempt's one-shot "audible" latency probe, held so
+     * [clearAttemptErrorListener] can drop it. It only removes itself once the
+     * preview plays: an attempt that errored or was stopped first left it (and the
+     * player, t0 and videoId it captures) on the singleton player, and they piled
+     * up until a later preview played — then every one fired with a stale latency.
+     */
+    private var audibleListener: Player.Listener? = null
+
+    /**
      * The [videoId] passed to the most recent [playUrl] call.
      * Held here so the [Player.Listener] can reference it when emitting
      * [PreviewState.Playing] without capturing a local variable that may
@@ -318,16 +327,19 @@ class PreviewPlayer @Inject constructor(
         // fresh instance rather than reusing a latched one. removeListener
         // MUST be called inside the branch so the instance doesn't leak
         // across playUrl calls.
-        player.addListener(object : Player.Listener {
+        val audible = object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (isPlaying) {
                     PerfLog.d {
                         "Preview audible at ${SystemClock.elapsedRealtime() - t0}ms (vid=$videoId)"
                     }
                     player.removeListener(this)
+                    if (audibleListener === this) audibleListener = null
                 }
             }
-        })
+        }
+        audibleListener = audible
+        player.addListener(audible)
         return attemptId
     }
 
@@ -432,9 +444,12 @@ class PreviewPlayer @Inject constructor(
         player.addListener(listener)
     }
 
+    /** Drops the current attempt's listeners: its error listener and any unfired audible probe. */
     private fun clearAttemptErrorListener(player: ExoPlayer) {
         attemptErrorListener?.let(player::removeListener)
         attemptErrorListener = null
+        audibleListener?.let(player::removeListener)
+        audibleListener = null
     }
 
     /**

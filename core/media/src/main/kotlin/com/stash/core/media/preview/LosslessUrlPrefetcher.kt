@@ -9,36 +9,30 @@ import com.stash.data.download.lossless.SourceResult
 import com.stash.data.download.lossless.TrackQuery
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Visible-row prefetch of lossless-source matches. Triggered by
- * `LaunchedEffect(track.videoId) { warmUp(track) }` in search/artist-
- * profile row composables. Stores `Deferred<SourceResult?>` keyed by
- * videoId so [SearchPreviewMediaSource] can join in-flight resolutions
- * without hitting the rate limiter twice.
+ * Lossless-source matches for the search preview, keyed by videoId so
+ * [SearchPreviewMediaSource] can reuse a result instead of resolving twice.
  *
- * Concurrency cap of 4 matches the aggregator's burst-of-4 budget;
- * `AggregatorRateLimiter`'s 1-token-per-3s budget then naturally
- * serialises beyond that. 5-min TTL on cached results — Qobuz signed
- * URLs expire in minutes, and a stale entry on tap would 403 mid-stream.
+ * The visible-row prefetch ([warmUp], called from
+ * `LaunchedEffect(track.videoId)` in search/artist-profile rows) is currently
+ * a no-op — see its KDoc. 5-min TTL on cached results — Qobuz signed URLs
+ * expire in minutes, and a stale entry on tap would 403 mid-stream.
  *
- * Memory bounded by TTL: stale entries get evicted via [cancelStale]
- * which `StashApplication` invokes every 60s.
+ * Memory bounded by TTL: stale entries get evicted via [cancelStale] on insert.
  */
 @Singleton
 class LosslessUrlPrefetcher internal constructor(
     private val registry: LosslessSourceRegistry,
-    private val availability: LosslessAvailability,
+    /** Unused while [warmUp] is a no-op; it gated the warm-up to the user's own account. */
+    @Suppress("unused") private val availability: LosslessAvailability,
     private val losslessPrefs: LosslessSourcePreferences,
     /** Where warm-ups and lookups run; tests pass Unconfined or a test dispatcher. */
     dispatcher: kotlinx.coroutines.CoroutineDispatcher,
@@ -57,59 +51,23 @@ class LosslessUrlPrefetcher internal constructor(
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
 
     private val cache = ConcurrentHashMap<String, CachedDeferred>()
-    private val concurrency = Semaphore(MAX_CONCURRENT)
 
     /**
-     * Warms up the lossless URL resolution for [track] in the background.
-     * Idempotent — if a fresh [CachedDeferred] already exists for this
-     * videoId the call is a no-op, so composable rows may call this on
-     * every recomposition without triggering duplicate network requests.
+     * Deliberately does nothing: no reader consumes a warm result today.
+     *
+     * Rows still call this as they enter composition (search, album discovery,
+     * popular tracks). It used to run a lossless search plus a signed file-URL
+     * request per row against the user's OWN Qobuz account — a 15-track album page
+     * was 15 of each — and the only reader of those results is [lookup], whose only
+     * caller is the 30-second preview path that `TrackActionsDelegate.previewTrack`
+     * no longer reaches (every tap now plays the full track via
+     * `PlayerRepository.playFromStream`). Every warm-up therefore expired unread
+     * after [TTL_MS]: network, battery and that account's quota spent for nothing.
+     * Bring the warm-up back (git history has it, including the own-account gate
+     * and the LAZY-start fix) together with a live consumer of [lookup].
      */
-    fun warmUp(track: TrackItem) {
-        val key = track.videoId
-        cache[key]?.let { if (it.isFresh()) return }
-        // Evict here rather than on a timer. The cache only ever grows at
-        // this line, so pruning on insert bounds it exactly as well as the
-        // 60s loop that used to do it from StashApplication — and that loop
-        // ran for the entire life of the process, waking every minute to
-        // sweep a map that is empty unless the user is browsing.
-        cancelStale()
-        // Store the entry BEFORE its body can run (LAZY start): with an eager
-        // start, a fast dispatcher ran the skip path's remove-by-key before the
-        // entry was stored, and the entry then landed as a completed null that
-        // the next tap read instead of resolving (the CI-only flake).
-        lateinit var entry: CachedDeferred
-        entry = CachedDeferred(
-            deferred = scope.async(start = CoroutineStart.LAZY) {
-                // Speculative work may only spend the user's OWN account. Every other
-                // lossless path is a shared, capped budget — the relay's per-account
-                // caps — and on launch day browsing alone drained it before anyone
-                // pressed play. The entry removes itself so a later
-                // tap does a real resolve instead of reading a cached "skipped" null.
-                // The Lossless switch is off → the preview is YouTube, never FLAC (it governs
-                // streaming and downloads alike; this is the one lossless entry that does not
-                // go through StreamSourceRegistry, so it checks the switch itself).
-                if (!losslessPrefs.enabledNow() || !availability.ownAccountLiveNow()) {
-                    cache.remove(key, entry) // only our own entry, never a newer lookup's
-                    return@async null
-                }
-                concurrency.withPermit {
-                    runCatching { registry.resolve(track.toQuery(), bypassRateLimit = false) }
-                        .onFailure { e ->
-                            // Re-throw cancellation so a lookup that supersedes this
-                            // warmUp doesn't log a spurious "resolve failed … cancelled"
-                            // (never swallow CancellationException).
-                            if (e is CancellationException) throw e
-                            Log.w(TAG, "resolve failed for $key: ${e.message}")
-                        }
-                        .getOrNull()
-                }
-            },
-            createdAt = System.currentTimeMillis(),
-        )
-        cache[key] = entry
-        entry.deferred.start()
-    }
+    @Suppress("UNUSED_PARAMETER")
+    fun warmUp(track: TrackItem) = Unit
 
     /**
      * Foreground (tap) resolve. If a warm result is already COMPLETE, return it
@@ -126,6 +84,8 @@ class LosslessUrlPrefetcher internal constructor(
         cache[key]?.let { if (it.isFresh() && it.deferred.isCompleted) return it.deferred.await() }
         // Supersede a slow in-flight rate-limited warmUp so it doesn't spend a token.
         cache[key]?.deferred?.cancel()
+        // The cache only grows below, so pruning here bounds it.
+        cancelStale()
         val fast = scope.async {
             runCatching { registry.resolve(track.toQuery(), bypassRateLimit = true) }
                 .onFailure { e ->
@@ -140,7 +100,7 @@ class LosslessUrlPrefetcher internal constructor(
 
     /**
      * Evicts all cache entries whose TTL has elapsed, bounding memory across
-     * long browse sessions. Called from [warmUp] — the only place the cache
+     * long browse sessions. Called from [lookup] — the only place the cache
      * grows — rather than from a timer.
      *
      * Eviction drops the entry; it does not cancel a still-running
@@ -179,9 +139,6 @@ class LosslessUrlPrefetcher internal constructor(
 
     companion object {
         private const val TAG = "LosslessUrlPrefetcher"
-
-        /** Max concurrent in-flight registry resolutions. Matches the aggregator burst budget. */
-        const val MAX_CONCURRENT = 4
 
         /** Cache TTL in milliseconds. Qobuz signed URLs expire in ~5 minutes. */
         const val TTL_MS = 5 * 60 * 1_000L

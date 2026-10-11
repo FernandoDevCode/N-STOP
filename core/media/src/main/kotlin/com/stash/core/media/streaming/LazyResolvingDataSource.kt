@@ -2,6 +2,7 @@ package com.stash.core.media.streaming
 
 import android.net.Uri
 import androidx.annotation.OptIn
+import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
@@ -62,6 +63,27 @@ fun stashResolveUri(
     .build()
 
 /**
+ * Query param marking a placeholder whose `yt` / `isrc` / `d` must win over the
+ * track's own Room row — see [withRowOverride].
+ */
+private const val ROW_OVERRIDE_PARAM = "pin"
+
+/**
+ * Marks [this] placeholder so [LazyResolvingDataSource] resolves it from the ids
+ * and length in its query params even when the track has a Room row, and keeps
+ * the result out of [StreamUrlCache].
+ *
+ * Listen Together plays the HOST's recording on a listener whose exact-matched
+ * row is a different edit: the item carries the host's ids, but the row exists,
+ * so the resolve used to read the row's own `youtubeId` / ISRC / length (and any
+ * URL already cached for the row) — the listener heard their own edit, the
+ * version-mismatch badge lit and drift correction kept seeking. Uncached both
+ * ways: the cache is keyed by track id alone, and the host's edit must not be
+ * served later when this row plays on its own.
+ */
+fun Uri.withRowOverride(): Uri = buildUpon().appendQueryParameter(ROW_OVERRIDE_PARAM, "1").build()
+
+/**
  * DataSource that turns a `stash-resolve://track/<id>` placeholder into a
  * playable stream at open time: [StreamUrlCache] first (the next-up
  * prefetch usually has it warm), then a full [StreamSourceRegistry.resolve]
@@ -91,6 +113,27 @@ class LazyResolvingDataSource(
     private var active: DataSource? = null
     private val listeners = mutableListOf<TransferListener>()
 
+    /**
+     * The stream this instance first served, kept for every later open.
+     *
+     * Media3 builds ONE DataSource per media period and re-opens it at byte N for
+     * every seek outside the buffer and every dropped connection, with the
+     * extractor it chose from the first bytes. Consulting [urlCache] (or
+     * re-resolving) on each open let the item switch files under it: a network
+     * change flips the quality tier and [StreamQualityPolicy] clears the cache, a
+     * long pause lets the URL lapse and the re-resolve lands on another rung, and
+     * the CD file (or YouTube Opus) is opened at byte N into a 24/96 FLAC
+     * extractor — a stall or a decoder error. The pin is reused while its URL is
+     * still good; a re-resolve is accepted only when it is the same file
+     * ([isSameFileAs]) of the same total length. Anything else throws, and the
+     * player's error path re-prepares the item from byte 0 in a new period, where
+     * a new file is sniffed from scratch.
+     */
+    private var pinned: StreamUrl? = null
+    private var pinnedAtElapsedMs = 0L
+    private var pinnedLifetimeMs = 0L
+    private var pinnedTotalLength = C.LENGTH_UNSET.toLong()
+
     override fun addTransferListener(transferListener: TransferListener) {
         listeners += transferListener
         active?.addTransferListener(transferListener)
@@ -104,19 +147,55 @@ class LazyResolvingDataSource(
         val trackId = uri.lastPathSegment?.toLongOrNull()
             ?: throw IOException("stash-resolve URI without a track id: $uri")
 
-        // StreamUrlCache.get() checks expiry internally (evicts + returns null
-        // when stale — see its monotonic-TTL KDoc), so no freshness re-check here.
-        val fresh = urlCache.get(trackId)
-            ?: resolveBlocking(trackId, uri)
-            ?: throw IOException("stream resolve failed for track $trackId")
+        val pin = pinned
+        val fresh = if (pin != null && pinStillValid()) {
+            pin
+        } else {
+            // StreamUrlCache.get() checks expiry internally (evicts + returns null
+            // when stale — see its monotonic-TTL KDoc), so no freshness re-check here.
+            val next = (if (overridesRow(uri)) null else urlCache.get(trackId))
+                ?: resolveBlocking(trackId, uri)
+                ?: throw IOException("stream resolve failed for track $trackId")
+            if (pin != null && !next.isSameFileAs(pin)) {
+                throw IOException(
+                    "track $trackId re-resolved to another file " +
+                        "(${pin.origin}/${pin.codec} -> ${next.origin}/${next.codec}); not splicing it at byte ${dataSpec.position}",
+                )
+            }
+            next
+        }
 
         val realSpec = dataSpec.buildUpon().setUri(Uri.parse(fresh.url)).build()
         val delegate = when (fresh.origin) {
             JioSaavnStreamResolver.ORIGIN -> jioSaavnDelegate()
             else -> httpDelegate()
         }
-        return delegateTo(delegate, realSpec)
+        val length = delegateTo(delegate, realSpec)
+        if (dataSpec.length == C.LENGTH_UNSET.toLong() && length != C.LENGTH_UNSET.toLong()) {
+            // The bytes from the server's position to its end, so position + length is
+            // the file's size: the one identity check that catches a same-format file
+            // of another master (a re-resolve that matched another release).
+            val total = dataSpec.position + length
+            if (pinnedTotalLength != C.LENGTH_UNSET.toLong() && total != pinnedTotalLength) {
+                close()
+                throw IOException("track $trackId re-opened on a file of another length ($pinnedTotalLength -> $total)")
+            }
+            pinnedTotalLength = total
+        }
+        if (fresh !== pin) pinStream(fresh)
+        return length
     }
+
+    private fun pinStream(stream: StreamUrl) {
+        pinned = stream
+        pinnedAtElapsedMs = elapsedMs()
+        // Same wall-clock-once, monotonic-after scheme as StreamUrlCache.
+        pinnedLifetimeMs = usableLifetimeMs(stream.expiresAtMs - System.currentTimeMillis())
+    }
+
+    private fun pinStillValid(): Boolean = elapsedMs() - pinnedAtElapsedMs < pinnedLifetimeMs
+
+    private fun elapsedMs(): Long = System.nanoTime() / 1_000_000L
 
     private fun delegateTo(delegate: DataSource, spec: DataSpec): Long {
         listeners.forEach(delegate::addTransferListener)
@@ -129,16 +208,27 @@ class LazyResolvingDataSource(
             withTimeout(resolveDeadlineMs) {
                 // DAO first; a track with no Room row (search-surface synthetic
                 // id) falls back to the resolver inputs carried in the URI's
-                // query params — see [stashResolveUri].
-                val entity = trackDao.getById(trackId)
+                // query params — see [stashResolveUri]. An override item's
+                // params win over its row ([withRowOverride]).
+                val row = trackDao.getById(trackId)
+                val entity = (if (row != null && overridesRow(uri)) row.withIdsFrom(uri) else row)
                     ?: entityFromUri(trackId, uri)
                     ?: return@withTimeout null
                 resolver.resolve(entity, allowYouTube = true, allowYtDlp = true)
             }
-        }?.also { urlCache.put(trackId, it) }
+        }?.also { if (!overridesRow(uri)) urlCache.put(trackId, it) }
     } catch (e: TimeoutCancellationException) {
         throw IOException("stream resolve deadline (${resolveDeadlineMs}ms) for track $trackId", e)
     }
+
+    private fun overridesRow(uri: Uri): Boolean = uri.getQueryParameter(ROW_OVERRIDE_PARAM) == "1"
+
+    /** The row, with the recording ids and length the override URI names. */
+    private fun TrackEntity.withIdsFrom(uri: Uri): TrackEntity = copy(
+        youtubeId = uri.getQueryParameter("yt") ?: youtubeId,
+        isrc = uri.getQueryParameter("isrc") ?: isrc,
+        durationMs = uri.getQueryParameter("d")?.toLongOrNull() ?: durationMs,
+    )
 
     /**
      * Rebuilds a resolver-input [TrackEntity] from the placeholder URI's query
