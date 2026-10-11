@@ -203,7 +203,12 @@ class MainActivity : ComponentActivity() {
 
         val target = intent.getStringExtra(CaptchaExpiredNotifier.INTENT_EXTRA_NAV_TARGET)
             ?: return
-        pendingDeepLink.value = target
+        // Only the one target Stash's own notification sends. This activity is
+        // exported, so any app can set the extra: passed through as-is, a
+        // "weblink:"/"listen:"/"shared_track:" value skipped every check the VIEW
+        // path above applies (the feature switch, the link prefix, the length
+        // cap, the room-code shape) on its way to the confirm screens.
+        if (target == CaptchaExpiredNotifier.DEEP_LINK_TARGET) pendingDeepLink.value = target
         // Clear the extra so a config change doesn't re-trigger the
         // navigate. setIntent() above already replaces the activity's
         // intent reference; this just guards against the same Intent
