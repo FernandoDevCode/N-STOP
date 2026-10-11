@@ -320,6 +320,13 @@ class StashPlaybackService : MediaLibraryService() {
      */
     private var crossfadeHeldForBitPerfect = false
 
+    /**
+     * An "end of track" sleep timer holds crossfade off: the timer means "stop
+     * when this song ends", and a fade brought the next song in under the
+     * timer's own fade-out. Follows [SleepTimerController.State.EndOfTrack].
+     */
+    private var crossfadeHeldForSleep = false
+
     private var listenTogetherSession: com.stash.core.media.listen.ListenTogetherSession? = null
     private var togetherPlayer: com.stash.core.media.listen.ListenTogetherPlayer? = null
     private var togetherListener: Player.Listener? = null
@@ -937,6 +944,7 @@ class StashPlaybackService : MediaLibraryService() {
         sleepTimerController.state.collect { state ->
             sleepTimerNotificationJob?.cancel()
             sleepTimerActive = state != SleepTimerController.State.Off
+            setCrossfadeHeldForSleep(state == SleepTimerController.State.EndOfTrack)
             updateCustomLayout()
             when (state) {
                 is SleepTimerController.State.Countdown -> {
@@ -1100,8 +1108,12 @@ class StashPlaybackService : MediaLibraryService() {
     /** Collector body for the crossfade preference; Listen Together can hold crossfade off without writing it. */
     internal fun onCrossfadePreference(enabled: Boolean) {
         crossfadePrefEnabled = enabled
-        onCrossfadeEnabledChanged(enabled && !crossfadeSuspended && !crossfadeHeldForBitPerfect)
+        onCrossfadeEnabledChanged(crossfadeAllowed())
     }
+
+    /** The preference, unless a Listen Together session, bit-perfect output or an end-of-track sleep timer holds it off. */
+    private fun crossfadeAllowed(): Boolean =
+        crossfadePrefEnabled && !crossfadeSuspended && !crossfadeHeldForBitPerfect && !crossfadeHeldForSleep
 
     /** Suspends or restores crossfade for a Listen Together session. */
     internal fun setCrossfadeSuspended(suspended: Boolean) {
@@ -1110,7 +1122,7 @@ class StashPlaybackService : MediaLibraryService() {
             crossfadeEngine?.cancelTransition()
             crossfadePreparedId = null
         }
-        onCrossfadeEnabledChanged(crossfadePrefEnabled && !suspended && !crossfadeHeldForBitPerfect)
+        onCrossfadeEnabledChanged(crossfadeAllowed())
     }
 
     /** Holds crossfade off while the output is bit-perfect, and restores it after. */
@@ -1121,7 +1133,26 @@ class StashPlaybackService : MediaLibraryService() {
             crossfadeEngine?.cancelTransition()
             crossfadePreparedId = null
         }
-        onCrossfadeEnabledChanged(crossfadePrefEnabled && !crossfadeSuspended && !held)
+        onCrossfadeEnabledChanged(crossfadeAllowed())
+    }
+
+    /**
+     * Holds crossfade off while an "end of track" sleep timer is armed, and
+     * parks the master at the end of its song. With crossfade on, the fade
+     * started 6 s from the end under the timer's own fade-out: the next song
+     * came in to full volume and the pause landed on it. pauseAtEndOfMediaItems
+     * is the backstop for a timer pause that lands a beat late, which would
+     * otherwise start the next song.
+     */
+    internal fun setCrossfadeHeldForSleep(held: Boolean) {
+        if (held == crossfadeHeldForSleep) return
+        crossfadeHeldForSleep = held
+        if (held) {
+            crossfadeEngine?.cancelTransition()
+            crossfadePreparedId = null
+        }
+        crossfadeEngine?.masterPlayer?.pauseAtEndOfMediaItems = held
+        onCrossfadeEnabledChanged(crossfadeAllowed())
     }
 
     /** The effective crossfade switch (test view). */
