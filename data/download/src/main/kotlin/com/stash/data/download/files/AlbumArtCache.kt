@@ -9,6 +9,8 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -82,13 +84,24 @@ class AlbumArtCache @Inject constructor(
 
     private fun cached(url: String) = File(fileOrganizer.getAlbumArtDir(), hashFilename(url))
 
-    private fun write(file: File, fitted: EmbedArtScaler.Fitted): File? = runCatching {
-        file.writeBytes(fitted.bytes)
-        file
-    }.getOrElse { e ->
-        Log.w(TAG, "art write failed for ${file.name}: ${e.message}")
-        file.delete()
-        null
+    /**
+     * Writes [file] under a name of its own beside it, then renames it into
+     * place. Written in place, a download of another track from the album
+     * (eight run at once) could find it mid-`writeBytes`, pass the
+     * `exists() && length() > 0` check above, and embed a truncated cover.
+     */
+    private fun write(file: File, fitted: EmbedArtScaler.Fitted): File? {
+        val tag = java.util.UUID.randomUUID().toString().substring(0, 8)
+        val partial = File(file.parentFile, "${file.name}.$tag.tmp")
+        return runCatching {
+            partial.writeBytes(fitted.bytes)
+            Files.move(partial.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            file
+        }.getOrElse { e ->
+            Log.w(TAG, "art write failed for ${file.name}: ${e.message}")
+            partial.delete()
+            null
+        }
     }
 
     /**

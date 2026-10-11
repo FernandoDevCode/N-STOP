@@ -2329,6 +2329,20 @@ interface TrackDao {
     suspend fun resetForReDownload(trackId: Long)
 
     /**
+     * Hands a downloaded track back to the download pipeline for a better
+     * copy while KEEPING its file: `is_downloaded = 0` lets the download
+     * worker pick it up, and file_path / file_size stay. That file is the
+     * user's only copy until a replacement is committed and validated;
+     * TrackDownloaderImpl deletes it then (a same-name download replaces it
+     * in place). [resetForReDownload] cleared the path while its caller
+     * deleted the file, so a download that deferred or failed (no lossless
+     * copy with the YouTube fallback off, a video taken down) left the track
+     * with nothing.
+     */
+    @Query("UPDATE tracks SET is_downloaded = 0 WHERE id = :trackId")
+    suspend fun markForReplacement(trackId: Long)
+
+    /**
      * All `is_downloaded=1` rows with their stored `file_path`. Drives the
      * startup file-integrity sweep that verifies every "downloaded" track
      * actually has a readable file on disk. A track whose file vanished

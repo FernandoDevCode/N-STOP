@@ -3,7 +3,6 @@ package com.stash.data.download
 import android.util.Log
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackDao
-import com.stash.core.data.db.dao.fileUsedByAnotherTrack
 import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.lastfm.LastFmCredentials
 import com.stash.core.data.mapper.toDomain
@@ -169,6 +168,16 @@ class DownloadManager @Inject constructor(
          * (kennyy, squid, + headroom) so it can't spin.
          */
         internal const val MAX_LOSSLESS_FAILOVER_ATTEMPTS = 3
+
+        /**
+         * A short random tag that gives each download attempt a temp file of
+         * its own. Named by track id alone, two downloads of one track at
+         * once (a double tap on Find in FLAC, or a tap while the FLAC upgrade
+         * sweep reaches the same song) shared one file: the second open
+         * truncated it under the first, and the interleaved FLAC, whose header
+         * still probed fine, was committed as the download.
+         */
+        internal fun attemptTag(): String = java.util.UUID.randomUUID().toString().substring(0, 8)
 
         /**
          * The least a real JioSaavn file at [expectedKbps] measures: a fifth under
@@ -395,7 +404,7 @@ class DownloadManager @Inject constructor(
 
         // Step 3: Download via yt-dlp
         val tempDir = fileOrganizer.getTempDir()
-        val tempFilename = "dl_${track.id}"
+        val tempFilename = "dl_${track.id}_${attemptTag()}"
 
         val dlResult = downloadExecutor.download(
             url = youtubeUrl,
@@ -452,21 +461,9 @@ class DownloadManager @Inject constructor(
             trackId = track.id,
         )
 
-        // Clean up the previous file if the canonicalizer renamed the
-        // track (new title → new derived file path). Without this the
-        // old OMV-titled file lingers as an orphan consuming disk. Only
-        // delete when paths genuinely differ — for a plain re-download
-        // commitDownload already overwrote the same path — and when no other
-        // song still plays from the old file (two rows can share one).
-        val oldPath = track.filePath
-        if (oldPath != null && oldPath != committed.filePath && !trackDao.fileUsedByAnotherTrack(oldPath, track.id)) {
-            runCatching {
-                val deleted = File(oldPath).delete()
-                Log.d(TAG, "executeDownload: deleted orphaned old file path=$oldPath deleted=$deleted")
-            }.onFailure { e ->
-                Log.w(TAG, "executeDownload: failed to delete old file $oldPath", e)
-            }
-        }
+        // The previous file, when the canonicalizer renamed the track (new
+        // title → new path), is deleted by TrackDownloaderImpl once the new
+        // file has passed validation, for every source, not only this one.
 
         Log.i(TAG, "Downloaded: ${effectiveTrack.artist} - ${effectiveTrack.title} → ${committed.filePath}")
         runCatching { trackDao.setMetadataEmbeddedAt(track.id, System.currentTimeMillis()) }
@@ -531,7 +528,7 @@ class DownloadManager @Inject constructor(
         } ?: return null
 
         emitProgress(track.id, 0.1f, DownloadStatus.DOWNLOADING)
-        val tempFile = File(fileOrganizer.getTempDir(), "jiosaavn_${track.id}.m4a")
+        val tempFile = File(fileOrganizer.getTempDir(), "jiosaavn_${track.id}_${attemptTag()}.m4a")
         val fetched = losslessUrlDownloader.download(
             source = match,
             destination = tempFile,
@@ -657,7 +654,7 @@ class DownloadManager @Inject constructor(
         // "mp3", etc. and the file organizer just plumbs through.
         val ext = match.format.fileExtension.lowercase()
             .ifBlank { match.format.codec.lowercase().ifBlank { "flac" } }
-        val tempFile = File(fileOrganizer.getTempDir(), "lossless_${track.id}.$ext")
+        val tempFile = File(fileOrganizer.getTempDir(), "lossless_${track.id}_${attemptTag()}.$ext")
 
         val fetched = losslessUrlDownloader.download(
             source = match,

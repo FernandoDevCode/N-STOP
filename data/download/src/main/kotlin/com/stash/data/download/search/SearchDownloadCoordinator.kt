@@ -159,6 +159,16 @@ class SearchDownloadCoordinator @Inject constructor(
             return@flow
         }
 
+        // A song the user blocked is refused before anything is fetched. The
+        // check in upsertSearchTrack alone ran only once the whole file (up
+        // to 140 MB of FLAC) was downloaded and committed to the library,
+        // where it then sat with no row recording it.
+        if (isBlocked(track)) {
+            Log.d(TAG, "Refused download of blocked: ${track.artist} - ${track.title}")
+            emit(SearchDownloadStatus.Failed("Track is blocked"))
+            return@flow
+        }
+
         val deferred = mutex.withLock {
             inFlight[key] ?: scope.async { performDownload(track) }.also { created ->
                 inFlight[key] = created
@@ -404,9 +414,13 @@ class SearchDownloadCoordinator @Inject constructor(
             }
         }
 
+        if (!localFileOps.acceptDownloadOrDelete(tempFile.absolutePath)) {
+            return SourceFinalizeAttempt.BeforeCommitFailure("Downloaded file failed validation")
+        }
+
         val finalized = trackFinalizer.finalizeFile(
             sourceFile = tempFile,
-            track = track.toDomainStub(),
+            track = track.toDomainStub(existingTrackId(track)),
             format = match.format,
         )
 
@@ -509,12 +523,19 @@ class SearchDownloadCoordinator @Inject constructor(
                 return TrackFinalizer.FinalizeResult.Failed("yt-dlp produced no output")
         }
 
+        // Checked before the commit: a junk body (a ~274-byte yt-dlp error)
+        // committed first would take the place of the song's own library file
+        // at the same name before upsertSearchTrack rejected it.
+        if (!localFileOps.acceptDownloadOrDelete(tempFile.absolutePath)) {
+            return TrackFinalizer.FinalizeResult.Failed("Downloaded file failed validation")
+        }
+
         // opus/0 are placeholder values — TrackFinalizer probes the real codec
         // post-download and upsertSearchTrack writes the probed values if available.
         val format = AudioFormat(codec = "opus", bitrateKbps = 0)
         val finalized = trackFinalizer.finalizeFile(
             sourceFile = tempFile,
-            track = track.toDomainStub(),
+            track = track.toDomainStub(existingTrackId(track)),
             format = format,
         )
 
@@ -726,6 +747,46 @@ class SearchDownloadCoordinator @Inject constructor(
     )
 
     /**
+     * Whether the user blocked this song. A failed lookup reads as not
+     * blocked: [upsertSearchTrack] checks again before anything is recorded.
+     */
+    private suspend fun isBlocked(track: TrackItem): Boolean = try {
+        blocklistGuard.isBlocked(
+            artist = track.artist,
+            title = track.title,
+            spotifyUri = null,
+            youtubeId = track.videoId,
+        )
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "blocklist lookup failed for ${track.videoId}: ${e.message}")
+        false
+    }
+
+    /**
+     * The library row this download will be recorded on, when there is one:
+     * the same lookup [upsertSearchTrack] makes. The commit replaces a file
+     * at its name only when no OTHER track records it; without the row's id
+     * every row counts as another, so re-downloading a song already in the
+     * library would step around its own file and orphan it.
+     */
+    private suspend fun existingTrackId(track: TrackItem): Long? = try {
+        (
+            trackDao.findByYoutubeId(track.videoId)
+                ?: trackDao.findByCanonicalIdentity(
+                    title = canonicalize(track.title),
+                    artist = canonicalize(track.artist),
+                )
+            )?.id
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "existing-row lookup failed for ${track.videoId}: ${e.message}")
+        null
+    }
+
+    /**
      * Builds a minimal [com.stash.core.model.Track] stub for [TrackFinalizer].
      * The finalizer uses title/artist/album for metadata embedding and
      * artist/title for the library file path.
@@ -735,7 +796,8 @@ class SearchDownloadCoordinator @Inject constructor(
      * tracks don't show up in the Library's Albums view (TrackDao.getAllAlbums
      * filters out tracks with empty album values).
      */
-    private fun TrackItem.toDomainStub() = com.stash.core.model.Track(
+    private fun TrackItem.toDomainStub(existingId: Long?) = com.stash.core.model.Track(
+        id = existingId ?: 0L,
         title = title,
         artist = artist,
         album = album.orEmpty(),

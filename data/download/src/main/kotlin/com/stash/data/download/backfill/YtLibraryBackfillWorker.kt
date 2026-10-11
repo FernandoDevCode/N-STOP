@@ -11,7 +11,6 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.TrackDao
-import com.stash.core.data.db.dao.fileUsedByAnotherTrack
 import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.sync.SyncNotificationManager
@@ -26,7 +25,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
-import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -59,9 +57,12 @@ import java.util.concurrent.atomic.AtomicInteger
  *      [MusicVideoType] of the stored videoId.
  *    - If ATV / OFFICIAL_SOURCE_MUSIC / null → skip (title was
  *      misleading; track is actually fine).
- *    - If OMV / UGC / PODCAST_EPISODE → delete the on-disk file,
- *      reset `is_downloaded = 0` + clear file_path, insert a PENDING
- *      download_queue entry.
+ *    - If OMV / UGC / PODCAST_EPISODE → set `is_downloaded = 0`, keeping
+ *      the file, and insert a PENDING download_queue entry. The old file
+ *      is deleted only once its replacement is committed and validated
+ *      (TrackDownloaderImpl), so a download that defers or fails keeps it.
+ *    - A song whose video the user picked in Failed Matches (#531) is
+ *      left alone: the pick is deliberate, and a re-download fetches it.
  * 3. Kick off [SyncScheduler.triggerManualSync] so the full
  *    Fetch → Diff → Download → Finalize chain runs, draining the
  *    new queue entries. The canonicalizer fires per-track during
@@ -254,6 +255,10 @@ class YtLibraryBackfillWorker @AssistedInject constructor(
         track: com.stash.core.data.db.entity.TrackEntity,
     ): Outcome? {
         val videoId = track.youtubeId ?: return null
+        // The user chose this video in Failed Matches (#531); it may well be
+        // a music video on purpose. A re-download honors the pick, so queuing
+        // one only re-fetches the same audio, or defers it with the fallback off.
+        if (track.matchPickedAt != null) return Outcome.SKIPPED
 
         // Short-circuit: if we already know this video is OMV / UGC /
         // PODCAST_EPISODE from a prior verification, we don't need to
@@ -304,18 +309,13 @@ class YtLibraryBackfillWorker @AssistedInject constructor(
             return Outcome.SKIPPED
         }
 
-        // Non-canonical upload (OMV/UGC/PODCAST) — delete the file and
-        // requeue so the canonicalizer can re-download + fully persist. A file
-        // another song still plays from stays (two rows can share one).
-        track.filePath?.takeUnless { trackDao.fileUsedByAnotherTrack(it, track.id) }?.let { path ->
-            try {
-                val deleted = File(path).delete()
-                Log.d(TAG, "deleted old file path=$path deleted=$deleted")
-            } catch (e: Exception) {
-                Log.w(TAG, "failed to delete file $path", e)
-            }
-        }
-        trackDao.resetForReDownload(track.id)
+        // Non-canonical upload (OMV/UGC/PODCAST) — requeue so the canonicalizer
+        // can re-download + fully persist. The file stays: deleting it here,
+        // before a replacement existed, lost the song whenever the download
+        // deferred (lossless on, YouTube fallback off: most OMV/UGC has no
+        // Qobuz copy) or failed (a video taken down since). The download
+        // pipeline replaces it once the new file is committed and validated.
+        trackDao.markForReplacement(track.id)
         // The stored music_video_type reflects the *old* videoId. Once
         // the re-download runs, the canonicalizer will swap in an ATV
         // videoId and the stored type becomes a lie. Clear it now so
@@ -325,7 +325,7 @@ class YtLibraryBackfillWorker @AssistedInject constructor(
         // here, TrackDownloadWorker forwards it as `preResolvedUrl` to
         // DownloadManager.executeDownload, which bypasses resolveUrl()
         // entirely — so YtLibraryCanonicalizer never fires and we just
-        // re-download the exact same OMV audio we deleted above. With
+        // re-download the exact same OMV audio we mean to replace. With
         // null, resolveUrl runs, sees track.youtubeId is still the OMV,
         // and routes through the canonicalizer which swaps to the ATV.
         downloadQueueDao.insert(

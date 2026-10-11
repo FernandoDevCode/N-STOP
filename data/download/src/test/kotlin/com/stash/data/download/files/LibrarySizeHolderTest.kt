@@ -36,4 +36,31 @@ class LibrarySizeHolderTest {
             cancelAndIgnoreRemainingEvents()
         }
     }
+
+    /**
+     * A sync changes the track count hundreds of times; each change used to
+     * start another full walk of the library (thousands of binder queries
+     * on an SD card) right after the last one ended.
+     */
+    @Test
+    fun `track count changes right after a walk wait for the gap`() = runTest {
+        val trackCount = MutableStateFlow(7)
+        val size = LibrarySizeBreakdown(100L, 80L, 2)
+        val fileOrganizer = mockk<FileOrganizer>()
+        val musicRepository = mockk<MusicRepository>()
+        every { musicRepository.getTrackCount() } returns trackCount
+        coEvery { fileOrganizer.computeMusicLibrarySize() } returns size
+        val holder = LibrarySizeHolder(fileOrganizer, musicRepository)
+
+        holder.size.test {
+            assertThat(awaitItem()).isEqualTo(LibrarySizeBreakdown(0L, 0L, 0))
+            assertThat(awaitItem()).isEqualTo(size)
+
+            (8..20).forEach { trackCount.value = it }
+            Thread.sleep(500)
+
+            coVerify(exactly = 1) { fileOrganizer.computeMusicLibrarySize() }
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
 }
