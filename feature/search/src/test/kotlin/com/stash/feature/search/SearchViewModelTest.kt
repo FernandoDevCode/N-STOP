@@ -123,7 +123,7 @@ class SearchViewModelTest {
     }
 
     @Test
-    fun `error surfaces userMessages snackbar`() = runTest {
+    fun `an error shows plain words on the error screen, without a second snackbar`() = runTest {
         val api = mock<YTMusicApiClient>()
         whenever(api.searchAll(any())).doSuspendableAnswer {
             throw RuntimeException("boom")
@@ -132,10 +132,28 @@ class SearchViewModelTest {
         vm.userMessages.test {
             vm.onQueryChanged("abc")
             advanceUntilIdle()
-            val msg = awaitItem()
-            assertTrue(msg.contains("search failed", ignoreCase = true))
+            assertEquals(SearchStatus.Error(SearchErrorCopy.NO_ANSWER), vm.uiState.value.status)
+            expectNoEvents()
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    /**
+     * YouTube Music not answering used to come back as an empty answer, so an
+     * offline search showed "No results" with no Retry.
+     */
+    @Test
+    fun `a search YouTube never answered is an offline error, not No results`() = runTest {
+        val api = mock<YTMusicApiClient>()
+        whenever(api.searchAll(any())).doSuspendableAnswer {
+            throw com.stash.data.ytmusic.SearchUnavailableException(statusCode = -1)
+        }
+        val vm = newVm(api = api)
+
+        vm.onQueryChanged("abc")
+        advanceUntilIdle()
+
+        assertEquals(SearchStatus.Error(SearchErrorCopy.OFFLINE), vm.uiState.value.status)
     }
 
     /**

@@ -18,7 +18,6 @@ import com.stash.data.ytmusic.model.SearchResultSection
 import com.stash.data.ytmusic.model.TopResultItem
 import com.stash.data.ytmusic.model.TrackSummary
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -304,10 +303,12 @@ class SearchViewModel @Inject constructor(
                 refreshDownloadedIds(sections)
             }
         } catch (t: Throwable) {
-            if (t is CancellationException) throw t
+            // Null for a cancellation (a newer keystroke): rethrown, never shown.
+            val message = searchErrorMessage(t) ?: throw t
             Log.e(TAG, "search failed for '$query'", t)
-            _userMessages.emit("Search failed — please try again.")
-            emit(SearchStatus.Error(searchErrorMessage(t)))
+            // The error screen (plain words + Retry) is the whole report; the
+            // "Search failed" snackbar that used to fire with it said it twice.
+            emit(SearchStatus.Error(message))
         }
     }
 
@@ -466,16 +467,3 @@ internal fun SearchResultItem.toTrackItem() = com.stash.core.model.TrackItem(
     durationSeconds = durationSeconds,
     thumbnailUrl = thumbnailUrl,
 )
-
-/**
- * Plain words for a failed search, instead of the raw exception text
- * ("Unable to resolve host music.youtube.com: No address associated…").
- */
-internal fun searchErrorMessage(t: Throwable): String = when (t) {
-    is java.net.UnknownHostException,
-    is java.net.ConnectException,
-    is java.net.NoRouteToHostException,
-    -> "You're offline, or YouTube Music can't be reached."
-    is java.net.SocketTimeoutException -> "YouTube Music took too long to answer."
-    else -> "YouTube Music didn't answer."
-}
