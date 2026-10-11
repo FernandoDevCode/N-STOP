@@ -151,7 +151,10 @@ class DownloadManager @Inject constructor(
      *  transcode) downloads are almost entirely network-bound so more parallelism helps. */
     private val concurrencySemaphore = Semaphore(8)
 
-    private val _progress = MutableSharedFlow<DownloadProgress>(replay = 1)
+    // The extra buffer keeps intermediate tryEmit()s from being dropped whenever the
+    // Main-thread collector is a step behind (8 parallel downloads emit every ~64 KB);
+    // with replay = 1 alone, tryEmit failed as soon as one event was unread.
+    private val _progress = MutableSharedFlow<DownloadProgress>(replay = 1, extraBufferCapacity = 64)
 
     /** Emits real-time progress snapshots for all in-flight downloads. */
     val progress: SharedFlow<DownloadProgress> = _progress.asSharedFlow()
@@ -199,10 +202,36 @@ class DownloadManager @Inject constructor(
     ): TrackDownloadResult {
         concurrencySemaphore.acquire()
         try {
-            return executeDownload(track, preResolvedUrl)
+            val result = try {
+                executeDownload(track, preResolvedUrl)
+            } catch (e: Throwable) {
+                // Cancellation or a throw from a later step: without this the row
+                // kept its last live status (Downloading) indefinitely.
+                emitProgress(track.id, 0f, DownloadStatus.FAILED)
+                throw e
+            }
+            emitFinalStatus(track.id, result)
+            return result
         } finally {
             concurrencySemaphore.release()
         }
+    }
+
+    /**
+     * Ends [trackId]'s live progress with the status [result] implies. Every exit
+     * gets one here: a Deferred track used to end on the lossless attempt's
+     * DOWNLOADING, so Downloads showed it "Downloading" while it sat in
+     * WAITING_FOR_LOSSLESS, and the pipeline's own terminal emits were tryEmit()s
+     * a slow collector could lose. This one suspends rather than drop.
+     */
+    private suspend fun emitFinalStatus(trackId: Long, result: TrackDownloadResult) {
+        val (progress, status) = when (result) {
+            is TrackDownloadResult.Success -> 1f to DownloadStatus.COMPLETED
+            is TrackDownloadResult.Unmatched -> 0f to DownloadStatus.UNMATCHED
+            is TrackDownloadResult.Failed -> 0f to DownloadStatus.FAILED
+            TrackDownloadResult.Deferred -> 0f to DownloadStatus.DEFERRED
+        }
+        _progress.emit(DownloadProgress(trackId, progress, 0, status))
     }
 
     /**
