@@ -59,6 +59,11 @@ class MainActivity : ComponentActivity() {
 
         /** A pairing link is about 160 characters; anything far longer isn't one. */
         private const val MAX_WEB_LINK = 512
+
+        /** Last theme the app rendered, read synchronously for the first frame; see [onCreate]. */
+        private const val THEME_SNAPSHOT_PREFS = "theme_snapshot"
+        private const val KEY_THEME_MODE = "theme_mode"
+        private const val KEY_AMOLED_DARK = "amoled_dark"
     }
 
     @Inject
@@ -101,9 +106,26 @@ class MainActivity : ComponentActivity() {
 
         val themeModeFlow: Flow<ThemeMode> = themePreference.themeMode
 
+        // The theme's first frames used to render with SYSTEM / not-AMOLED until
+        // the DataStore read landed (~0.4 s measured on a Pixel 5), so a
+        // light-theme user on a dark-mode phone saw dark flash to light, and an
+        // AMOLED user grey to black, on every cold start. Start from the last
+        // theme rendered, kept in plain SharedPreferences like the start tab.
+        val themeSnapshot = getSharedPreferences(THEME_SNAPSHOT_PREFS, MODE_PRIVATE)
+        val initialThemeMode = themeSnapshot.getString(KEY_THEME_MODE, null)
+            ?.let { name -> ThemeMode.entries.firstOrNull { it.name == name } }
+            ?: ThemeMode.SYSTEM
+        val initialAmoledDark = themeSnapshot.getBoolean(KEY_AMOLED_DARK, false)
+
         setContent {
-            val themeMode by themeModeFlow.collectAsState(initial = ThemeMode.SYSTEM)
-            val amoledDark by themePreference.amoledDark.collectAsState(initial = false)
+            val themeMode by themeModeFlow.collectAsState(initial = initialThemeMode)
+            val amoledDark by themePreference.amoledDark.collectAsState(initial = initialAmoledDark)
+            LaunchedEffect(themeMode, amoledDark) {
+                themeSnapshot.edit()
+                    .putString(KEY_THEME_MODE, themeMode.name)
+                    .putBoolean(KEY_AMOLED_DARK, amoledDark)
+                    .apply()
+            }
             val systemDark = isSystemInDarkTheme()
             val darkTheme = when (themeMode) {
                 ThemeMode.LIGHT -> false
