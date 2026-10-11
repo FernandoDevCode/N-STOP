@@ -1295,6 +1295,9 @@ class PlayerRepositoryImpl @Inject constructor(
             _userMessages.tryEmit("Nothing in this queue is playable right now.")
             return false
         }
+        // Off the main thread: a downloaded track's disk check is a ContentResolver
+        // query on a SAF tree, which a slow provider (SD card, cloud-backed) stalls.
+        val queueItem = withContext(Dispatchers.IO) { queueTrack.toQueueMediaItem() }
         restoreGhostPaused()
         val wasEmpty = controller.mediaItemCount == 0
         // Mirror into the logical queue right after the playing track's
@@ -1318,7 +1321,7 @@ class PlayerRepositoryImpl @Inject constructor(
         val currentIndex = controller.currentMediaItemIndex
         val insertIndex = currentIndex + 1
         val walk = if (wasEmpty) null else shuffleWalk(controller)
-        controller.addMediaItem(insertIndex, queueTrack.toQueueMediaItem())
+        controller.addMediaItem(insertIndex, queueItem)
         placeInShuffleOrder(controller, walk, insertIndex, 1, currentIndex, afterCurrent = true)
         // If the queue was empty, the user tapped "Play next" with nothing
         // playing — they expect the song to actually start, not just sit
@@ -1344,13 +1347,16 @@ class PlayerRepositoryImpl @Inject constructor(
             _userMessages.tryEmit("Nothing in this queue is playable right now.")
             return false
         }
+        // Off the main thread: a downloaded track's disk check is a ContentResolver
+        // query on a SAF tree, which a slow provider (SD card, cloud-backed) stalls.
+        val queueItem = withContext(Dispatchers.IO) { queueTrack.toQueueMediaItem() }
         restoreGhostPaused()
         val wasEmpty = controller.mediaItemCount == 0
         // The logical queue first, as in addNext: the add is reported during addMediaItem.
         currentQueueTracks = if (wasEmpty) listOf(queueTrack) else currentQueueTracks + queueTrack
         val walk = if (wasEmpty) null else shuffleWalk(controller)
         val at = controller.mediaItemCount
-        controller.addMediaItem(queueTrack.toQueueMediaItem())
+        controller.addMediaItem(queueItem)
         placeInShuffleOrder(controller, walk, at, 1, controller.currentMediaItemIndex, afterCurrent = false)
         if (wasEmpty) {
             controller.prepare()
@@ -1974,7 +1980,11 @@ class PlayerRepositoryImpl @Inject constructor(
         allowYtDlp: Boolean = true,
     ): StreamRoutingResult {
         val localPath = track.filePath
-        if (track.isDownloaded && !localPath.isNullOrBlank() && filePathExistsOnDisk(localPath)) {
+        // The disk check off the main thread (playTrack runs on the caller's, Main from a
+        // viewModelScope): on a SAF tree it is a ContentResolver query a slow provider stalls.
+        if (track.isDownloaded && !localPath.isNullOrBlank() &&
+            withContext(Dispatchers.IO) { filePathExistsOnDisk(localPath) }
+        ) {
             val uri = if (localPath.startsWith("/")) Uri.parse("file://$localPath") else Uri.parse(localPath)
             return StreamRoutingResult.Item(
                 MediaItem.Builder()
