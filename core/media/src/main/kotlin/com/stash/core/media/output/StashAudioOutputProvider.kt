@@ -47,8 +47,11 @@ class StashAudioOutputProvider(
             if (plan.trackFormat == SampleFormat.FLOAT) throw e
             // A device that lists a bit-perfect format but won't open an
             // AudioTrack in it: play, on the shared mixer, rather than not at all.
+            // Remembered, or the next recheck would plan the same format again
+            // and rebuild the stream into the same refusal, over and over.
             Log.w(TAG, "AudioTrack in ${plan.trackFormat} refused; falling back to float", e)
-            plan = OutputPlan(MixerDecision.Shared(MixerDecision.Reason.REJECTED), SampleFormat.FLOAT, plan.device, null)
+            controller.onTrackRefused(plan)
+            plan = plan.rejected(SampleFormat.FLOAT)
             super.getAudioOutput(configFor(config, inFormat, SampleFormat.FLOAT))
         }
         return StashAudioOutput(

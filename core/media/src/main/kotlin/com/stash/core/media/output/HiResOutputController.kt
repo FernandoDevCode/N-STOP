@@ -54,12 +54,37 @@ class OutputPlan internal constructor(
     }
     val bitPerfect: Boolean get() = mixerPath == MixerPath.BIT_PERFECT
 
-    /** Two plans with equal keys configure the hardware identically. */
+    /**
+     * Two plans with equal keys configure the hardware identically. Only what
+     * the hardware does counts: every shared plan writing the same track format
+     * shares a key whatever its [MixerDecision.Shared.reason] (STANDARD → MATCH
+     * on the speaker changes the reason, not the output, and must not rebuild
+     * the stream). The reason stays on [decision] for the signal path.
+     */
     val key: String = when (decision) {
         is MixerDecision.Configure ->
             "cfg:${device?.id}:${decision.option.index}:${decision.option.sampleRate}:$trackFormat"
-        is MixerDecision.Shared -> "shared:${decision.reason}"
+        is MixerDecision.Shared -> "shared:$trackFormat"
     }
+
+    private val isRejected: Boolean get() = decision == MixerDecision.Shared(MixerDecision.Reason.REJECTED)
+
+    /**
+     * This plan's stream degraded to the shared mixer after Android or the DAC
+     * refused it. [trackFormat] is what the AudioTrack is (or will be) open in.
+     */
+    internal fun rejected(trackFormat: SampleFormat = this.trackFormat): OutputPlan =
+        OutputPlan(MixerDecision.Shared(MixerDecision.Reason.REJECTED), trackFormat, device, null)
+
+    /**
+     * Whether a live stream built for this plan must be rebuilt to follow
+     * [fresh]. A stream already degraded by a refusal that still stands is
+     * left alone even when its track format differs (its AudioTrack was opened
+     * for the refused mixer, and the shared mixer takes that format as well):
+     * the rebuild would only cost a re-seek.
+     */
+    internal fun needsRebuildFor(fresh: OutputPlan): Boolean =
+        key != fresh.key && !(isRejected && fresh.isRejected)
 }
 
 /** Per-player facts the output stage needs but Media3's output config doesn't carry. */
@@ -146,14 +171,24 @@ class HiResOutputController @Inject constructor(
 
     private class Applied(val device: AudioDeviceInfo, val attributes: AudioAttributes, val mixer: Any)
 
+    /** Configurations Android or the DAC refused; [prepare] plans the shared fallback for them. */
+    private val refusals = RefusedConfigurations()
+
     init {
         scope.launch { preference.mode.collect(::onModeChanged) }
         audioManager.registerAudioDeviceCallback(
             object : AudioDeviceCallback() {
-                override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) = recheckLiveOutputs()
+                override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
+                    // A re-attached DAC gets another try at what it refused.
+                    addedDevices.forEach { refusals.forgetDevice(it.id) }
+                    recheckLiveOutputs()
+                }
                 override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
                     // Android drops the preference itself when the device goes away.
-                    removedDevices.forEach { applied.remove(it.id) }
+                    removedDevices.forEach {
+                        applied.remove(it.id)
+                        refusals.forgetDevice(it.id)
+                    }
                     recheckLiveOutputs()
                 }
             },
@@ -171,7 +206,7 @@ class HiResOutputController @Inject constructor(
         if (Build.VERSION.SDK_INT < 34) return shared(MixerDecision.Reason.UNSUPPORTED_ANDROID)
         if (attributes.usage != AudioAttributes.USAGE_MEDIA) return shared(MixerDecision.Reason.NOT_MEDIA_USAGE)
         if (device == null || !device.isUsb()) return shared(MixerDecision.Reason.NOT_USB)
-        return MixerApi34.plan(audioManager, device, m, sampleRate, channelCount, speed)
+        return refusals.screen(MixerApi34.plan(audioManager, device, m, sampleRate, channelCount, speed))
     }
 
     /**
@@ -189,7 +224,10 @@ class HiResOutputController @Inject constructor(
                 is MixerDecision.Configure -> applyMixer(device, attributes, plan.platformMixer!!)
                 is MixerDecision.Shared -> { clearMixer(device); true }
             }
-            if (!ok) output.onMixerRejected()
+            if (!ok) {
+                refusals.remember(plan)
+                output.onMixerRejected()
+            }
         }
         active = output
         _output.value = output.pathState()
@@ -218,6 +256,9 @@ class HiResOutputController @Inject constructor(
     /** [output]'s speed changed; bit-perfect can only hold at 1x. */
     fun onSpeedChanged(output: StashAudioOutput) = recheck(output)
 
+    /** An AudioTrack wouldn't open in [plan]'s format (playback thread); see [StashAudioOutputProvider]. */
+    internal fun onTrackRefused(plan: OutputPlan) = refusals.remember(plan)
+
     /** Clears every mixer preference Stash set (service shutdown). */
     fun releaseAll() {
         if (Build.VERSION.SDK_INT < 34) return
@@ -228,6 +269,8 @@ class HiResOutputController @Inject constructor(
         if (newMode == mode) return
         mode = newMode
         if (newMode == HiResOutputMode.STANDARD) releaseAll()
+        // A new mode asks for different things: let refused configurations be tried again.
+        refusals.clear()
         recheckLiveOutputs()
     }
 
@@ -237,7 +280,16 @@ class HiResOutputController @Inject constructor(
         val fresh = runCatching {
             prepare(output.streamSampleRate, output.channelCount, output.session.speed, output.platformAttributes)
         }.getOrNull() ?: return
-        if (fresh.key != output.plan.key) output.requestReplan()
+        val current = output.plan
+        when {
+            // Same hardware set-up: keep the stream, but take the fresh plan's
+            // reason and device so the signal path tells today's story.
+            fresh.key == current.key -> {
+                output.adopt(fresh)
+                if (active === output) _output.value = output.pathState()
+            }
+            current.needsRebuildFor(fresh) -> output.requestReplan()
+        }
     }
 
     @RequiresApi(34)

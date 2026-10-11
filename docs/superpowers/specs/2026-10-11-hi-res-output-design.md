@@ -84,7 +84,11 @@ Decoder ──float──▶ DefaultAudioSink (float on, speed via AudioTrack pa
   speed change that breaks bit-perfect → the output throws a *recoverable*
   `WriteException` once, after at least one frame was written (earlier is
   fatal in `DefaultAudioSink`). ExoPlayer then rebuilds the output in place,
-  the same path it uses for a dead AudioTrack.
+  the same path it uses for a dead AudioTrack. Only a hardware change
+  rebuilds: shared plans with the same track format are equal whatever their
+  reason, and a configuration Android or the DAC refused is remembered
+  (`RefusedConfigurations`, per device) until a replug or a mode change, so
+  a recheck never rebuilds a stream into the same refusal again.
 - **Bit-perfect side effects.** EQ, normalization and crossfade step aside;
   the Equalizer screen says so, and the service holds crossfade off while
   `bitPerfectEngaged`.

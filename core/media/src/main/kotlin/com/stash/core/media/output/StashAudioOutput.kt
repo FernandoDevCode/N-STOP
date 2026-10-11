@@ -89,8 +89,18 @@ class StashAudioOutput(
 
     /** Android refused the mixer preference: carry on, honestly, on the shared mixer. */
     internal fun onMixerRejected() {
-        plan = OutputPlan(MixerDecision.Shared(MixerDecision.Reason.REJECTED), plan.trackFormat, plan.device, null)
+        plan = plan.rejected()
         inner.setVolume(playerVolume)
+    }
+
+    /**
+     * Takes [fresh] in place of the current plan when it configures the
+     * hardware identically (equal [OutputPlan.key]), so the signal path shows
+     * the current reason and device without rebuilding the stream. Equal keys
+     * mean the same mixer path, so volume and DSP handling don't change.
+     */
+    internal fun adopt(fresh: OutputPlan) {
+        if (fresh.key == plan.key) plan = fresh
     }
 
     override fun write(buffer: ByteBuffer, encodedAccessUnitCount: Int, presentationTimeUs: Long): Boolean {
