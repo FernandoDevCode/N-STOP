@@ -2,6 +2,7 @@ package com.stash.feature.search
 
 import android.os.SystemClock
 import android.util.Log
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.common.perf.PerfLog
@@ -62,6 +63,14 @@ class SearchViewModel @Inject constructor(
     private val playerRepository: PlayerRepository,
     private val streamingPreference: StreamingPreference,
     private val recentSearchesStore: RecentSearchesStore,
+    /**
+     * Holds the typed query across process death. The Search tab's ViewModel
+     * already survives tab switches (its back-stack entry is saved, not
+     * cleared), but when Android reclaims the app in the background the
+     * restored tab used to come back blank; now it comes back with the query
+     * in the field and its results searched again.
+     */
+    private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
     companion object {
@@ -75,9 +84,15 @@ class SearchViewModel @Inject constructor(
 
         /** Max number of tracks to pre-warm URLs for on a fresh results page. */
         private const val PREFETCH_TOP_N = 6
+
+        /** [SavedStateHandle] key of the typed query. */
+        internal const val KEY_QUERY = "search_query"
     }
 
-    private val _uiState = MutableStateFlow(SearchUiState())
+    // Starts from the saved query (empty on a fresh open); see [savedStateHandle].
+    private val _uiState = MutableStateFlow(
+        SearchUiState(query = savedStateHandle.get<String>(KEY_QUERY).orEmpty()),
+    )
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 
     /**
@@ -217,8 +232,12 @@ class SearchViewModel @Inject constructor(
         viewModelScope.launch { recentSearchesStore.clear() }
     }
 
-    /** Drives [flatMapLatest] — every keystroke replaces the value. */
-    private val queryFlow = MutableStateFlow("")
+    /**
+     * Drives [flatMapLatest] — every keystroke replaces the value. Seeded with
+     * the restored query, so the pipeline searches it again on its own (the
+     * results themselves are not saved: they are large and would be stale).
+     */
+    private val queryFlow = MutableStateFlow(_uiState.value.query)
 
     /**
      * Re-runs the current query. A failed search used to be a dead end: no
@@ -296,6 +315,7 @@ class SearchViewModel @Inject constructor(
     fun onQueryChanged(query: String) {
         _uiState.update { it.copy(query = query) }
         queryFlow.value = query
+        savedStateHandle[KEY_QUERY] = query
     }
 
     /**

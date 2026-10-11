@@ -1,5 +1,6 @@
 package com.stash.feature.search
 
+import androidx.lifecycle.SavedStateHandle
 import app.cash.turbine.test
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.media.PlayerRepository
@@ -161,6 +162,36 @@ class SearchViewModelTest {
         vm.onSearchCommitted()
         advanceUntilIdle()
         verify(api, org.mockito.kotlin.times(3)).searchAll(eq("abc"))
+    }
+
+    /**
+     * After process death the Search tab came back blank. The query now lives
+     * in SavedStateHandle: typing writes it, and a restored ViewModel shows it
+     * and searches it again.
+     */
+    @Test
+    fun `typing saves the query for process death`() = runTest {
+        val handle = SavedStateHandle()
+        val vm = newVm(savedStateHandle = handle)
+
+        vm.onQueryChanged("radiohead")
+
+        assertEquals("radiohead", handle.get<String>(SearchViewModel.KEY_QUERY))
+    }
+
+    @Test
+    fun `a restored query is shown and searched again`() = runTest {
+        val api = mock<YTMusicApiClient>()
+        whenever(api.searchAll(eq("radiohead"))).doReturn(SearchAllResults(emptyList()))
+        val vm = newVm(
+            api = api,
+            savedStateHandle = SavedStateHandle(mapOf(SearchViewModel.KEY_QUERY to "radiohead")),
+        )
+
+        assertEquals("radiohead", vm.uiState.value.query)
+        advanceUntilIdle()
+        verify(api, atLeastOnce()).searchAll(eq("radiohead"))
+        assertEquals(SearchStatus.Empty, vm.uiState.value.status)
     }
 
     // ------------------------------------------------------------------
@@ -335,6 +366,7 @@ class SearchViewModelTest {
         recentSearchesStore: RecentSearchesStore = mock {
             on { recent } doReturn kotlinx.coroutines.flow.flowOf(emptyList())
         },
+        savedStateHandle: SavedStateHandle = SavedStateHandle(),
     ): SearchViewModel = SearchViewModel(
         api = api,
         prefetcher = prefetcher,
@@ -343,6 +375,7 @@ class SearchViewModelTest {
         playerRepository = playerRepository,
         streamingPreference = streamingPreference,
         recentSearchesStore = recentSearchesStore,
+        savedStateHandle = savedStateHandle,
     )
 
     private fun sampleTrack(): TrackItem = TrackItem(
