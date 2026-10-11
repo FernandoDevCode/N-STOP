@@ -648,8 +648,9 @@ suspend fun updateNowPlaying(
          * TTL for cached generic lookups (tag→tracks, artist→similar, …).
          * These change slowly, so a week keeps mixes fresh while collapsing
          * the repeated cross-user traffic that throttled the shared key.
+         * Rows past it are never served again, so SyncFinalizeWorker prunes them.
          */
-        private const val CACHE_TTL_MS = 7L * 24 * 60 * 60 * 1000
+        internal const val CACHE_TTL_MS = 7L * 24 * 60 * 60 * 1000
 
         /** Synthetic breaker key for the Worker proxy source (vs. real api keys). */
         private const val PROXY_BREAKER_KEY = "__proxy__"

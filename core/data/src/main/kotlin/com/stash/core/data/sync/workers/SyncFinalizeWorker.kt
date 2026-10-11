@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.stash.core.data.db.dao.LastFmCacheDao
 import com.stash.core.data.db.dao.RemoteSnapshotDao
 import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.sync.SyncNotificationManager
@@ -26,6 +27,7 @@ class SyncFinalizeWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val syncHistoryDao: SyncHistoryDao,
     private val remoteSnapshotDao: RemoteSnapshotDao,
+    private val lastFmCacheDao: LastFmCacheDao,
     private val syncStateManager: SyncStateManager,
     private val syncNotificationManager: SyncNotificationManager,
 ) : CoroutineWorker(appContext, params) {
@@ -79,6 +81,19 @@ class SyncFinalizeWorker @AssistedInject constructor(
                 throw e
             } catch (e: Exception) {
                 Log.w(TAG, "Pruning old snapshots failed", e)
+            }
+            // Last.fm responses past their TTL are never served again (LastFmApiClient
+            // refetches and overwrites), but nothing ever deleted them: the table grew
+            // without bound — ~5k rows on a real library — bloating the database and
+            // every backup. Same rules: best effort, never fails the sync.
+            try {
+                lastFmCacheDao.prune(
+                    System.currentTimeMillis() - com.stash.core.data.lastfm.LastFmApiClient.CACHE_TTL_MS,
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Pruning expired Last.fm responses failed", e)
             }
 
             // Cancel the ongoing progress notification.
