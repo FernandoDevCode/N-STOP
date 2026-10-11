@@ -14,7 +14,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -132,7 +132,14 @@ class StreamSourceRegistry internal constructor(
             // that track would coalesce onto the same dead Deferred and time
             // out — turning a transient hang into a permanently unplayable
             // track, which is worse than the duplicate resolve this fixes.
-            withTimeout(LazyResolvingDataSource.RESOLVE_DEADLINE_MS) {
+            //
+            // OrNull: a hit deadline is a miss, not a cancellation. withTimeout's
+            // TimeoutCancellationException reached every waiter through await(),
+            // and callers read a CancellationException as "a newer tap preempted
+            // us" — so a 45 s hang ended with the spinner cleared and no "Couldn't
+            // find this track", and RefreshingDataSource's open() threw a
+            // non-IOException Media3 never retries. doResolve still records it.
+            withTimeoutOrNull(LazyResolvingDataSource.RESOLVE_DEADLINE_MS) {
                 doResolve(track, allowYouTube, allowYtDlp)
             }
         }
