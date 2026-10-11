@@ -268,7 +268,14 @@ class FakeSyncServer : SyncApi {
         return SyncResult.Ok(LogPage(after.take(200), space.head, after.size > 200))
     }
 
+    /** Runs once before the next post, by anyone: another device's batch landing between a device's pull and its push. */
+    var beforeNextPost: (suspend () -> Unit)? = null
+
     override suspend fun postLog(auth: DeviceAuth, spaceId: String, env: SyncEnvelope): SyncResult<LogPosted> {
+        beforeNextPost?.let {
+            beforeNextPost = null
+            it()
+        }
         calls += "postLog"
         forced("postLog")?.let { return it }
         failPostsAfter?.let { n -> if (n <= 0) return SyncResult.Unreachable("offline") else failPostsAfter = n - 1 }

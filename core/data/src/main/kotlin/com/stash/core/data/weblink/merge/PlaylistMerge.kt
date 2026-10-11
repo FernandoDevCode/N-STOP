@@ -134,6 +134,13 @@ object PlaylistMerge {
      * Merges a remote `pl` op into this device's playlist. [phone]: this device is the phone. [base]: the version last agreed on.
      * [local] / [localHash]: this device's current version and its hash, or null when it doesn't have the playlist. [remote],
      * [parent] (the hash the edit started from) and [fromPhone] (the phone wrote it) describe the op.
+     *
+     * [baseHash] / [ancestor]: an op whose [parent] is neither null nor [baseHash] wasn't made from the version this device agreed
+     * on; it ran concurrently with it (this device's own pushed edit, or another device's op it took). Its merge base is then
+     * [ancestor], the version [parent] names when this device kept it, never [base]. The base can be this device's own pushed
+     * edit: "unchanged since the base, take the remote" would drop that edit here while the other side drops the remote one the
+     * same way, and neither pushes again (audit A5). With no [ancestor] kept, an unchanged playlist keeps the newer `at`, and a
+     * kept one is pushed back over the remote. Without [baseHash] (the shared vectors) the rules are sync-v1's as written.
      */
     fun <S : SongIdentity> merge(
         phone: Boolean,
@@ -143,6 +150,8 @@ object PlaylistMerge {
         remote: PlVersion<S>,
         parent: String?,
         fromPhone: Boolean,
+        baseHash: String? = null,
+        ancestor: PlVersion<S>? = null,
     ): Result<S> {
         val r = remote
         val take = Result(Action.TAKE, r, r)
@@ -152,8 +161,11 @@ object PlaylistMerge {
         if (local?.ro == true || r.ro) return if (phone || !fromPhone) keep(base) else take
         if (local == null) return take
         if (parent != null && parent == localHash) return take
-        if (base != null && sameVersion(local, base)) return take
-        if (base != null && sameVersion(r, base)) return keep()
+        val concurrent = parent != null && baseHash != null && parent != baseHash
+        if (concurrent && ancestor == null && base != null && sameVersion(local, base)) return if (r.at > local.at) take else keep()
+        val b = if (concurrent && ancestor != null) ancestor else base
+        if (b != null && sameVersion(local, b)) return take
+        if (b != null && sameVersion(r, b)) return keep()
 
         // Both changed.
         val l = local
@@ -161,7 +173,7 @@ object PlaylistMerge {
             if (r.items == null && l.items == null) return take
             return if (r.at > l.at) take else keep()
         }
-        val name = mergeName(base, l, r)
+        val name = mergeName(b, l, r)
         val at = maxOf(l.at, r.at)
         val merged: PlVersion<S> = if (l.follow != null || r.follow != null) {
             // A followed shared mix: its songs are never merged; the follow with the higher version (same mix) or the newer edit wins.
@@ -174,7 +186,7 @@ object PlaylistMerge {
             PlVersion(name, w.items, at, w.follow)
         } else {
             val rFirst = r.at > l.at
-            PlVersion(name, mergeItems(base?.items.orEmpty(), if (rFirst) r.items else l.items, if (rFirst) l.items else r.items), at)
+            PlVersion(name, mergeItems(b?.items.orEmpty(), if (rFirst) r.items else l.items, if (rFirst) l.items else r.items), at)
         }
         if (sameVersion(merged, r)) return take
         if (sameVersion(merged, l)) return Result(Action.KEEP, l, r)

@@ -9,7 +9,9 @@ import com.stash.core.data.weblink.PairingState
 import com.stash.core.data.weblink.SyncErrorCode
 import com.stash.core.data.weblink.SyncResult
 import com.stash.core.data.weblink.WebLinkRepository
+import com.stash.core.data.weblink.merge.PlVersion
 import com.stash.core.data.weblink.merge.PlayRec
+import com.stash.core.data.weblink.merge.PlaylistMerge
 import com.stash.core.data.weblink.merge.SyncHashes
 import com.stash.core.model.weblink.Hlc
 import kotlinx.coroutines.test.runTest
@@ -599,6 +601,77 @@ class MirrorEngineTest {
         assertThat(lib.playlists.getValue(drive).items.map { it.title }).containsExactly("1", "X", "2").inOrder()
         val pushed = web.ops(me).filterIsInstance<MirrorOp.Pl>().last()
         assertThat(pushed.items!!.map { it.title }).containsExactly("1", "X", "2").inOrder()
+    }
+
+    /**
+     * Audit A5: the phone and the browser edit one playlist from the same version and both push before reading the other's. The
+     * phone's base is then its own edit, so "unchanged since the base, take the remote" dropped that edit here while the browser
+     * dropped its own the same way. The phone now merges against the version both started from and pushes the merge, which the
+     * browser (today's rules, replayed with [PlaylistMerge]) takes: both end with both edits.
+     */
+    @Test fun `concurrent edits from the same version converge on both edits, whichever push landed first`() {
+        for (phoneFirst in listOf(true, false)) runTest {
+            val server = FakeSyncServer()
+            val store = InMemoryWebLinkStore()
+            val repo = WebLinkRepository(server, store)
+            val session = PairingSession(server, store, repo, phoneName = { "Pixel 5" }, now = { clock }, sleep = { clock += it })
+            val lib = FakeMirrorLibrary()
+            val engine = MirrorEngine(server, store, repo, InMemoryMirrorStore(), lib, { clock }, { "m_Phone%011d".format(++minted) })
+            val b = FakeBrowser(server, name = "Chrome on Windows")
+            val code = b.openCode()
+            server.onAnswered = { slot ->
+                b.readAnswer(slot)
+                b.reply()
+            }
+            session.open(code)
+            session.confirm()
+            repo.refresh()
+            val web = WebSide(server, b)
+            val me = store.id!!.deviceId
+
+            val drive = lib.addPlaylist("Night drive", listOf(song("1"), song("2"), song("3"), song("4")))
+            engine.configure(MirrorChange(dirs = mapOf(Kind.PLAYLISTS to Dir.BOTH), add = listOf(drive)))
+            clock += 1_000
+            val mid = web.config()!!.ids.single()
+            val v0 = web.ops(me).filterIsInstance<MirrorOp.Pl>().single()
+            val h0 = MirrorView.hashOf(v0)
+
+            // The phone removes 2 and adds P; the browser, still at V0, adds W after 1.
+            val webEdit = MirrorOp.Pl(mid, web.at(), h0, "Night drive", listOf(song("1"), song("W"), song("2"), song("3"), song("4")))
+            lib.playlists.getValue(drive).items = listOf(song("1"), song("3"), song("4"), song("P"))
+            // The phone pulls (nothing new), then the browser's batch lands just before or just after the phone's own.
+            if (!phoneFirst) server.beforeNextPost = { web.post(webEdit) }
+            engine.sync()
+            clock += 1_000
+            if (phoneFirst) web.post(webEdit)
+            val phoneEdit = web.ops(me).filterIsInstance<MirrorOp.Pl>().last()
+            assertThat(phoneEdit.parent).isEqualTo(h0)
+
+            engine.sync()
+            clock += 1_000
+            val merged = listOf("1", "W", "3", "4", "P")
+            assertThat(lib.playlists.getValue(drive).items.map { it.title }).containsExactly(*merged.toTypedArray()).inOrder()
+            val pushed = web.ops(me).filterIsInstance<MirrorOp.Pl>().last()
+            assertThat(pushed.items!!.map { it.title }).containsExactly(*merged.toTypedArray()).inOrder()
+            assertThat(pushed.parent).isEqualTo(MirrorView.hashOf(webEdit))
+
+            // Today's browser: its base is its own edit, so it takes the phone's concurrent edit, then the phone's merge on top.
+            var base = PlVersion(webEdit.name, webEdit.items, webEdit.at)
+            var local = base
+            for (op in web.ops(me).filterIsInstance<MirrorOp.Pl>().filter { it.at > v0.at }) {
+                val res = PlaylistMerge.merge(
+                    phone = false, base = base, local = local, localHash = SyncHashes.playlistHash(local.name, local.items, null),
+                    remote = PlVersion(op.name, op.items, op.at), parent = op.parent, fromPhone = true,
+                )
+                if (res.action != PlaylistMerge.Action.KEEP) local = res.local!!
+                base = res.base!!
+            }
+            assertThat(local.items!!.map { it.title }).containsExactly(*merged.toTypedArray()).inOrder()
+            // Nothing left to send.
+            val sent = web.ops(me).filterIsInstance<MirrorOp.Pl>().size
+            engine.sync()
+            assertThat(web.ops(me).filterIsInstance<MirrorOp.Pl>()).hasSize(sent)
+        }
     }
 
     @Test fun `a playlist from the web becomes a playlist here, a delete everywhere removes it, a stale delete loses to an edit`() = runTest {
