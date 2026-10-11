@@ -932,11 +932,28 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
-    /** Delete all downloaded tracks by [artistName] from disk and DB. */
+    /**
+     * Delete the downloaded songs on [artistName]'s card from disk and DB — exactly the
+     * [ArtistInfo.trackCount] songs the confirm dialog names (see [artistCardTracks]).
+     *
+     * [MusicRepository.getTracksByArtist] is a credit search (any credit, album artist too,
+     * downloaded or not): deleting all of it also took "Future, Drake" songs from Future's card,
+     * compilations whose album artist is Drake, and every streamable synced row crediting him,
+     * cascading them out of playlists and Liked for good. Per-item failures are isolated;
+     * emits one roll-up message.
+     */
     fun deleteArtist(artistName: String) {
         viewModelScope.launch {
-            val tracks = musicRepository.getTracksByArtist(artistName).first()
-            tracks.forEach { musicRepository.deleteTrack(it) }
+            val tracks = artistCardTracks(musicRepository.getTracksByArtist(artistName).first(), artistName)
+            var deleted = 0
+            tracks.forEach { track ->
+                runCatching { musicRepository.deleteTrack(track) }
+                    .onSuccess { if (it) deleted++ }
+                    .onFailure { e -> if (e is CancellationException) throw e }
+            }
+            if (deleted > 0) {
+                _userMessages.tryEmit("Deleted $deleted ${songs(deleted)}.")
+            }
         }
     }
 
@@ -1094,3 +1111,12 @@ private data class LibraryData(
     val playlists: List<Playlist>,
     val recentlyAdded: List<Track>,
 )
+
+/**
+ * The songs an Artists-tab card counts: DOWNLOADED rows whose credit's primary act is
+ * [artistName]. Mirrors how the card is built (`getAllArtists` counts `is_downloaded` rows per
+ * exact credit, then the tab regroups credits by [primaryArtist]), so a destructive action on
+ * the card touches exactly the songs its count, and its confirm dialog, promise.
+ */
+internal fun artistCardTracks(candidates: List<Track>, artistName: String): List<Track> =
+    candidates.filter { it.isDownloaded && it.artist.primaryArtist() == artistName }

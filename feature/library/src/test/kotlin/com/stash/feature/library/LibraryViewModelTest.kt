@@ -251,6 +251,33 @@ class LibraryViewModelTest {
         verify(playerRepo, org.mockito.kotlin.never()).addToQueue(offAlbum)
     }
 
+    @Test
+    fun deleteArtist_deletes_only_the_downloaded_songs_on_the_card() = runTest {
+        val own = Track(1L, "God's Plan", "Drake", isDownloaded = true, filePath = "/a")
+        val ownCollab = Track(2L, "Jimmy Cooks", "Drake, 21 Savage", isDownloaded = true, filePath = "/b")
+        // Under Future's card, not Drake's.
+        val feature = Track(3L, "Life Is Good", "Future, Drake", isDownloaded = true, filePath = "/c")
+        // A synced, streamable row: not on any Library card.
+        val streamOnly = Track(4L, "Hotline Bling", "Drake", isDownloaded = false)
+        // A compilation whose album artist is Drake: credit search matches it, the card doesn't.
+        val compilation = Track(5L, "Signs", "Someone Else", albumArtist = "Drake", isDownloaded = true, filePath = "/d")
+        val musicRepo = musicRepoMock()
+        whenever(musicRepo.getTracksByArtist("Drake"))
+            .thenReturn(flowOf(listOf(own, ownCollab, feature, streamOnly, compilation)))
+        val vm = buildVm(musicRepository = musicRepo)
+        val messages = collectMessages(vm)
+
+        vm.deleteArtist("Drake")
+        runCurrent()
+
+        verify(musicRepo).deleteTrack(own)
+        verify(musicRepo).deleteTrack(ownCollab)
+        verify(musicRepo, org.mockito.kotlin.never()).deleteTrack(feature)
+        verify(musicRepo, org.mockito.kotlin.never()).deleteTrack(streamOnly)
+        verify(musicRepo, org.mockito.kotlin.never()).deleteTrack(compilation)
+        assertEquals(listOf("Deleted 2 songs."), messages)
+    }
+
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
