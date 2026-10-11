@@ -13,6 +13,7 @@ import com.stash.data.spotify.model.SpotifyPlaylistItem
 import com.stash.data.spotify.model.SpotifyTrackItem
 import com.stash.data.spotify.model.SpotifyTrackObject
 import com.stash.data.spotify.model.SpotifyTracksRef
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -20,6 +21,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -348,10 +350,13 @@ class SpotifyApiClient @Inject constructor(
      * Falls back to the sp_dc GraphQL approach if client_credentials fails.
      *
      * @param playlistId The Spotify playlist ID (without the "spotify:playlist:" prefix).
-     * @return List of [SpotifyTrackItem].
+     * @return The playlist's tracks. [SpotifyPlaylistTracks.partial] is set when
+     *   the GraphQL walk ended early (a later page failed, or Spotify's own count
+     *   says items are missing) — the caller must then not mirror the playlist
+     *   down to what was fetched.
      * @throws SpotifyApiException if all approaches fail.
      */
-    suspend fun getPlaylistTracks(playlistId: String): SyncResult<List<SpotifyTrackItem>> {
+    suspend fun getPlaylistTracks(playlistId: String): SyncResult<SpotifyPlaylistTracks> {
         Log.d(TAG, "getPlaylistTracks: playlistId=$playlistId")
 
         try {
@@ -362,7 +367,9 @@ class SpotifyApiClient @Inject constructor(
                 val webApiTracks = tryGetPlaylistTracksViaWebApi(playlistId)
                 if (webApiTracks != null) {
                     Log.d(TAG, "getPlaylistTracks: got ${webApiTracks.size} tracks via Web API")
-                    return SyncResult.Success(webApiTracks)
+                    // All-or-nothing: any failed Web API page returns null above
+                    // and the whole playlist is re-fetched via GraphQL.
+                    return SyncResult.Success(SpotifyPlaylistTracks(webApiTracks))
                 }
             } else {
                 Log.d(TAG, "getPlaylistTracks: Web API breaker open, straight to GraphQL")
@@ -372,13 +379,19 @@ class SpotifyApiClient @Inject constructor(
             Log.d(TAG, "getPlaylistTracks: trying GraphQL")
             val graphqlTracks = tryGetPlaylistTracksViaGraphQL(playlistId)
             if (graphqlTracks != null) {
-                Log.d(TAG, "getPlaylistTracks: got ${graphqlTracks.size} tracks via GraphQL")
+                Log.d(
+                    TAG,
+                    "getPlaylistTracks: got ${graphqlTracks.tracks.size} tracks via GraphQL" +
+                        if (graphqlTracks.partial) " (PARTIAL: ${graphqlTracks.partialReason})" else "",
+                )
                 return SyncResult.Success(graphqlTracks)
             }
 
             return SyncResult.Error("getPlaylistTracks: both Web API and GraphQL failed for $playlistId")
         } catch (e: SpotifyApiException) {
             throw e  // Preserve for doWork() 429 retry handling
+        } catch (e: CancellationException) {
+            throw e  // A stopped sync is not a fetch error
         } catch (e: Exception) {
             return SyncResult.Error("getPlaylistTracks failed: ${e.message}", cause = e)
         }
@@ -388,16 +401,20 @@ class SpotifyApiClient @Inject constructor(
      * Fetches the user's Liked Songs from the library.
      *
      * Liked Songs are private and require the sp_dc token (Prong 2).
-     * If the GraphQL request fails, returns an empty list gracefully.
      *
      * @param limit  Maximum number of tracks to return (default 50).
      * @param offset Zero-based index of the first track to return.
-     * @return List of [SpotifyTrackItem].
+     * @return [SyncResult.Success] with the page whenever Spotify returned any
+     *   items — even if every one was filtered out, so a page of liked local
+     *   files can't end the walk early (paginate on
+     *   [SpotifyLikedSongsPage.rawItemCount]). [SyncResult.Empty] only when
+     *   Spotify returned no items at all; [SyncResult.Error] when the request
+     *   failed or the response had no recognisable items list.
      */
     suspend fun getLikedSongs(
         limit: Int = DEFAULT_LIMIT,
         offset: Int = 0,
-    ): SyncResult<List<SpotifyTrackItem>> = withContext(Dispatchers.IO) {
+    ): SyncResult<SpotifyLikedSongsPage> = withContext(Dispatchers.IO) {
         Log.d(TAG, "getLikedSongs: limit=$limit, offset=$offset (via sp_dc GraphQL)")
 
         try {
@@ -413,16 +430,26 @@ class SpotifyApiClient @Inject constructor(
             )
 
             if (responseJson != null) {
-                val tracks = parseLibraryTracksResponse(responseJson)
-                Log.d(TAG, "getLikedSongs: got ${tracks.size} liked songs")
-                if (tracks.isEmpty()) {
-                    SyncResult.Empty("GraphQL returned empty liked songs")
-                } else {
-                    SyncResult.Success(tracks)
+                val page = parseLibraryTracksPage(responseJson)
+                when {
+                    page == null ->
+                        SyncResult.Error("getLikedSongs: unrecognised response at offset=$offset")
+                    page.rawItemCount == 0 ->
+                        SyncResult.Empty("GraphQL returned no liked songs at offset=$offset")
+                    else -> {
+                        Log.d(
+                            TAG,
+                            "getLikedSongs: got ${page.tracks.size}/${page.rawItemCount} liked songs " +
+                                "(total=${page.totalCount})",
+                        )
+                        SyncResult.Success(page)
+                    }
                 }
             } else {
                 SyncResult.Error("getLikedSongs: GraphQL returned null (sp_dc may be expired)")
             }
+        } catch (e: CancellationException) {
+            throw e  // A stopped sync is not a fetch error
         } catch (e: Exception) {
             Log.e(TAG, "getLikedSongs: failed", e)
             SyncResult.Error("getLikedSongs failed: ${e.message}", e)
@@ -963,14 +990,25 @@ class SpotifyApiClient @Inject constructor(
      * This is the fallback for private playlists that aren't accessible via
      * the public Web API. Returns null if the GraphQL approach fails entirely.
      *
+     * A page that fails AFTER the first one (HTTP 429/5xx, which
+     * [executeGraphQL] turns into null, or a 200 carrying only `errors`) used
+     * to `break` out of the loop and hand back the pages read so far as the
+     * whole playlist. Now the walk still stops there but the result is marked
+     * [SpotifyPlaylistTracks.partial], as it is when the raw items walked fall
+     * short of the `totalCount` Spotify reports — so REFRESH keeps the local
+     * playlist instead of mirroring it down to a truncated list.
+     *
      * @param playlistId The Spotify playlist ID.
-     * @return List of tracks, or null on failure.
+     * @return The tracks with an honest partial flag, or null on failure.
      */
-    private suspend fun tryGetPlaylistTracksViaGraphQL(playlistId: String): List<SpotifyTrackItem>? {
+    private suspend fun tryGetPlaylistTracksViaGraphQL(playlistId: String): SpotifyPlaylistTracks? {
         val uri = "spotify:playlist:$playlistId"
         val allTracks = mutableListOf<SpotifyTrackItem>()
         var currentOffset = 0
         val pageSize = 100
+        var rawItemsWalked = 0
+        var totalCount: Int? = null
+        var partialReason: String? = null
 
         while (true) {
             val variables = buildJsonObject {
@@ -984,9 +1022,17 @@ class SpotifyApiClient @Inject constructor(
                 operationName = "fetchPlaylist",
                 variables = variables,
                 seedHash = SpotifyAuthConfig.HASH_FETCH_PLAYLIST,
-            ) ?: break
-
-            val page = parsePlaylistTracksGraphQLResponse(responseJson)
+            )
+            val page = responseJson?.let { parsePlaylistTracksGraphQLResponse(it) }
+            if (page == null) {
+                // First page: nothing was read, so this is a plain failure
+                // (the caller reports Error). Later page: what we have is a
+                // truncated playlist and must say so.
+                if (currentOffset == 0) return null
+                partialReason = "page at offset $currentOffset failed"
+                Log.w(TAG, "tryGetPlaylistTracksViaGraphQL: $playlistId — $partialReason, marking partial")
+                break
+            }
             Log.d(
                 TAG,
                 "tryGetPlaylistTracksViaGraphQL: offset=$currentOffset, " +
@@ -994,6 +1040,8 @@ class SpotifyApiClient @Inject constructor(
             )
 
             allTracks.addAll(page.tracks)
+            rawItemsWalked += page.rawItemCount
+            page.totalCount?.let { totalCount = it }
 
             // Terminate on raw item count, NOT parsed count. A page with
             // any filtered item (local tracks, podcast episodes, region-
@@ -1005,7 +1053,17 @@ class SpotifyApiClient @Inject constructor(
             currentOffset += pageSize
         }
 
-        return if (allTracks.isNotEmpty()) allTracks else null
+        if (partialReason == null && fetchedBelowExpected(rawItemsWalked, totalCount)) {
+            partialReason = "walked $rawItemsWalked of $totalCount items"
+            Log.w(TAG, "tryGetPlaylistTracksViaGraphQL: $playlistId — $partialReason, marking partial")
+        }
+
+        if (allTracks.isEmpty()) return null
+        return SpotifyPlaylistTracks(
+            tracks = allTracks,
+            partial = partialReason != null,
+            partialReason = partialReason,
+        )
     }
 
     // ── Library writes (heart button) — GraphQL mutations ───────────────
@@ -1387,21 +1445,26 @@ class SpotifyApiClient @Inject constructor(
      * blocked URIs) prematurely terminates pagination. Issue: a user with
      * 850 tracks saw 99 because one item on page 1 got filtered and
      * `tracks.size (99) < pageSize (100)` broke the loop early.
+     *
+     * Returns null when the response has no `items` list at all (an
+     * errors-only body, a renamed node): that is a failed page, and the
+     * walk must not read it as an empty last page.
      */
-    private fun parsePlaylistTracksGraphQLResponse(responseJson: JsonObject): PlaylistTracksPage {
+    private fun parsePlaylistTracksGraphQLResponse(responseJson: JsonObject): PlaylistTracksPage? {
         return try {
-            val items = responseJson["data"]
+            val content = responseJson["data"]
                 ?.jsonObject?.get("playlistV2")
                 ?.jsonObject?.get("content")
-                ?.jsonObject?.get("items")
-                ?.jsonArray
+                ?.jsonObject
+            val items = content?.get("items")?.jsonArray
 
             if (items == null) {
                 Log.w(TAG, "parsePlaylistTracksGraphQLResponse: could not find data.playlistV2.content.items")
                 val dataKeys = responseJson["data"]?.jsonObject?.keys
                 Log.d(TAG, "parsePlaylistTracksGraphQLResponse: data keys: $dataKeys")
-                return PlaylistTracksPage(emptyList(), 0)
+                return null
             }
+            val totalCount = (content["totalCount"] as? JsonPrimitive)?.intOrNull
 
             val rawItemCount = items.size
             Log.d(TAG, "parsePlaylistTracksGraphQLResponse: found $rawItemCount items")
@@ -1494,11 +1557,11 @@ class SpotifyApiClient @Inject constructor(
                     TAG,
                     "parsePlaylistTracksGraphQLResponse: parsed ${parsed.size}/$rawItemCount tracks",
                 )
-                PlaylistTracksPage(parsed, rawItemCount)
+                PlaylistTracksPage(parsed, rawItemCount, totalCount)
             }
         } catch (e: Exception) {
             Log.e(TAG, "parsePlaylistTracksGraphQLResponse: failed to parse response", e)
-            PlaylistTracksPage(emptyList(), 0)
+            null
         }
     }
 
@@ -1508,10 +1571,13 @@ class SpotifyApiClient @Inject constructor(
      * reliable signal for "is this the last page?" — using
      * `tracks.size < pageSize` mis-fires whenever an item gets filtered
      * by the parser (local tracks, podcast episodes, non-Track URIs).
+     * [totalCount] is the playlist size Spotify reports alongside the page
+     * (`playlistV2.content.totalCount`), null when absent.
      */
     private data class PlaylistTracksPage(
         val tracks: List<SpotifyTrackItem>,
         val rawItemCount: Int,
+        val totalCount: Int? = null,
     )
 
 }
