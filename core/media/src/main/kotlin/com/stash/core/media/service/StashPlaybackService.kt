@@ -37,7 +37,6 @@ import com.stash.core.media.equalizer.computeGain
 import com.stash.core.media.equalizer.watchDspActivation
 import com.stash.core.media.PlaybackResumer
 import com.stash.core.media.ResumePlayGate
-import com.stash.core.media.ResumeStreamResolver
 import com.stash.core.media.SleepTimerController
 import com.stash.core.media.streaming.PrefetchOrchestrator
 import com.stash.core.media.streaming.StashMediaSourceFactory
@@ -90,7 +89,6 @@ class StashPlaybackService : MediaLibraryService() {
     @Inject lateinit var sleepTimerController: SleepTimerController
     @Inject lateinit var streamingMediaSourceFactory: StreamingMediaSourceFactory
     @Inject lateinit var playbackResumer: PlaybackResumer
-    @Inject lateinit var resumeStreamResolver: ResumeStreamResolver
     @Inject lateinit var crossfadePreference: CrossfadePreference
     @Inject lateinit var playbackSessionBus: com.stash.core.media.PlaybackSessionBus
 
@@ -1237,7 +1235,7 @@ class StashPlaybackService : MediaLibraryService() {
      * Posts a lightweight "Resuming…" foreground notification so a
      * media-button-triggered resumption (started via startForegroundService
      * on a dead process) satisfies the OS ~5s "must call startForeground"
-     * deadline even when the current track needs a slow stream-URL resolve.
+     * deadline even when the current track's stream resolves slowly at play.
      *
      * Reuses Media3's default notification id so the real media notification
      * replaces this placeholder seamlessly once playback starts — no
@@ -2330,22 +2328,23 @@ class StashPlaybackService : MediaLibraryService() {
         }
 
         /**
-         * Builds a resumable [MediaItem] from a DB row. When [streamUrl] is
-         * non-null (the current track was resolved via [ResumeStreamResolver]
-         * for online-mode resume), it is used as the playback URI directly.
-         * Everything else goes through [toAutoMediaItem]: downloaded rows get
-         * their `file://` URI, and stream rows get a `stash-resolve://`
-         * placeholder resolved just-in-time at play — instead of the old
-         * URI-less item that surfaced as an onPlayerError skip.
+         * Builds a resumable [MediaItem] from a DB row through [toAutoMediaItem]:
+         * downloaded rows get their `file://` URI, and stream rows get a
+         * `stash-resolve://` placeholder that LazyResolvingDataSource resolves
+         * just-in-time at open().
+         *
+         * Never a pre-resolved URL. The current track's stream used to be
+         * resolved here (the full chain, yt-dlp included) before the
+         * resumption future returned: a headset press on a dead process heard
+         * up to 45 s of silence; the registry's timeout cancelled the future,
+         * so nothing was restored at all; a success swapped in a raw URL
+         * without EXTRA_STREAM_ORIGIN, which routed a YouTube URL past the 403
+         * refresh chain and a JioSaavn URL past its no-redirect client; and a
+         * boot-time call, only populating SystemUI's resume card, spent a
+         * resolve (and lossless quota) for nothing. The placeholder resolves
+         * once, at play, through the same routing as every other queue item.
          */
-        private fun buildResumeItem(track: TrackEntity, streamUrl: String? = null): MediaItem {
-            val item = track.toAutoMediaItem()
-            return if (streamUrl != null && !(track.isDownloaded && !track.filePath.isNullOrBlank())) {
-                item.buildUpon().setUri(streamUrl.toUri()).build()
-            } else {
-                item
-            }
-        }
+        private fun buildResumeItem(track: TrackEntity): MediaItem = track.toAutoMediaItem()
 
         @OptIn(UnstableApi::class)
         override fun onPlaybackResumption(
@@ -2356,8 +2355,8 @@ class StashPlaybackService : MediaLibraryService() {
             return serviceScope.future {
                 // This callback can run for a genuine play request started via
                 // startForegroundService (media button on a dead process). The
-                // current track may need a (possibly slow) stream-URL resolve
-                // for online mode, which can blow the OS 5s "must call
+                // current track's stream may resolve slowly once it plays,
+                // which can blow the OS 5s "must call
                 // startForeground" window. Post a lightweight "Resuming…"
                 // foreground notification first to satisfy it; Media3 replaces
                 // it with the real media notification once playback starts.
@@ -2370,18 +2369,7 @@ class StashPlaybackService : MediaLibraryService() {
                 // continues where it stopped.
                 val plan = playbackResumer.buildResumePlan()
                 if (plan != null) {
-                    // Resolve ONLY the current track's stream URL in the
-                    // foreground so it plays in online mode; other streamed
-                    // tracks resolve later via the prefetch/skip path.
-                    // Downloaded tracks return null here and use their file.
-                    val currentStreamUrl = resumeStreamResolver
-                        .resolveStreamUrl(plan.tracks[plan.startIndex])
-                    val items = plan.tracks.mapIndexed { index, track ->
-                        buildResumeItem(
-                            track,
-                            streamUrl = if (index == plan.startIndex) currentStreamUrl else null,
-                        )
-                    }
+                    val items = plan.tracks.map { buildResumeItem(it) }
                     kotlinx.coroutines.withContext(Dispatchers.Main) {
                         session.player.shuffleModeEnabled = plan.isShuffled
                         // Repeat mode is persisted with the queue and must be
@@ -2407,9 +2395,7 @@ class StashPlaybackService : MediaLibraryService() {
                 // track, or the most recently added track if none.
                 val track = trackDao.getLastPlayedTrack()
                     ?: trackDao.getRecentlyAdded(1).first().firstOrNull()
-                val item = track?.let {
-                    buildResumeItem(it, streamUrl = resumeStreamResolver.resolveStreamUrl(it))
-                }
+                val item = track?.let { buildResumeItem(it) }
 
                 if (item != null) {
                     resumePlayGate.arm(isForPlayback)
