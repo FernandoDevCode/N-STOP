@@ -22,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -101,11 +102,18 @@ internal fun LyricsLineRenderer(
     onLineTap: (Long) -> Unit,
     look: LyricsLook,
     modifier: Modifier = Modifier,
+    isPlaying: Boolean = true,
+    playbackSpeed: Float = 1f,
 ) {
     val listState = rememberLazyListState()
-    // currentPositionMs is a plain parameter, not snapshot state: key the scan on it directly
-    // (a derivedStateOf here once froze on the value captured at first composition).
-    val currentIndex = remember(lines, currentPositionMs) { currentLineIndex(lines, currentPositionMs) }
+    // The line is chosen on the smoothed clock the word renderer uses, not the raw 250ms poll:
+    // a line timed just after a poll lit up to 250ms after its vocal started. The clock is
+    // snapshot state, so derivedStateOf reads it live and recomposes only when the line changes.
+    // (A derivedStateOf over the plain currentPositionMs parameter once froze on the value
+    // captured at first composition; reading the clock State avoids that.)
+    val clock = rememberSmoothPositionMs(currentPositionMs, isPlaying, playbackSpeed)
+    val currentIndexState = remember(lines) { derivedStateOf { currentLineIndex(lines, clock.value) } }
+    val currentIndex = currentIndexState.value
     val active = rememberUpdatedState(currentIndex)
     FollowLiveLine(listState, active, lines.size)
 

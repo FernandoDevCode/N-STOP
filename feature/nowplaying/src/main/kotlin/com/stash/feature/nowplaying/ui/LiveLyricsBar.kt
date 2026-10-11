@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -139,9 +140,13 @@ fun LiveLyricsBar(
                         playbackSpeed = playbackSpeed,
                     )
                 } else {
-                    val index = remember(mode.lines, positionMs) {
-                        currentLineIndex(mode.lines, positionMs)
+                    // On the smoothed clock, as the lyrics view: on the raw 250ms poll a line
+                    // could light up to 250ms after its vocal.
+                    val clock = rememberSmoothPositionMs(positionMs, isPlaying, playbackSpeed)
+                    val indexState = remember(mode.lines) {
+                        derivedStateOf { currentLineIndex(mode.lines, clock.value) }
                     }
+                    val index = indexState.value
                     val line = mode.lines.getOrNull(index)?.text.orEmpty()
                     AnimatedContent(
                         targetState = line,

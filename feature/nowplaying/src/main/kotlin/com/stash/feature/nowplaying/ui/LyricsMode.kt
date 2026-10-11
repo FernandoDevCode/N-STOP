@@ -147,7 +147,11 @@ internal fun LyricsPane(
                     isPlaying = isPlaying,
                     playbackSpeed = playbackSpeed,
                 )
-                is LyricsBody.Lines -> LyricsLineRenderer(b.lines, currentPositionMs(), onSeek, look)
+                is LyricsBody.Lines -> LyricsLineRenderer(
+                    b.lines, currentPositionMs(), onSeek, look,
+                    isPlaying = isPlaying,
+                    playbackSpeed = playbackSpeed,
+                )
                 is LyricsBody.Plain -> LyricsPlainRenderer(b.text, look)
                 is LyricsBody.Message -> LyricsMessage(
                     text = b.text,
