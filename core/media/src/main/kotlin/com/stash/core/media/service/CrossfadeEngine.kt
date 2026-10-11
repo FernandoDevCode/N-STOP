@@ -104,9 +104,29 @@ class CrossfadeEngine(
         }
     }
 
-    /** Requests focus when the master starts; abandons when it stops. */
+    /**
+     * Requests focus when the master starts; abandons when it stops. Also hands
+     * a running fade back to the outgoing master when the user pauses or seeks
+     * it (see below). Registered before the service's own listener, so a
+     * cancelled fade is already over when that listener re-reads idleness.
+     */
     private val masterFocusListener = object : Player.Listener {
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            // A pause mid-fade (app, notification, headset, the sleep timer's
+            // final pause) lands only on this OUTGOING master, the session's
+            // player. The spare isn't wired to the session, so it played on,
+            // ramped up and was promoted at the swap with playWhenReady = true:
+            // the pause turned into "skip to the next song", and a sleep timer
+            // expiring inside a fade left the music on all night. Abort the
+            // fade so the pause holds. A transient focus loss sets
+            // pausedForFocusLoss first and keeps the fade (both players resume
+            // on gain); pauseAtEndOfMediaItems' own hold reports
+            // END_OF_MEDIA_ITEM, not USER_REQUEST.
+            if (!playWhenReady && transitioning && !pausedForFocusLoss &&
+                reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST
+            ) {
+                cancelTransition()
+            }
             // During a fade this listener still sits on the OUTGOING player,
             // whose pauseAtEndOfMediaItems fires playWhenReady=false if it
             // runs out mid-ramp (streaming durations drift). The incoming is
@@ -114,6 +134,18 @@ class CrossfadeEngine(
             // focus stack while music keeps playing (#251 car-route ghost).
             if (playWhenReady) requestFocus()
             else if (!pausedForFocusLoss && !transitioning) abandonFocus()
+        }
+
+        override fun onPositionDiscontinuity(
+            oldPosition: Player.PositionInfo,
+            newPosition: Player.PositionInfo,
+            reason: Int,
+        ) {
+            // A seek inside the outgoing song mid-fade ("Previous" more than 3 s
+            // in, scrubbing back) raises no media-item transition, so the
+            // service's cancel never ran: the fade went on and the song the
+            // user just restarted was cut off at the swap.
+            if (transitioning && reason == Player.DISCONTINUITY_REASON_SEEK) handBackToOutgoing()
         }
     }
 
@@ -290,6 +322,21 @@ class CrossfadeEngine(
         // index-for-index the outgoing's, so its (immutable) order applies as is; the count check
         // only keeps setShuffleOrder's length precondition from throwing should they ever differ.
         if (to.mediaItemCount == from.mediaItemCount) to.shuffleOrder = from.shuffleOrder
+    }
+
+    /**
+     * Aborts the fade for a reason that is not a pause (a seek on the outgoing),
+     * leaving the outgoing master playing. If the outgoing already reached its
+     * end, pauseAtEndOfMediaItems is holding it there paused, and a plain
+     * [cancelTransition] would leave silence. A user pause or a focus loss
+     * mid-fade cancels the fade itself (or sets [pausedForFocusLoss]), so a
+     * paused outgoing here is exactly that hold, and it plays on.
+     */
+    private fun handBackToOutgoing() {
+        val outgoing = playerA
+        val heldAtEnd = !outgoing.playWhenReady && !pausedForFocusLoss
+        cancelTransition()
+        if (heldAtEnd) outgoing.play()
     }
 
     /** Abort a pending/in-flight fade and restore the master; spare is reset. */
