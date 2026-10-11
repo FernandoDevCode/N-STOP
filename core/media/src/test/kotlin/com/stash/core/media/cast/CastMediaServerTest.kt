@@ -368,6 +368,17 @@ class CastMediaServerTest {
         }
     }
 
+    @Test fun `a one-byte probe after a full read keeps the sniffed type`() {
+        server.start()
+        val url = server.audioUrl(Uri.parse("file:///music/a"), payload = null)!!
+        request(url) // learns audio/flac
+
+        request(url, range = "bytes=0-0") // too short to sniff
+        val later = request(url, range = "bytes=100-199")
+
+        assertThat(later.headers["content-type"]).isEqualTo("audio/flac")
+    }
+
     @Test fun `a connection stop() closed before its worker set it up doesn't escape the worker`() {
         // The race: the speaker connects just as stop() closes every client socket.
         // setSoTimeout on the closed socket threw out of the pool thread — an

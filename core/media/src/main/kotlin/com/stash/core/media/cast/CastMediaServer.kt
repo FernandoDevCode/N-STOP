@@ -349,7 +349,10 @@ class CastMediaServer(
             // and our URIs carry no usable extension.
             val head = ByteArray(BUFFER_SIZE)
             val headLength = readFully(source, head, if (end >= 0) minOf(BUFFER_SIZE.toLong(), end - start + 1).toInt() else BUFFER_SIZE)
-            if (start == 0L && headLength > 0) entry.sniffedType = sniff(head, headLength, entry.isArtwork)
+            // Only a positive answer replaces what an earlier read learned: a probe of
+            // `bytes=0-0` is too short to sniff, and storing its null relabelled every
+            // later range `audio/mpeg` and turned off the HEAD shortcut.
+            if (start == 0L && headLength > 0) sniff(head, headLength, entry.isArtwork)?.let { entry.sniffedType = it }
             val type = entry.sniffedType ?: if (entry.isArtwork) "image/jpeg" else "audio/mpeg"
 
             writeHeaders(out, partial = range != null && total >= 0, start = start, end = end, total = total, type = type)
