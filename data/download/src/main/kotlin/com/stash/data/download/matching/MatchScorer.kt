@@ -371,8 +371,8 @@ class MatchScorer @Inject constructor(
         val liveIndicators = listOf("live", "concert", "woodstock", "festival", "session",
             "unplugged", "acoustic version", "radio session", "bbc session", "peel session",
             "mtv", "letterman", "snl", "tonight show")
-        val isLikelyLive = liveIndicators.any { it in candidateLower } &&
-            liveIndicators.none { it in targetLower }
+        val isLikelyLive = liveIndicators.any { containsWord(candidateLower, it) } &&
+            liveIndicators.none { containsWord(targetLower, it) }
 
         // Tempo/pitch edits commonly uploaded to YT that masquerade as the
         // real track — penalise whenever the target title doesn't explicitly
@@ -380,8 +380,8 @@ class MatchScorer @Inject constructor(
         // "edit" and "extended" catch alternate cuts that differ from the
         // album master.
         val tempoVariants = listOf("sped up", "nightcore", "slowed", "extended", "edit")
-        val isTempoVariant = tempoVariants.any { it in candidateLower } &&
-            tempoVariants.none { it in targetLower }
+        val isTempoVariant = tempoVariants.any { containsWord(candidateLower, it) } &&
+            tempoVariants.none { containsWord(targetLower, it) }
 
         return when {
             "karaoke" in candidateLower -> 0.4f
@@ -400,6 +400,21 @@ class MatchScorer @Inject constructor(
             else -> 0f
         }
     }
+
+    /**
+     * True when [phrase] appears in [text] as whole words. The live and tempo
+     * keyword lists used raw substring tests, so "edit" fired on "(Deluxe
+     * Edition)" and "Credits" (a 0.2 penalty that could sink the right
+     * candidate under the bar), and "live" / "session" fired on the *target*
+     * titles "Deliverance", "Alive" or "Obsession", exempting real live
+     * recordings from the penalty.
+     */
+    private fun containsWord(text: String, phrase: String): Boolean =
+        wordPatterns.getOrPut(phrase) { Regex("\\b" + Regex.escape(phrase) + "\\b") }
+            .containsMatchIn(text)
+
+    /** [containsWord]'s compiled patterns, one per keyword. */
+    private val wordPatterns = java.util.concurrent.ConcurrentHashMap<String, Regex>()
 
     /**
      * Adjustment keyed off YouTube Music's authoritative video classification.
