@@ -598,6 +598,9 @@ class MirrorEngine internal constructor(
                 batch = MirrorWire.readOps(SyncCrypto.open(key, c.sp.spaceId, SyncCrypto.Place.LOG, e.env))
             } catch (x: MirrorWireException) {
                 if (x.newer) throw x // stop here: nothing is applied, nothing is lost (the log keeps it)
+                // It opened under the space key, so a device of the space wrote it, but this app can't read it: a gap, so this
+                // phone never compacts it away for every device; a browser that reads it compacts (sync-v1 §5.4, audit A5).
+                if (e.seq !in r.gaps) r.gaps = r.gaps + e.seq
             } catch (x: SyncCryptoException) {
                 Log.w(TAG, "log entry ${e.seq} didn't open")
             }
