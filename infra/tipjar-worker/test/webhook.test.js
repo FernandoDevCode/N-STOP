@@ -85,6 +85,15 @@ test("a private donation (is_public: false) is listed as Anonymous with no messa
     assert.equal(supportersOf(e)[0].name, "Ann");
 });
 
+test("a non-USD donation is listed in whole US dollars; an unknown currency as 0, not its raw amount", async () => {
+    const e = env();
+    await worker.fetch(kofiPost(donation({ amount: "1000", currency: "JPY" })), e);
+    const jpy = supportersOf(e)[0].amountUsd;
+    assert.ok(jpy > 0 && jpy < 20, `¥1000 is a few dollars, got ${jpy}`);
+    await worker.fetch(kofiPost(donation({ message_id: "m2", kofi_transaction_id: "tx-2", amount: "50", currency: "XYZ" })), e);
+    assert.equal(supportersOf(e)[0].amountUsd, 0);
+});
+
 test("early access lives in ACCESS_KV by email hash, never the email; STASH_KV keeps only the tip jar's own keys", async () => {
     const e = env();
     await worker.fetch(kofiPost(donation()), e);

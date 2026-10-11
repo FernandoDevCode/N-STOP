@@ -29,7 +29,7 @@
  * Deploy: see ../README.md.
  */
 
-import { dedupeId, KEYS, KOFI_TXN_TTL_S, recordKofiSupport, sameSecret } from "./access.js";
+import { dedupeId, KEYS, KOFI_TXN_TTL_S, recordKofiSupport, sameSecret, toUsdCents } from "./access.js";
 import { sendWelcome } from "./welcome.js";
 
 // 2026-07-19: 20 was destructively truncating — donors pushed past the
@@ -130,9 +130,12 @@ async function handleKofiWebhook(request, env, ctx) {
  */
 async function addSupporter(env, payload) {
     const isPublic = payload.is_public !== false;
+    // Ko-fi's `amount` is in the donation's own currency: a ¥1000 tip used to show as "$1000". Converted like the
+    // goal is (src/access.js); a currency with no known rate shows 0 rather than a wrong dollar figure.
+    const cents = toUsdCents(payload.amount, payload.currency);
     const newSupporter = {
         name: (isPublic && payload.from_name ? payload.from_name : "Anonymous").slice(0, 40),
-        amountUsd: Math.max(0, Math.floor(parseFloat(payload.amount) || 0)),
+        amountUsd: cents === null ? 0 : Math.floor(cents / 100),
         message: (isPublic ? payload.message || "" : "").slice(0, 280),
         timestamp: payload.timestamp || new Date().toISOString(),
     };
