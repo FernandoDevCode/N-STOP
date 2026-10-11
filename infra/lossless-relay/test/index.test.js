@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { fakeD1 } from "./fake-d1.js";
-import worker, { handle, refusalNamesTrack } from "../src/index.js";
+import worker, { handle, networkOf, refusalNamesTrack } from "../src/index.js";
 import { bumpQuotaStmt } from "../src/db.js";
 
 const NOW = 1788282000; // 2026-09-01T17:00:00Z
@@ -23,8 +23,8 @@ function env(over = {}) {
     };
 }
 
-function mintReq(trackId, formatId, { key = KEY, install = "install-0001", ts = NOW, signed = true, version = "1", purpose } = {}) {
-    const h = { "X-Stash-Version": version, Accept: "application/json", "CF-Connecting-IP": "203.0.113.9" };
+function mintReq(trackId, formatId, { key = KEY, install = "install-0001", ts = NOW, signed = true, version = "1", purpose, ip = "203.0.113.9" } = {}) {
+    const h = { "X-Stash-Version": version, Accept: "application/json", "CF-Connecting-IP": ip };
     if (purpose) h["X-Stash-Purpose"] = purpose;
     if (signed) {
         h["X-Stash-Install"] = install;
@@ -323,7 +323,7 @@ function quotaRows(e) {
     return e.DB.raw.prepare("SELECT key, n, ip FROM quota WHERE key LIKE 'i:%' ORDER BY key").all().map((r) => ({ ...r }));
 }
 
-test("with IP_SALT set, each install's quota row carries the same short hash for the same IP; no extra rows", async () => {
+test("with IP_SALT set, each install's quota row carries the same short hash for the same IP; one network row, not one per request", async () => {
     const e = env({ IP_SALT: "salt-1" });
     await handle(mintReq(42, 27, { install: "install-aaaa" }), e, qobuz([200, GOOD]), NOW);
     await handle(mintReq(43, 27, { install: "install-bbbb" }), e, qobuz([200, GOOD]), NOW);
@@ -332,11 +332,114 @@ test("with IP_SALT set, each install's quota row carries the same short hash for
     assert.match(rows[0].ip, /^[0-9a-f]{16}$/);
     assert.equal(rows[0].ip, rows[1].ip); // two installs, one IP → visible as a pair
     assert.notEqual(rows[0].ip, "203.0.113.9"); // never the raw address
-    assert.equal(e.DB.raw.prepare("SELECT COUNT(*) AS c FROM quota").get().c, 3); // global + 2 installs, as before
+    assert.equal(e.DB.raw.prepare("SELECT COUNT(*) AS c FROM quota").get().c, 4); // global + 2 installs + the network's cap row
+    assert.equal(e.DB.raw.prepare("SELECT n FROM quota WHERE key = ?").get("n:" + rows[0].ip).n, 2);
 });
 
 test("without IP_SALT nothing about the IP is stored", async () => {
     const e = env();
     await handle(mintReq(42, 27), e, qobuz([200, GOOD]), NOW);
     assert.equal(quotaRows(e)[0].ip, null);
+    assert.equal(e.DB.raw.prepare("SELECT COUNT(*) AS c FROM quota").get().c, 2); // global + the install: no network row
+});
+
+// ── One caller can't take the whole pool (2026-10-11 audit) ─────────────────────────────────
+
+test("networkOf: IPv4 as is; IPv6 by its /56, however it's written", () => {
+    assert.equal(networkOf("203.0.113.9"), "203.0.113.9");
+    assert.equal(networkOf("::ffff:203.0.113.9"), "::ffff:203.0.113.9"); // IPv4-mapped stays an IPv4 key
+    assert.equal(networkOf("2001:db8:aa:bb12:1:2:3:4"), "2001:db8:aa:bb/56");
+    assert.equal(networkOf("2001:DB8:AA:BBFF::9"), "2001:db8:aa:bb/56"); // same /56, other /64, other case
+    assert.equal(networkOf("2001:db8::1"), "2001:db8:0:0/56");
+    assert.notEqual(networkOf("2001:db8:aa:cc00::1"), networkOf("2001:db8:aa:bb00::1"));
+    assert.equal(networkOf(""), "?");
+});
+
+test("the per-IP limiter counts an IPv6 caller by its /56: rotating addresses inside it shares one bucket", async () => {
+    const keys = [];
+    const e = env({ MINT_RL: { limit: async ({ key }) => { keys.push(key); return { success: true }; } } });
+    await handle(mintReq(42, 27, { ip: "2001:db8:aa:bb01::1" }), e, qobuz([200, GOOD]), NOW);
+    await handle(mintReq(42, 27, { ip: "2001:db8:aa:bbfe:dead:beef:0:1" }), e, qobuz(), NOW);
+    await handle(mintReq(42, 27, { ip: "203.0.113.9" }), e, qobuz(), NOW);
+    assert.deepEqual(keys, ["2001:db8:aa:bb/56", "2001:db8:aa:bb/56", "203.0.113.9"]);
+});
+
+test("a network's daily cap stops a script rotating install ids (and IPv6 addresses in its /56): 429, no Qobuz call", async () => {
+    const e = env({ IP_SALT: "salt-1", NETWORK_DAILY_CAP: "3" });
+    const q = qobuzByToken(new Set());
+    for (let i = 0; i < 3; i++) {
+        const r = await handle(mintReq(100 + i, 27, { install: `rotating-${i}`, ip: `2001:db8:aa:bb${i}0::${i}` }), e, q, NOW + i);
+        assert.equal(r.status, 200);
+    }
+    const r = await handle(mintReq(200, 27, { install: "rotating-x", ip: "2001:db8:aa:bbff::1" }), e, q, NOW + 10);
+    assert.equal(r.status, 429);
+    assert.equal(r.headers.get("Retry-After"), "3600");
+    assert.equal(q.calls.length, 3);
+    // Another network, and a cache HIT from the capped one, still work.
+    assert.equal((await handle(mintReq(300, 27, { install: "someone-else", ip: "198.51.100.7" }), e, q, NOW + 11)).status, 200);
+    assert.equal((await handle(mintReq(100, 27, { install: "rotating-y", ip: "2001:db8:aa:bb00::5" }), e, q, NOW + 12)).headers.get("X-Stash-Cache"), "HIT");
+});
+
+test("a Qobuz 404 (an id it doesn't know) spends neither the global cap nor the account's slots, only the install's quota and the network's allowance", async () => {
+    const e = env({ IP_SALT: "salt-1" });
+    const q = qobuz([404, ""], [404, ""]);
+    assert.equal((await handle(mintReq(987654321, 27), e, q, NOW)).status, 404);
+    assert.equal((await handle(mintReq(987654322, 27), e, q, NOW + 1)).status, 404);
+    assert.equal(await e.DB.prepare("SELECT n FROM quota WHERE key = 'global'").first(), null);
+    assert.equal((await e.DB.prepare("SELECT n FROM quota WHERE key = 'i:install-0001'").first()).n, 2);
+    assert.equal((await e.DB.prepare("SELECT n FROM quota WHERE key LIKE 'nf:%'").first()).n, 2);
+    assert.equal(await e.DB.prepare("SELECT n FROM quota WHERE key LIKE 'n:%'").first(), null);
+    const accts = (await e.DB.prepare("SELECT label, hour_n, day_n FROM accounts ORDER BY label").all()).results;
+    assert.deepEqual(accts, [{ label: "a", hour_n: 0, day_n: 0 }, { label: "b", hour_n: 0, day_n: 0 }]);
+});
+
+test("random ids can't burn the pool: past its allowance a network's 404s count again, and its daily cap ends them", async () => {
+    const e = env({ IP_SALT: "salt-1", GLOBAL_DAILY_CAP: "10", NETWORK_DAILY_CAP: "3", NETWORK_FREE_404_DAILY: "2" });
+    const q = qobuz(...Array(20).fill([404, ""]));
+    const statuses = [];
+    for (let i = 0; i < 8; i++) statuses.push((await handle(mintReq(1000 + i, 27, { install: `junk-id-${i}` }), e, q, NOW + i)).status);
+    // 2 free, 3 counted, then the network cap (429). The global cap of 10 is never reached.
+    assert.deepEqual(statuses, [404, 404, 404, 404, 404, 429, 429, 429]);
+    assert.equal((await e.DB.prepare("SELECT n FROM quota WHERE key = 'global'").first()).n, 3);
+    // Everyone else still gets FLAC.
+    assert.equal((await handle(mintReq(42, 27, { ip: "198.51.100.7" }), e, qobuz([200, GOOD]), NOW + 20)).status, 200);
+});
+
+test("without IP_SALT there is no network tally, so a Qobuz 404 counts as before", async () => {
+    const e = env();
+    assert.equal((await handle(mintReq(987654321, 27), e, qobuz([404, ""]), NOW)).status, 404);
+    assert.equal((await e.DB.prepare("SELECT n FROM quota WHERE key = 'global'").first()).n, 1);
+});
+
+test("a rights refusal (a real track) still spends the global and network caps: only Qobuz's 404 is free", async () => {
+    const e = env({ IP_SALT: "salt-1" });
+    assert.equal((await handle(mintReq(42, 27), e, qobuz([200, RIGHTS_LOCK]), NOW)).status, 404);
+    assert.equal((await e.DB.prepare("SELECT n FROM quota WHERE key = 'global'").first()).n, 1);
+    assert.equal((await e.DB.prepare("SELECT n FROM quota WHERE key LIKE 'n:%'").first()).n, 1);
+});
+
+// ── Failures answer the contract's 503, never a bare 500 ───────────────────────────────────
+
+test("a body that stalls after the headers cools that account and the next one serves the request", async () => {
+    const e = env();
+    let n = 0;
+    const q = async () => (n++ === 0
+        ? new Response(new ReadableStream({ start(c) { c.error(Object.assign(new Error("t"), { name: "TimeoutError" })); } }), { status: 200 })
+        : new Response(JSON.stringify(GOOD), { status: 200 }));
+    const r = await handle(mintReq(42, 27), e, q, NOW);
+    assert.equal(r.status, 200);
+    assert.equal((await e.DB.prepare("SELECT cooling_until FROM accounts WHERE label = 'a'").first()).cooling_until, NOW + 300);
+});
+
+test("a D1 error mid-request is a 503 busy with Retry-After, not an uncaught throw", async () => {
+    const e = env();
+    e.DB = { prepare() { throw new Error("D1_ERROR: database is overloaded"); }, batch: async () => { throw new Error("D1_ERROR"); } };
+    const r = await handle(mintReq(42, 27), e, qobuz([200, GOOD]), NOW);
+    assert.equal(r.status, 503);
+    assert.equal(r.headers.get("Retry-After"), "60");
+    assert.deepEqual(await r.json(), { error: "busy" });
+    // A write failing after Qobuz answered is the same 503.
+    const late = env();
+    late.DB.batch = async () => { throw new Error("D1_ERROR"); };
+    assert.equal((await handle(mintReq(43, 27), late, qobuz([200, GOOD]), NOW)).status, 503);
 });

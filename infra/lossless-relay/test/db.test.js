@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { fakeD1 } from "./fake-d1.js";
 import {
     selectAccount, ensureAccounts, coolAccount, killAccount,
-    getCached, putCachedStmt, readQuota, bumpQuotaStmt, prune, dayKey, hourKey,
+    getCached, putCachedStmt, readQuota, readQuotas, bumpQuotaStmt, refundAccountStmt, prune, dayKey, hourKey,
 } from "../src/db.js";
 
 const CAPS = { hourly: 2, daily: 3 };
@@ -96,4 +96,25 @@ test("prune keeps a week of quota rows for the IP report, and drops older ones",
     await prune(db, now);
     const days = db.raw.prepare("SELECT day FROM quota ORDER BY day").all().map((r) => r.day);
     assert.deepEqual(days, ["2026-08-25", "2026-09-01"]);
+});
+
+test("readQuotas reads several of today's counters at once, 0 for a key with no row", async () => {
+    const db = fakeD1();
+    await db.batch([bumpQuotaStmt(db, "2026-09-01", "i:x"), bumpQuotaStmt(db, "2026-09-01", "n:t"), bumpQuotaStmt(db, "2026-08-31", "nf:t")]);
+    assert.deepEqual(await readQuotas(db, "2026-09-01", ["i:x", "n:t", "nf:t"]), { "i:x": 1, "n:t": 1, "nf:t": 0 });
+});
+
+test("refundAccountStmt hands back this hour's and today's slot, never below 0, never a past hour's", async () => {
+    const db = fakeD1();
+    await ensureAccounts(db, ["a"]);
+    await selectAccount(db, T0, CAPS);
+    await selectAccount(db, T0 + 1, CAPS); // at the hourly cap of 2
+    await db.batch([refundAccountStmt(db, "a", T0 + 2)]);
+    assert.equal(await selectAccount(db, T0 + 3, CAPS), "a"); // the refunded slot is usable again
+    await db.batch([refundAccountStmt(db, "a", T0 + 3600)]); // next hour: hour_n belongs to the old hour, left alone
+    assert.deepEqual(await db.prepare("SELECT hour_n, day_n FROM accounts WHERE label = 'a'").first(), { hour_n: 2, day_n: 1 });
+    const fresh = fakeD1();
+    await ensureAccounts(fresh, ["b"]);
+    await fresh.batch([refundAccountStmt(fresh, "b", T0)]); // never stamped: stays at 0
+    assert.deepEqual(await fresh.prepare("SELECT hour_n, day_n FROM accounts WHERE label = 'b'").first(), { hour_n: 0, day_n: 0 });
 });
