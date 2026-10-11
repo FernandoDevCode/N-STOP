@@ -532,6 +532,9 @@ private fun InterludeDot(startMs: Long, endMs: Long, ctx: LyricsCtx, box: Dp, fo
  * Single-line word-synced text for [LiveLyricsBar]: syllables fade from 40% to full accent as they're
  * sung. (A fade, not the sweep: the bar is one ellipsized line of small text, and a sweep needs the
  * per-glyph layout the lyrics view uses.)
+ *
+ * Through an instrumental break (the gaps the lyrics view fills with interlude dots, [ttmlBreakAt])
+ * it shows the ♪ row instead of holding the last sung line, as the line-synced bar does.
  */
 @Composable
 internal fun WordSyncedBarLine(
@@ -544,7 +547,11 @@ internal fun WordSyncedBarLine(
 ) {
     val clock = rememberSmoothPositionMs(currentPositionMs, isPlaying, playbackSpeed)
     val lines = lyrics.lines
-    val lineIndex by remember(lines) { derivedStateOf { activeLineIndex(lines, clock.value) } }
+    // Both notify only when their answer changes, not on every clock frame.
+    val gap by remember(lines) { derivedStateOf { ttmlBreakAt(lines, clock.value) } }
+    val lineIndex by remember(lines) {
+        derivedStateOf { if (gap != null) BAR_BREAK else activeLineIndex(lines, clock.value) }
+    }
     val style = MaterialTheme.typography.titleMedium.copy(
         fontWeight = FontWeight.SemiBold,
         shadow = Shadow(color = accent.copy(alpha = 0.55f), blurRadius = 18f),
@@ -558,34 +565,49 @@ internal fun WordSyncedBarLine(
         label = "wordBarLine",
         modifier = modifier,
     ) { idx ->
-        val line = lines.getOrNull(idx)
-        val pos = clock.value                       // read here on purpose: one small text, per-frame
-        val text = buildAnnotatedString {
-            val syls = line?.lead?.syllables.orEmpty().ifEmpty { line?.background?.firstOrNull()?.syllables.orEmpty() }
-            if (syls.isEmpty()) {
-                withStyle(SpanStyle(color = accent)) { append("♪") }
-            } else {
-                syls.forEachIndexed { i, s ->
-                    val a = when {
-                        pos >= s.endMs -> 1f
-                        pos < s.startMs -> 0.4f
-                        else -> 0.4f + 0.6f * progressOf(pos, s.startMs, s.endMs)
+        if (idx == BAR_BREAK) {
+            InstrumentalBreakNotes(
+                style = style,
+                color = accent,
+                live = true,
+                progress = { gap?.progress(clock.value) },
+                spacing = BarNoteSpacing,
+                alignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        } else {
+            val line = lines.getOrNull(idx)
+            val pos = clock.value                       // read here on purpose: one small text, per-frame
+            val text = buildAnnotatedString {
+                val syls = line?.lead?.syllables.orEmpty().ifEmpty { line?.background?.firstOrNull()?.syllables.orEmpty() }
+                if (syls.isEmpty()) {
+                    withStyle(SpanStyle(color = accent)) { append("♪") }
+                } else {
+                    syls.forEachIndexed { i, s ->
+                        val a = when {
+                            pos >= s.endMs -> 1f
+                            pos < s.startMs -> 0.4f
+                            else -> 0.4f + 0.6f * progressOf(pos, s.startMs, s.endMs)
+                        }
+                        withStyle(SpanStyle(color = accent.copy(alpha = a))) { append(s.text) }
+                        if (!s.partOfWord && i < syls.lastIndex) append(' ')
                     }
-                    withStyle(SpanStyle(color = accent.copy(alpha = a))) { append(s.text) }
-                    if (!s.partOfWord && i < syls.lastIndex) append(' ')
                 }
             }
+            Text(
+                text = text,
+                style = style,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
-        Text(
-            text = text,
-            style = style,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
-        )
     }
 }
+
+/** [WordSyncedBarLine]'s "line" during an instrumental break: no line, the ♪ row. */
+private const val BAR_BREAK = -1
 
 // ─── helpers ────────────────────────────────────────────────────────────────────────────────────
 

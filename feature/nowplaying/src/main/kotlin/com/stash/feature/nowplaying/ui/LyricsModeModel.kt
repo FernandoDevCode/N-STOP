@@ -35,9 +35,11 @@ internal const val LYRICS_ERROR_MESSAGE = "Couldn't load lyrics"
 internal fun lyricsBodyFor(state: LyricsViewState): LyricsBody = when (state) {
     LyricsViewState.Loading -> LyricsBody.Loading
     // A TTML body that parsed to no lines would draw nothing at all: fall back to the LRC lines.
+    // Those carry their instrumental breaks as the view shows them (short gaps out, see
+    // [linesWithBreaks]), the same list the live bar follows.
     is LyricsViewState.Synced -> state.syllables?.takeIf { it.lines.isNotEmpty() }
         ?.let { LyricsBody.Words(it) }
-        ?: LyricsBody.Lines(state.lines)
+        ?: LyricsBody.Lines(linesWithBreaks(state.lines))
     is LyricsViewState.Plain -> LyricsBody.Plain(state.text)
     LyricsViewState.Instrumental -> LyricsBody.Message(INSTRUMENTAL_MESSAGE, canRetry = false)
     // "None" can be a stale miss (a source was down when it last looked), so it keeps a quiet retry.

@@ -39,6 +39,20 @@ class LyricsModeModelTest {
         assertEquals(LyricsBody.Lines(lines), lyricsBodyFor(LyricsViewState.Synced(lines, "")))
     }
 
+    @Test fun `line-synced lyrics carry long breaks and drop short ones`() {
+        val withBreaks = listOf(
+            LrcLine(0L, "one"),
+            LrcLine(2_000L, ""), // a breath before "two": dropped
+            LrcLine(3_000L, "two"),
+            LrcLine(5_000L, ""), // a 15 s solo: the ♪ row
+            LrcLine(20_000L, "three"),
+        )
+        assertEquals(
+            LyricsBody.Lines(listOf(LrcLine(0L, "one"), LrcLine(3_000L, "two"), LrcLine(5_000L, ""), LrcLine(20_000L, "three"))),
+            lyricsBodyFor(LyricsViewState.Synced(withBreaks, "")),
+        )
+    }
+
     @Test fun `an empty TTML body falls back to the lines rather than drawing nothing`() {
         val empty = TtmlLyrics(emptyList(), 0L, 0L)
         assertEquals(LyricsBody.Lines(lines), lyricsBodyFor(LyricsViewState.Synced(lines, "", empty)))
