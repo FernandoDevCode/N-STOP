@@ -11,6 +11,10 @@ INSTALL_DAILY_CAP = "500"      # doubled 300→600 on 09-11; raised to 800 (~33%
 ACCOUNT_HOURLY_CAP = "467"     # 350→467 (~33%) on 2026-10-03; 100/h failed for all 7 accounts on 09-19, then rose to 250
 ACCOUNT_DAILY_CAP = "8000"     # 6000→8000 (~33%) on 2026-10-03; originally doubled 1000→2000 on 09-08
 DOWNLOAD_PACE_HEADROOM_PCT = "13" # 10→13 (+30%) on 2026-10-03; streams first, downloads take what the pool can spare
+# Per network (IPv4 address, IPv6 /56), added 2026-10-11 so a script rotating install ids can't take the whole
+# global cap. Both need the IP_SALT secret; without it they are off.
+NETWORK_DAILY_CAP = "2000"     # 4 installs' worth: a household or a carrier NAT still fits
+NETWORK_FREE_404_DAILY = "100" # Qobuz 404s (unknown ids) that spend no global or account budget; past it they count
 
 # Rotation state, mint cache, daily counters (spec §5.2: D1, not KV, because of KV's write limit).
 [[d1_databases]]
@@ -20,6 +24,7 @@ database_id = "b223d4c7-ba0a-41fa-948d-2a41d29dfdbb"   # printed by `npx wrangle
 migrations_dir = "migrations"
 
 # Per-IP cap in front of everything (spec §5.4). Counts every /v1/qobuz/file request, hits included.
+# Keyed per network (IPv4 address, IPv6 /56) since 2026-10-11, so rotating IPv6 addresses doesn't buy new buckets.
 [[ratelimits]]
 name = "MINT_RL"
 namespace_id = "1001"
@@ -34,3 +39,5 @@ crons = ["17 * * * *"]
 #   RELAY_KEY_PREV  optional: the previous key, accepted during a rotation window.
 #   QOBUZ_ACCOUNTS  JSON array of {"label","token","app_id","app_secret"} entries from scripts/login.mjs.
 #   QOBUZ_ACCOUNTS_EXTRA  optional additive JSON array; lets the pool grow without replacing QOBUZ_ACCOUNTS.
+#   IP_SALT         random secret salting the stored network hash. Turns on the per-network caps above and the
+#                   IP column `npm run report` reads. Never the relay key (that one is public).

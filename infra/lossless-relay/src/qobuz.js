@@ -81,5 +81,15 @@ export async function mintFromQobuz(fetchImpl, account, trackId, formatId, nowSe
     } catch (e) {
         return { kind: "transient", reason: e?.name === "TimeoutError" ? "timeout" : "network" };
     }
-    return classify(res.status, await res.text());
+    // The body is read under the same timeout, so it can fail too: Qobuz sending headers in time and
+    // then stalling the body made res.text() reject with TimeoutError. Unguarded, that escaped as an
+    // uncaught throw (a 500 that cools the base 5 min on the device), and the second account was never
+    // asked. As a transient, this account cools and the next one gets the request.
+    let body;
+    try {
+        body = await res.text();
+    } catch (e) {
+        return { kind: "transient", reason: e?.name === "TimeoutError" ? "timeout" : "body" };
+    }
+    return classify(res.status, body);
 }

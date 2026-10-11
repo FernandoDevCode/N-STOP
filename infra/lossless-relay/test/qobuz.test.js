@@ -90,3 +90,11 @@ test("mintFromQobuz turns a thrown fetch into transient, never a throw", async (
     const down = async () => { throw new TypeError("fetch failed"); };
     assert.equal((await mintFromQobuz(down, acct, 1, 6, 1)).reason, "network");
 });
+
+test("mintFromQobuz turns a body that fails after the headers (a stalled body timing out) into transient, never a throw", async () => {
+    const acct = { label: "a", token: "t", app_id: "1", app_secret: "s" };
+    const failing = (err) => async () => new Response(new ReadableStream({ start(c) { c.error(err); } }), { status: 200 });
+    const timeout = Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" });
+    assert.deepEqual(await mintFromQobuz(failing(timeout), acct, 1, 6, 1), { kind: "transient", reason: "timeout" });
+    assert.deepEqual(await mintFromQobuz(failing(new TypeError("terminated")), acct, 1, 6, 1), { kind: "transient", reason: "body" });
+});

@@ -30,6 +30,15 @@ export async function readQuota(db, day, key) {
     return row ? row.n : 0;
 }
 
+/** Several of today's counters in one round trip: `{ key: n }`, 0 for a key with no row yet. */
+export async function readQuotas(db, day, keys) {
+    const { results } = await db.prepare("SELECT key, n FROM quota WHERE day = ?1 AND key IN (SELECT value FROM json_each(?2))")
+        .bind(day, JSON.stringify(keys)).all();
+    const out = Object.fromEntries(keys.map((k) => [k, 0]));
+    for (const r of results) out[r.key] = r.n;
+    return out;
+}
+
 /** `ip` (a salted hash, or null) is kept on the row as last seen — same write, no extra rows. */
 export function bumpQuotaStmt(db, day, key, ip = null) {
     return db.prepare(
@@ -65,6 +74,19 @@ WHERE label = (
   ORDER BY CASE WHEN ?6 IS NULL THEN last_used_at ELSE -last_used_at END ASC, label ASC LIMIT 1)
 RETURNING label`).bind(nowSec, hourKey(nowSec), dayKey(nowSec), caps.hourly, caps.daily, exclude, labels && JSON.stringify(labels)).first();
     return row ? row.label : null;
+}
+
+/**
+ * Statement (not executed): hands back the hourly and daily slot selectAccount stamped on `label`, for a lookup
+ * that must not count against the account caps (Qobuz's 404 for an id it doesn't know, see index.js). Only
+ * while the stamp's hour/day is still current, never below 0. last_used_at stays, so the LRU still moves on.
+ */
+export function refundAccountStmt(db, label, nowSec) {
+    return db.prepare(`
+UPDATE accounts SET
+  hour_n = CASE WHEN hour_key = ?2 AND hour_n > 0 THEN hour_n - 1 ELSE hour_n END,
+  day_n  = CASE WHEN day_key  = ?3 AND day_n  > 0 THEN day_n  - 1 ELSE day_n  END
+WHERE label = ?1`).bind(label, hourKey(nowSec), dayKey(nowSec));
 }
 
 /** Give every label in the secret a state row. INSERT OR IGNORE writes nothing for a known label. */
