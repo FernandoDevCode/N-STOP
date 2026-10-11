@@ -53,7 +53,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -2190,6 +2192,14 @@ class PlayerRepositoryImpl @Inject constructor(
                 // Sync initial state
                 updateState(controller)
                 controller
+            } catch (e: CancellationException) {
+                // await() throws this both when OUR caller was cancelled (a screen
+                // closing mid-reconnect), which must propagate: as null the caller
+                // ran on into its non-suspending tail (loadPlan set shuffle and
+                // repeat, then re-entered), and when the build future itself was
+                // cancelled, which is a failed connect like any other.
+                currentCoroutineContext().ensureActive()
+                null
             } catch (e: Exception) {
                 null
             }

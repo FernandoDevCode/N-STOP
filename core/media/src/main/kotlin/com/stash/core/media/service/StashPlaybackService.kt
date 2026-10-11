@@ -2315,7 +2315,7 @@ class StashPlaybackService : MediaLibraryService() {
                         pushLayout(session, session.player, newLikeState)
 
                         serviceScope.launch {
-                            runCatching {
+                            try {
                                 // Resolve the real Room PK. The mediaId may be a
                                 // v0.9.30 streaming-engine synthetic id
                                 // (`videoId.hashCode().toLong()`); without this
@@ -2332,7 +2332,10 @@ class StashPlaybackService : MediaLibraryService() {
                                 // Stash like stays synchronous; optional Spotify/YT
                                 // mirroring (off by default) layers on top.
                                 likeCoordinator.setLiked(realId, liked = newLikeState)
-                            }.onFailure { e ->
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                // onDestroy cancelled serviceScope: no rollback onto a session being released.
+                                throw e
+                            } catch (e: Exception) {
                                 android.util.Log.w(
                                     "StashPlayback",
                                     "notification like toggle failed for candidateId=$candidateId yt=$youtubeId",
