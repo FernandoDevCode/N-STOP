@@ -37,12 +37,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
@@ -186,10 +188,24 @@ class FailedMatchesViewModel @Inject constructor(
          * running or waiting, leaving those tracks never downloaded.
          */
         private val approvedDownloadProcessScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+        /**
+         * How the approved downloads are getting on, process-wide like the
+         * downloads themselves: leave the screen mid-run and come back, and the
+         * banner still counts the same run.
+         */
+        private val approvedDownloadsState = MutableStateFlow(ApprovedDownloads())
     }
 
     /** Scope for approved downloads; a `var` only so tests can run them on the test scheduler. */
     internal var approvedDownloadScope: CoroutineScope = approvedDownloadProcessScope
+
+    /**
+     * Drives the "Downloading 12 approved songs" banner. Approving hides the
+     * row at once, so without it the list silently emptied (often to "All
+     * caught up!") while the songs were still downloading in the background.
+     */
+    internal val approvedDownloads: StateFlow<ApprovedDownloads> = approvedDownloadsState.asStateFlow()
 
     /** Observable preview playback state for the UI to highlight the active row. */
     val previewState: StateFlow<PreviewState> = previewPlayer.previewState
@@ -637,35 +653,42 @@ class FailedMatchesViewModel @Inject constructor(
             }
 
             // Background download, outliving this screen (see approvedDownloadScope)
-            // and taking its turn behind the other approvals.
+            // and taking its turn behind the other approvals. Counted from here
+            // until it finishes, however it finishes (see approvedDownloads).
+            approvedDownloadsState.update { it.started() }
             approvedDownloadScope.launch {
                 var downloaded = false
                 try {
-                    approvedDownloadSlots.withPermit {
-                        downloaded = downloadApproved(trackId, url, candidate)
-                    }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    Log.w(TAG, "Background download error for ${candidate.title}", e)
-                }
-                if (!downloaded) {
-                    // The row was marked COMPLETED up front to hide it. Left so,
-                    // nothing would ever download this track (the downloader skips
-                    // COMPLETED rows); put it back in Failed Matches instead.
                     try {
-                        downloadQueueDao.updateStatus(
-                            id = queueEntryId,
-                            status = DownloadStatus.FAILED,
-                            errorMessage = "Approved match didn't download",
-                            failureType = DownloadFailureType.NO_MATCH,
-                        )
+                        approvedDownloadSlots.withPermit {
+                            downloaded = downloadApproved(trackId, url, candidate)
+                        }
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
-                        Log.w(TAG, "Couldn't put ${candidate.title} back in Failed Matches", e)
+                        Log.w(TAG, "Background download error for ${candidate.title}", e)
                     }
-                    _userMessages.trySend("Couldn't download '${candidate.title}'. It's back in the list to try again.")
+                    if (!downloaded) {
+                        // The row was marked COMPLETED up front to hide it. Left so,
+                        // nothing would ever download this track (the downloader skips
+                        // COMPLETED rows); put it back in Failed Matches instead.
+                        try {
+                            downloadQueueDao.updateStatus(
+                                id = queueEntryId,
+                                status = DownloadStatus.FAILED,
+                                errorMessage = "Approved match didn't download",
+                                failureType = DownloadFailureType.NO_MATCH,
+                            )
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Couldn't put ${candidate.title} back in Failed Matches", e)
+                        }
+                        _userMessages.trySend("Couldn't download '${candidate.title}'. It's back in the list to try again.")
+                    }
+                } finally {
+                    val after = approvedDownloadsState.updateAndGet { it.finished(downloaded) }
+                    approvedDownloadsFinishedMessage(after)?.let { _userMessages.trySend(it) }
                 }
             }
         }

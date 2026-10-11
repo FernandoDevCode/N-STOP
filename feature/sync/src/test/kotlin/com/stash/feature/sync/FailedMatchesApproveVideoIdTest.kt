@@ -34,6 +34,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -202,5 +203,34 @@ class FailedMatchesApproveVideoIdTest {
         gate.complete(Unit) // release the shared slots for the other tests
         advanceUntilIdle()
         coVerify(exactly = 4) { downloadExecutor.download(any(), any(), any(), any(), any()) }
+    }
+
+    /**
+     * Approving hid the row with nothing saying the song was on its way: the
+     * list just emptied. The approval now counts in [FailedMatchesViewModel.approvedDownloads]
+     * (the "Downloading N approved songs" banner) until its download finishes.
+     * Compared as deltas: the count is process-wide, like the downloads.
+     */
+    @Test fun `an approval counts as downloading until its download finishes`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        coEvery { downloadExecutor.download(any(), any(), any(), any(), any()) } coAnswers {
+            gate.await()
+            DownloadResult.Success(java.io.File("approve_dQw4w9WgXcQ.opus"))
+        }
+        val vm = makeVm()
+        vm.approvedDownloadScope = backgroundScope
+        val before = vm.approvedDownloads.value
+
+        vm.approveMatch(trackId = 1L, queueEntryId = 1L, candidate = candidate("dQw4w9WgXcQ"))
+        runCurrent()
+        val during = vm.approvedDownloads.value
+        assertEquals(before.waiting + 1, during.waiting)
+        assertTrue(during.active)
+
+        gate.complete(Unit)
+        runCurrent()
+        val after = vm.approvedDownloads.value
+        assertEquals(before.waiting, after.waiting)
+        assertEquals(during.done + 1, after.done)
     }
 }
