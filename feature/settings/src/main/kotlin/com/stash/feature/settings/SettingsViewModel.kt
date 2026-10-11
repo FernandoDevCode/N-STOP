@@ -69,6 +69,10 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/** Shown when a connect call failed with an error (e.g. the sign-in could not be stored) rather than a rejection. */
+private const val CONNECT_SAVE_FAILED =
+    "Couldn't finish connecting on this device. Please try again."
+
 /**
  * ViewModel for the Settings screen.
  *
@@ -1209,9 +1213,9 @@ class SettingsViewModel @Inject constructor(
                 it.copy(isSpotifyCookieValidating = true, spotifyCookieError = null)
             }
 
-            val success = tokenManager.connectSpotifyWithCookie(cookie, username)
+            val success = connectGuarded { tokenManager.connectSpotifyWithCookie(cookie, username) }
 
-            if (success) {
+            if (success == true) {
                 _localState.update {
                     it.copy(
                         showSpotifyCookieDialog = false,
@@ -1222,7 +1226,11 @@ class SettingsViewModel @Inject constructor(
             } else {
                 _localState.update {
                     it.copy(
-                        spotifyCookieError = "Invalid or expired sp_dc cookie. Please try again.",
+                        spotifyCookieError = if (success == null) {
+                            CONNECT_SAVE_FAILED
+                        } else {
+                            "Invalid or expired sp_dc cookie. Please try again."
+                        },
                         isSpotifyCookieValidating = false,
                     )
                 }
@@ -1251,6 +1259,22 @@ class SettingsViewModel @Inject constructor(
             musicRepository.cancelPendingDownloadsForSource("SPOTIFY")
             tokenManager.clearAuth(AuthService.SPOTIFY)
         }
+    }
+
+    /**
+     * Runs one of the connect calls, returning null when it THREW rather than
+     * answering. The connect calls end by encrypting and saving the credential;
+     * when the credential store fails (e.g. the device's Keystore is
+     * unavailable), the exception used to escape this bare viewModelScope
+     * launch and crash the app mid sign-in. Cancellation still propagates.
+     */
+    private suspend fun connectGuarded(connect: suspend () -> Boolean): Boolean? = try {
+        connect()
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        android.util.Log.w("SettingsViewModel", "connecting an account failed", e)
+        null
     }
 
     // -- YouTube actions ------------------------------------------------------
@@ -1347,9 +1371,9 @@ class SettingsViewModel @Inject constructor(
                 it.copy(isYouTubeCookieValidating = true, youTubeCookieError = null)
             }
 
-            val success = tokenManager.connectYouTubeWithCookie(cookie)
+            val success = connectGuarded { tokenManager.connectYouTubeWithCookie(cookie) }
 
-            if (success) {
+            if (success == true) {
                 _localState.update {
                     it.copy(
                         showYouTubeCookieDialog = false,
@@ -1360,7 +1384,11 @@ class SettingsViewModel @Inject constructor(
             } else {
                 _localState.update {
                     it.copy(
-                        youTubeCookieError = "Failed to save cookie. Please try again.",
+                        youTubeCookieError = if (success == null) {
+                            CONNECT_SAVE_FAILED
+                        } else {
+                            "Failed to save cookie. Please try again."
+                        },
                         isYouTubeCookieValidating = false,
                     )
                 }
@@ -1432,8 +1460,8 @@ class SettingsViewModel @Inject constructor(
         }
         viewModelScope.launch {
             _localState.update { it.copy(isDiscordTokenValidating = true, discordTokenError = null) }
-            val success = tokenManager.connectDiscordWithToken(token)
-            if (success) {
+            val success = connectGuarded { tokenManager.connectDiscordWithToken(token) }
+            if (success == true) {
                 _localState.update {
                     it.copy(
                         showDiscordTokenDialog = false,
@@ -1444,7 +1472,11 @@ class SettingsViewModel @Inject constructor(
             } else {
                 _localState.update {
                     it.copy(
-                        discordTokenError = "Invalid or expired token. Please try again.",
+                        discordTokenError = if (success == null) {
+                            CONNECT_SAVE_FAILED
+                        } else {
+                            "Invalid or expired token. Please try again."
+                        },
                         isDiscordTokenValidating = false,
                     )
                 }
