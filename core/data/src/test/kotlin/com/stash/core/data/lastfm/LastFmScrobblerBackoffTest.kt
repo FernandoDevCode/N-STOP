@@ -9,7 +9,10 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
@@ -142,5 +145,34 @@ class LastFmScrobblerBackoffTest {
         s.drainNow()
 
         coVerify(exactly = 2) { h.apiClient.scrobble(any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `a manual sync during an automatic pass does not scrobble the same plays twice`() = runTest {
+        val h = Harness()
+        val all = (1L..3L).map { event(it) }
+        val scrobbled = mutableSetOf<Long>()
+        coEvery { h.listeningEventDao.pendingScrobbles(any()) } answers { all.filter { it.id !in scrobbled } }
+        coEvery { h.listeningEventDao.markScrobbled(any()) } answers { scrobbled += firstArg<Long>() }
+        coEvery { h.trackDao.getById(any()) } answers { track(firstArg()) }
+        // The first submission hangs until both passes have started.
+        val lastFmAnswers = CompletableDeferred<Unit>()
+        coEvery {
+            h.apiClient.scrobble(any(), any(), any(), any(), any())
+        } coAnswers {
+            lastFmAnswers.await()
+            Result.success(Unit)
+        }
+
+        val s = scrobbler(h)
+        val automatic = async { s.drainNow() }
+        val manual = async { s.drainNow() }
+        runCurrent()
+        lastFmAnswers.complete(Unit)
+        automatic.await()
+        manual.await()
+
+        // Each play once. Without single-flight both passes held rows 1-3.
+        coVerify(exactly = 3) { h.apiClient.scrobble(any(), any(), any(), any(), any()) }
     }
 }

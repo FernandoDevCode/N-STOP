@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -41,6 +43,15 @@ class LastFmScrobbler @Inject constructor(
     private val rateLimitGate: LastFmRateLimitGate,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * One drain at a time. The automatic pass (on connect and on every listen)
+     * and the Settings "Sync scrobbles now" button both drain; run together, the
+     * two passes loaded the same unscrobbled rows and each submitted them, and
+     * Last.fm keeps duplicate scrobbles. A pass that waits here reloads the
+     * queue once it runs, so it only sends what the other pass left.
+     */
+    private val drainLock = Mutex()
 
     /** Must be called once from Application.onCreate. */
     fun start() {
@@ -111,6 +122,10 @@ class LastFmScrobbler @Inject constructor(
      * submission works fine for the low volumes we expect here.
      */
     private suspend fun drainQueue(session: LastFmSession) {
+        drainLock.withLock { drainQueueLocked(session) }
+    }
+
+    private suspend fun drainQueueLocked(session: LastFmSession) {
         // Offline, every submission in this pass is doomed, and a pass runs
         // on EVERY recorded listen. Backing off after consecutive failures
         // turns a session's worth of guaranteed-to-fail requests — each one
