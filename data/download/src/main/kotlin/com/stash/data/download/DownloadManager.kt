@@ -987,12 +987,14 @@ class DownloadManager @Inject constructor(
 
         // Gate 2: Short title word containment
         // Jaro-Winkler is unreliable for short strings (e.g., "Hey" vs "Otherside" = 0.63)
-        // For titles <= 5 chars, require the target to appear as a word in the candidate
+        // For titles <= 5 chars, require the target to appear as a word in the candidate.
+        // Both sides are tokenised the same way (titleContainsTarget's contiguous word
+        // run): comparing the raw lowercased target against the candidate's split words
+        // rejected every candidate for "Help!", "Don't" or "7/11", whose punctuation can
+        // never survive the candidate's split.
         val targetTitle = track.title.trim()
         if (targetTitle.length <= 5) {
-            val targetWord = targetTitle.lowercase()
-            val candidateWords = best.title.lowercase().split(Regex("\\W+"))
-            if (targetWord !in candidateWords) {
+            if (!matchScorer.titleContainsTarget(targetTitle, best.title)) {
                 Log.w(TAG, "resolveUrl: rejecting '${best.title}' — short title '${track.title}' not found as word")
                 return null
             }
