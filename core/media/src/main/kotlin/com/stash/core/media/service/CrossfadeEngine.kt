@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import androidx.annotation.OptIn
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -253,6 +254,12 @@ class CrossfadeEngine(
 
             var elapsed = 0L
             while (elapsed < fadeMs) {
+                // The queue moved under the fade (see incomingIndexIn): hand back
+                // now, while the outgoing is still audible, not at the swap.
+                if (incomingIndexIn(outgoing, incoming) == null) {
+                    handBackToOutgoing()
+                    return@launch
+                }
                 val (out, inc) = equalPowerVolumes(elapsed.toFloat() / fadeMs)
                 outgoing.volume = out
                 incoming.volume = inc
@@ -283,7 +290,14 @@ class CrossfadeEngine(
             if (!isActive) return@launch
 
             // Late swap: give the incoming the outgoing's queue, then promote it.
-            transferQueue(from = outgoing, to = incoming)
+            // Re-checked here: nothing suspends from this point on, so no edit can
+            // slip in between the check and the transfer.
+            val incomingIndex = incomingIndexIn(outgoing, incoming)
+            if (incomingIndex == null) {
+                handBackToOutgoing()
+                return@launch
+            }
+            transferQueue(from = outgoing, to = incoming, incomingIndex = incomingIndex)
             outgoing.removeListener(masterFocusListener)
             incoming.addListener(masterFocusListener)
             incoming.pauseAtEndOfMediaItems = false
@@ -304,15 +318,39 @@ class CrossfadeEngine(
     }
 
     /**
+     * [outgoing]'s timeline index of the song [incoming] is playing, or null
+     * when that song is no longer the outgoing's NEXT one.
+     *
+     * Edits land on the outgoing (the session's player) and raise no item
+     * transition, so the fade used to run on regardless: the upcoming song
+     * swiped away or evicted mid-fade made the old by-mediaId lookup miss, the
+     * transfer returned early, and the swap promoted a ONE-item player whose
+     * timeline the repository then persisted over the user's whole queue. A
+     * "Play next" inserted mid-fade sits at outgoing + 1 and ended up in the
+     * new master's history, never played. Shuffle or repeat changed mid-fade
+     * moves "next" the same way. And with duplicates (`[A, B, C, A, D]`,
+     * fading C into the second A) the first-match lookup put the new master
+     * on the FIRST A, replaying B and C. Reading the outgoing's own next index
+     * answers both: it is where the incoming must sit, and if it no longer
+     * holds the incoming's song the fade is handed back.
+     */
+    private fun incomingIndexIn(outgoing: ExoPlayer, incoming: ExoPlayer): Int? {
+        val next = outgoing.nextMediaItemIndex
+        if (next == C.INDEX_UNSET) return null
+        val id = incoming.currentMediaItem?.mediaId ?: return null
+        return next.takeIf { outgoing.getMediaItemAt(next).mediaId == id }
+    }
+
+    /**
      * Copies [from]'s queue around [to]'s current item so the promoted player
      * has the full timeline (history + future) with the same current index and
      * the position it has been playing, and the same shuffle (play) order.
-     * Matches by mediaId so it is shuffle- and repeat-order safe.
+     * [incomingIndex] is [to]'s song's index in [from] (see [incomingIndexIn]),
+     * so it is shuffle-, repeat- and duplicate-safe.
      */
-    private fun transferQueue(from: ExoPlayer, to: ExoPlayer) {
-        val currentId = to.currentMediaItem?.mediaId ?: return
+    private fun transferQueue(from: ExoPlayer, to: ExoPlayer, incomingIndex: Int) {
         val count = from.mediaItemCount
-        val idx = (0 until count).firstOrNull { from.getMediaItemAt(it).mediaId == currentId } ?: return
+        val idx = incomingIndex
         val history = (0 until idx).map { from.getMediaItemAt(it) }
         val future = ((idx + 1) until count).map { from.getMediaItemAt(it) }
         to.repeatMode = from.repeatMode
@@ -332,7 +370,8 @@ class CrossfadeEngine(
     }
 
     /**
-     * Aborts the fade for a reason that is not a pause (a seek on the outgoing),
+     * Aborts the fade for a reason that is not a pause (a seek on the outgoing,
+     * a queue edit that moved its next song; see [incomingIndexIn]),
      * leaving the outgoing master playing. If the outgoing already reached its
      * end, pauseAtEndOfMediaItems is holding it there paused, and a plain
      * [cancelTransition] would leave silence. A user pause or a focus loss

@@ -11,6 +11,7 @@ import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
@@ -66,5 +67,56 @@ class CrossfadeEngineQueueTransferTest {
 
         assertThat(swapped).isSameInstanceAs(inc)
         verify { inc.shuffleOrder = order }
+    }
+
+    @Test fun `fading into the second copy of a song keeps the queue around that copy`() = runTest {
+        // [A, B, C, A, D], fading C into the second A.
+        val a = item("a")
+        val queue = listOf(a, item("b"), item("c"), a, item("d"))
+        val out = master(queue, current = 2)
+        val inc = spare(a)
+        engine(backgroundScope, out, inc).performTransition(fadeMs = 1_000L) {}
+        advanceUntilIdle()
+
+        verify { inc.addMediaItems(0, queue.subList(0, 3)) }
+        verify { inc.addMediaItems(listOf(queue[4])) }
+    }
+
+    @Test fun `the upcoming song removed mid-fade hands back to the outgoing, no swap`() = runTest {
+        val queue = mutableListOf(item("a"), item("b"), item("c"))
+        val out = master(queue, current = 0)
+        every { out.playWhenReady } returns true
+        val inc = spare(queue[1])
+        var swapped: ExoPlayer? = null
+        val engine = engine(backgroundScope, out, inc)
+        engine.performTransition(fadeMs = 2_000L) { swapped = it }
+        advanceTimeBy(500)
+
+        queue.removeAt(1) // swiped away from the queue sheet: C is next now
+        every { out.mediaItemCount } returns queue.size
+        advanceUntilIdle()
+
+        assertThat(swapped).isNull()
+        assertThat(engine.isTransitioning()).isFalse()
+        verify(exactly = 0) { inc.addMediaItems(any(), any()) }
+        verify(exactly = 0) { inc.addMediaItems(any<List<MediaItem>>()) }
+        verify { inc.stop() }
+    }
+
+    @Test fun `a Play next inserted mid-fade after the outgoing reached its end plays next`() = runTest {
+        val queue = mutableListOf(item("a"), item("b"))
+        val out = master(queue, current = 0)
+        every { out.playWhenReady } returns false // held at its end by pauseAtEndOfMediaItems
+        val inc = spare(queue[1])
+        var swapped: ExoPlayer? = null
+        engine(backgroundScope, out, inc).performTransition(fadeMs = 2_000L) { swapped = it }
+        advanceTimeBy(500)
+
+        queue.add(1, item("x"))
+        every { out.mediaItemCount } returns queue.size
+        advanceUntilIdle()
+
+        assertThat(swapped).isNull()
+        verify { out.play() } // on into X, not stuck paused at A's end
     }
 }
