@@ -295,6 +295,7 @@ fun NowPlayingScreen(
             onSaveToPlaylist = { queueSaveTrack = it },
             onShare = viewModel::onShareTrack,
             onToggleDownload = viewModel::toggleDownload,
+            onRestoreTrack = viewModel::onRestoreToQueue,
         )
     }
 

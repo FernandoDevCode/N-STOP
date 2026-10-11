@@ -94,6 +94,7 @@ class ListeningRecorderSkipTest {
         override suspend fun toggleShuffle() = Unit
         override suspend fun cycleRepeatMode() = Unit
         override suspend fun removeFromQueue(index: Int) = Unit
+        override suspend fun insertInQueue(index: Int, track: Track) = false
         override suspend fun moveInQueue(from: Int, to: Int) = Unit
         override suspend fun skipToQueueIndex(index: Int) = Unit
         override suspend fun playTrack(track: Track) = StreamRoutingResult.NotAvailable

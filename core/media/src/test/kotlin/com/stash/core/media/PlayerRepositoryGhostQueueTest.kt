@@ -531,6 +531,21 @@ class PlayerRepositoryGhostQueueTest {
     }
 
     @Test
+    fun `Undo of a swipe on the ghost's queue puts the song back on screen and in the saved queue, and plays nothing`() = runTest {
+        val repo = coldStartGhost()
+        repo.removeFromQueue(2) // Nude
+
+        assertThat(repo.insertInQueue(2, library.getValue(3L).toDomain())).isTrue()
+
+        val state = repo.playerState.value
+        assertThat(state.queue.map { it.id }).containsExactly(1L, 2L, 3L, 4L).inOrder()
+        assertThat(state.currentIndex).isEqualTo(1)
+        assertThat(stored?.queueTrackIds).containsExactly(1L, 2L, 3L, 4L).inOrder()
+        verifyNothingLoaded()
+        verify(exactly = 0) { controller.addMediaItem(any<Int>(), any()) }
+    }
+
+    @Test
     fun `a song swiped off the ghost's queue stays off when a tap rebuilds it`() = runTest {
         val repo = coldStartGhost()
 

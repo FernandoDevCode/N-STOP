@@ -140,6 +140,19 @@ internal object QueueDisplay {
     return shifted.subList(0, pos + 1) + inserted + shifted.subList(pos + 1, shifted.size)
   }
 
+  /**
+   * The shuffle walk after [count] items were inserted at timeline index [at], with the new items
+   * at [position] of the play order (0 = the walk's first): the queue sheet's Undo puts a song back
+   * on the row it was swiped from. [walk] is from before the insert; [position] is clamped to it.
+   * Null for an identity [walk], for the reason [walkWithInserted] gives.
+   */
+  fun walkWithInsertedAt(walk: List<Int>, at: Int, count: Int, position: Int): List<Int>? {
+    if (walk.withIndex().all { (i, v) -> i == v }) return null
+    val shifted = walk.map { if (it >= at) it + count else it }
+    val pos = position.coerceIn(0, shifted.size)
+    return shifted.subList(0, pos) + (at until at + count).toList() + shifted.subList(pos, shifted.size)
+  }
+
   fun moveTimelineTarget(
     newLogical: List<Track>,
     toIndex: Int,

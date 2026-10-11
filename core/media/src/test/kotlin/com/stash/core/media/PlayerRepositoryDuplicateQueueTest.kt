@@ -130,4 +130,17 @@ class PlayerRepositoryDuplicateQueueTest {
 
         verify(exactly = 1) { controller.moveMediaItem(3, 1) }
     }
+
+    /**
+     * The queue sheet's Undo puts a swiped song back on its row of the logical queue, and into the
+     * timeline after exactly the items that come before that row (one copy of A, then B; the second
+     * A comes after it).
+     */
+    @Test
+    fun `Undo puts the song back on its row and in the matching timeline slot`() = runTest {
+        assertThat(repo.insertInQueue(2, track(9))).isTrue() // [A, B, 9, C, A]
+
+        assertThat(repo.currentQueueTracks.map { it.id }).containsExactly(1L, 2L, 9L, 3L, 1L).inOrder()
+        verify(exactly = 1) { controller.addMediaItem(2, any()) }
+    }
 }

@@ -1561,6 +1561,74 @@ class PlayerRepositoryImpl @Inject constructor(
         }
     }
 
+    /**
+     * The queue sheet's Undo: [track] back at display row [index], in whichever index space the
+     * sheet is showing, exactly as [removeFromQueue] took it out of it:
+     *  - the #462 ghost: its rows and the persisted queue ([insertIntoGhostQueue]);
+     *  - shuffle on (#468): a new timeline item where the song sits in the unshuffled queue, and
+     *    row [index] of the shuffle walk;
+     *  - the logical queue: row [index] of it, and the timeline slot that keeps the timeline a
+     *    subsequence of it in order ([QueueDisplay.moveTimelineTarget]);
+     *  - else the timeline itself.
+     * The item is built as Play next builds one (a downloaded file, else a stream placeholder that
+     * resolves when reached), so nothing is resolved now and playback is never touched.
+     */
+    override suspend fun insertInQueue(index: Int, track: Track): Boolean {
+        if (ghostQueueActive()) return insertIntoGhostQueue(index, track)
+        val controller = ensureController() ?: return false
+        // A session owns the player's queue (the sheet isn't offered there); an empty player has
+        // no queue to put a song back into.
+        if (listenTogetherOwnsQueue || controller.mediaItemCount == 0) return false
+        if (!track.isPlayableForQueueAppend()) return false
+        val queueTrack = track.withQueueIdentity()
+        // Off the main thread: a downloaded track's disk check is a ContentResolver query on a
+        // SAF tree, which a slow provider stalls (as in addNext).
+        val queueItem = withContext(Dispatchers.IO) { queueTrack.toQueueMediaItem() }
+        val count = controller.mediaItemCount
+        if (count == 0) return false // cleared during the IO hop
+
+        if (shuffledDisplayIndices != null) {
+            // The walk from before the insert, read fresh as addNext does.
+            val walk = shuffleWalk(controller)
+            // Removal under shuffle left the logical (unshuffled) queue alone, so the song's place
+            // there says where in the timeline it belongs; a song outside it goes at the end.
+            val logical = currentQueueTracks
+            val logicalPos = logical.indexOfFirst { it.id == queueTrack.id }
+            val at = if (logicalPos >= 0) {
+                QueueDisplay.moveTimelineTarget(logical, logicalPos, timelineTrackIds(controller))
+            } else {
+                count
+            }
+            controller.addMediaItem(at, queueItem)
+            val order = walk?.let { QueueDisplay.walkWithInsertedAt(it, at, 1, index) } ?: return true
+            controller.sendCustomCommand(
+                SessionCommand(StashPlaybackService.COMMAND_SET_SHUFFLE_ORDER, Bundle.EMPTY),
+                Bundle().apply { putIntArray(StashPlaybackService.EXTRA_SHUFFLE_ORDER, order.toIntArray()) },
+            )
+            return true
+        }
+        if (logicalDisplayActive(controller)) {
+            val logical = currentQueueTracks
+            val pos = index.coerceIn(0, logical.size)
+            val newLogical = logical.toMutableList().apply { add(pos, queueTrack) }
+            val at = QueueDisplay.moveTimelineTarget(newLogical, pos, timelineTrackIds(controller))
+            // The logical queue first, as in addNext: the insert is reported, and the queue
+            // published from it, during addMediaItem itself.
+            currentQueueTracks = newLogical
+            controller.addMediaItem(at, queueItem)
+            return true
+        }
+        controller.addMediaItem(index.coerceIn(0, count), queueItem)
+        return true
+    }
+
+    /** The timeline's track ids in timeline order (the extras' id, else the media id; -1 for neither). */
+    private fun timelineTrackIds(controller: MediaController): List<Long> =
+        List(controller.mediaItemCount) { i ->
+            val item = controller.getMediaItemAt(i)
+            item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID) ?: item.mediaId.toLongOrNull() ?: -1L
+        }
+
     override suspend fun moveInQueue(from: Int, to: Int) {
         if (ghostQueueActive()) {
             moveInGhostQueue(from, to)
@@ -1766,6 +1834,28 @@ class PlayerRepositoryImpl @Inject constructor(
             val at = ids.indexOfCopy(removed.id, copy)
             if (at == null) ids else ids.filterIndexed { i, _ -> i != at }
         }
+    }
+
+    /**
+     * The queue sheet's Undo on the ghost's queue: [track] back at row [index] (never before the
+     * paused song, which the sheet only lists rows after), and back in the persisted queue just
+     * before the copy of the song that now follows it, so the next rebuild has it too. Nothing
+     * loads or plays.
+     */
+    private suspend fun insertIntoGhostQueue(index: Int, track: Track): Boolean {
+        val ghost = _playerState.value
+        if (ghost.queue.isEmpty()) return false
+        val pos = index.coerceAtLeast(ghost.currentIndex + 1).coerceAtMost(ghost.queue.size)
+        _playerState.value = ghost.copy(queue = ghost.queue.toMutableList().apply { add(pos, track) })
+        // The persisted queue may be in another order (timeline order under a shuffle-walk ghost),
+        // so anchor on the same copy of the row that follows, as removeFromGhostQueue does.
+        val follower = ghost.queue.getOrNull(pos)
+        val followerCopy = follower?.let { f -> ghost.queue.subList(0, pos).count { it.id == f.id } } ?: 0
+        persistGhostQueue { ids ->
+            val before = follower?.let { ids.indexOfCopy(it.id, followerCopy) }
+            ids.toMutableList().apply { if (before != null) add(before, track.id) else add(track.id) }
+        }
+        return true
     }
 
     /**
