@@ -10,7 +10,7 @@ import { APP_LINK_ORIGIN, assetLinks, landingPage, messagePage, mixPage, roomPag
 import { legacyTrackUrl, publicTrack, readTrack, saveTrack, trackFromQuery, writeTrack } from "./tracks.js";
 import { legacyArt, songLinkArt } from "./art.js";
 import { base64url, randomCode } from "./listen-room.js";
-import { ip, json, limitKey } from "./http.js";
+import { ip, json, limitKey, readCapped } from "./http.js";
 import { cleanup, communityRoute } from "./community.js";
 export { limitKey }; // test/hardening.test.js imports it from here
 
@@ -123,8 +123,8 @@ const methodNotAllowed = () => json({ error: "method_not_allowed" }, 405);
 
 async function readBody(request, max = MAX_BODY_BYTES) {
     if (Number(request.headers.get("content-length")) > max) return { tooBig: true };
-    const buf = await request.arrayBuffer();
-    if (buf.byteLength > max) return { tooBig: true };
+    const buf = await readCapped(request, max);
+    if (buf === null) return { tooBig: true };
     try { return { body: JSON.parse(new TextDecoder().decode(buf)) }; } catch { return { body: null }; }
 }
 

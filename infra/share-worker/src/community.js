@@ -3,7 +3,7 @@
  * D1 tables: posts, votes, blocked (migrations/). A phone is sha256(its key);
  * a network is sha256(COMMUNITY_SALT | IPv4, or IPv6 /56). Every error body is {error: "<code>"}.
  */
-import { json, networkOf } from "./http.js";
+import { json, networkOf, readCapped } from "./http.js";
 import { validEditKey } from "./validate.js";
 import { newId, sha256Hex } from "./store.js";
 import { cleanPost, summaryOf } from "./community-post.js";
@@ -73,8 +73,8 @@ const networkHash = (request, env) => {
 
 async function readJson(request) {
     if (Number(request.headers.get("content-length")) > MAX_REQUEST_BYTES) return { tooBig: true };
-    const buf = await request.arrayBuffer();
-    if (buf.byteLength > MAX_REQUEST_BYTES) return { tooBig: true };
+    const buf = await readCapped(request, MAX_REQUEST_BYTES); // streamed: a body without Content-Length isn't buffered whole
+    if (buf === null) return { tooBig: true };
     try { return { body: JSON.parse(new TextDecoder().decode(buf)) }; } catch { return { body: null }; }
 }
 
