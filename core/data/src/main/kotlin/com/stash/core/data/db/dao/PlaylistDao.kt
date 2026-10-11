@@ -7,6 +7,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
+import com.stash.core.data.db.chunkedForBindWrite
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.TrackEntity
@@ -738,16 +739,36 @@ interface PlaylistDao {
      * surfaced today). The rows stay in the DB with their track links
      * intact, so the playlist can be cheaply revived if it reappears
      * later — see [reactivateById]. Returns the number of rows flipped.
+     *
+     * The "missing" set is worked out in memory and written by id in chunks.
+     * It used to be one `source_id NOT IN (:currentSourceIds)` UPDATE, which
+     * binds a variable per id: past 999 (the library walk allows 2000) it
+     * threw "too many SQL variables" on API 26-30, the caller caught it, and
+     * deactivation silently never ran. A NOT IN can't simply be chunked: each
+     * chunk would hide the rows the other chunks list.
      */
-    @Query(
-        "UPDATE playlists SET is_active = 0 " +
-            "WHERE source = :source AND is_active = 1 " +
-            "AND source_id NOT IN (:currentSourceIds)"
-    )
+    @Transaction
     suspend fun deactivateMissingForSource(
         source: MusicSource,
         currentSourceIds: List<String>,
-    ): Int
+    ): Int {
+        val current = currentSourceIds.toHashSet()
+        val missing = getActivePlaylistsBySource(source)
+            .filter { it.sourceId !in current }
+            .map { it.id }
+        return deactivateByIdsChunked(missing)
+    }
+
+    /** Flip every still-active row in [ids] to inactive. Use [deactivateByIdsChunked]. */
+    @Query("UPDATE playlists SET is_active = 0 WHERE is_active = 1 AND id IN (:ids)")
+    suspend fun deactivateByIdsRaw(ids: List<Long>): Int
+
+    /** Bind-safe [deactivateByIdsRaw]; returns the total number of rows flipped. */
+    suspend fun deactivateByIdsChunked(ids: List<Long>): Int {
+        var flipped = 0
+        ids.chunkedForBindWrite { flipped += deactivateByIdsRaw(it) }
+        return flipped
+    }
 
     /**
      * Whether any ACTIVE YouTube row of [type] exists, split on whether its
@@ -770,18 +791,23 @@ interface PlaylistDao {
     )
     suspend fun hasActiveYouTubeRows(type: PlaylistType, savedAlbums: Boolean): Boolean
 
-    /** Soft-deactivate only Spotify CUSTOM playlists absent from a complete inventory. */
-    @Query(
-        """
-        UPDATE playlists SET is_active = 0
-        WHERE source = 'SPOTIFY' AND type = 'CUSTOM' AND is_active = 1
-          AND (:hasCurrentIds = 0 OR source_id NOT IN (:currentSourceIds))
-        """
-    )
+    /**
+     * Soft-deactivate only Spotify CUSTOM playlists absent from a complete
+     * inventory. With [hasCurrentIds] false every active one goes. Worked out
+     * in memory and written in chunks for the same bind-cap reason as
+     * [deactivateMissingForSource].
+     */
+    @Transaction
     suspend fun deactivateMissingSpotifyCustomPlaylists(
         currentSourceIds: List<String>,
         hasCurrentIds: Boolean,
-    ): Int
+    ): Int {
+        val current = currentSourceIds.toHashSet()
+        val missing = getActivePlaylistsBySource(MusicSource.SPOTIFY)
+            .filter { it.type == PlaylistType.CUSTOM && (!hasCurrentIds || it.sourceId !in current) }
+            .map { it.id }
+        return deactivateByIdsChunked(missing)
+    }
 
     /** Flip [is_active] back to 1 for a specific playlist id. Paired with
      *  [deactivateMissingForSource] so a rotating home-feed mix that
