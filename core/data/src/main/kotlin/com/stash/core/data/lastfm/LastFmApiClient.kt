@@ -505,7 +505,20 @@ suspend fun updateNowPlaying(
                     rateLimitGate.recordRateLimited(breakerKey, System.currentTimeMillis())
                     error("Last.fm GET failed: HTTP 429 (rate limited)")
                 }
-                check(code in 200..299) { "Last.fm GET failed: HTTP $code" }
+                if (code !in 200..299) {
+                    // Last.fm sends some API errors (6 "not found" among them)
+                    // with a 4xx status and an { error, message } body. Keep the
+                    // code so callers can tell "no such track" from an outage.
+                    val apiError = body?.let { raw ->
+                        runCatching {
+                            json.parseToJsonElement(raw).jsonObject["error"]?.jsonPrimitive?.content
+                        }.getOrNull()
+                    }
+                    if (apiError != null) {
+                        throw LastFmApiException(apiError, "Last.fm GET failed: HTTP $code (API error $apiError)")
+                    }
+                    error("Last.fm GET failed: HTTP $code")
+                }
                 val bodyStr = body ?: error("Empty Last.fm response")
 
                 val root = json.parseToJsonElement(bodyStr).jsonObject
@@ -516,7 +529,7 @@ suspend fun updateNowPlaying(
                     val msg = root["message"]?.jsonPrimitive?.content ?: "unknown"
                     // error 29 == "Rate Limit Exceeded" → trip this source's breaker.
                     if (err == "29") rateLimitGate.recordRateLimited(breakerKey, System.currentTimeMillis())
-                    error("Last.fm API error $err: $msg")
+                    throw LastFmApiException(err, "Last.fm API error $err: $msg")
                 }
 
                 // A clean response means this source isn't throttled — close its breaker.
