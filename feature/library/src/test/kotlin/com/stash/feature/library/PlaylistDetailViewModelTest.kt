@@ -182,6 +182,25 @@ class PlaylistDetailViewModelTest {
         assertEquals("Downloading 10 of 11", button.label)
     }
 
+    @Test fun `the list, the download button and the build state share one tracks query`() = runTest {
+        // Each used to subscribe on its own: three Room observers and three full conversions of
+        // the playlist per tracks write.
+        val music = musicRepoMock().stub {
+            on { getTracksByPlaylist(any()) } doReturn flowOf(listOf(track(1L, downloaded = true), track(2L)))
+            onBlocking { getPlaylistWithTracks(1L) } doReturn playlist(keepOffline = true)
+        }
+        val vm = buildVm(musicRepository = music)
+        backgroundScope.launch { vm.uiState.collect {} }
+        backgroundScope.launch { vm.downloadButton.collect {} }
+        backgroundScope.launch { vm.buildState.collect {} }
+        advanceTimeBy(1_000)
+        runCurrent()
+
+        verify(music, org.mockito.kotlin.times(1)).getTracksByPlaylist(1L)
+        assertEquals(listOf(1L, 2L), vm.uiState.value.tracks.map { it.id })
+        assertEquals(DownloadButtonState(on = true, downloaded = 1, total = 2), vm.downloadButton.value)
+    }
+
     @Test fun `the counts cover the whole playlist while a search filter is active`() = runTest {
         val music = musicRepoMock().stub {
             on { getTracksByPlaylist(any()) } doReturn flowOf(listOf(track(1L, downloaded = true), track(2L), track(3L)))
