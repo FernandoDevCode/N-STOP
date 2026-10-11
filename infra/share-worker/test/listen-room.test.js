@@ -115,6 +115,16 @@ test("the socket route refuses an upgrade once 20 sockets are open, resume or no
     assert.equal(r.status, 409);
 });
 
+test("the socket route takes the Upgrade header in any case, as the Worker does", async () => {
+    const clock = { t: 1_000 };
+    const { ctx, room } = await openRoom(clock);
+    for (let i = 0; i < 20; i++) ctx.acceptWebSocket(fakeSocket());
+    // Past the 426 check (here to the full-room 409), not refused as "no upgrade".
+    const r = await room.fetch(new Request("https://room/ws?r=1", { headers: { Upgrade: "WebSocket" } }));
+    assert.equal(r.status, 409);
+    assert.equal((await room.fetch(new Request("https://room/ws?r=1"))).status, 426);
+});
+
 test("an oversized frame closes with 1009 before it is parsed", async () => {
     const clock = { t: 1_000 };
     const { ctx, room } = await openRoom(clock);

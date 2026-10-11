@@ -10,8 +10,9 @@ import { APP_LINK_ORIGIN, assetLinks, landingPage, messagePage, mixPage, roomPag
 import { legacyTrackUrl, publicTrack, readTrack, saveTrack, trackFromQuery, writeTrack } from "./tracks.js";
 import { legacyArt, songLinkArt } from "./art.js";
 import { base64url, randomCode } from "./listen-room.js";
-import { ip, json, limitKey } from "./http.js";
+import { ip, json, limitKey, readCapped } from "./http.js";
 import { cleanup, communityRoute } from "./community.js";
+import { pruneDaily, takeDaily, untilTomorrow } from "./quota.js";
 export { limitKey }; // test/hardening.test.js imports it from here
 
 export { ListenRoom } from "./listen-room.js";
@@ -38,9 +39,10 @@ export default {
             return json({ error: "unavailable" }, 503, { "Retry-After": "2" });
         }
     },
-    /** The daily cron in wrangler.toml: expired and long-removed Community posts go (spec 2026-09-26 §2). */
+    /** The daily cron in wrangler.toml: expired and long-removed Community posts go (spec 2026-09-26 §2), and past days' create budgets. */
     async scheduled(_controller, env, ctx) {
         ctx.waitUntil(cleanup(env, Date.now()));
+        ctx.waitUntil(pruneDaily(env, Date.now()));
     },
 };
 
@@ -123,8 +125,8 @@ const methodNotAllowed = () => json({ error: "method_not_allowed" }, 405);
 
 async function readBody(request, max = MAX_BODY_BYTES) {
     if (Number(request.headers.get("content-length")) > max) return { tooBig: true };
-    const buf = await request.arrayBuffer();
-    if (buf.byteLength > max) return { tooBig: true };
+    const buf = await readCapped(request, max);
+    if (buf === null) return { tooBig: true };
     try { return { body: JSON.parse(new TextDecoder().decode(buf)) }; } catch { return { body: null }; }
 }
 
@@ -135,6 +137,7 @@ async function createMix(request, env, url) {
     if (!body || !validEditKey(body.editKey)) return json({ error: "bad_request" }, 400);
     const problem = validateDoc(body.doc);
     if (problem) return json({ error: "bad_request", message: problem }, 400);
+    if (!(await takeDaily(request, env, "mix"))) return json({ error: "rate_limited" }, 429, { "Retry-After": untilTomorrow() });
     const id = await freeId(env.SHARE_KV);
     const doc = { ...cleanDoc(body.doc), id, version: 1, updatedAt: Math.floor(Date.now() / 1000) };
     await writeMix(env.SHARE_KV, id, { doc, keyHash: await sha256Hex(body.editKey), deleted: false });
@@ -151,7 +154,9 @@ async function createTrack(request, env, url) {
     if (tooBig) return json({ error: "too_large" }, 413);
     const problem = validateTrackLink(body);
     if (problem) return json({ error: "bad_request", message: problem }, 400);
-    const saved = await saveTrack(env.SHARE_KV, cleanTrackLink(body));
+    // Only a new link takes from the network's daily budget: sharing a song that already has one is free.
+    const saved = await saveTrack(env.SHARE_KV, cleanTrackLink(body), Date.now(), () => takeDaily(request, env, "track"));
+    if (saved?.overBudget) return json({ error: "rate_limited" }, 429, { "Retry-After": untilTomorrow() });
     // All five ids taken by other songs: that won't change, so no Retry-After. The app shares the long link instead.
     if (!saved) return json({ error: "unavailable" }, 503);
     return json({ id: saved.id, url: `${url.origin}/t/${saved.id}` }, saved.created ? 201 : 200);

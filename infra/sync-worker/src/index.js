@@ -10,6 +10,7 @@
  */
 import { answer, fail, limitKey, parseDeviceAuth, PLAYER_HEADER, randomId, rpc, sameSecret, tokenHashOf } from "./http.js";
 import { cleanBox, cleanDevice, isDeviceId, isNewSpaceId, isPairId, isSendId, isSpaceId, LIMITS, pathInt } from "./validate.js";
+import { spaceIpKind } from "./quota.js";
 
 export { SyncSpace } from "./sync-space.js";
 export { PairSlot } from "./pair-slot.js";
@@ -241,8 +242,9 @@ export async function handle(request, env, _ctx) {
         }
         let made;
         try {
-            // At most 10 new spaces a day from one player session's codes, and 20 from one phone IP.
-            const quota = (session ? await overQuota(env, session, "space") : null) ?? (await overQuota(env, `ip:${ip}`, "spaceIp"));
+            // At most 10 new spaces a day from one player session's codes, and 20 from one phone IPv6 /64 (100 from one IPv4
+            // address, which a carrier NAT or campus shares).
+            const quota = (session ? await overQuota(env, session, "space") : null) ?? (await overQuota(env, `ip:${ip}`, spaceIpKind(ip)));
             if (quota) {
                 await rpc(slot, "release");
                 return quota;

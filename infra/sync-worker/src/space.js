@@ -34,6 +34,12 @@ const IDLE_MS = DEVICE_IDLE_DAYS * DAY_MS;
 const SLOT_MS = SLOT_KEEP_DAYS * DAY_MS;
 const SEND_MS = SEND_KEEP_DAYS * DAY_MS;
 
+/**
+ * Which device the staged snapshot parts belong to (one row). Its own table, created on first use too, so spaces made
+ * before it existed need no migration of `snapshot`.
+ */
+const STAGED_BY_TABLE = "CREATE TABLE IF NOT EXISTS stagedBy (id INTEGER PRIMARY KEY CHECK (id = 1), deviceId TEXT NOT NULL)";
+
 const SCHEMA = [
     `CREATE TABLE IF NOT EXISTS meta (id INTEGER PRIMARY KEY CHECK (id = 1), spaceId TEXT NOT NULL, createdAt INTEGER NOT NULL,
         epoch INTEGER NOT NULL, rotationDue INTEGER NOT NULL, compactDue INTEGER NOT NULL, bytesUsed INTEGER NOT NULL,
@@ -47,6 +53,7 @@ const SCHEMA = [
     `CREATE TABLE IF NOT EXISTS slots (name TEXT PRIMARY KEY, deviceId TEXT NOT NULL, epoch INTEGER NOT NULL, serverAt INTEGER NOT NULL, body TEXT NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS inbox (sendId TEXT NOT NULL, toDevice TEXT NOT NULL, fromDevice TEXT NOT NULL, part INTEGER NOT NULL,
         count INTEGER NOT NULL, epoch INTEGER NOT NULL, serverAt INTEGER NOT NULL, body TEXT NOT NULL, PRIMARY KEY (sendId, part))`,
+    STAGED_BY_TABLE,
 ];
 
 /** Operations that change the space; they count against the caller's daily write cap. Everything else is a read. */
@@ -74,13 +81,15 @@ const parse = (text) => JSON.parse(text);
 export class Space {
     /**
      * @param {{ sql: { exec(q: string, ...b: unknown[]): { toArray(): object[] } }, transaction?: (fn: () => unknown) => unknown,
-     *           now?: () => number, claimPair?: (pairId: string, caller: object, mode: string) => Promise<object> }} deps
+     *           now?: () => number, claimPair?: (pairId: string, caller: object, mode: string) => Promise<object>,
+     *           releasePair?: (pairId: string) => Promise<unknown> }} deps
      */
-    constructor({ sql, transaction, now, claimPair }) {
+    constructor({ sql, transaction, now, claimPair, releasePair }) {
         this.sql = sql;
         this.tx = transaction ?? ((fn) => fn());
         this.now = now ?? (() => Date.now());
         this.claimPair = claimPair;
+        this.releasePair = releasePair;
         /**
          * Reads per device are counted in memory: a brake on floods (a flood keeps the object awake, which is when it matters),
          * not an exact daily quota, since the count starts over when the object is evicted.
@@ -152,7 +161,7 @@ export class Space {
                 case "rotate": return this.rotate(m, me, body, now);
                 case "logAfter": return this.logAfter(m, params.seq);
                 case "logAppend": return this.logAppend(m, me, body, now);
-                case "snapshotPut": return this.snapshotPut(m, params, body, now);
+                case "snapshotPut": return this.snapshotPut(m, me, params, body, now);
                 case "snapshotGet": return this.snapshotGet(params.part);
                 case "configGet": return this.slotGet("config", now, false);
                 case "configPut": return this.configPut(m, me, body, ifMatch, now);
@@ -257,8 +266,9 @@ export class Space {
      * newcomer's key envelope for the current epoch (sealed to its device key: the browser's is in the slot's label, the
      * phone's in its answer); without one the answer is a retryable `409 epoch` with the current epoch, before the code is
      * used. The caller is already a member; the slot is burned by the claim. The caps are checked before the claim (so a
-     * full space doesn't waste the code) and again after it. If the key changes while the code is being claimed, the device
-     * is still added and `rotationDue` is set, so the next rotation gives it the key.
+     * full space doesn't waste the code) and again after it. If the key changes while the code is being claimed, the claim
+     * is released (the code isn't used up) and the answer is the same retryable `409 epoch`: the newcomer was never sent the
+     * new key, and adding it anyway left it stuck, since the next rotation seals its key under one it never had.
      */
     async join(me, body) {
         const pairId = body?.pairId;
@@ -285,18 +295,22 @@ export class Space {
         const r = await this.claimPair(pairId, { deviceId: me.id, tokenHash: me.tokenHash }, "join");
         if (r.status !== 200) return r;
         const add = r.body.add;
-        return this.tx(() => {
+        const done = this.tx(() => {
             const m = this.meta();
             if (!m) return gone();
             if (!this.one("SELECT id FROM devices WHERE id = ?", me.id)) return revoked();
             if (this.one("SELECT id FROM devices WHERE id = ?", add.id)) return err(409, "member", "That device is already linked");
+            // Rotated during the claim: neither the newcomer's key nor its label is under the current key any more.
+            if (labelCt.e !== m.epoch || (given !== m.epoch && envelope?.e !== m.epoch)) return { rotated: m.epoch };
             const full = this.capFor(add.type);
             if (full) return full;
             this.insertDevice({ ...add, labelCt }, this.now());
             if (envelope && envelope.e === m.epoch) this.sql.exec("INSERT OR REPLACE INTO envelopes VALUES (?, ?, ?)", add.id, m.epoch, JSON.stringify(envelope));
-            else if (given !== m.epoch) this.sql.exec("UPDATE meta SET rotationDue = 1 WHERE id = 1"); // rotated during the claim
             return { status: 201, body: { device: add.id, type: add.type, epoch: m.epoch } };
         });
+        if (done.rotated === undefined) return done;
+        if (this.releasePair) await this.releasePair(pairId);
+        return { status: 409, body: { error: { code: "epoch", message: "The key changed: send the new device its key" }, epoch: done.rotated } };
     }
 
     capFor(type) {
@@ -427,10 +441,15 @@ export class Space {
 
     /**
      * One part of a snapshot covering the log up to `upto`. Parts are staged; when all `count` are in, the staged snapshot
-     * replaces the old one and the log rows it covers are deleted. A new upload (another `upto`, `count` or key) replaces
-     * an unfinished one.
+     * replaces the old one and the log rows it covers are deleted. A new upload (another `upto`, `count` or key, or another
+     * device) replaces an unfinished one.
+     *
+     * Another device's parts are never mixed in, even for the same `(upto, count, epoch)`: after a rotation every device
+     * compacts the whole log at once, so two uploads of that shape are likely, and A0 + B1 would commit a snapshot whose
+     * parts each decrypt but whose joined gzip is corrupt, after deleting the log it covered. The second uploader takes the
+     * staging over instead; the first finds it incomplete and uploads again on its next run.
      */
-    snapshotPut(m, { upto, part, count }, body, now) {
+    snapshotPut(m, me, { upto, part, count }, body, now) {
         const env = cleanEnv(body?.env, LIMITS.blobChars);
         if (!env) return bad("Not an envelope");
         if (!(count >= 1 && count <= LIMITS.parts) || !(part >= 0 && part < count)) return bad("Bad part");
@@ -438,6 +457,11 @@ export class Space {
         if (upto > m.head) return bad("Past the end of the log");
         if (upto < m.snapUpto) return err(409, "stale", "A newer snapshot exists");
         if (m.compactDue && upto !== m.head) return err(409, "stale", "After a key change the snapshot must cover the whole log");
+        this.sql.exec(STAGED_BY_TABLE);
+        if (this.one("SELECT deviceId FROM stagedBy WHERE id = 1")?.deviceId !== me.id) {
+            this.sql.exec("DELETE FROM snapshot WHERE staged = 1");
+            this.sql.exec("INSERT OR REPLACE INTO stagedBy VALUES (1, ?)", me.id);
+        }
         this.sql.exec("DELETE FROM snapshot WHERE staged = 1 AND (uptoSeq <> ? OR count <> ? OR epoch <> ?)", upto, count, env.e);
         this.sql.exec("INSERT OR REPLACE INTO snapshot VALUES (1, ?, ?, ?, ?, ?, ?)", part, count, upto, env.e, now, JSON.stringify(env));
         const have = this.one("SELECT COUNT(*) AS n FROM snapshot WHERE staged = 1").n;
