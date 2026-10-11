@@ -579,7 +579,7 @@ class SettingsViewModel @Inject constructor(
         _localState,
         youTubeHistoryPreference.enabled,
         youTubeHistoryScrobbler.health,
-        listeningEventDao.pendingYtScrobbleCount(),
+        youTubeHistoryScrobbler.pendingCount(),
         losslessPrefs.enabled,
         losslessPrefs.captchaCookieValue,
         losslessPrefs.qualityTier,

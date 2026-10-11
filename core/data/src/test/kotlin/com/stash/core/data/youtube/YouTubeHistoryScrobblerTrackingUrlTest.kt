@@ -7,6 +7,8 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.ListeningEventEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.prefs.YouTubeHistoryPreference
+import com.stash.data.ytmusic.CanonicalLookup
+import com.stash.data.ytmusic.CanonicalMatch
 import com.stash.data.ytmusic.InnerTubeClient
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -52,7 +54,8 @@ class YouTubeHistoryScrobblerTrackingUrlTest {
         whenever(state.incrementConsecutiveFailures()).thenReturn(1)
         whenever(tokenManager.getYouTubeCookie()).thenReturn("SAPISID=abc; LOGIN_INFO=xyz")
         whenever(cookieHelper.extractSapiSid(any())).thenReturn("abc")
-        whenever(resolver.resolve(any())).thenReturn("dQw4w9WgXcQ")
+        whenever(resolver.resolve(any()))
+            .thenReturn(CanonicalLookup.Found(CanonicalMatch("dQw4w9WgXcQ", thumbnailUrl = null)))
 
         scrobbler = YouTubeHistoryScrobbler(
             preference = preference,
