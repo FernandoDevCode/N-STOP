@@ -80,6 +80,8 @@ class YtLibraryCanonicalizerTest {
         )
         // Canonicalizer's search returns the real fixture candidates.
         whenever(searchExecutor.search(any(), any())).thenReturn(candidates)
+        // No other row owns the ATV id, so the guarded write applies.
+        whenever(trackDao.updateYoutubeIdIfUnclaimed(any(), any())).thenReturn(1)
 
         val canonicalizer = YtLibraryCanonicalizer(
             searchExecutor = searchExecutor,
@@ -112,7 +114,7 @@ class YtLibraryCanonicalizerTest {
         // videoId even though the file on disk is the ATV audio. Future
         // code that joins by youtube_id (Failed Matches' exclude-current
         // guard, duplicate detection) would see inconsistent state.
-        verify(trackDao).updateYoutubeId(eq(514L), eq("XzNWRmqibNE"))
+        verify(trackDao).updateYoutubeIdIfUnclaimed(eq(514L), eq("XzNWRmqibNE"))
         // Phase 7: also persist the ATV's display/dedup metadata so the
         // UI stops showing the MV's title + thumbnail for the studio
         // audio that just landed on disk.
@@ -158,7 +160,7 @@ class YtLibraryCanonicalizerTest {
 
         assertEquals("https://www.youtube.com/watch?v=atvStudio01", url)
         verify(searchExecutor, never()).search(any(), any())
-        verify(trackDao, never()).updateYoutubeId(any(), any())
+        verify(trackDao, never()).updateYoutubeIdIfUnclaimed(any(), any())
     }
 
     @Test
@@ -194,7 +196,7 @@ class YtLibraryCanonicalizerTest {
             "https://www.youtube.com/watch?v=omvVideo001",
             url,
         )
-        verify(trackDao, never()).updateYoutubeId(any(), any())
+        verify(trackDao, never()).updateYoutubeIdIfUnclaimed(any(), any())
     }
 
     private fun omvTrack() = Track(
@@ -242,11 +244,30 @@ class YtLibraryCanonicalizerTest {
         searchExecutor.reportsOmv("omvVideo001")
         whenever(searchExecutor.search(any(), any()))
             .thenReturn(listOf(atvRow("atvStudio01", webpageUrl = "https://other.example/watch?v=atvStudio01")))
+        whenever(trackDao.updateYoutubeIdIfUnclaimed(any(), any())).thenReturn(1)
 
         val url = canonicalizerFor(searchExecutor, trackDao).canonicalize(omvTrack(), "omvVideo001")
 
         assertEquals("https://www.youtube.com/watch?v=atvStudio01", url)
-        verify(trackDao).updateYoutubeId(eq(21L), eq("atvStudio01"))
+        verify(trackDao).updateYoutubeIdIfUnclaimed(eq(21L), eq("atvStudio01"))
+    }
+
+    @Test
+    fun `when another track already owns the studio id, the original is kept and nothing else is rewritten`() = runTest {
+        // youtube_id is UNIQUE: the library holds the MV (this track) and the studio
+        // audio (another track). A plain UPDATE threw SQLiteConstraintException on
+        // every sync, so this track never downloaded.
+        val searchExecutor = mock<InnerTubeSearchExecutor>()
+        val trackDao = mock<TrackDao>()
+        searchExecutor.reportsOmv("omvVideo001")
+        whenever(searchExecutor.search(any(), any())).thenReturn(listOf(atvRow("atvStudio01")))
+        whenever(trackDao.updateYoutubeIdIfUnclaimed(any(), any())).thenReturn(0)
+
+        val url = canonicalizerFor(searchExecutor, trackDao).canonicalize(omvTrack(), "omvVideo001")
+
+        assertEquals("https://www.youtube.com/watch?v=omvVideo001", url)
+        verify(trackDao, never()).updateYoutubeId(any(), any())
+        verify(trackDao, never()).updateCanonicalMetadata(any(), any(), any(), any(), anyOrNull(), anyOrNull(), any())
     }
 
     @Test
@@ -265,7 +286,7 @@ class YtLibraryCanonicalizerTest {
         val url = canonicalizerFor(searchExecutor, trackDao).canonicalize(omvTrack(), "omvVideo001")
 
         assertEquals("https://www.youtube.com/watch?v=omvVideo001", url)
-        verify(trackDao, never()).updateYoutubeId(any(), any())
+        verify(trackDao, never()).updateYoutubeIdIfUnclaimed(any(), any())
         verify(trackDao, never()).updateCanonicalMetadata(any(), any(), any(), any(), anyOrNull(), anyOrNull(), any())
     }
 
@@ -279,6 +300,6 @@ class YtLibraryCanonicalizerTest {
         assertNull(url)
         verify(searchExecutor, never()).verifyVideo(any())
         verify(searchExecutor, never()).search(any(), any())
-        verify(trackDao, never()).updateYoutubeId(any(), any())
+        verify(trackDao, never()).updateYoutubeIdIfUnclaimed(any(), any())
     }
 }
