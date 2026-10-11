@@ -102,6 +102,22 @@ class StashMixRefreshWorker @AssistedInject constructor(
         /** Serializes [materializeMix] across concurrent worker instances. */
         private val materializeMutex = kotlinx.coroutines.sync.Mutex()
         const val ONE_SHOT_WORK_NAME = "stash_mix_refresh_oneshot"
+
+        /**
+         * Unique name for the materialize-only re-link, kept apart from
+         * [ONE_SHOT_WORK_NAME]. Sharing it with REPLACE meant every stub the
+         * discovery drain materialized cancelled an in-flight FULL refresh
+         * (cold start, "Refresh" tap) mid-loop: the remaining recipes queued
+         * no discovery candidates that run and its closing drain kick never
+         * happened. The two can safely overlap; [materializeMutex]
+         * serializes the playlist writes.
+         */
+        internal const val MATERIALIZE_WORK_NAME = "stash_mix_relink_oneshot"
+
+        /** The unique-work name [enqueueOneTime] uses for each mode. */
+        internal fun oneShotWorkName(materializeOnly: Boolean): String =
+            if (materializeOnly) MATERIALIZE_WORK_NAME else ONE_SHOT_WORK_NAME
+
         private const val TOP_ARTISTS_LIMIT = 8
         private const val SIMILAR_REQUEST_INTERVAL_MS = 220L
         private const val AFFINITY_LOOKBACK_DAYS = 180L
@@ -258,8 +274,12 @@ class StashMixRefreshWorker @AssistedInject constructor(
             if (materializeOnly) {
                 builder.setInputData(androidx.work.workDataOf(KEY_MATERIALIZE_ONLY to true))
             }
+            // REPLACE within each mode: a newer request supersedes a pending
+            // one of the same kind (a re-link restarted by a fresh stub picks
+            // that stub up too). Across modes the names differ, so a re-link
+            // never cancels a full refresh.
             WorkManager.getInstance(context).enqueueUniqueWork(
-                ONE_SHOT_WORK_NAME,
+                oneShotWorkName(materializeOnly),
                 androidx.work.ExistingWorkPolicy.REPLACE,
                 builder.build(),
             )

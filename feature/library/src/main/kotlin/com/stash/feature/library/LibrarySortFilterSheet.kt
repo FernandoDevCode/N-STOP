@@ -1,6 +1,8 @@
 package com.stash.feature.library
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -36,6 +38,8 @@ fun LibrarySortFilterSheet(
     sortOrder: SortOrder,
     sourceFilter: SourceFilter,
     showDuration: Boolean,
+    /** The SHOW ONLY section: Songs only, the one tab the source filter narrows. */
+    showSourceFilter: Boolean = true,
     onSortSelected: (SortOrder) -> Unit,
     onFilterSelected: (SourceFilter) -> Unit,
     onDismiss: () -> Unit,
@@ -69,7 +73,9 @@ fun LibrarySortFilterSheet(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onSortSelected(order) }
+                        // A radio choice to TalkBack (the check icon is decorative), so the
+                        // current sort is announced as selected.
+                        .selectable(selected = selected, role = Role.RadioButton, onClick = { onSortSelected(order) })
                         .padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -91,15 +97,17 @@ fun LibrarySortFilterSheet(
                 }
             }
 
-            SheetLabel("SHOW ONLY")
-            CrispChipRow(
-                chips = filters.map { it.first },
-                selected = filters.first { it.second == sourceFilter }.first,
-                onSelect = { label -> onFilterSelected(filters.first { it.first == label }.second) },
-                modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
-                // Sheet column already pads horizontally — don't add the gutter.
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
-            )
+            if (showSourceFilter) {
+                SheetLabel("SHOW ONLY")
+                CrispChipRow(
+                    chips = filters.map { it.first },
+                    selected = filters.first { it.second == sourceFilter }.first,
+                    onSelect = { label -> onFilterSelected(filters.first { it.first == label }.second) },
+                    modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+                    // Sheet column already pads horizontally — don't add the gutter.
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                )
+            }
         }
     }
 }

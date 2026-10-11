@@ -113,6 +113,9 @@ fun MiniPlayer(
     listen: ListenTogetherViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    // Kept as a State and read only inside drawBehind below: the progress line redraws per
+    // 250ms tick without recomposing the card (which shows on every screen).
+    val position = viewModel.positionMs.collectAsStateWithLifecycle()
     val together by listen.state.collectAsStateWithLifecycle()
     val room = together as? ListenTogetherState.InRoom
     val chrome = LocalAlbumChrome.current
@@ -140,7 +143,8 @@ fun MiniPlayer(
                     .fillMaxWidth()
                     .height(2.dp)
                     .drawBehind {
-                        drawRect(color = chrome.vib, size = Size(size.width * uiState.progressFraction, size.height))
+                        val fraction = progressFraction(position.value, uiState.durationMs)
+                        drawRect(color = chrome.vib, size = Size(size.width * fraction, size.height))
                     },
             )
 
@@ -156,10 +160,14 @@ fun MiniPlayer(
                 val artModel = track?.albumArtPath ?: track?.albumArtUrl
                 val coverShape = RoundedCornerShape(6.dp)
                 if (artModel != null) {
+                    // Remembered per cover: a fresh request each recomposition makes Coil treat
+                    // it as a new load.
+                    val context = LocalContext.current
+                    val artRequest = remember(artModel) {
+                        ImageRequest.Builder(context).data(artModel).build()
+                    }
                     AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current)
-                            .data(artModel)
-                            .build(),
+                        model = artRequest,
                         contentDescription = "Album art",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
@@ -234,10 +242,15 @@ fun MiniPlayer(
                     // Play / pause: a 40dp circle in the album's vibrant colour, its ink on top;
                     // a spinner while the track is still resolving/buffering (e.g. a slow
                     // YouTube-fallback resolve). One button to TalkBack: its action, and its state.
+                    // It stays ENABLED while buffering and keys on playWhenReady, so a stalled
+                    // stream can be paused from any screen (it used to be disabled while loading,
+                    // which left no in-app way to stop a stream that was about to start).
                     val playPress = remember { MutableInteractionSource() }
-                    val playAction = if (uiState.isPlaying) "Pause" else "Play"
+                    val wantsToPlay = uiState.playWhenReady || uiState.isPlaying
+                    val loading = uiState.isBuffering && wantsToPlay
+                    val playAction = if (wantsToPlay) "Pause" else "Play"
                     val playState = when {
-                        uiState.isBuffering -> "Loading"
+                        loading -> "Loading"
                         uiState.isPlaying -> "Playing"
                         else -> "Paused"
                     }
@@ -247,7 +260,6 @@ fun MiniPlayer(
                             .clickable(
                                 interactionSource = playPress,
                                 indication = null,
-                                enabled = !uiState.isBuffering,
                                 role = Role.Button,
                                 onClick = viewModel::onPlayPauseClick,
                             )
@@ -266,7 +278,7 @@ fun MiniPlayer(
                                 .indication(playPress, ripple(color = chrome.onVib)),
                             contentAlignment = Alignment.Center,
                         ) {
-                            if (uiState.isBuffering) {
+                            if (loading) {
                                 CircularProgressIndicator(
                                     color = chrome.onVib,
                                     strokeWidth = 2.dp,
@@ -274,7 +286,7 @@ fun MiniPlayer(
                                 )
                             } else {
                                 Icon(
-                                    imageVector = if (uiState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    imageVector = if (wantsToPlay) Icons.Default.Pause else Icons.Default.PlayArrow,
                                     contentDescription = null,
                                     tint = chrome.onVib,
                                     modifier = Modifier.size(24.dp),

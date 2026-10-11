@@ -217,7 +217,13 @@ class DownloadManagerPickedTrackTest {
         )
 
         coVerify(exactly = 1) {
-            downloadExecutor.download("https://music.youtube.com/watch?v=dQw4w9WgXcQ", any(), "dl_7", any(), any())
+            downloadExecutor.download(
+                "https://music.youtube.com/watch?v=dQw4w9WgXcQ",
+                any(),
+                match { it.startsWith("dl_7_") },
+                any(),
+                any(),
+            )
         }
     }
 
@@ -237,7 +243,7 @@ class DownloadManagerPickedTrackTest {
         }
 
         queued.forEach { (url, rebuilt) ->
-            coVerify(exactly = 1) { downloadExecutor.download(rebuilt, any(), "dl_7", any(), any()) }
+            coVerify(exactly = 1) { downloadExecutor.download(rebuilt, any(), match { it.startsWith("dl_7_") }, any(), any()) }
             coVerify(exactly = 0) { downloadExecutor.download(url, any(), any(), any(), any()) }
         }
     }

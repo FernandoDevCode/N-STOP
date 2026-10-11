@@ -118,6 +118,34 @@ class DatabaseBackupExportScopeTest {
         }
     }
 
+    /**
+     * Export no longer zips the live file: it stages a snapshot (main file +
+     * WAL, copied under a write lock), folds the WAL into it, and verifies it.
+     * The archived file must therefore stand alone — it is opened here with no
+     * WAL beside it — and the staging copy must not be left in the cache.
+     */
+    @Test fun `the archived database is a self-contained verified snapshot and staging is cleaned up`() = runTest {
+        seed()
+        // A write after the last checkpoint: it lives in the live WAL until
+        // something folds it, so a main-file-only copy would miss it.
+        db.trackDao().insert(
+            TrackEntity(title = "Late write", artist = "D", album = "Al", durationMs = 1, source = MusicSource.SPOTIFY),
+        )
+        manager.exportDatabase(Uri.fromFile(out), BackupExportScope.LIBRARY_ONLY).getOrThrow()
+
+        assertTrue(
+            "staging snapshot must be deleted",
+            context.cacheDir.listFiles().orEmpty().none { it.name.startsWith("export-") && it.name.contains(".db") },
+        )
+        val (zip, exported) = openExported()
+        try {
+            assertTrue(exported.trackDao().getAllForIntegrityScan().any { it.title == "Late write" })
+            assertEquals(4, exported.trackDao().getAllForIntegrityScan().size)
+        } finally {
+            exported.close(); zip.close()
+        }
+    }
+
     @Test fun `settings only carries no database at all`() = runTest {
         seed()
         manager.exportDatabase(Uri.fromFile(out), BackupExportScope.SETTINGS_ONLY).getOrThrow()

@@ -70,7 +70,9 @@ import com.stash.core.ui.components.NowPlayingJumpChip
 import com.stash.core.ui.components.SearchFilterBar
 import com.stash.core.ui.components.SourceIndicator
 import com.stash.core.ui.components.TrackOptionsSheet
+import com.stash.core.ui.selection.RemoveDownloadsConfirmDialog
 import com.stash.core.ui.selection.SelectionAction
+import com.stash.core.ui.selection.removeDownloadsNeedsConfirm
 import com.stash.core.ui.selection.SelectionScaffoldOverlay
 import com.stash.core.ui.selection.rememberSelectionState
 import com.stash.core.ui.theme.StashTheme
@@ -251,6 +253,21 @@ fun LikedSongsDetailScreen(
         // (visible) and Play next collapses into the ⋮ overflow.
         // In a Listen Together session "Add to queue" hides; Play next says what it does there (as in TrackOptionsSheet).
         val listenRole = com.stash.core.ui.components.LocalListenTogetherRole.current
+        // Batch "Remove download" deletes files that can take hours to fetch again (a whole
+        // Select all, one mis-tap from the confirmed Delete): confirm it first (shared dialog).
+        var confirmRemoveDownloads by remember { mutableStateOf<List<Track>?>(null) }
+        confirmRemoveDownloads?.let { tracks ->
+            RemoveDownloadsConfirmDialog(
+                count = tracks.size,
+                totalBytes = tracks.sumOf { it.fileSizeBytes },
+                onConfirm = {
+                    viewModel.removeDownloadsForSelected(tracks.map { it.id })
+                    selection.clear()
+                    confirmRemoveDownloads = null
+                },
+                onDismiss = { confirmRemoveDownloads = null },
+            )
+        }
         val selectionActions = listOfNotNull(
             SelectionAction("add_queue", "Add to queue", Icons.Default.PlaylistAdd) {
                 viewModel.addSelectedToQueue(selectedTracks); selection.clear()
@@ -260,7 +277,11 @@ fun LikedSongsDetailScreen(
             },
             if (allDownloaded) {
                 SelectionAction("remove_download", "Remove download", Icons.Default.DownloadDone) {
-                    viewModel.removeDownloadsForSelected(selectedIds); selection.clear()
+                    if (removeDownloadsNeedsConfirm(selectedTracks.size)) {
+                        confirmRemoveDownloads = selectedTracks
+                    } else {
+                        viewModel.removeDownloadsForSelected(selectedIds); selection.clear()
+                    }
                 }
             } else {
                 SelectionAction("download", "Download", Icons.Default.Download) {

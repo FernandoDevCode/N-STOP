@@ -10,6 +10,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.withLock
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -168,8 +170,22 @@ class FileOrganizer @Inject constructor(
         return if (suffix == null) "${location.baseName}.$format" else "${location.baseName}-$suffix.$format"
     }
 
-    /** Temporary download directory inside the cache. Cleaned by the OS as needed. */
-    fun getTempDir(): File = File(context.cacheDir, "downloads").also { it.mkdirs() }
+    /**
+     * Temporary download directory inside the cache. Cleaned by the OS as
+     * needed, and of files a day old once per process: each download attempt
+     * names its temp files apart, so what a cancelled or crashed attempt
+     * leaves is never reused, and would otherwise sit there.
+     */
+    fun getTempDir(): File {
+        val dir = File(context.cacheDir, "downloads").also { it.mkdirs() }
+        if (tempDirSwept.compareAndSet(false, true)) {
+            val cutoff = System.currentTimeMillis() - STALE_TEMP_AGE_MS
+            dir.listFiles { file -> file.isFile && file.lastModified() < cutoff }?.forEach { it.delete() }
+        }
+        return dir
+    }
+
+    private val tempDirSwept = java.util.concurrent.atomic.AtomicBoolean(false)
 
     /**
      * One-pass existence checker: whether a track's file still exists, and
@@ -363,7 +379,7 @@ class FileOrganizer @Inject constructor(
         // artist may be matched tree-wide; multiple hits stay unmatched
         // (reporting "missing" for a genuinely ambiguous pair is safer than
         // adopting the wrong song's file).
-        val artistQualifiedPrefix = FileOrganizerSlugs.slugify(artist) + "-"
+        val artistQualifiedPrefix = LibraryLayoutResolver.artistSlug(artist) + "-"
         for (candidate in candidates) {
             for (name in candidate.candidateFileNames) {
                 if (!name.startsWith(artistQualifiedPrefix)) continue
@@ -501,6 +517,13 @@ class FileOrganizer @Inject constructor(
         private val KNOWN_AUDIO_FORMATS = listOf("opus", "m4a", "flac", "mp3", "ogg", "wav")
         // Highest `-N` a new file's name tries before the commit gives up.
         private const val MAX_COPY_NUMBER = 999
+        // A temp download older than this is no attempt's any more; no download takes a day.
+        private const val STALE_TEMP_AGE_MS = 24L * 60 * 60 * 1000
+        // A library file being written, before one rename puts it in place.
+        private const val PART_SUFFIX = ".part"
+        // Names a SAF document written to replace one: `<name>.stash-part.<ext>`.
+        // The real extension stays last, so providers keep the name as given.
+        private const val STAGING_INFIX = ".stash-part"
     }
 
     /**
@@ -522,7 +545,15 @@ class FileOrganizer @Inject constructor(
      * [plannedPaths]).
      *
      * A file already at the spot is replaced: that is a track's own file on
-     * a re-download or upgrade. [asNewFile] is for a file that starts a NEW
+     * a re-download or upgrade. Unless ANOTHER track records it: names aren't
+     * unique per track (two movements of one work slug alike once cut to 60
+     * characters; a studio and a live "Intro" share `<artist>-intro` in the
+     * flat layouts), and replacing it wrote this track's audio over the other
+     * track's, leaving both rows on one file. Then, as the wrong-match swap
+     * does, the album name is added, then the track id, then a counter (see
+     * [replaceSuffixes]). Existing files keep their names; only a commit that
+     * would land on another track's file is named apart. A caller-chosen
+     * [nameSuffix] is used as given. [asNewFile] is for a file that starts a NEW
      * track (a device import), which must never take another track's place:
      * the name is used only when no file is there and no track records it,
      * else `-2`, `-3`, … is added until one is free. Otherwise an import
@@ -552,11 +583,9 @@ class FileOrganizer @Inject constructor(
             val finalFile = if (asNewFile) {
                 freeInternalFile(dir, location, format, nameSuffix, trackId)
             } else {
-                File(dir, fileNameFor(location, format, nameSuffix))
+                ownInternalFile(dir, location, format, replaceSuffixes(nameSuffix, album, trackId), trackId)
             }
-            // A new file never replaces one, even one that appeared since the
-            // name was picked: copyTo throws instead.
-            tempFile.copyTo(finalFile, overwrite = !asNewFile)
+            writeInternalFile(tempFile, finalFile, replace = !asNewFile)
             tempFile.delete()
             CommittedTrack(finalFile.absolutePath, size)
         } else {
@@ -568,8 +597,9 @@ class FileOrganizer @Inject constructor(
                     tempFile,
                     externalTree,
                     location,
-                    fileNameFor(location, format, nameSuffix),
                     format,
+                    replaceSuffixes(nameSuffix, album, trackId),
+                    trackId,
                 )
             }
             tempFile.delete()
@@ -584,6 +614,20 @@ class FileOrganizer @Inject constructor(
     private fun newFileSuffixes(nameSuffix: String?): Sequence<String?> =
         sequenceOf(nameSuffix) +
             (2..MAX_COPY_NUMBER).asSequence().map { n -> listOfNotNull(nameSuffix, "$n").joinToString("-") }
+
+    /**
+     * The names a re-download or upgrade may take, in order: [nameSuffix]
+     * alone when the caller chose one; else the plain name, then the album,
+     * then album and [trackId], then a counter after that. Mirrors the
+     * wrong-match swap's choice (#531), so both name a clash the same way.
+     */
+    private fun replaceSuffixes(nameSuffix: String?, album: String?, trackId: Long?): Sequence<String?> {
+        if (nameSuffix != null) return sequenceOf(nameSuffix)
+        val albumName = album?.takeIf { it.isNotBlank() }
+        val withId = listOfNotNull(albumName, trackId?.toString()).joinToString("-").ifEmpty { null }
+        val choices = (listOf<String?>(null) + listOfNotNull(albumName, withId)).distinct()
+        return choices.asSequence() + newFileSuffixes(choices.last()).drop(1)
+    }
 
     /**
      * Whether a track other than [trackId] records [path] as its file, whether
@@ -609,26 +653,93 @@ class FileOrganizer @Inject constructor(
     }
 
     /**
-     * Writes [tempFile] into the user's SAF tree at [location]'s relative
-     * path, creating intermediate directories on demand. Returns the created
-     * document's URI as a string. Throws if the tree URI is stale (permission
-     * revoked) or I/O fails — caller should log and leave the temp file in
-     * place for retry.
+     * The first of [suffixes]' names in [dir] that no other track records: a
+     * file there that is this track's own, or nobody's, is replaced.
      */
-    private fun writeToSafTree(
+    private suspend fun ownInternalFile(
+        dir: File,
+        location: LibraryLayoutResolver.ResolvedLocation,
+        format: String,
+        suffixes: Sequence<String?>,
+        trackId: Long?,
+    ): File {
+        for (suffix in suffixes) {
+            val file = File(dir, fileNameFor(location, format, suffix))
+            if (!recordedByAnotherTrack(file.absolutePath, trackId)) return file
+        }
+        error("No free file name for '${location.baseName}.$format' in $dir")
+    }
+
+    /**
+     * Writes [tempFile] to [finalFile] through a `.part` file beside it, put in
+     * place by one rename once complete. `copyTo(overwrite = true)` deleted
+     * the old file first and, on a full disk, left a partial one at the name:
+     * a failed re-download or upgrade destroyed the track's own audio, and the
+     * partial file could later be adopted as the download. Now a failure
+     * leaves the old file as it was. [replace] false (a new file): the move
+     * refuses a name that is taken, even one that appeared since it was picked.
+     */
+    private fun writeInternalFile(tempFile: File, finalFile: File, replace: Boolean) {
+        // Its own name per call: two commits of one track at once (a double
+        // tap on Find in FLAC) must not write into one part file.
+        val tag = java.util.UUID.randomUUID().toString().substring(0, 8)
+        val part = File(finalFile.parentFile, "${finalFile.name}.$tag$PART_SUFFIX")
+        try {
+            tempFile.copyTo(part, overwrite = true)
+            if (replace) {
+                Files.move(
+                    part.toPath(),
+                    finalFile.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+            } else {
+                Files.move(part.toPath(), finalFile.toPath())
+            }
+        } finally {
+            part.delete() // gone already once moved
+        }
+    }
+
+    /**
+     * Writes [tempFile] into the user's SAF tree at [location]'s relative
+     * path, creating intermediate directories on demand, under the first of
+     * [suffixes]' names whose document no other track records (see
+     * [commitDownload]). Returns the created document's URI as a string.
+     * Throws if the tree URI is stale (permission revoked) or I/O fails —
+     * caller should log and leave the temp file in place for retry.
+     */
+    private suspend fun writeToSafTree(
         tempFile: File,
         treeUri: Uri,
         location: LibraryLayoutResolver.ResolvedLocation,
-        filename: String,
         format: String,
+        suffixes: Sequence<String?>,
+        trackId: Long?,
     ): String {
         val cursor = openSafDir(treeUri, location)
-        // Overwrite: delete any existing file with the same name before creating.
-        cursor.findFile(filename)?.delete()
-        val target = cursor.createFile(mimeTypeFor(format), filename)
-            ?: error("Could not create SAF file '$filename' under ${cursor.uri}")
-        copyIntoDocument(tempFile, target, filename)
-        return target.uri.toString()
+        // Listed once: findFile per candidate name re-lists the folder each time.
+        val listing = cursor.listFiles().mapNotNull { doc -> doc.name?.let { it to doc } }.toMap()
+        for (suffix in suffixes) {
+            val filename = fileNameFor(location, format, suffix)
+            val existing = listing[filename]
+            if (existing != null) {
+                if (recordedByAnotherTrack(existing.uri.toString(), trackId)) continue
+                // This track's own (or nobody's) file is at the name.
+                return replaceSafDocument(tempFile, cursor, existing, filename, format)
+            }
+            val target = cursor.createFile(mimeTypeFor(format), filename)
+                ?: error("Could not create SAF file '$filename' under ${cursor.uri}")
+            // Path-based providers hand a new document a deleted one's URI,
+            // which a track whose file went missing may still record.
+            if (recordedByAnotherTrack(target.uri.toString(), trackId)) {
+                target.delete()
+                continue
+            }
+            copyIntoNewDocument(tempFile, target, filename)
+            return target.uri.toString()
+        }
+        error("No free file name for '${location.baseName}.$format' under ${cursor.uri}")
     }
 
     /**
@@ -670,6 +781,49 @@ class FileOrganizer @Inject constructor(
             }
         }
         error("No free file name for '${location.baseName}.$format' under ${cursor.uri}")
+    }
+
+    /**
+     * Replaces [existing] with [tempFile]'s bytes without risking it: the new
+     * file is written in full to a staging document first, and only then is
+     * the old one deleted and the staging one renamed to [filename]. The old
+     * code deleted the document, then created and filled a new one: a full or
+     * ejected SD card left the track with no file but a partial one at its
+     * name, which the next library check adopted as the download. On a
+     * path-based provider the renamed document gets the old one's URI back,
+     * so a row still recording it stays valid.
+     */
+    private fun replaceSafDocument(
+        tempFile: File,
+        cursor: DocumentFile,
+        existing: DocumentFile,
+        filename: String,
+        format: String,
+    ): String {
+        val stagingName = "${filename.substringBeforeLast('.')}$STAGING_INFIX.$format"
+        val staging = cursor.createFile(mimeTypeFor(format), stagingName)
+            ?: error("Could not create SAF file '$stagingName' under ${cursor.uri}")
+        copyIntoNewDocument(tempFile, staging, stagingName)
+        if (!existing.delete()) {
+            staging.delete()
+            error("Could not replace SAF file '$filename' under ${cursor.uri}")
+        }
+        // A failed rename still leaves a complete file, under the staging name.
+        if (!staging.renameTo(filename)) {
+            android.util.Log.w("FileOrganizer", "commit: kept '$stagingName'; renaming it to '$filename' failed")
+        }
+        return staging.uri.toString()
+    }
+
+    /** [copyIntoDocument] into a document this call made, which goes again if the copy fails. */
+    private fun copyIntoNewDocument(tempFile: File, target: DocumentFile, filename: String) {
+        var copied = false
+        try {
+            copyIntoDocument(tempFile, target, filename)
+            copied = true
+        } finally {
+            if (!copied) target.delete()
+        }
     }
 
     /** The folder for [location] in the SAF tree, made as needed. */

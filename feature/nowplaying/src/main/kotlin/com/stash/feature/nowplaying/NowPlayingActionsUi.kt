@@ -223,12 +223,22 @@ internal fun NowPlayingTopBar(
             ActionSlot(action, actionVisual(action, visualState, pinned = true), slot, ink, accent, isDownloading, visualState.radioTuning, radioLock, onAction)
         }
 
-        // ⋮ — always present. While a download is in flight and Download is not in the row,
-        // a spinner stands in for it, as before pins.
-        if (isDownloading && NowPlayingAction.DOWNLOAD !in row.leading) {
-            SlotSpinner(slot, ink)
-        } else {
-            TopBarIcon(Icons.Default.MoreVert, "More actions", ink, slot, onClick = onMoreClick)
+        // ⋮ — always present AND always tappable. While a download is in flight and Download is
+        // not in the row, a thin ring turns around it so the job isn't silent. (A spinner used to
+        // stand in for ⋮ itself, which hid every unpinned action — Save to Playlist, Share, Speed,
+        // Flag… — until the file landed, or for the watchdog's 3 minutes when the job failed.)
+        val downloadingHere = isDownloading && NowPlayingAction.DOWNLOAD !in row.leading && NowPlayingAction.DOWNLOAD !in row.trailing
+        Box(Modifier.size(slot), contentAlignment = Alignment.Center) {
+            if (downloadingHere) {
+                CircularProgressIndicator(modifier = Modifier.size(34.dp), strokeWidth = 1.5.dp, color = ink.copy(alpha = 0.6f))
+            }
+            TopBarIcon(
+                Icons.Default.MoreVert,
+                if (downloadingHere) "More actions, downloading" else "More actions",
+                ink,
+                slot,
+                onClick = onMoreClick,
+            )
         }
 
         row.trailing.forEach { action ->

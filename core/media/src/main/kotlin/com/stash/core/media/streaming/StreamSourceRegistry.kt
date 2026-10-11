@@ -14,7 +14,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -132,7 +132,14 @@ class StreamSourceRegistry internal constructor(
             // that track would coalesce onto the same dead Deferred and time
             // out — turning a transient hang into a permanently unplayable
             // track, which is worse than the duplicate resolve this fixes.
-            withTimeout(LazyResolvingDataSource.RESOLVE_DEADLINE_MS) {
+            //
+            // OrNull: a hit deadline is a miss, not a cancellation. withTimeout's
+            // TimeoutCancellationException reached every waiter through await(),
+            // and callers read a CancellationException as "a newer tap preempted
+            // us" — so a 45 s hang ended with the spinner cleared and no "Couldn't
+            // find this track", and RefreshingDataSource's open() threw a
+            // non-IOException Media3 never retries. doResolve still records it.
+            withTimeoutOrNull(LazyResolvingDataSource.RESOLVE_DEADLINE_MS) {
                 doResolve(track, allowYouTube, allowYtDlp)
             }
         }
@@ -155,6 +162,22 @@ class StreamSourceRegistry internal constructor(
         // "Couldn't find this track" — see the chain loop below.
         return deferred.await()
     }
+
+    /**
+     * Re-resolves a YouTube-origin item for [RefreshingDataSource]'s 403 refresh:
+     * the YouTube rung ONLY, never the chain.
+     *
+     * The refresh re-opens at the byte offset the dead URL failed on, into an
+     * extractor (and a stream-cache key) set up for the YouTube file. The full chain
+     * puts qbdlx and JioSaavn first, so a source that missed at the first resolve and
+     * hits now handed FLAC or AAC/MP4 bytes from offset N to a WebM extractor, and
+     * read a JioSaavn URL through the redirect-following HTTP client that host must
+     * never get. The caller still checks the result is the same file
+     * ([isSameFileAs] / [sameUrlFileParams]); this only stops it asking the wrong
+     * sources.
+     */
+    suspend fun resolveYouTubeRefresh(track: TrackEntity): StreamUrl? =
+        youtube.resolve(track, allowYtDlp = true)
 
     /**
      * Shared scope for in-flight resolves. Mirrors

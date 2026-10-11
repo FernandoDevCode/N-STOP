@@ -230,6 +230,22 @@ data class DownloadedFileRef(
 )
 
 /**
+ * What one [TrackDao.deleteOrphanedDownloadedTracks] pass swept. Both lists
+ * hold the rows as they were BEFORE the sweep (file paths intact), so the
+ * caller can remove their audio files afterward.
+ *
+ * @property deleted orphans with no listening history — their rows are gone.
+ * @property undownloaded orphans that carry plays or skips — the row stays
+ *   (un-marked as downloaded, so it leaves the Library and only streams) and
+ *   only the file goes, because deleting the row would CASCADE away the
+ *   listening history, any unsent scrobbles under it, and the skip signal.
+ */
+data class OrphanSweep(
+    val deleted: List<TrackEntity>,
+    val undownloaded: List<TrackEntity>,
+)
+
+/**
  * A download this device lost and that is not already on its way back.
  *
  * Without the queue check, "Download N again" queued tracks the sync's requeue
@@ -602,6 +618,12 @@ interface TrackDao {
      * `@Transaction`: a large playlist's detail feed spans CursorWindows the
      * same way the Library feed does (#380) — one snapshot per emission so a
      * concurrent delete can't race the window refills.
+     *
+     * The trailing `pt.added_at, t.id` make the order total. Positions can
+     * tie — in REFRESH a kept `locally_added` row keeps its old position while
+     * the sync renumbers its own rows from 0 — and tied rows otherwise came
+     * back in whatever order SQLite chose, so they could swap between
+     * emissions.
      */
     @Transaction
     @Query(
@@ -623,10 +645,44 @@ interface TrackDao {
           )
         ORDER BY
             CASE WHEN p.type = 'DAILY_MIX' THEN pt.added_at END DESC,
-            pt.position ASC
+            pt.position ASC,
+            pt.added_at ASC,
+            t.id ASC
         """
     )
     fun getByPlaylist(playlistId: Long, includeStreamable: Boolean): Flow<List<TrackEntity>>
+
+    /**
+     * How many rows [getByPlaylist] would emit — same joins, same filters —
+     * without materialising them, for the cached `track_count` badge.
+     *
+     * Recounting via `getByPlaylist(...).first().size` loads every member's
+     * full row; done after each add of a multi-select batch, that made adding
+     * 1,000 songs ~500k row loads. Each (playlist, track) pair is one
+     * `playlist_tracks` row (primary key) and the blocklist LEFT JOIN keeps only
+     * unmatched tracks, which join to exactly one NULL row, so COUNT(*) equals
+     * the list size.
+     */
+    @Query(
+        """
+        SELECT COUNT(*) FROM tracks t
+        INNER JOIN playlist_tracks pt ON t.id = pt.track_id
+        INNER JOIN playlists p ON pt.playlist_id = p.id
+        LEFT JOIN track_blocklist bl
+            ON bl.canonical_key = (t.canonical_artist || '|' || t.canonical_title)
+            OR (bl.spotify_uri IS NOT NULL AND bl.spotify_uri = t.spotify_uri)
+            OR (bl.youtube_id  IS NOT NULL AND bl.youtube_id  = t.youtube_id)
+        WHERE pt.playlist_id = :playlistId
+          AND pt.removed_at IS NULL
+          AND bl.canonical_key IS NULL
+          AND (
+              t.is_downloaded = 1
+              OR :includeStreamable
+              OR (p.type = 'STASH_MIX' AND t.is_streamable = 1)
+          )
+        """
+    )
+    suspend fun countByPlaylist(playlistId: Long, includeStreamable: Boolean): Int
 
     /** Most-recently-added downloaded tracks, limited to [limit] results. */
     /**
@@ -1088,16 +1144,25 @@ interface TrackDao {
      *
      * A separate weekly resurrection query (added later in the plan) picks
      * up the failed-sentinel rows after a cooldown for a single retry pass.
+     *
+     * Paged by id ([afterId], ascending). Rows the worker cannot measure —
+     * a missing file, or a SAF `content://` path the measurer cannot open —
+     * stay unstamped on purpose (a re-download must still get measured), so
+     * a plain `LIMIT` kept returning the same unmeasurable rows first: with
+     * 250 of them, every run measured nothing. The worker now walks past
+     * them page by page instead.
      */
     @Query(
         """
         SELECT * FROM tracks
         WHERE loudness_measured_at IS NULL
           AND file_path IS NOT NULL
+          AND id > :afterId
+        ORDER BY id
         LIMIT :limit
         """
     )
-    suspend fun tracksNeedingLoudness(limit: Int): List<TrackEntity>
+    suspend fun tracksNeedingLoudness(afterId: Long, limit: Int): List<TrackEntity>
 
     /**
      * Writes a successful loudness measurement: integrated loudness in
@@ -1349,7 +1414,7 @@ interface TrackDao {
      * the DB write runs **first** so a mid-op crash leaves an orphaned
      * file (cleaned up by the existing orphan sweeper) rather than a
      * row whose `file_path` points at a deleted file. Mirrors the column
-     * set cleared by [resetForReDownload] / [bulkResetForReDownload].
+     * set cleared by [resetForReDownload] / [bulkResetPathlessDownloads].
      */
     @Query(
         """
@@ -1620,7 +1685,10 @@ interface TrackDao {
      * A track is "orphaned" when it was part of a daily mix that refreshed
      * (its playlist_tracks rows were cleared) and it does not belong to any
      * other playlist (liked songs, custom, or another mix). Tracks with
-     * source = 'BOTH' are local/custom imports and are never swept.
+     * source = 'BOTH' (custom / shared / web-library adds) or 'LOCAL'
+     * ("Import from device" — LocalImportCoordinator writes LOCAL, with no
+     * playlist membership at all) are never swept: they were never a sync's
+     * to take back, and an imported file may exist nowhere else.
      *
      * The discovery-queue exclusion mirrors [com.stash.core.data.db.dao.DiscoveryQueueDao.getActiveTrackIds]
      * (status PENDING/DONE): a discovery download completes, then the weekly
@@ -1636,7 +1704,7 @@ interface TrackDao {
         """
         SELECT t.* FROM tracks t
         WHERE t.is_downloaded = 1
-          AND t.source != 'BOTH'
+          AND t.source NOT IN ('BOTH', 'LOCAL')
           AND t.id NOT IN (
               SELECT pt.track_id FROM playlist_tracks pt
               WHERE pt.removed_at IS NULL
@@ -1660,13 +1728,40 @@ interface TrackDao {
      * its fresh cross-ref (CASCADE) and its irrecoverable FLAC with it
      * (2026-04-21 audit: 9/10 DONE discovery rows lost this way). Selecting and
      * deleting in one transaction closes the window.
+     *
+     * An orphan with listening history (a play or a skip) keeps its row and
+     * only loses its download ([clearDownloadState]): every FK to tracks is
+     * CASCADE, so deleting a played REFRESH-mode mix track used to delete its
+     * plays from History, the unsent Last.fm / ListenBrainz scrobbles queued
+     * under them (listen_submissions), and the mix-affinity skip signal. The
+     * file is still freed, which is what the sweep is for.
      */
     @Transaction
-    suspend fun deleteOrphanedDownloadedTracks(): List<TrackEntity> {
+    suspend fun deleteOrphanedDownloadedTracks(): OrphanSweep {
         val orphans = selectDeletableOrphans()
-        orphans.forEach { delete(it) }
-        return orphans
+        if (orphans.isEmpty()) return OrphanSweep(emptyList(), emptyList())
+        val withHistory = orphans.map { it.id }.chunkedForBind { idsWithListeningHistory(it) }.toSet()
+        val (keep, drop) = orphans.partition { it.id in withHistory }
+        drop.forEach { delete(it) }
+        keep.forEach { clearDownloadState(it.id) }
+        return OrphanSweep(deleted = drop, undownloaded = keep)
     }
+
+    /**
+     * The ids among [ids] that have listening history — a listening_events
+     * row (which listen_submissions hangs off) or a track_skip_events row —
+     * i.e. the tracks whose row a delete would take that history with.
+     * Route through [chunkedForBind]: the orphan set can be library-sized.
+     */
+    @Query(
+        """
+        SELECT t.id FROM tracks t
+        WHERE t.id IN (:ids)
+          AND (EXISTS (SELECT 1 FROM listening_events le WHERE le.track_id = t.id)
+               OR EXISTS (SELECT 1 FROM track_skip_events se WHERE se.track_id = t.id))
+        """
+    )
+    suspend fun idsWithListeningHistory(ids: List<Long>): List<Long>
 
     /**
      * Shared mixes: after an unfollow, delete the tracks among [ids] that nothing else claims.
@@ -1829,6 +1924,11 @@ interface TrackDao {
      * snapshot per emission so a mass delete can't race the refills (#380 —
      * the device repro's fatal collector was actually [getAllAlbums], the
      * same class of unbounded reactive read as this one).
+     *
+     * `MAX(album_art_url)`, as [getAllAlbums] does: a bare column beside an
+     * aggregate takes whichever row SQLite visits last, so the artist card's
+     * art changed as songs were added and went blank whenever that row had
+     * none. MAX skips NULLs and is stable.
      */
     @Transaction
     @Query(
@@ -1836,7 +1936,7 @@ interface TrackDao {
         SELECT artist,
                COUNT(*) AS trackCount,
                SUM(duration_ms) AS totalDurationMs,
-               album_art_url AS artUrl
+               MAX(album_art_url) AS artUrl
         FROM tracks
         WHERE is_downloaded = 1 OR (:includeStreamable AND is_streamable = 1)
         GROUP BY artist
@@ -2125,6 +2225,12 @@ interface TrackDao {
      * the file path — no network round-trips are implied by a hit in
      * this result set. Same `LIMIT` safety cap so a huge backlog can't
      * take down the worker.
+     *
+     * `ORDER BY id DESC`: a row no source can fill stays a candidate forever,
+     * and with no order SQLite returned rowid order, so once [limit] such
+     * rows existed every run retried the same oldest ones and newer tracks
+     * were never reached. Newest-first means fresh rows are always tried
+     * next; rows that already failed sink below them.
      */
     @Query(
         """
@@ -2134,6 +2240,7 @@ interface TrackDao {
           AND duration_ms = 0
           AND file_path IS NOT NULL
           AND file_path != ''
+        ORDER BY id DESC
         LIMIT :limit
         """
     )
@@ -2148,6 +2255,12 @@ interface TrackDao {
      * Only rows where the backfill has any chance of succeeding are
      * returned — tracks with a blank artist or title can't match anything
      * upstream, so we skip them entirely.
+     *
+     * `ORDER BY id DESC`: a row no source can fill stays a candidate forever,
+     * and with no order SQLite returned rowid order, so once [limit] such
+     * rows existed every run retried the same oldest ones and newer tracks
+     * were never reached. Newest-first means fresh rows are always tried
+     * next; rows that already failed sink below them.
      */
     @Query(
         """
@@ -2157,6 +2270,7 @@ interface TrackDao {
           AND (album_art_url IS NULL OR album_art_url = '')
           AND artist != ''
           AND title != ''
+        ORDER BY id DESC
         LIMIT :limit
         """
     )
@@ -2173,6 +2287,12 @@ interface TrackDao {
      * "0:00" durations on first paint; metadata only filled in
      * incidentally when the player resolved a queue window at play time
      * (conversation 2026-05-28).
+     *
+     * Newest first. Unordered, SQLite handed back the same oldest rows every
+     * run, and stubs Last.fm can't fill (no duration is common) never leave
+     * the set, so once 500 of them piled up the stubs a mix refresh had just
+     * created never got art or a duration. Newest-first keeps the stubs that
+     * triggered this pass at the front; the stuck ones sink behind them.
      */
     @Query(
         """
@@ -2183,6 +2303,7 @@ interface TrackDao {
           AND (album_art_url IS NULL OR album_art_url = '' OR duration_ms = 0)
           AND artist != ''
           AND title != ''
+        ORDER BY id DESC
         LIMIT :limit
         """
     )
@@ -2208,6 +2329,20 @@ interface TrackDao {
     suspend fun resetForReDownload(trackId: Long)
 
     /**
+     * Hands a downloaded track back to the download pipeline for a better
+     * copy while KEEPING its file: `is_downloaded = 0` lets the download
+     * worker pick it up, and file_path / file_size stay. That file is the
+     * user's only copy until a replacement is committed and validated;
+     * TrackDownloaderImpl deletes it then (a same-name download replaces it
+     * in place). [resetForReDownload] cleared the path while its caller
+     * deleted the file, so a download that deferred or failed (no lossless
+     * copy with the YouTube fallback off, a video taken down) left the track
+     * with nothing.
+     */
+    @Query("UPDATE tracks SET is_downloaded = 0 WHERE id = :trackId")
+    suspend fun markForReplacement(trackId: Long)
+
+    /**
      * All `is_downloaded=1` rows with their stored `file_path`. Drives the
      * startup file-integrity sweep that verifies every "downloaded" track
      * actually has a readable file on disk. A track whose file vanished
@@ -2224,11 +2359,13 @@ interface TrackDao {
     suspend fun getDownloadedFileRefs(): List<DownloadedFileRef>
 
     /**
-     * Bulk-reset rows to undownloaded state. Companion to
-     * [resetForReDownload] but takes a list — used by the startup integrity
-     * sweep which collects all missing-file ids and resets them in one
-     * statement. `quality_kbps`/`file_format` deliberately untouched: the
-     * row may still hold useful metadata for a future re-download attempt.
+     * Bulk-reset `is_downloaded = 1` rows that have NO file path back to
+     * undownloaded. The startup integrity sweep's counterpart to
+     * [resetMissingFiles] (which is guarded on the path found missing): a row
+     * with no path has none to guard on, so the reset applies only while the
+     * path is still blank — a download that lands a file meanwhile is kept.
+     * `quality_kbps`/`file_format` deliberately untouched: the row may still
+     * hold useful metadata for a future re-download attempt.
      */
     @Query(
         """
@@ -2238,18 +2375,17 @@ interface TrackDao {
             file_size_bytes = 0,
             download_missing_at = :now
         WHERE id IN (:trackIds)
+          AND (file_path IS NULL OR file_path = '')
         """
     )
-    suspend fun bulkResetForReDownloadRaw(trackIds: List<Long>, now: Long)
+    suspend fun bulkResetPathlessDownloadsRaw(trackIds: List<Long>, now: Long)
 
     /**
-     * Chunked wrapper for [bulkResetForReDownloadRaw]: the startup integrity
-     * sweep collects every missing-file id, which can be library-sized, so the
-     * reset must chunk under the bind cap (#337). Chunks are separate
-     * statements — wrap in a transaction if all-or-nothing is required.
+     * Chunked wrapper for [bulkResetPathlessDownloadsRaw]: the id list can be
+     * library-sized, so the reset must chunk under the bind cap (#337).
      */
-    suspend fun bulkResetForReDownload(trackIds: List<Long>, now: Long = System.currentTimeMillis()) =
-        trackIds.chunkedForBindWrite { bulkResetForReDownloadRaw(it, now) }
+    suspend fun bulkResetPathlessDownloads(trackIds: List<Long>, now: Long = System.currentTimeMillis()) =
+        trackIds.chunkedForBindWrite { bulkResetPathlessDownloadsRaw(it, now) }
 
     /**
      * YT-source tracks the Quick-scan backfill should verify. Two routes
@@ -2388,6 +2524,30 @@ interface TrackDao {
         LIMIT 1
     """)
     suspend fun findDownloadedByCanonical(canonicalTitle: String, canonicalArtist: String): TrackEntity?
+
+    /**
+     * Batched [findDownloadedByCanonical] for DiffWorker's auto-reconciliation:
+     * every downloaded track whose lowercased `title|artist` key is in
+     * [canonicalKeys]. The single-row form ran once per undownloaded existing
+     * track of every playlist, every sync, and each call is a full table scan
+     * (LOWER() rules out an index). An Online-mode user, with nothing
+     * downloaded, paid ~one scan per playlist membership inside the diff's
+     * write transactions. This is one scan per playlist.
+     *
+     * The `|`-joined key can collide ("a|b" + "c" vs "a" + "b|c"), so callers
+     * must re-check title and artist separately. Use
+     * [findDownloadedByCanonicalKeys], which chunks for the bind cap.
+     */
+    @Query("""
+        SELECT * FROM tracks
+        WHERE is_downloaded = 1
+          AND (LOWER(canonical_title) || '|' || LOWER(canonical_artist)) IN (:canonicalKeys)
+    """)
+    suspend fun findDownloadedByCanonicalKeysRaw(canonicalKeys: List<String>): List<TrackEntity>
+
+    /** Bind-safe wrapper for [findDownloadedByCanonicalKeysRaw]. Empty input runs no query. */
+    suspend fun findDownloadedByCanonicalKeys(canonicalKeys: List<String>): List<TrackEntity> =
+        canonicalKeys.chunkedForBind { findDownloadedByCanonicalKeysRaw(it) }
 
     /**
      * Returns the canonical-key set ("$canonicalArtist|$canonicalTitle")

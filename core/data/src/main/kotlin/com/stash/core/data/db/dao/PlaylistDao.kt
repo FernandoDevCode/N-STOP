@@ -7,6 +7,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
+import com.stash.core.data.db.chunkedForBindWrite
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.TrackEntity
@@ -448,6 +449,39 @@ interface PlaylistDao {
     suspend fun getTracksForPlaylist(playlistId: Long): List<TrackEntity>
 
     /**
+     * Whether [playlistId] holds at least one downloaded (non-removed) track.
+     * Android Auto's Playlists row asks this of every custom playlist on each
+     * open; loading each one's whole track list for it was tens of thousands
+     * of rows per browse.
+     */
+    @Query(
+        """
+        SELECT EXISTS(
+            SELECT 1 FROM playlist_tracks pt
+            INNER JOIN tracks t ON t.id = pt.track_id
+            WHERE pt.playlist_id = :playlistId AND pt.removed_at IS NULL AND t.is_downloaded = 1
+        )
+        """
+    )
+    suspend fun hasDownloadedTrack(playlistId: Long): Boolean
+
+    /**
+     * Distinct non-removed tracks across [playlistIds] that the car can play
+     * (downloaded, streamable, or never checked: AutoBrowse's
+     * `isPlayableInAuto`). The count on Android Auto's one merged "Liked Songs"
+     * row, without loading, merging and sorting every likes playlist for it.
+     */
+    @Query(
+        """
+        SELECT COUNT(DISTINCT t.id) FROM tracks t
+        INNER JOIN playlist_tracks pt ON t.id = pt.track_id
+        WHERE pt.playlist_id IN (:playlistIds) AND pt.removed_at IS NULL
+          AND (t.is_downloaded = 1 OR t.is_streamable = 1 OR t.is_streamable_checked_at IS NULL)
+        """
+    )
+    suspend fun countPlayableInAutoAcross(playlistIds: List<Long>): Int
+
+    /**
      * True when [trackId] appears in any active Stash Mix playlist —
      * i.e. a playlist with `type = STASH_MIX`. Stash Mixes are the
      * locally-curated rotating playlists; downloads from those should
@@ -738,29 +772,75 @@ interface PlaylistDao {
      * surfaced today). The rows stay in the DB with their track links
      * intact, so the playlist can be cheaply revived if it reappears
      * later — see [reactivateById]. Returns the number of rows flipped.
+     *
+     * The "missing" set is worked out in memory and written by id in chunks.
+     * It used to be one `source_id NOT IN (:currentSourceIds)` UPDATE, which
+     * binds a variable per id: past 999 (the library walk allows 2000) it
+     * threw "too many SQL variables" on API 26-30, the caller caught it, and
+     * deactivation silently never ran. A NOT IN can't simply be chunked: each
+     * chunk would hide the rows the other chunks list.
      */
-    @Query(
-        "UPDATE playlists SET is_active = 0 " +
-            "WHERE source = :source AND is_active = 1 " +
-            "AND source_id NOT IN (:currentSourceIds)"
-    )
+    @Transaction
     suspend fun deactivateMissingForSource(
         source: MusicSource,
         currentSourceIds: List<String>,
-    ): Int
+    ): Int {
+        val current = currentSourceIds.toHashSet()
+        val missing = getActivePlaylistsBySource(source)
+            .filter { it.sourceId !in current }
+            .map { it.id }
+        return deactivateByIdsChunked(missing)
+    }
 
-    /** Soft-deactivate only Spotify CUSTOM playlists absent from a complete inventory. */
+    /** Flip every still-active row in [ids] to inactive. Use [deactivateByIdsChunked]. */
+    @Query("UPDATE playlists SET is_active = 0 WHERE is_active = 1 AND id IN (:ids)")
+    suspend fun deactivateByIdsRaw(ids: List<Long>): Int
+
+    /** Bind-safe [deactivateByIdsRaw]; returns the total number of rows flipped. */
+    suspend fun deactivateByIdsChunked(ids: List<Long>): Int {
+        var flipped = 0
+        ids.chunkedForBindWrite { flipped += deactivateByIdsRaw(it) }
+        return flipped
+    }
+
+    /**
+     * Whether any ACTIVE YouTube row of [type] exists, split on whether its
+     * source_id is a saved-album browseId (`MPREb_…`): saved albums and
+     * library playlists are both typed CUSTOM but come from different
+     * listings. The sync fetch asks this when a library-level listing comes
+     * back Empty. A logged-out (expired-cookie) browse returns an empty
+     * library rather than an error, so "the listing is empty but we hold
+     * active rows of that kind" is read as an incomplete inventory instead
+     * of letting REFRESH hide the user's whole YouTube library.
+     */
     @Query(
         """
-        UPDATE playlists SET is_active = 0
-        WHERE source = 'SPOTIFY' AND type = 'CUSTOM' AND is_active = 1
-          AND (:hasCurrentIds = 0 OR source_id NOT IN (:currentSourceIds))
+        SELECT EXISTS(
+            SELECT 1 FROM playlists
+            WHERE source = 'YOUTUBE' AND is_active = 1 AND type = :type
+              AND (source_id LIKE 'MPREb%') = :savedAlbums
+        )
         """
     )
+    suspend fun hasActiveYouTubeRows(type: PlaylistType, savedAlbums: Boolean): Boolean
+
+    /**
+     * Soft-deactivate only Spotify CUSTOM playlists absent from a complete
+     * inventory. With [hasCurrentIds] false every active one goes. Worked out
+     * in memory and written in chunks for the same bind-cap reason as
+     * [deactivateMissingForSource].
+     */
+    @Transaction
     suspend fun deactivateMissingSpotifyCustomPlaylists(
         currentSourceIds: List<String>,
         hasCurrentIds: Boolean,
-    ): Int
+    ): Int {
+        val current = currentSourceIds.toHashSet()
+        val missing = getActivePlaylistsBySource(MusicSource.SPOTIFY)
+            .filter { it.type == PlaylistType.CUSTOM && (!hasCurrentIds || it.sourceId !in current) }
+            .map { it.id }
+        return deactivateByIdsChunked(missing)
+    }
 
     /** Flip [is_active] back to 1 for a specific playlist id. Paired with
      *  [deactivateMissingForSource] so a rotating home-feed mix that
@@ -851,9 +931,21 @@ interface PlaylistDao {
     )
     fun getPickablePlaylists(): Flow<List<PlaylistEntity>>
 
-    /** Soft-delete a single track from a playlist. */
-    @Query("UPDATE playlist_tracks SET removed_at = CURRENT_TIMESTAMP WHERE playlist_id = :playlistId AND track_id = :trackId AND removed_at IS NULL")
-    suspend fun softDeleteTrackFromPlaylist(playlistId: Long, trackId: Long)
+    /**
+     * Soft-delete a single track from a playlist.
+     *
+     * `removed_at` is an epoch-millis [java.time.Instant] column. This used to
+     * write SQL `CURRENT_TIMESTAMP`, i.e. TEXT like '2026-10-11 12:34:56',
+     * which Room reads back with getLong as the leading digits —
+     * `Instant.ofEpochMilli(2026)` — and which was copied verbatim into undo
+     * points and backups. Only `IS NULL` reads it today; anything ordering or
+     * windowing on it would have been wrong.
+     */
+    suspend fun softDeleteTrackFromPlaylist(playlistId: Long, trackId: Long) =
+        softDeleteTrackFromPlaylistAt(playlistId, trackId, System.currentTimeMillis())
+
+    @Query("UPDATE playlist_tracks SET removed_at = :removedAtMs WHERE playlist_id = :playlistId AND track_id = :trackId AND removed_at IS NULL")
+    suspend fun softDeleteTrackFromPlaylistAt(playlistId: Long, trackId: Long, removedAtMs: Long)
 
     /**
      * Returns DISTINCT track ids that appear in any of the given playlists.

@@ -142,24 +142,17 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                     val previousPending = pending
                     if (trackChanged && previousPending != null) {
                         if (previousPending.claimed.compareAndSet(false, true)) {
+                            val position = positionReached(previousPending)
                             previousPending.job?.cancel()
-                            val skipAt = System.currentTimeMillis()
-                            val position = previousPending.positionAtScheduleMs
                             // Inline (rather than `scope.launch { ... }`) so
                             // the suspend insert completes within the collect
                             // tick — keeps the skip ordered with respect to
                             // the next track's scheduling and lets the test
                             // harness observe the insert without an extra
                             // dispatcher round-trip.
-                            runCatching {
-                                trackSkipEventDao.insert(
-                                    TrackSkipEventEntity(
-                                        trackId = previousPending.track.id,
-                                        skippedAt = skipAt,
-                                        positionMs = position,
-                                    ),
-                                )
-                            }.onFailure { Log.w(TAG, "skip insert failed", it) }
+                            if (!playedThrough(previousPending.track, position)) {
+                                recordSkip(previousPending.track, position)
+                            }
                         }
                     }
                     if (trackChanged) pending = null
@@ -295,6 +288,59 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         session.playedMs += wallToMediaMs(nowMs() - session.playingSinceMs, session.speed)
     }
 
+    /**
+     * How far into the song [session] got when it ended: where its countdown
+     * started plus the song time played since, the stretch still running included.
+     *
+     * The skip used to record [PendingFire.positionAtScheduleMs] alone — the
+     * position at the first play edge, usually 0 — so 1:50 of a 4:00 song read as
+     * a skip at 0:00. The early-skip ban (`position_ms <= 30 s`, three times in 90
+     * days) then dropped songs from discovery that the user had listened to half
+     * of every time. A seek within the session is not counted: this is listening
+     * time, which is what "skipped early" means.
+     */
+    private fun positionReached(session: PendingFire): Long {
+        val running = if (session.job != null) wallToMediaMs(nowMs() - session.playingSinceMs, session.speed) else 0L
+        return session.positionAtScheduleMs + session.playedMs + running
+    }
+
+    /**
+     * The session reached the song's end (allowing for a crossfade, up to 12 s,
+     * which moves the transition before it): not a skip, though no listen was
+     * recorded either. A song of 30 s or less never reaches its threshold (see
+     * [thresholdFor]), so an interlude that played out was recorded as a skip at
+     * a 100% skip rate — the heavy mix penalty, and the early-skip ban after three
+     * plays. Last.fm doesn't count such a song as a play; that doesn't make it a
+     * skip.
+     */
+    private fun playedThrough(track: Track, positionMs: Long): Boolean =
+        track.durationMs > 0 && positionMs >= track.durationMs - TRACK_END_SLACK_MS
+
+    /**
+     * Records a skip of [track] at [positionMs].
+     *
+     * Persisted first, like a listen ([recordListen]): radio and search tracks carry
+     * a synthetic id with no Room row, so the insert broke the track_id foreign key
+     * and was dropped — skips on the main discovery surface were never counted
+     * although its plays were.
+     */
+    private suspend fun recordSkip(track: Track, positionMs: Long) {
+        try {
+            val persistedTrackId = musicRepository.ensureTrackPersisted(track)
+            trackSkipEventDao.insert(
+                TrackSkipEventEntity(
+                    trackId = persistedTrackId,
+                    skippedAt = System.currentTimeMillis(),
+                    positionMs = positionMs,
+                ),
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "skip insert failed", e)
+        }
+    }
+
     /** Enough listening time has played: record the listen, unless a transition claimed it first. */
     private suspend fun recordListen(session: PendingFire) {
         val track = session.track
@@ -337,5 +383,8 @@ class ListeningRecorder @VisibleForTesting internal constructor(
 
     companion object {
         private const val TAG = "ListeningRecorder"
+
+        /** The longest crossfade (12 s) plus a little for the play-time estimate. */
+        private const val TRACK_END_SLACK_MS = 15_000L
     }
 }

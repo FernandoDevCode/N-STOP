@@ -244,6 +244,28 @@ and key rotation. Do not describe this cap as containing a leaked key. A cache h
 served before the per-install check and does not count against it — it spends no Qobuz
 request; the per-IP limiter is what bounds a client replaying popular tracks.
 
+**Per-network caps (added 2026-10-11, after an audit).** The per-IP limiter alone did not
+stop one client from taking the whole day: it was keyed on the full address (an IPv6 host
+rotating through its /64 got a fresh bucket per address), 40/min from one IPv4 address is
+57,600 a day against a global cap of 34,667, and a random 1-12 digit track id (Qobuz
+answers 404) spent the global cap like a real mint. So:
+
+- Every per-caller limit counts the caller's **network**: an IPv4 address as is, an IPv6
+  address by its /56 (the same unit as the share Worker's Community limits). That covers
+  the per-IP limiter, the new daily cap below, and the IP column of the abuse report.
+- **Per-network daily cap** (`NETWORK_DAILY_CAP`, a few installs' worth so a household or
+  a carrier NAT still fits), counted in D1 under a salted hash of the network and enforced
+  next to the per-install cap: over it → **429** + `Retry-After`. A cache hit still costs
+  nothing.
+- **Qobuz's own 404** (an id it has never heard of) spends neither the global cap nor the
+  account's hourly/daily slot, while the network has some of its small daily allowance of
+  them left (`NETWORK_FREE_404_DAILY`). Past the allowance a 404 counts like any other
+  answer, so the network cap still ends a flood of junk ids. It always counts against the
+  install's own cap. Region locks and preview-only answers are real tracks and still count.
+
+Both need the `IP_SALT` secret (the relay key is public, so it can't salt anything); without
+it they are off and the relay behaves as before.
+
 **Client half BUILT (PR #465, `9e2f2e3f`, 2026-09-01).** `lossless.json` carries an
 optional `relay_key`; `LosslessRelayClient` signs only when one is present, and a
 config that omits the key disarms it. Exact wire format the relay must verify:
@@ -297,7 +319,7 @@ Recorded here so the spec and the shipped Worker cannot drift apart. Plan:
 |---|---|---|
 | Config host (§3) | The tipjar Worker serves `GET /lossless.json` and `/lossless.json.sig` from `STASH_KV` | Already deployed, hostname already disclosed in README, KV is "rarely written, often read", bytes served exactly as stored. GitHub raw would put the relay key in public git history; the relay serving its own config would put the relay hostname in the APK. |
 | Where account tokens live | Worker secret `QOBUZ_ACCOUNTS` (JSON array); D1 `accounts` holds rotation state only, keyed by `label` | Secrets are encrypted at rest and `d1 execute` can never print one; re-seeding a token is `wrangler secret put`, never SQL with a token on a command line. |
-| Per-install and per-IP cap status | **429** with `Retry-After` | The client cools a non-2xx/non-503 base for 5 min (spec §1), the right backoff for a runaway install; 503 would have it retry every 60 s. Global exhaustion stays **503** (§5.5). |
+| Per-install, per-network and per-IP cap status | **429** with `Retry-After` | The client cools a non-2xx/non-503 base for 5 min (spec §1), the right backoff for a runaway install; 503 would have it retry every 60 s. Global exhaustion stays **503** (§5.5). |
 | Caps | `[vars]` in `wrangler.toml`: global 600/day, install 100/day, per account 20/h and 200/day | Tunable by redeploy, not code. |
 | Attempts per request | 2 accounts max, 3 s upstream timeout each | Two attempts plus the D1 round trips fit inside the client's 8 s budget (§1). A Worker that overran it would turn the intended 503 (60 s cooldown) into a client-side timeout (5 min cooldown). |
 | Upstream classification | 401, 403 `USER_BLOCKED`, or a preview body → account **dead** (operator re-logs in); anything else, Qobuz 400 included → account cools 5 min | Mirrors `QbdlxApiClient` exactly. A 400 is more likely our bug than a dead account and must not kill the pool. |
@@ -310,8 +332,8 @@ Status the Worker emits, and what the client does with it:
 |---|---|---|
 | 200 | mint (cache HIT or MISS) | streams it |
 | 404 | Qobuz answered 404 for the track id, or returned no URL / a lossy format, for these accounts; or a request for a non-lossless format (Data Saver's 5), answered without a Qobuz call | NoMatch — ends the router for the track; Save Data falls to JioSaavn AAC 320 |
-| 503 + Retry-After | global cap hit, or every account dead/cooling/capped | cools the base 60 s |
-| 429 + Retry-After | per-install daily cap, or the per-IP limiter | cools the base 5 min |
+| 503 + Retry-After | global cap hit, or every account dead/cooling/capped, or an internal failure mid-request (a D1 error) | cools the base 60 s |
+| 429 + Retry-After | per-install or per-network daily cap, or the per-IP limiter (per network since 2026-10-11, §5.4) | cools the base 5 min |
 | 401 | signature missing/wrong, or \|skew\| > 300 s | cools the base 5 min |
 | 400 | malformed input only: a non-numeric or absent track_id/format_id, or a wrong X-Stash-Version | cools the base 5 min |
 | 500 | RELAY_KEY not configured | cools the base 5 min |

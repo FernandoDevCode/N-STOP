@@ -4,7 +4,13 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.repository.MusicRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
+import androidx.lifecycle.viewModelScope
+import com.stash.core.data.audio.AudioDurationExtractor
+import com.stash.core.data.db.dao.TrackBackfillRow
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -49,10 +55,46 @@ class LibraryHealthViewModelRestoreTest {
             reconciliationUseCase = mockk(relaxed = true),
             adoptExistingFilesUseCase = mockk(relaxed = true),
             musicRepository = music,
+            localFileOps = mockk(relaxed = true),
         )
 
         vm.restoreMissingDownloads()
 
         coVerify { music.resumeWaitingDownloads(tap = true) }
+    }
+
+    /**
+     * "Refresh quality info", then Back: the blocking metadata read never
+     * checked for cancellation and the runCatching around each write swallowed
+     * it, so the closed screen kept opening every file of the library.
+     */
+    @Test fun `closing the screen stops the quality backfill`() {
+        val trackDao = mockk<TrackDao>(relaxed = true) {
+            coEvery { getRowsNeedingFormatBackfill() } returns
+                (1L..3L).map { TrackBackfillRow(id = it, filePath = "/m/$it.flac") }
+            coEvery { getRowsNeedingSizeBackfill() } returns
+                listOf(TrackBackfillRow(id = 9L, filePath = "/m/9.flac"))
+        }
+        val extractor = mockk<AudioDurationExtractor>(relaxed = true)
+        val vm = LibraryHealthViewModel(
+            appContext = mockk(relaxed = true),
+            trackDao = trackDao,
+            downloadQueueDao = mockk(relaxed = true),
+            metadataExtractor = extractor,
+            fileExistenceSessionFactory = mockk(relaxed = true),
+            reconciliationUseCase = mockk(relaxed = true),
+            adoptExistingFilesUseCase = mockk(relaxed = true),
+            musicRepository = mockk(relaxed = true),
+            localFileOps = mockk(relaxed = true),
+        )
+        every { extractor.extract(any()) } answers {
+            vm.viewModelScope.cancel() // the user leaves while the first file is read
+            null
+        }
+
+        vm.runBackfill()
+
+        verify(exactly = 1) { extractor.extract(any()) }
+        coVerify(exactly = 0) { trackDao.setFileSize(any(), any()) }
     }
 }

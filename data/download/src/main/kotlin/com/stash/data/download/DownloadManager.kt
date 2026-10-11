@@ -3,7 +3,6 @@ package com.stash.data.download
 import android.util.Log
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackDao
-import com.stash.core.data.db.dao.fileUsedByAnotherTrack
 import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.lastfm.LastFmCredentials
 import com.stash.core.data.mapper.toDomain
@@ -151,7 +150,10 @@ class DownloadManager @Inject constructor(
      *  transcode) downloads are almost entirely network-bound so more parallelism helps. */
     private val concurrencySemaphore = Semaphore(8)
 
-    private val _progress = MutableSharedFlow<DownloadProgress>(replay = 1)
+    // The extra buffer keeps intermediate tryEmit()s from being dropped whenever the
+    // Main-thread collector is a step behind (8 parallel downloads emit every ~64 KB);
+    // with replay = 1 alone, tryEmit failed as soon as one event was unread.
+    private val _progress = MutableSharedFlow<DownloadProgress>(replay = 1, extraBufferCapacity = 64)
 
     /** Emits real-time progress snapshots for all in-flight downloads. */
     val progress: SharedFlow<DownloadProgress> = _progress.asSharedFlow()
@@ -166,6 +168,16 @@ class DownloadManager @Inject constructor(
          * (kennyy, squid, + headroom) so it can't spin.
          */
         internal const val MAX_LOSSLESS_FAILOVER_ATTEMPTS = 3
+
+        /**
+         * A short random tag that gives each download attempt a temp file of
+         * its own. Named by track id alone, two downloads of one track at
+         * once (a double tap on Find in FLAC, or a tap while the FLAC upgrade
+         * sweep reaches the same song) shared one file: the second open
+         * truncated it under the first, and the interleaved FLAC, whose header
+         * still probed fine, was committed as the download.
+         */
+        internal fun attemptTag(): String = java.util.UUID.randomUUID().toString().substring(0, 8)
 
         /**
          * The least a real JioSaavn file at [expectedKbps] measures: a fifth under
@@ -199,10 +211,36 @@ class DownloadManager @Inject constructor(
     ): TrackDownloadResult {
         concurrencySemaphore.acquire()
         try {
-            return executeDownload(track, preResolvedUrl)
+            val result = try {
+                executeDownload(track, preResolvedUrl)
+            } catch (e: Throwable) {
+                // Cancellation or a throw from a later step: without this the row
+                // kept its last live status (Downloading) indefinitely.
+                emitProgress(track.id, 0f, DownloadStatus.FAILED)
+                throw e
+            }
+            emitFinalStatus(track.id, result)
+            return result
         } finally {
             concurrencySemaphore.release()
         }
+    }
+
+    /**
+     * Ends [trackId]'s live progress with the status [result] implies. Every exit
+     * gets one here: a Deferred track used to end on the lossless attempt's
+     * DOWNLOADING, so Downloads showed it "Downloading" while it sat in
+     * WAITING_FOR_LOSSLESS, and the pipeline's own terminal emits were tryEmit()s
+     * a slow collector could lose. This one suspends rather than drop.
+     */
+    private suspend fun emitFinalStatus(trackId: Long, result: TrackDownloadResult) {
+        val (progress, status) = when (result) {
+            is TrackDownloadResult.Success -> 1f to DownloadStatus.COMPLETED
+            is TrackDownloadResult.Unmatched -> 0f to DownloadStatus.UNMATCHED
+            is TrackDownloadResult.Failed -> 0f to DownloadStatus.FAILED
+            TrackDownloadResult.Deferred -> 0f to DownloadStatus.DEFERRED
+        }
+        _progress.emit(DownloadProgress(trackId, progress, 0, status))
     }
 
     /**
@@ -366,7 +404,7 @@ class DownloadManager @Inject constructor(
 
         // Step 3: Download via yt-dlp
         val tempDir = fileOrganizer.getTempDir()
-        val tempFilename = "dl_${track.id}"
+        val tempFilename = "dl_${track.id}_${attemptTag()}"
 
         val dlResult = downloadExecutor.download(
             url = youtubeUrl,
@@ -423,21 +461,9 @@ class DownloadManager @Inject constructor(
             trackId = track.id,
         )
 
-        // Clean up the previous file if the canonicalizer renamed the
-        // track (new title → new derived file path). Without this the
-        // old OMV-titled file lingers as an orphan consuming disk. Only
-        // delete when paths genuinely differ — for a plain re-download
-        // commitDownload already overwrote the same path — and when no other
-        // song still plays from the old file (two rows can share one).
-        val oldPath = track.filePath
-        if (oldPath != null && oldPath != committed.filePath && !trackDao.fileUsedByAnotherTrack(oldPath, track.id)) {
-            runCatching {
-                val deleted = File(oldPath).delete()
-                Log.d(TAG, "executeDownload: deleted orphaned old file path=$oldPath deleted=$deleted")
-            }.onFailure { e ->
-                Log.w(TAG, "executeDownload: failed to delete old file $oldPath", e)
-            }
-        }
+        // The previous file, when the canonicalizer renamed the track (new
+        // title → new path), is deleted by TrackDownloaderImpl once the new
+        // file has passed validation, for every source, not only this one.
 
         Log.i(TAG, "Downloaded: ${effectiveTrack.artist} - ${effectiveTrack.title} → ${committed.filePath}")
         runCatching { trackDao.setMetadataEmbeddedAt(track.id, System.currentTimeMillis()) }
@@ -502,7 +528,7 @@ class DownloadManager @Inject constructor(
         } ?: return null
 
         emitProgress(track.id, 0.1f, DownloadStatus.DOWNLOADING)
-        val tempFile = File(fileOrganizer.getTempDir(), "jiosaavn_${track.id}.m4a")
+        val tempFile = File(fileOrganizer.getTempDir(), "jiosaavn_${track.id}_${attemptTag()}.m4a")
         val fetched = losslessUrlDownloader.download(
             source = match,
             destination = tempFile,
@@ -628,7 +654,7 @@ class DownloadManager @Inject constructor(
         // "mp3", etc. and the file organizer just plumbs through.
         val ext = match.format.fileExtension.lowercase()
             .ifBlank { match.format.codec.lowercase().ifBlank { "flac" } }
-        val tempFile = File(fileOrganizer.getTempDir(), "lossless_${track.id}.$ext")
+        val tempFile = File(fileOrganizer.getTempDir(), "lossless_${track.id}_${attemptTag()}.$ext")
 
         val fetched = losslessUrlDownloader.download(
             source = match,
@@ -987,12 +1013,14 @@ class DownloadManager @Inject constructor(
 
         // Gate 2: Short title word containment
         // Jaro-Winkler is unreliable for short strings (e.g., "Hey" vs "Otherside" = 0.63)
-        // For titles <= 5 chars, require the target to appear as a word in the candidate
+        // For titles <= 5 chars, require the target to appear as a word in the candidate.
+        // Both sides are tokenised the same way (titleContainsTarget's contiguous word
+        // run): comparing the raw lowercased target against the candidate's split words
+        // rejected every candidate for "Help!", "Don't" or "7/11", whose punctuation can
+        // never survive the candidate's split.
         val targetTitle = track.title.trim()
         if (targetTitle.length <= 5) {
-            val targetWord = targetTitle.lowercase()
-            val candidateWords = best.title.lowercase().split(Regex("\\W+"))
-            if (targetWord !in candidateWords) {
+            if (!matchScorer.titleContainsTarget(targetTitle, best.title)) {
                 Log.w(TAG, "resolveUrl: rejecting '${best.title}' — short title '${track.title}' not found as word")
                 return null
             }

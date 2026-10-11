@@ -5,6 +5,7 @@ import android.util.Log
 import com.stash.core.auth.TokenManager
 import com.stash.core.model.YouTubeVideoId
 import com.stash.data.download.CookieFileWriter
+import com.stash.data.download.YtCookieFiles
 import com.stash.data.download.ytdlp.YtDlpManager
 import com.stash.data.ytmusic.InnerTubeClient
 import com.yausername.youtubedl_android.YoutubeDL
@@ -18,6 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.currentCoroutineContext
@@ -30,7 +32,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -367,9 +368,9 @@ class PreviewUrlExtractor @Inject constructor(
             ytDlpGraceMs: Long = YTDLP_GRACE_MS,
         ): String {
             // Both lanes run in the extractor's own scope, not the caller's: when
-            // InnerTube wins, the caller returns at once and a yt-dlp process already
-            // running is left to finish on its own (a JNI call cannot be interrupted;
-            // its permit is released when it ends). Pixel 6, 2026-09-06: InnerTube served
+            // InnerTube wins, the caller returns at once instead of waiting for a
+            // running yt-dlp to wind down (cancelling it interrupts execute(), which
+            // kills the process and then releases the permit). Pixel 6, 2026-09-06: InnerTube served
             // in 1.1 s, the old coroutineScope waited 14.2 s for the cancelled yt-dlp
             // child, and the user heard the track 14 s after the tap.
             val inner = scope.async {
@@ -775,7 +776,7 @@ class PreviewUrlExtractor @Inject constructor(
      * — the caller already owns the cap-1 [ytDlpSemaphore] permit.
      */
     private suspend fun runYtDlp(videoId: String, playerClient: String?, lowestQuality: Boolean = false): YtDlpStream? {
-        val cookieFile = File(context.noBackupFilesDir, "yt_preview_cookies_${System.nanoTime()}.txt")
+        val cookieFile = YtCookieFiles.newFile(context.noBackupFilesDir, YtCookieFiles.PREVIEW_PREFIX)
         return try {
             val url = YouTubeVideoId.watchUrl(videoId) ?: return null
 
@@ -825,8 +826,16 @@ class PreviewUrlExtractor @Inject constructor(
             Log.d(TAG, "yt-dlp: invoking for videoId=$videoId client=${playerClient ?: "default"}")
             // null processId: sharing the video url as the id collides with a
             // concurrent download of the same track ("Process ID already
-            // exists"). The id is never used to cancel. (#210)
-            val response = YoutubeDL.getInstance().execute(request, null, null)
+            // exists"). (#210)
+            //
+            // Interruptible, so [YTDLP_TIMEOUT_MS] and a cancelled race actually
+            // end the run: youtubedl-android destroys the process when its
+            // thread is interrupted. As a plain blocking call, withTimeout only
+            // fired after yt-dlp returned, and the cap-1 permit stayed held for
+            // as long as yt-dlp ran, stalling every other stream resolve.
+            val response = runInterruptible {
+                YoutubeDL.getInstance().execute(request, null, null)
+            }
 
             val stdout = response.out.orEmpty()
             val stderr = response.err.orEmpty()

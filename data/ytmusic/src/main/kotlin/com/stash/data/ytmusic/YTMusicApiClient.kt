@@ -476,7 +476,7 @@ class YTMusicApiClient @Inject constructor(
     /**
      * Sectioned Search tab results.
      *
-     * Wraps [InnerTubeClient.search]. InnerTube search returns shelves under
+     * Wraps [InnerTubeClient.searchWithStatus]. InnerTube search returns shelves under
      * `contents.tabbedSearchResultsRenderer.tabs[0].tabRenderer.content.sectionListRenderer.contents`.
      * Each shelf is either a [musicCardShelfRenderer] (the tall "Top result"
      * card, at most one) or a named [musicShelfRenderer] (Songs / Artists /
@@ -486,13 +486,16 @@ class YTMusicApiClient @Inject constructor(
      * Top → Songs → Artists → Albums — skipping any shelf that is missing or
      * empty. The Songs list is capped at 4 rows per the Search tab spec.
      *
-     * A null InnerTube response, a missing `sectionListRenderer`, or a
-     * zero-shelf response (e.g. InnerTube's "No results" message) all yield
-     * [SearchAllResults] with an empty sections list — callers should render
-     * the empty-state UI in that case.
+     * A missing `sectionListRenderer` or a zero-shelf response (e.g.
+     * InnerTube's "No results" message) yields [SearchAllResults] with an
+     * empty sections list — callers should render the empty-state UI in that
+     * case. No answer at all (no connection, timeout, 429, 5xx) throws
+     * [SearchUnavailableException] instead: it used to read as an empty
+     * answer too, so an offline search showed "No results" and no Retry.
      *
      * @param query The search query string as typed by the user.
      * @return An ordered list of sections; empty if nothing matched.
+     * @throws SearchUnavailableException when YouTube Music didn't answer.
      */
     /**
      * Resolve a single best YouTube **videoId** for [artist]/[title] via the
@@ -510,8 +513,8 @@ class YTMusicApiClient @Inject constructor(
         innerTubeClient.searchCanonicalMatch(artist, title)
 
     suspend fun searchAll(query: String): SearchAllResults {
-        val response = innerTubeClient.search(query)
-            ?: return SearchAllResults(emptyList())
+        val outcome = innerTubeClient.searchWithStatus(query)
+        val response = outcome.body ?: throw SearchUnavailableException(outcome.statusCode)
         return parseSearchAll(response)
             .also { Log.d(TAG, "searchAll('$query'): ${it.sections.size} sections") }
     }

@@ -36,6 +36,9 @@ class StreamErrorCascadeGuard(
      */
     private var retriedItemKey: String? = null
 
+    /** Local-file skips since anything last played; see [onLocalSkip]. */
+    private var consecutiveLocalSkips: Int = 0
+
     sealed class Verdict {
         /** Re-prepare the CURRENT item in place before considering a skip. */
         data object RetrySameItem : Verdict()
@@ -59,14 +62,32 @@ class StreamErrorCascadeGuard(
         return if (consecutiveErrors >= threshold) Verdict.Halt(consecutiveErrors) else Verdict.Recover
     }
 
+    /**
+     * A local file failed and is about to be skipped (offline, so no stream
+     * fallback). Returns true when that skip should NOT happen: [queueSize]
+     * skips in a row with nothing playing in between means every item in the
+     * queue has failed. Local failures stay out of the streaming cascade (one
+     * bad download is not a backend outage), but uncounted, an unmounted SD
+     * card or revoked folder access with repeat-all on cycled error, skip,
+     * prepare several times a second forever: hasNextMediaItem() is always
+     * true there, and playWhenReady never dropped, so the idle stop never
+     * armed either.
+     */
+    fun onLocalSkip(queueSize: Int): Boolean {
+        consecutiveLocalSkips += 1
+        return consecutiveLocalSkips >= queueSize.coerceAtLeast(1)
+    }
+
     /** A track actually started playing — backend is alive; reset the skip count. */
     fun onPlaybackStarted() {
         consecutiveErrors = 0
+        consecutiveLocalSkips = 0
     }
 
     /** User did something deliberate (next/prev/seek/play) — rearm everything. */
     fun onUserTransport() {
         consecutiveErrors = 0
+        consecutiveLocalSkips = 0
         retriedItemKey = null
     }
 }

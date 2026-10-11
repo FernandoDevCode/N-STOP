@@ -1,5 +1,6 @@
 package com.stash.feature.search
 
+import androidx.lifecycle.SavedStateHandle
 import app.cash.turbine.test
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.media.PlayerRepository
@@ -122,7 +123,7 @@ class SearchViewModelTest {
     }
 
     @Test
-    fun `error surfaces userMessages snackbar`() = runTest {
+    fun `an error shows plain words on the error screen, without a second snackbar`() = runTest {
         val api = mock<YTMusicApiClient>()
         whenever(api.searchAll(any())).doSuspendableAnswer {
             throw RuntimeException("boom")
@@ -131,10 +132,84 @@ class SearchViewModelTest {
         vm.userMessages.test {
             vm.onQueryChanged("abc")
             advanceUntilIdle()
-            val msg = awaitItem()
-            assertTrue(msg.contains("search failed", ignoreCase = true))
+            assertEquals(SearchStatus.Error(SearchErrorCopy.NO_ANSWER), vm.uiState.value.status)
+            expectNoEvents()
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    /**
+     * YouTube Music not answering used to come back as an empty answer, so an
+     * offline search showed "No results" with no Retry.
+     */
+    @Test
+    fun `a search YouTube never answered is an offline error, not No results`() = runTest {
+        val api = mock<YTMusicApiClient>()
+        whenever(api.searchAll(any())).doSuspendableAnswer {
+            throw com.stash.data.ytmusic.SearchUnavailableException(statusCode = -1)
+        }
+        val vm = newVm(api = api)
+
+        vm.onQueryChanged("abc")
+        advanceUntilIdle()
+
+        assertEquals(SearchStatus.Error(SearchErrorCopy.OFFLINE), vm.uiState.value.status)
+    }
+
+    /**
+     * A failed search was a dead end: no Retry, and the same text typed again
+     * was dropped by distinctUntilChanged. Retry and the keyboard Search key
+     * now run it again.
+     */
+    @Test
+    fun `retry and the Search key re-run a failed query`() = runTest {
+        val api = mock<YTMusicApiClient>()
+        whenever(api.searchAll(any())).doSuspendableAnswer {
+            throw java.net.UnknownHostException("Unable to resolve host music.youtube.com")
+        }
+        val vm = newVm(api = api)
+        vm.onQueryChanged("abc")
+        advanceUntilIdle()
+        val error = vm.uiState.value.status as SearchStatus.Error
+        assertEquals("You're offline, or YouTube Music can't be reached.", error.message)
+
+        vm.retry()
+        advanceUntilIdle()
+        verify(api, org.mockito.kotlin.times(2)).searchAll(eq("abc"))
+
+        vm.onSearchCommitted()
+        advanceUntilIdle()
+        verify(api, org.mockito.kotlin.times(3)).searchAll(eq("abc"))
+    }
+
+    /**
+     * After process death the Search tab came back blank. The query now lives
+     * in SavedStateHandle: typing writes it, and a restored ViewModel shows it
+     * and searches it again.
+     */
+    @Test
+    fun `typing saves the query for process death`() = runTest {
+        val handle = SavedStateHandle()
+        val vm = newVm(savedStateHandle = handle)
+
+        vm.onQueryChanged("radiohead")
+
+        assertEquals("radiohead", handle.get<String>(SearchViewModel.KEY_QUERY))
+    }
+
+    @Test
+    fun `a restored query is shown and searched again`() = runTest {
+        val api = mock<YTMusicApiClient>()
+        whenever(api.searchAll(eq("radiohead"))).doReturn(SearchAllResults(emptyList()))
+        val vm = newVm(
+            api = api,
+            savedStateHandle = SavedStateHandle(mapOf(SearchViewModel.KEY_QUERY to "radiohead")),
+        )
+
+        assertEquals("radiohead", vm.uiState.value.query)
+        advanceUntilIdle()
+        verify(api, atLeastOnce()).searchAll(eq("radiohead"))
+        assertEquals(SearchStatus.Empty, vm.uiState.value.status)
     }
 
     // ------------------------------------------------------------------
@@ -309,6 +384,7 @@ class SearchViewModelTest {
         recentSearchesStore: RecentSearchesStore = mock {
             on { recent } doReturn kotlinx.coroutines.flow.flowOf(emptyList())
         },
+        savedStateHandle: SavedStateHandle = SavedStateHandle(),
     ): SearchViewModel = SearchViewModel(
         api = api,
         prefetcher = prefetcher,
@@ -317,6 +393,7 @@ class SearchViewModelTest {
         playerRepository = playerRepository,
         streamingPreference = streamingPreference,
         recentSearchesStore = recentSearchesStore,
+        savedStateHandle = savedStateHandle,
     )
 
     private fun sampleTrack(): TrackItem = TrackItem(

@@ -66,6 +66,36 @@ class PlaylistDaoSpotifyDeactivationTest {
         assertTrue(dao.getById(liked)!!.isActive)
     }
 
+    /**
+     * One bind variable per current id: past 999 the old single NOT IN UPDATE
+     * threw "too many SQL variables" on API 26-30 and deactivation silently
+     * never ran. And a naive per-chunk NOT IN would hide every row the other
+     * chunks list.
+     */
+    @Test fun `a library-sized Spotify inventory deactivates only what is missing`() = runTest {
+        val present = (1..1200).map { "sp$it" }
+        present.forEach { insert(it, MusicSource.SPOTIFY, PlaylistType.CUSTOM) }
+        val missing = insert("gone", MusicSource.SPOTIFY, PlaylistType.CUSTOM)
+
+        assertEquals(1, dao.deactivateMissingSpotifyCustomPlaylists(present, true))
+
+        assertFalse(dao.getById(missing)!!.isActive)
+        assertEquals(1200, dao.getActivePlaylistsBySource(MusicSource.SPOTIFY).size)
+    }
+
+    @Test fun `a library-sized YouTube inventory deactivates only what is missing`() = runTest {
+        val present = (1..1200).map { "yt$it" }
+        present.forEach { insert(it, MusicSource.YOUTUBE, PlaylistType.CUSTOM) }
+        val missing = insert("gone", MusicSource.YOUTUBE, PlaylistType.DAILY_MIX)
+        val spotify = insert("spotify-row", MusicSource.SPOTIFY, PlaylistType.CUSTOM)
+
+        assertEquals(1, dao.deactivateMissingForSource(MusicSource.YOUTUBE, present))
+
+        assertFalse(dao.getById(missing)!!.isActive)
+        assertTrue(dao.getById(spotify)!!.isActive)
+        assertEquals(1200, dao.getActivePlaylistsBySource(MusicSource.YOUTUBE).size)
+    }
+
     private suspend fun insert(
         sourceId: String,
         source: MusicSource,

@@ -248,6 +248,7 @@ class MirrorEngine internal constructor(
         r.letGo = r.letGo + mids
         r.map = r.map - mids
         r.basePlaylists = r.basePlaylists - mids
+        r.pastPlaylists = r.pastPlaylists - mids
         r.ghosts = r.ghosts - mids
         r.everywhere = r.everywhere - mids
     }
@@ -410,7 +411,14 @@ class MirrorEngine internal constructor(
         val sent = clock()
         val info = api.space(DeviceAuth(id.deviceId, id.token), sp.spaceId).get()
         val received = clock()
-        if (info.serverTime > 0) r.samples = (r.samples + ClockSample(sent, received, info.serverTime)).takeLast(ClockOffset.SAMPLES)
+        if (info.serverTime > 0) {
+            // A clock set since the last samples starts them again (A5): else `wall` stays off by the jump for three more runs.
+            val kept = r.samples.map { ClockOffset.Sample(it.sent, it.received, it.serverTime) }
+            r.samples = ClockOffset.keep(kept, ClockOffset.Sample(sent, received, info.serverTime)).map { ClockSample(it.sent, it.received, it.serverTime) }
+            // Stamps taken while this phone's clock ran ahead left the HLC in the future, and `tick` never goes below it: every
+            // op it sends would be skipped by every reader as from the future, while its base moves past them. Back to now.
+            r.last?.let { if (it.wall > info.serverTime + Hlc.MAX_FUTURE_MS) r.last = Hlc(info.serverTime, 0, id.deviceId) }
+        }
         if (info.rotationDue || info.epoch > sp.epoch) throw Settle()
         val names = store.roster().filter { it.type == TYPE_WEB }.map { it.displayName }
         _status.update { it.copy(linked = true, otherName = names.singleOrNull() ?: MirrorStatus.OTHERS) }
@@ -489,6 +497,7 @@ class MirrorEngine internal constructor(
         if (!cfg.newOnes) r.newOnesFrom = null
         // A playlist no longer mirrored: its base goes; every copy stays where it is.
         r.basePlaylists = r.basePlaylists.filterKeys { it in cfg.ids }
+        r.pastPlaylists = r.pastPlaylists.filterKeys { it in cfg.ids }
         r.configJson = MirrorWire.configJson(cfg)
         c.cfg = cfg
     }
@@ -519,6 +528,7 @@ class MirrorEngine internal constructor(
                 val gone = r.map.filterValues { it.localId in change.remove }.keys + change.removeIds
                 ids.removeAll(gone)
                 r.basePlaylists = r.basePlaylists - gone
+                r.pastPlaylists = r.pastPlaylists - gone
                 r.ghosts = r.ghosts - gone
             }
             next = next.copy(ids = ids.distinct())
@@ -588,6 +598,9 @@ class MirrorEngine internal constructor(
                 batch = MirrorWire.readOps(SyncCrypto.open(key, c.sp.spaceId, SyncCrypto.Place.LOG, e.env))
             } catch (x: MirrorWireException) {
                 if (x.newer) throw x // stop here: nothing is applied, nothing is lost (the log keeps it)
+                // It opened under the space key, so a device of the space wrote it, but this app can't read it: a gap, so this
+                // phone never compacts it away for every device; a browser that reads it compacts (sync-v1 §5.4, audit A5).
+                if (e.seq !in r.gaps) r.gaps = r.gaps + e.seq
             } catch (x: SyncCryptoException) {
                 Log.w(TAG, "log entry ${e.seq} didn't open")
             }
@@ -794,9 +807,16 @@ class MirrorEngine internal constructor(
         }
         val local = localVersion(c, op.id)
         val localHash = local?.let { SyncHashes.playlistHash(it.name, it.items, it.follow) }
-        val base = r.basePlaylists[op.id]?.version()
+        val baseRec = r.basePlaylists[op.id]
+        val base = baseRec?.version()
+        // An op that didn't start from this base ran concurrently with it: merged against the version it did start from (A5).
+        val ancestor = op.parent?.takeIf { baseRec != null && it != baseRec.hash }
+            ?.let { p -> r.pastPlaylists[op.id]?.lastOrNull { it.hash == p }?.version() }
         val remote = PlVersion(op.name, op.items, op.at, op.follow, op.ro)
-        val res = PlaylistMerge.merge(phone = true, base = base, local = local, localHash = localHash, remote = remote, parent = op.parent, fromPhone = false)
+        val res = PlaylistMerge.merge(
+            phone = true, base = base, local = local, localHash = localHash, remote = remote, parent = op.parent, fromPhone = false,
+            baseHash = baseRec?.hash, ancestor = ancestor,
+        )
         if (res.action == PlaylistMerge.Action.TAKE || res.action == PlaylistMerge.Action.MERGE) {
             val v = res.local
             val mapped = r.map[op.id]
@@ -819,11 +839,26 @@ class MirrorEngine internal constructor(
         }
         if (res.base === base) return // an ignored read-only op keeps the old base
         val nb = res.base
-        r.basePlaylists = if (nb == null) {
-            r.basePlaylists - op.id
+        if (nb == null) {
+            r.basePlaylists = r.basePlaylists - op.id
+            r.pastPlaylists = r.pastPlaylists - op.id
         } else {
-            r.basePlaylists + (op.id to BasePl(nb.name, nb.items, FollowRec.of(nb.follow), nb.ro, nb.at, hash))
+            moveBase(r, op.id, BasePl(nb.name, nb.items, FollowRec.of(nb.follow), nb.ro, nb.at, hash))
         }
+    }
+
+    /**
+     * [mid]'s base becomes [next]; the one it replaces joins the last [PAST_BASES] kept, which a concurrent op can name as its
+     * `parent`. Without them, this phone's own pushed edit was the base when the other side's concurrent edit arrived, and
+     * each side took the other's version for good (audit A5).
+     */
+    private fun moveBase(r: MirrorRecord, mid: String, next: BasePl) {
+        val old = r.basePlaylists[mid]
+        if (old != null && old.hash != next.hash) {
+            val past = r.pastPlaylists[mid].orEmpty().filter { it.hash != old.hash } + old
+            r.pastPlaylists = r.pastPlaylists + (mid to past.takeLast(PAST_BASES))
+        }
+        r.basePlaylists = r.basePlaylists + (mid to next)
     }
 
     // -------------------------------------------------------------------------------------------- first merge
@@ -867,6 +902,7 @@ class MirrorEngine internal constructor(
                 Kind.PLAYLISTS -> {
                     // Joined again (turned off and on): the old base describes another time, so it goes (sync-v1 §7.4).
                     r.basePlaylists = emptyMap()
+                    r.pastPlaylists = emptyMap()
                     for ((id, vp) in view.playlists) {
                         if (id !in cfg.ids || id in r.letGo) continue
                         val op = MirrorOp.Pl(id, vp.at, vp.hash, vp.name, vp.items, vp.follow?.follow(), vp.ro)
@@ -1051,7 +1087,7 @@ class MirrorEngine internal constructor(
                     )
                 }
                 for (o in batch.filterIsInstance<MirrorOp.Pl>()) {
-                    plBases[o.id]?.let { r.basePlaylists = r.basePlaylists + (o.id to it) }
+                    plBases[o.id]?.let { moveBase(r, o.id, it) }
                     if (o.items == null) {
                         // Deleted everywhere and sent: nothing here maps to it any more, and its id stays chosen, so every
                         // device that reads the delete applies it (letting it go now would make them skip the delete).
@@ -1191,6 +1227,9 @@ class MirrorEngine internal constructor(
         /** This many unlikes or more in one run are held for the listener (N7); so are [MASS_REMOVALS_MIN] or more when over a quarter. */
         const val MASS_REMOVALS = 200
         const val MASS_REMOVALS_MIN = 50
+
+        /** How many earlier bases per playlist are kept for a concurrent op to name as its `parent` (audit A5). */
+        const val PAST_BASES = 4
 
         /** An Everywhere intent whose playlist is still here after this long is stale (a crash before the delete: R-N6). */
         const val STALE_INTENT_MS = 2L * 60 * 1000

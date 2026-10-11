@@ -154,6 +154,30 @@ class QbdlxQobuzSourceTest {
         coVerify(exactly = 2) { apiClient.search(any()) }
     }
 
+    @Test fun `an ISRC miss falls back to artist and title`() = runTest {
+        // Qobuz filed the recording under a reissue ISRC: the ISRC search finds nothing.
+        enabledAndAcquired()
+        coEvery { apiClient.search(query.isrc!!) } returns emptyList()
+        coEvery { apiClient.search("John Frusciante Murderers") } returns
+            listOf(candidate(7).copy(isrc = "USWB19990001"))
+        coEvery { router.getFileUrl(7, 27) } returns ok()
+
+        val r = source().resolve(query)
+
+        assertThat(r?.sourceTrackId).isEqualTo("7")
+    }
+
+    @Test fun `an ISRC hit costs one catalog search`() = runTest {
+        enabledAndAcquired()
+        coEvery { apiClient.search(any()) } returns listOf(candidate())
+        coEvery { router.getFileUrl(42, 27) } returns ok()
+
+        assertThat(source().resolve(query)).isNotNull()
+
+        coVerify(exactly = 1) { apiClient.search(any()) }
+        coVerify(exactly = 1) { apiClient.search(query.isrc!!) }
+    }
+
     @Test fun `isEnabled is false while the breaker is open even when configured`() = runTest {
         coEvery { availability.qbdlxEnabledNow() } returns true
         coEvery { rateLimiter.stateOf(sid) } returns notBroken.copy(isCircuitBroken = true)

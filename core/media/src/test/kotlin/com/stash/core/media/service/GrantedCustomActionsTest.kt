@@ -1,0 +1,34 @@
+package com.stash.core.media.service
+
+import com.google.common.truth.Truth.assertThat
+import org.junit.Test
+
+/**
+ * The library service is exported: any installed app can bind it. Transport-like custom commands
+ * stay open to all; the ones that write Stash's own state (a like that can mirror to the user's
+ * Spotify or YouTube account, the shuffle order, leaving a Listen Together room) go only to the
+ * app, the system, trusted controllers and Android Auto / Automotive.
+ */
+class GrantedCustomActionsTest {
+
+    @Test fun `any controller gets the transport-like commands`() {
+        assertThat(grantedCustomActions(privileged = false)).containsExactly(
+            StashPlaybackService.COMMAND_TOGGLE_SHUFFLE,
+            StashPlaybackService.COMMAND_CYCLE_REPEAT,
+            StashPlaybackService.COMMAND_STOP_SLEEP_TIMER,
+        )
+    }
+
+    @Test fun `only a privileged controller can like, set the shuffle order or leave a session`() {
+        assertThat(grantedCustomActions(privileged = true)).containsAtLeast(
+            StashPlaybackService.COMMAND_TOGGLE_LIKE,
+            StashPlaybackService.COMMAND_SET_SHUFFLE_ORDER,
+            StashPlaybackService.COMMAND_LEAVE_SESSION,
+        )
+        assertThat(grantedCustomActions(privileged = false)).containsNoneOf(
+            StashPlaybackService.COMMAND_TOGGLE_LIKE,
+            StashPlaybackService.COMMAND_SET_SHUFFLE_ORDER,
+            StashPlaybackService.COMMAND_LEAVE_SESSION,
+        )
+    }
+}

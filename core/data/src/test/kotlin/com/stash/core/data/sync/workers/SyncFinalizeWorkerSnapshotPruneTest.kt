@@ -11,6 +11,7 @@ import androidx.work.testing.WorkManagerTestInitHelper
 import androidx.work.workDataOf
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.dao.RemoteSnapshotDao
+import com.stash.core.data.db.entity.LastFmCacheEntity
 import com.stash.core.data.db.entity.RemotePlaylistSnapshotEntity
 import com.stash.core.data.db.entity.RemoteTrackSnapshotEntity
 import com.stash.core.model.MusicSource
@@ -76,6 +77,7 @@ class SyncFinalizeWorkerSnapshotPruneTest {
                         appContext, workerParameters,
                         syncHistoryDao = mockk(relaxed = true),
                         remoteSnapshotDao = dao,
+                        lastFmCacheDao = db.lastFmCacheDao(),
                         syncStateManager = mockk(relaxed = true),
                         syncNotificationManager = mockk(relaxed = true),
                     )
@@ -94,6 +96,18 @@ class SyncFinalizeWorkerSnapshotPruneTest {
         assertEquals(0, dao.getPlaylistSnapshotsBySyncId(1).size)
         assertEquals(0, dao.getTrackSnapshotsBySyncId(1).size)
         assertEquals(0, dao.getTrackSnapshotsBySyncId(2).size)
+    }
+
+    @Test fun `a finished sync drops Last fm responses past their TTL and keeps fresh ones`() = runBlocking {
+        val cache = db.lastFmCacheDao()
+        val now = System.currentTimeMillis()
+        cache.upsert(LastFmCacheEntity(cacheKey = "stale", json = "{}", fetchedAt = now - 8L * 24 * 3600 * 1000))
+        cache.upsert(LastFmCacheEntity(cacheKey = "fresh", json = "{}", fetchedAt = now - 3600 * 1000))
+
+        assertEquals(ListenableWorker.Result.success(), finalize(syncId = 5))
+
+        assertEquals(null, cache.get("stale"))
+        assertEquals("{}", cache.get("fresh")?.json)
     }
 
     @Test fun `a recent run's snapshots stay`() = runBlocking {

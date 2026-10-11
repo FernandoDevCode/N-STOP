@@ -39,6 +39,14 @@ class SelectionStateTest {
         val restored = SelectionStateSaver.restore(saved!!)
         assertThat(restored!!.selectedIds).containsExactly(4L, 9L)
     }
+    @Test fun saver_skips_a_select_all_too_big_for_saved_state() {
+        // 30K boxed ids in the saved-state Bundle overflowed the Binder budget on Home.
+        val huge = SelectionState((1L..30_000L).toSet())
+        val saved = with(SelectionStateSaver) { SaverScopeStub.save(huge) }
+        assertThat(saved).isEmpty()
+        val atCap = SelectionState((1L..MAX_SAVED_SELECTION.toLong()).toSet())
+        assertThat(with(SelectionStateSaver) { SaverScopeStub.save(atCap) }).hasSize(MAX_SAVED_SELECTION)
+    }
 }
 
 private object SaverScopeStub : androidx.compose.runtime.saveable.SaverScope {

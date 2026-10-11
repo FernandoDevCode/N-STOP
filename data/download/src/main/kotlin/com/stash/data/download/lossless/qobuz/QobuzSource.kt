@@ -142,7 +142,7 @@ class QobuzSource @Inject constructor(
         // "¥$, Kanye West, Ty Dolla $ign": sending the full credit verbatim
         // makes the proxy return the featured artists' popular tracks instead
         // of the actual song, so every candidate scores 0 → "failed". ISRC,
-        // when present, is used alone (precise key). See TrackQuery.searchTerms.
+        // when present, is tried first (precise key). See TrackQuery.searchTerms.
         var found: Pair<QobuzTrack, Float>? = null
         for (term in query.searchTerms()) {
             val searchData = callLimited(bypassRateLimit) { apiClient.search(term) } ?: continue

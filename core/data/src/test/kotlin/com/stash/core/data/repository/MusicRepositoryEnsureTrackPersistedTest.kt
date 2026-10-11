@@ -1,5 +1,6 @@
 package com.stash.core.data.repository
 
+import android.database.sqlite.SQLiteConstraintException
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.model.MusicSource
@@ -9,6 +10,7 @@ import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -62,6 +64,51 @@ class MusicRepositoryEnsureTrackPersistedTest {
         val repo = buildRepo(trackDao)
         repo.ensureTrackPersisted(Track(title = "Song", artist = "Artist", isrc = "USABC1234567"))
         coVerify(exactly = 0) { trackDao.backfillIsrcIfMissing(any(), any()) }
+    }
+
+    @Test fun `losing the insert race to a concurrent caller adopts the winner's row`() = runTest {
+        val trackDao = mockk<TrackDao>(relaxed = true)
+        val winner = TrackEntity(id = 91L, title = "Song", artist = "Artist", youtubeId = "yt1", source = MusicSource.YOUTUBE)
+        // Our lookup misses; by the time we insert, the other caller's row exists.
+        coEvery { trackDao.findByYoutubeId("yt1") } returnsMany listOf(null, winner)
+        coEvery { trackDao.findBySpotifyUri(any()) } returns null
+        coEvery { trackDao.findByCanonicalIdentity(any(), any()) } returns null
+        coEvery { trackDao.insert(any()) } throws SQLiteConstraintException("UNIQUE constraint failed: tracks.youtube_id")
+
+        val id = buildRepo(trackDao).ensureTrackPersisted(Track(title = "Song", artist = "Artist", youtubeId = "yt1"))
+
+        assertEquals(91L, id)
+    }
+
+    @Test fun `a constraint failure with no winning row still throws`() = runTest {
+        val trackDao = mockk<TrackDao>(relaxed = true)
+        coEvery { trackDao.findByYoutubeId(any()) } returns null
+        coEvery { trackDao.findBySpotifyUri(any()) } returns null
+        coEvery { trackDao.findByCanonicalIdentity(any(), any()) } returns null
+        coEvery { trackDao.insert(any()) } throws SQLiteConstraintException("NOT NULL constraint failed")
+
+        val thrown = runCatching {
+            buildRepo(trackDao).ensureTrackPersisted(Track(title = "Song", artist = "Artist", youtubeId = "yt1"))
+        }.exceptionOrNull()
+
+        assertTrue(thrown is SQLiteConstraintException)
+    }
+
+    @Test fun `a synthetic stream id equal to an unrelated row's id is not trusted`() = runTest {
+        val trackDao = mockk<TrackDao>(relaxed = true)
+        val videoId = "dQw4w9WgXcQ"
+        val syntheticId = videoId.hashCode().toLong()
+        assertTrue(syntheticId > 0L) // the case the old id fast path trusted
+        coEvery { trackDao.getById(syntheticId) } returns
+            TrackEntity(id = syntheticId, title = "Other Song", artist = "Other", youtubeId = "other", source = MusicSource.YOUTUBE)
+        coEvery { trackDao.findByYoutubeId(videoId) } returns
+            TrackEntity(id = 12L, title = "Song", artist = "Artist", youtubeId = videoId, source = MusicSource.YOUTUBE)
+
+        val id = buildRepo(trackDao).ensureTrackPersisted(
+            Track(id = syntheticId, title = "Song", artist = "Artist", youtubeId = videoId),
+        )
+
+        assertEquals(12L, id)
     }
 
     private fun buildRepo(trackDao: TrackDao): MusicRepositoryImpl = MusicRepositoryImpl(

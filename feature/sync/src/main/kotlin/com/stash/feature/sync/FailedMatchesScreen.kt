@@ -60,6 +60,7 @@ import coil3.compose.AsyncImage
 import com.stash.core.data.db.dao.UnmatchedTrackView
 import com.stash.core.media.preview.PreviewState
 import com.stash.core.ui.theme.StashTheme
+import com.stash.feature.sync.components.ApprovedDownloadsBanner
 
 /**
  * Screen displaying tracks that could not be matched on YouTube during sync.
@@ -79,6 +80,7 @@ fun FailedMatchesScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val previewState by viewModel.previewState.collectAsStateWithLifecycle()
+    val approvedDownloads by viewModel.approvedDownloads.collectAsStateWithLifecycle()
     val extendedColors = StashTheme.extendedColors
 
     // Track pending dismiss confirmation dialog.
@@ -125,36 +127,47 @@ fun FailedMatchesScreen(
                     )
                 }
 
-                // Centered empty message
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .padding(horizontal = 32.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.CheckCircle,
-                        contentDescription = null,
-                        modifier = Modifier.size(72.dp),
-                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
+                if (approvedDownloads.active) {
+                    // Approve All empties the list at once while the songs are
+                    // still downloading: say that, not "All caught up!".
+                    ApprovedDownloadsBanner(
+                        downloads = approvedDownloads,
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(horizontal = 24.dp),
                     )
+                } else {
+                    // Centered empty message
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(horizontal = 32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            modifier = Modifier.size(72.dp),
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
+                        )
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
 
-                    Text(
-                        text = "All caught up!",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                    )
+                        Text(
+                            text = "All caught up!",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onBackground,
+                        )
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
 
-                    Text(
-                        text = "No unmatched songs.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                        Text(
+                            text = "No unmatched songs.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
 
@@ -177,6 +190,16 @@ fun FailedMatchesScreen(
                             onApproveAll = { viewModel.approveAll() },
                             onDismissAll = { viewModel.dismissAll() },
                         )
+                    }
+
+                    // -- Approved matches still downloading --
+                    if (approvedDownloads.active) {
+                        item(key = "approved-downloads") {
+                            ApprovedDownloadsBanner(
+                                downloads = approvedDownloads,
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                            )
+                        }
                     }
 
                     // -- Track list --

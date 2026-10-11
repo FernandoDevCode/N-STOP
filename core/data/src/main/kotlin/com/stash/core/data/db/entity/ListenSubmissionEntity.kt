@@ -33,8 +33,7 @@ import androidx.room.Index
  * they connect it: that would submit thousands of old plays as one flood nobody
  * asked for. The drain query is therefore bounded by a per-destination
  * "listening from" timestamp held by the sink, not by this table. Deliberate
- * backfill stays an explicit, separate action (as Last.fm's cold-start importer
- * already is).
+ * backfill, if it is ever offered, stays an explicit, separate action.
  */
 @Entity(
     tableName = "listen_submissions",

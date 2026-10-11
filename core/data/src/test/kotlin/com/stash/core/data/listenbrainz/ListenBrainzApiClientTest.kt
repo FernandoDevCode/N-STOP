@@ -125,6 +125,19 @@ class ListenBrainzApiClientTest {
             .isInstanceOf(ListenBrainzApiClient.Response.Unavailable::class.java)
     }
 
+    /** Throttling says nothing about the listens: as a refusal it split the batch
+     *  into a burst and burned each listen's retries. */
+    @Test fun `429 and 408 are unavailable not refused`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(429).setHeader("X-RateLimit-Reset-In", "10"))
+        assertThat(client.submitListens("tok", listOf(listen())))
+            .isInstanceOf(ListenBrainzApiClient.Response.Unavailable::class.java)
+
+        // OkHttp retries a 408 once by itself, so both attempts get one.
+        repeat(2) { server.enqueue(MockResponse().setResponseCode(408)) }
+        assertThat(client.submitListens("tok", listOf(listen())))
+            .isInstanceOf(ListenBrainzApiClient.Response.Unavailable::class.java)
+    }
+
     /** A dead socket must read as unavailable, never as a rejected payload. */
     @Test fun `transport failure is unavailable not refused`() = runBlocking {
         server.shutdown()

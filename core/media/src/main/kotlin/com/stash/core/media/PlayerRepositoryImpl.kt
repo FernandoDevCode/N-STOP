@@ -53,7 +53,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -62,6 +64,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -281,6 +284,22 @@ class PlayerRepositoryImpl @Inject constructor(
                 if (remaining in 0 until RADIO_GROW_THRESHOLD) growRadio()
             }
         }
+        // Position save while playing. updateState (the only other writer) runs
+        // on player events alone, and a steady hour-long mix raises none after
+        // its track starts: a process death mid-track (an OOM kill #238/#239,
+        // LMK, force-stop, a crash) resumed near the track's beginning instead
+        // of where it was. Every POSITION_PERSIST_INTERVAL_MS while playing the
+        // position goes through the same gate; nothing runs while paused (the
+        // pause edge already saved the exact spot).
+        scope.launch {
+            _playerState.map { it.isPlaying }.distinctUntilChanged().collectLatest { playing ->
+                while (playing) {
+                    delay(POSITION_PERSIST_INTERVAL_MS)
+                    persistPositionWhilePlaying()
+                }
+            }
+        }
+
         // Autoplay radio (user ask, 2026-09-07): with the setting on, the moment
         // the LAST queued track starts, a song radio seeded from it is spliced
         // behind it, so a one-off play never ends in silence. Tried once per
@@ -338,6 +357,14 @@ class PlayerRepositoryImpl @Inject constructor(
      * is deleted.
      */
     @Volatile private var ghostSession = false
+
+    /**
+     * Number of [setQueueInternal] calls that are still building their MediaItems (an IO hop that
+     * scales with the queue). During that window the controller can still hold NO timeline, and a
+     * play tap used to read that as "the service died" and call [resumeLastQueue], putting the
+     * previous persisted session back over the song the user had just tapped. Internal: test seam.
+     */
+    internal val queueBuildsInFlight = java.util.concurrent.atomic.AtomicInteger(0)
     override val playerState: StateFlow<PlayerState> = _playerState.asStateFlow()
 
     /**
@@ -514,6 +541,9 @@ class PlayerRepositoryImpl @Inject constructor(
         // from the persisted queue instead. resumeLastQueue ends in
         // prepare() + play(), so playback still starts.
         if (controller.mediaItemCount == 0 && !inListenTogether) {
+            // A tapped queue is still being built: it ends in prepare() + play() by itself, so
+            // there is nothing to resume, and resuming would race it (see [queueBuildsInFlight]).
+            if (queueBuildsInFlight.get() > 0) return
             resumeLastQueue()
             return
         }
@@ -521,7 +551,9 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     override suspend fun pause() {
-        ensureController()?.pause()
+        // MediaController is main-thread-only (Media3 checks and throws); a
+        // background caller — the sleep timer used to be one — must hop.
+        withContext(Dispatchers.Main.immediate) { ensureController()?.pause() }
     }
 
     override fun setVolume(volume: Float) {
@@ -629,12 +661,31 @@ class PlayerRepositoryImpl @Inject constructor(
      * parameter. [resumeLastQueue] uses this to continue from the saved
      * position AND the saved source.
      */
+    /** Bumped by every [setQueueInternal]; a build that finishes behind a newer one is dropped. */
+    private val setQueueGeneration = java.util.concurrent.atomic.AtomicInteger()
+
     private suspend fun setQueueInternal(
         tracks: List<Track>,
         startIndex: Int,
         startPositionMs: Long,
         source: com.stash.core.model.PlaybackSource = com.stash.core.model.PlaybackSource.Unknown,
         play: Boolean = true,
+    ) {
+        queueBuildsInFlight.incrementAndGet()
+        try {
+            setQueueBuilding(tracks, startIndex, startPositionMs, source, play)
+        } finally {
+            queueBuildsInFlight.decrementAndGet()
+        }
+    }
+
+    /** The body of [setQueueInternal], run while [queueBuildsInFlight] counts it. */
+    private suspend fun setQueueBuilding(
+        tracks: List<Track>,
+        startIndex: Int,
+        startPositionMs: Long,
+        source: com.stash.core.model.PlaybackSource,
+        play: Boolean,
     ) {
         // Any explicit setQueue (playlist tap, single-song play, etc.) leaves
         // library-shuffle mode behind. Snapshot is cleared so a stale Track
@@ -646,6 +697,7 @@ class PlayerRepositoryImpl @Inject constructor(
         radioSession = null
         _radioSeedLabel.value = null
         currentSource = source
+        val generation = setQueueGeneration.incrementAndGet()
 
         val controller = ensureController() ?: return
         if (tracks.isEmpty()) return
@@ -667,6 +719,13 @@ class PlayerRepositoryImpl @Inject constructor(
                     validateLocalFile = index == safeStart,
                 )?.let { Triple(index, track, it) }
             }
+        }
+        // A later setQueue started while this one built (two quick taps, each its own
+        // viewModelScope.launch): the first tap's selected-item SAF probe can be the slow one,
+        // and without this its build landed last and replaced the song the user tapped second.
+        if (generation != setQueueGeneration.get()) {
+            Log.i(TAG, "setQueue: superseded by a later one while building, dropped")
+            return
         }
         // Every built item is accepted: streaming is always allowed, so a
         // stash-resolve:// placeholder is as legitimate a queue entry as a
@@ -1213,6 +1272,46 @@ class PlayerRepositoryImpl @Inject constructor(
      */
     private fun Track.isPlayableForQueueAppend(): Boolean = !isUnavailableForDisplay
 
+    /**
+     * The controller's shuffle walk (timeline indexes in play order), or null with
+     * shuffle off. Read BEFORE an insert, for [placeInShuffleOrder].
+     */
+    private fun shuffleWalk(controller: MediaController): List<Int>? {
+        val count = controller.mediaItemCount
+        if (!controller.shuffleModeEnabled || count == 0) return null
+        val timeline = controller.currentTimeline
+        return QueueDisplay.walkShuffleOrder(count, timeline.getFirstWindowIndex(true)) {
+            timeline.getNextWindowIndex(it, Player.REPEAT_MODE_OFF, true)
+        }.takeIf { it.size == count }
+    }
+
+    /**
+     * Under shuffle, ExoPlayer's DefaultShuffleOrder gives every inserted item a
+     * uniformly random slot in the PLAY order (cloneAndInsert), whatever its
+     * timeline position: a "Play next" landed behind the current song about half
+     * the time and, with repeat off, never played; an "Add to queue" played at
+     * some arbitrary point. Re-sends the walk with the [count] items inserted at
+     * timeline [at] placed where the user asked (see
+     * [QueueDisplay.walkWithInserted]) through the service's
+     * COMMAND_SET_SHUFFLE_ORDER, which checks it against the player's timeline.
+     * [walk] and [currentIndex] are from before the insert.
+     */
+    private fun placeInShuffleOrder(
+        controller: MediaController,
+        walk: List<Int>?,
+        at: Int,
+        count: Int,
+        currentIndex: Int,
+        afterCurrent: Boolean,
+    ) {
+        walk ?: return
+        val order = QueueDisplay.walkWithInserted(walk, at, count, currentIndex, afterCurrent) ?: return
+        controller.sendCustomCommand(
+            SessionCommand(StashPlaybackService.COMMAND_SET_SHUFFLE_ORDER, Bundle.EMPTY),
+            Bundle().apply { putIntArray(StashPlaybackService.EXTRA_SHUFFLE_ORDER, order.toIntArray()) },
+        )
+    }
+
     override suspend fun addNext(track: Track): Boolean {
         val controller = ensureController() ?: return false
         val playable = track.takeIf {
@@ -1227,6 +1326,9 @@ class PlayerRepositoryImpl @Inject constructor(
             _userMessages.tryEmit("Nothing in this queue is playable right now.")
             return false
         }
+        // Off the main thread: a downloaded track's disk check is a ContentResolver
+        // query on a SAF tree, which a slow provider (SD card, cloud-backed) stalls.
+        val queueItem = withContext(Dispatchers.IO) { queueTrack.toQueueMediaItem() }
         restoreGhostPaused()
         val wasEmpty = controller.mediaItemCount == 0
         // Mirror into the logical queue right after the playing track's
@@ -1247,8 +1349,11 @@ class PlayerRepositoryImpl @Inject constructor(
         // Instant add: stream tracks enter as stash-resolve:// placeholders
         // (resolved at play time), so the queue grows immediately instead of
         // waiting out a slow resolve.
-        val insertIndex = controller.currentMediaItemIndex + 1
-        controller.addMediaItem(insertIndex, queueTrack.toQueueMediaItem())
+        val currentIndex = controller.currentMediaItemIndex
+        val insertIndex = currentIndex + 1
+        val walk = if (wasEmpty) null else shuffleWalk(controller)
+        controller.addMediaItem(insertIndex, queueItem)
+        placeInShuffleOrder(controller, walk, insertIndex, 1, currentIndex, afterCurrent = true)
         // If the queue was empty, the user tapped "Play next" with nothing
         // playing — they expect the song to actually start, not just sit
         // silently in a queue they can't see. Prepare and play.
@@ -1273,11 +1378,17 @@ class PlayerRepositoryImpl @Inject constructor(
             _userMessages.tryEmit("Nothing in this queue is playable right now.")
             return false
         }
+        // Off the main thread: a downloaded track's disk check is a ContentResolver
+        // query on a SAF tree, which a slow provider (SD card, cloud-backed) stalls.
+        val queueItem = withContext(Dispatchers.IO) { queueTrack.toQueueMediaItem() }
         restoreGhostPaused()
         val wasEmpty = controller.mediaItemCount == 0
         // The logical queue first, as in addNext: the add is reported during addMediaItem.
         currentQueueTracks = if (wasEmpty) listOf(queueTrack) else currentQueueTracks + queueTrack
-        controller.addMediaItem(queueTrack.toQueueMediaItem())
+        val walk = if (wasEmpty) null else shuffleWalk(controller)
+        val at = controller.mediaItemCount
+        controller.addMediaItem(queueItem)
+        placeInShuffleOrder(controller, walk, at, 1, controller.currentMediaItemIndex, afterCurrent = false)
         if (wasEmpty) {
             controller.prepare()
             controller.play()
@@ -1310,7 +1421,10 @@ class PlayerRepositoryImpl @Inject constructor(
         // for streams), preserving tap order — no resolve fan-out, no dropped
         // rows, "Added N tracks" is finally literally true.
         currentQueueTracks = if (wasEmpty) queueTracks else currentQueueTracks + queueTracks
+        val walk = if (wasEmpty) null else shuffleWalk(controller)
+        val at = controller.mediaItemCount
         controller.addMediaItems(items)
+        placeInShuffleOrder(controller, walk, at, items.size, controller.currentMediaItemIndex, afterCurrent = false)
         if (wasEmpty) {
             controller.prepare()
             controller.play()
@@ -1393,14 +1507,24 @@ class PlayerRepositoryImpl @Inject constructor(
         return true
     }
 
-    /** Timeline slot holding [trackId], or -1 when the track was dropped by
-     * the fast-lane background fill and has no MediaItem yet. */
-    private fun timelineIndexOfTrackId(controller: MediaController, trackId: Long): Int {
+    /** Timeline slot holding the [copy]-th (0-based) occurrence of [trackId], or -1
+     * when the track was dropped by the fast-lane background fill and has no
+     * MediaItem yet.
+     *
+     * By copy, not by id: with a song queued twice (`[A(playing), B, C, A]`)
+     * the first match turned a swipe on the second A into removing the PLAYING
+     * one, and a tap on it into replaying B and C. The timeline holds a
+     * subsequence of the logical queue in the same order, so the k-th copy in
+     * the logical queue ([QueueDisplay.copyOrdinal]) is the k-th copy here. */
+    private fun timelineIndexOfTrackId(controller: MediaController, trackId: Long, copy: Int): Int {
+        var seen = 0
         for (i in 0 until controller.mediaItemCount) {
             val item = controller.getMediaItemAt(i)
             val id = item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID)
                 ?: item.mediaId.toLongOrNull()
-            if (id == trackId) return i
+            if (id != trackId) continue
+            if (seen == copy) return i
+            seen++
         }
         return -1
     }
@@ -1421,7 +1545,8 @@ class PlayerRepositoryImpl @Inject constructor(
             val logical = currentQueueTracks
             val target = logical.getOrNull(index) ?: return
             currentQueueTracks = logical.filterIndexed { i, _ -> i != index }
-            val timelineIdx = timelineIndexOfTrackId(controller, target.id)
+            val timelineIdx =
+                timelineIndexOfTrackId(controller, target.id, QueueDisplay.copyOrdinal(logical, index))
             if (timelineIdx >= 0) {
                 controller.removeMediaItem(timelineIdx)
             } else {
@@ -1453,7 +1578,8 @@ class PlayerRepositoryImpl @Inject constructor(
             mutable.add(to, moved)
             currentQueueTracks = mutable
 
-            val timelineFrom = timelineIndexOfTrackId(controller, moved.id)
+            val timelineFrom =
+                timelineIndexOfTrackId(controller, moved.id, QueueDisplay.copyOrdinal(logical, from))
             if (timelineFrom >= 0) {
                 val timelineIdsWithoutMoved = buildList {
                     for (i in 0 until controller.mediaItemCount) {
@@ -1501,7 +1627,11 @@ class PlayerRepositoryImpl @Inject constructor(
         }
         if (logicalDisplayActive(controller)) {
             val target = currentQueueTracks.getOrNull(index) ?: return
-            val timelineIdx = timelineIndexOfTrackId(controller, target.id)
+            val timelineIdx = timelineIndexOfTrackId(
+                controller,
+                target.id,
+                QueueDisplay.copyOrdinal(currentQueueTracks, index),
+            )
             if (timelineIdx >= 0) {
                 if (prepareExplicitTimelineTarget(controller, timelineIdx, target)) {
                     controller.seekToDefaultPosition(timelineIdx)
@@ -1881,7 +2011,11 @@ class PlayerRepositoryImpl @Inject constructor(
         allowYtDlp: Boolean = true,
     ): StreamRoutingResult {
         val localPath = track.filePath
-        if (track.isDownloaded && !localPath.isNullOrBlank() && filePathExistsOnDisk(localPath)) {
+        // The disk check off the main thread (playTrack runs on the caller's, Main from a
+        // viewModelScope): on a SAF tree it is a ContentResolver query a slow provider stalls.
+        if (track.isDownloaded && !localPath.isNullOrBlank() &&
+            withContext(Dispatchers.IO) { filePathExistsOnDisk(localPath) }
+        ) {
             val uri = if (localPath.startsWith("/")) Uri.parse("file://$localPath") else Uri.parse(localPath)
             return StreamRoutingResult.Item(
                 MediaItem.Builder()
@@ -1899,7 +2033,11 @@ class PlayerRepositoryImpl @Inject constructor(
                                 putLong(EXTRA_TRACK_ID, track.id)
                                 track.youtubeId?.let { putString(EXTRA_TRACK_YOUTUBE_ID, it) }
                                 if (track.durationMs > 0) putLong(EXTRA_TRACK_DURATION_MS, track.durationMs)
-                                putBoolean(EXTRA_TRACK_IS_STREAMABLE, track.isStreamable)
+                                // This branch plays the local file, so it is never "stream-only",
+                                // whatever the row's is_streamable says: rows first seen via Search,
+                                // Discovery, a share or a Stash Mix keep is_streamable=1 after they
+                                // download, and offline silent-skip used to skip them all.
+                                putBoolean(EXTRA_TRACK_IS_STREAMABLE, false)
                             })
                             .build()
                     )
@@ -1995,11 +2133,17 @@ class PlayerRepositoryImpl @Inject constructor(
      * + play() pattern used by [setQueue].
      *
      * Also clears the library-shuffle armed state since the user has
-     * navigated into a specific track — same invariant as [setQueue].
+     * navigated into a specific track — same invariant as [setQueue]. A radio
+     * station ends too: left armed, its grow watcher saw a one-song queue near
+     * its tail and appended the OLD station behind a song tapped in Search,
+     * under a stale "Radio: X" label.
      */
     private suspend fun playSingleMediaItem(mediaItem: MediaItem) {
         libraryShuffleActive = false
         librarySnapshot = emptyList()
+        radioActive = false
+        radioSession = null
+        _radioSeedLabel.value = null
         val controller = ensureController() ?: return
         controller.setMediaItem(mediaItem)
         controller.prepare()
@@ -2081,6 +2225,14 @@ class PlayerRepositoryImpl @Inject constructor(
                 // Sync initial state
                 updateState(controller)
                 controller
+            } catch (e: CancellationException) {
+                // await() throws this both when OUR caller was cancelled (a screen
+                // closing mid-reconnect), which must propagate: as null the caller
+                // ran on into its non-suspending tail (loadPlan set shuffle and
+                // repeat, then re-entered), and when the build future itself was
+                // cancelled, which is a failed connect like any other.
+                currentCoroutineContext().ensureActive()
+                null
             } catch (e: Exception) {
                 null
             }
@@ -2106,7 +2258,7 @@ class PlayerRepositoryImpl @Inject constructor(
             if (_playerState.value.currentTrack != null) {
                 ghostSession = true
                 // No spinner either: a snapshot taken mid-load would keep play disabled.
-                _playerState.value = _playerState.value.copy(isPlaying = false, isBuffering = false)
+                _playerState.value = _playerState.value.copy(isPlaying = false, isBuffering = false, playWhenReady = false)
             }
         }
     }
@@ -2179,6 +2331,15 @@ class PlayerRepositoryImpl @Inject constructor(
             newPosition: Player.PositionInfo,
             reason: Int,
         ) {
+            controllerDeferred?.let { updateState(it) }
+        }
+
+        /**
+         * A pause while BUFFERING flips playWhenReady without changing isPlaying (already false)
+         * or the playback state, so no other callback fires: without this the published
+         * [PlayerState.playWhenReady] stayed true and the play/pause button kept showing Pause.
+         */
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
             controllerDeferred?.let { updateState(it) }
         }
 
@@ -2292,7 +2453,15 @@ class PlayerRepositoryImpl @Inject constructor(
                                 controller.currentMediaItemIndex == failedIndex &&
                                 (failedId == null || activeId == failedId)
                             ) {
-                                controller.recoverOrStop()
+                                if (cascadeGuard.onLocalSkip(controller.mediaItemCount)) {
+                                    // Every song in the queue failed in a row: stop
+                                    // instead of cycling (see onLocalSkip).
+                                    note("LOCAL: every queued file failed, paused")
+                                    controller.pause()
+                                    _userMessages.tryEmit("None of the songs in this queue can play right now.")
+                                } else {
+                                    controller.recoverOrStop()
+                                }
                             }
                         }
                     }
@@ -2761,6 +2930,11 @@ class PlayerRepositoryImpl @Inject constructor(
             isBuffering = computeIsBuffering(
                 controller.playbackState == Player.STATE_BUFFERING,
             ),
+            // Media3's own play-button rule (Util.shouldShowPlayButton): an IDLE or ENDED
+            // player plays nothing whatever playWhenReady says.
+            playWhenReady = controller.playWhenReady &&
+                controller.playbackState != Player.STATE_IDLE &&
+                controller.playbackState != Player.STATE_ENDED,
             source = currentSource,
             shuffleTimelineSlots = display.timelineIndices,
         )
@@ -2778,24 +2952,8 @@ class PlayerRepositoryImpl @Inject constructor(
         // index switch, a pause edge (exact resume position), or ≥5s drift.
         val pauseEdge = lastObservedIsPlaying && !newState.isPlaying
         lastObservedIsPlaying = newState.isPlaying
-        if (track != null &&
-            shouldPersistPosition(
-                trackChanged = track.id != lastSavedPosTrackId,
-                indexChanged = newState.currentIndex != lastSavedPosQueueIndex,
-                pauseEdge = pauseEdge,
-                positionDeltaMs = newState.positionMs - lastSavedPositionMs,
-            )
-        ) {
-            lastSavedPosTrackId = track.id
-            lastSavedPosQueueIndex = newState.currentIndex
-            lastSavedPositionMs = newState.positionMs
-            scope.launch {
-                playbackStateStore.savePosition(
-                    trackId = track.id,
-                    positionMs = newState.positionMs,
-                    queueIndex = newState.currentIndex,
-                )
-            }
+        if (track != null) {
+            savePositionIfDue(track.id, newState.positionMs, newState.currentIndex, pauseEdge)
         }
 
         // Persist the full queue so Bluetooth/Android Auto resumption can
@@ -2829,6 +2987,41 @@ class PlayerRepositoryImpl @Inject constructor(
                 }
             }
         }
+    }
+
+    /**
+     * The gated position write ([shouldPersistPosition]) shared by
+     * [updateState] and the periodic save while playing. Main thread.
+     */
+    private fun savePositionIfDue(trackId: Long, positionMs: Long, queueIndex: Int, pauseEdge: Boolean) {
+        if (!shouldPersistPosition(
+                trackChanged = trackId != lastSavedPosTrackId,
+                indexChanged = queueIndex != lastSavedPosQueueIndex,
+                pauseEdge = pauseEdge,
+                positionDeltaMs = positionMs - lastSavedPositionMs,
+            )
+        ) {
+            return
+        }
+        lastSavedPosTrackId = trackId
+        lastSavedPosQueueIndex = queueIndex
+        lastSavedPositionMs = positionMs
+        scope.launch {
+            playbackStateStore.savePosition(
+                trackId = trackId,
+                positionMs = positionMs,
+                queueIndex = queueIndex,
+            )
+        }
+    }
+
+    /** One tick of the save-while-playing loop (see init): the live position of the published track. */
+    internal fun persistPositionWhilePlaying() {
+        if (listenTogetherOwnsQueue) return // as in updateState: never over the user's own queue
+        val controller = controllerDeferred?.takeIf { it.isConnected } ?: return
+        val state = _playerState.value
+        val track = state.currentTrack ?: return
+        savePositionIfDue(track.id, controller.currentPosition.coerceAtLeast(0), state.currentIndex, pauseEdge = false)
     }
 
     // ---- Mappers ----
@@ -2927,7 +3120,9 @@ class PlayerRepositoryImpl @Inject constructor(
                 putLong(EXTRA_TRACK_ID, id)
                 youtubeId?.let { putString(EXTRA_TRACK_YOUTUBE_ID, it) }
                 if (durationMs > 0) putLong(EXTRA_TRACK_DURATION_MS, durationMs)
-                putBoolean(EXTRA_TRACK_IS_STREAMABLE, isStreamable)
+                // "Stream-only" means no local file (as AutoBrowse computes it): a
+                // downloaded row can still carry is_streamable=1 from how it was found.
+                putBoolean(EXTRA_TRACK_IS_STREAMABLE, isStreamable && filePath.isNullOrBlank())
             })
             .build()
 
@@ -3014,6 +3209,9 @@ internal fun shouldPersistPosition(
 
 /** Minimum position drift before an unforced persist write. */
 internal const val POSITION_PERSIST_MIN_DELTA_MS = 5_000L
+
+/** How often the position is saved while playing, between player events. */
+internal const val POSITION_PERSIST_INTERVAL_MS = 15_000L
 
 /**
  * Playback-position stream: polls the player [pollIntervalMs] apart WHILE

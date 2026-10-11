@@ -100,15 +100,13 @@ class TrackDownloadWorker @AssistedInject constructor(
     }
 
     /**
-     * Called by WorkManager BEFORE [doWork] runs. Returning a [ForegroundInfo]
-     * here signals that this is a long-running worker that needs foreground
-     * service promotion, and WorkManager will start the foreground service
-     * itself before invoking [doWork]. This bypasses the Android 12+ restriction
-     * on starting foreground services from the background, because WorkManager
-     * is the one starting the service — not an already-backgrounded app.
-     *
-     * Without this override, the worker is treated as a regular background job
-     * and gets killed within ~10 minutes of the app being backgrounded.
+     * The initial foreground notification. Note what this does NOT do:
+     * WorkManager only calls it on its own for EXPEDITED work on Android 11
+     * and below, and the sync chain is not expedited, so overriding it never
+     * promotes the worker before [doWork]. Promotion happens only through the
+     * [safeSetForeground] call in [doWork], which Android 12+ refuses while the
+     * app is in the background — a scheduled run that starts backgrounded
+     * downloads as a regular job, subject to the ~10-minute job limit.
      */
     override suspend fun getForegroundInfo(): ForegroundInfo {
         return createForegroundInfo(
@@ -219,12 +217,17 @@ class TrackDownloadWorker @AssistedInject constructor(
                 )
             }
 
-            // The worker is already running as a foreground service because
-            // getForegroundInfo() was overridden and WorkManager promoted us
-            // before calling doWork(). This setForeground() call UPDATES the
-            // notification to show the real track count now that we know it.
+            // Promote to a foreground service with the real track count. This
+            // is the ONLY promotion: getForegroundInfo() alone does not run a
+            // non-expedited worker in the foreground. Best-effort — refused
+            // when the app is backgrounded (see safeSetForeground).
             syncStateManager.onDownloading(downloaded = 0, total = total)
             safeSetForeground(createForegroundInfo(downloaded = 0, total = total))
+            // Every per-track update reposts the progress notification under
+            // the same id, so it must carry the Cancel action too or the first
+            // update strips it from the foreground notification.
+            val progressCancelIntent = WorkManager.getInstance(applicationContext)
+                .createCancelPendingIntent(id)
 
             // ── Parallel download loop ──────────────────────────────────
             //
@@ -577,6 +580,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                                 "Downloaded $completed of $total"
                             },
                             progress = 0.25f + 0.70f * (resolved.toFloat() / total),
+                            cancelIntent = progressCancelIntent,
                         )
 
                         // Flush sync history tallies every 10 tracks for crash resilience.
@@ -660,16 +664,28 @@ class TrackDownloadWorker @AssistedInject constructor(
             // IN_PROGRESS queue rows will be reset to PENDING by the next
             // run's resetStaleInProgress() sweep.
             Log.i(TAG, "Sync cancelled by user or system")
-            syncHistoryDao.updateStatus(
-                id = syncId,
-                status = SyncState.CANCELLED,
-                completedAt = System.currentTimeMillis(),
-                errorMessage = "Cancelled",
-            )
+            // NonCancellable: this coroutine is already cancelled, so a plain
+            // suspend DAO call throws on entry and the row stayed DOWNLOADING
+            // ("Running") until the next startup flipped it to Interrupted.
+            withContext(NonCancellable) {
+                syncHistoryDao.updateStatus(
+                    id = syncId,
+                    status = SyncState.CANCELLED,
+                    completedAt = System.currentTimeMillis(),
+                    errorMessage = "Cancelled",
+                )
+            }
             syncStateManager.reset()
+            // Only SyncFinalizeWorker dismissed the progress notification, and a
+            // stopped chain never reaches it. When the run was not foreground
+            // (a scheduled sync with the app in the background) the per-track
+            // updates had posted a plain ongoing notification, so "Downloaded
+            // 37 of 120" stuck around, undismissable, until a later sync ended.
+            syncNotificationManager.cancelProgress()
             throw ce
         } catch (e: Exception) {
             Log.e(TAG, "Download worker failed", e)
+            syncNotificationManager.cancelProgress()
             syncHistoryDao.updateStatus(
                 id = syncId,
                 status = SyncState.FAILED,

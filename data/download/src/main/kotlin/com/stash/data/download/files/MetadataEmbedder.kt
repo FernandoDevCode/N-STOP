@@ -7,9 +7,12 @@ import com.stash.core.common.AppVersionProvider
 import com.stash.core.model.Track
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -38,6 +41,9 @@ class MetadataEmbedder @Inject constructor(
     internal var renameFile: (File, File) -> Boolean = { source, target ->
         source.renameTo(target)
     }
+
+    /** Test seam: how long one ffmpeg tag pass may run before it is killed. */
+    internal var ffmpegTimeoutSec: Long = FFMPEG_TIMEOUT_SEC
 
     suspend fun embedMetadata(
         audioFile: File,
@@ -83,12 +89,32 @@ class MetadataEmbedder @Inject constructor(
             pb.environment()["LD_LIBRARY_PATH"] = ldLibraryPath()
             val process = pb.start()
 
-            // Drain both streams to prevent the process from blocking on
-            // full pipe buffers — ffmpeg can be chatty on stderr even on
-            // success (progress, stream mapping summary).
-            val stdout = process.inputStream.bufferedReader().use { it.readText() }
-            val stderr = process.errorStream.bufferedReader().use { it.readText() }
-            val exit = process.waitFor()
+            // Drain both streams AT ONCE, each on its own thread. Reading stdout
+            // to EOF before touching stderr deadlocked: ffmpeg writes nothing to
+            // stdout (the output is a file), so that read only returns at exit,
+            // while ffmpeg itself blocks once stderr's ~64 KB pipe fills, which
+            // per-packet warnings on a slightly broken file easily do. The stuck
+            // thread held one of DownloadManager's download slots for good, and
+            // hung MetadataBackfillWorker on the first such file.
+            val stdoutDrain = StreamDrain(process.inputStream)
+            val stderrDrain = StreamDrain(process.errorStream)
+            val exit = try {
+                // Interruptible, so a cancelled download or a stopped backfill
+                // stops waiting; the finally below then kills ffmpeg.
+                val finished = runInterruptible {
+                    process.waitFor(ffmpegTimeoutSec, TimeUnit.SECONDS)
+                }
+                if (!finished) {
+                    throw IOException("ffmpeg timed out after ${ffmpegTimeoutSec}s for ${audioFile.absolutePath}")
+                }
+                process.exitValue()
+            } finally {
+                // A no-op once ffmpeg has exited; otherwise (timeout, cancellation)
+                // it frees the process and lets the drain threads hit EOF.
+                process.destroyForcibly()
+            }
+            val stdout = stdoutDrain.text()
+            val stderr = stderrDrain.text()
 
             if (exit != 0) {
                 Log.w(TAG, "ffmpeg exited $exit for ${audioFile.absolutePath} (args: ${args.take(8)}...)")
@@ -195,8 +221,52 @@ class MetadataEmbedder @Inject constructor(
         }
     }
 
+    /**
+     * Reads [stream] to EOF on a daemon thread, keeping the first [MAX_CAPTURE_CHARS]
+     * characters for the failure log and discarding the rest, so a chatty ffmpeg
+     * can neither block on a full pipe nor grow this buffer without bound.
+     */
+    private class StreamDrain(stream: InputStream) {
+        private val captured = StringBuilder()
+        private val thread = Thread {
+            try {
+                stream.bufferedReader().use { reader ->
+                    val buf = CharArray(4096)
+                    while (true) {
+                        val n = reader.read(buf)
+                        if (n < 0) break
+                        synchronized(captured) {
+                            val room = MAX_CAPTURE_CHARS - captured.length
+                            if (room > 0) captured.append(buf, 0, minOf(n, room))
+                        }
+                    }
+                }
+            } catch (_: IOException) {
+                // Stream closed under us (process destroyed): what we have is enough.
+            }
+        }.apply { isDaemon = true; start() }
+
+        /** What was captured; waits briefly for the drain to reach EOF. */
+        fun text(): String {
+            thread.join(DRAIN_JOIN_MS)
+            return synchronized(captured) { captured.toString() }
+        }
+    }
+
     companion object {
         private const val TAG = "MetadataEmbedder"
+
+        /**
+         * Generous: `-c copy` remuxes even a 140 MB hi-res FLAC in seconds. Past
+         * this, ffmpeg is hung, and it would otherwise hold a download slot forever.
+         */
+        private const val FFMPEG_TIMEOUT_SEC = 120L
+
+        /** First characters of each ffmpeg stream kept for logging. */
+        private const val MAX_CAPTURE_CHARS = 8 * 1024
+
+        /** How long to wait for a drain thread after ffmpeg exits. */
+        private const val DRAIN_JOIN_MS = 2_000L
 
         // Containers that don't support ffmpeg's `-disposition:v:0 attached_pic`
         // mapping (mux fails with exit 234). Tag writing still works for these.

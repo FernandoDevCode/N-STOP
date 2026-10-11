@@ -14,6 +14,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -62,6 +64,8 @@ sealed interface MoveLibraryState {
  *    in either start order.
  *  - Cancellation mid-move leaves the DB consistent — each track is its own
  *    atomic unit, and a cancelled coroutine stops at track boundaries.
+ *  - A document another track records is never replaced: a name clash
+ *    gives the moved file a distinct name instead (see [createTarget]).
  */
 @Singleton
 class MoveLibraryCoordinator @Inject constructor(
@@ -166,6 +170,13 @@ class MoveLibraryCoordinator @Inject constructor(
             for ((index, track) in tracks.withIndex()) {
                 _state.value = MoveLibraryState.Running(current = index, total = total)
                 val ok = runCatching { moveOne(track, root, layout, dirCache) }
+                // runCatching swallows CancellationException too. Cancel works
+                // by cancelling activeJob, which surfaced here as one failed
+                // track: the loop copied the REST of the library (each copy
+                // then orphaned when the cancelled DB write threw) and ended
+                // by overwriting Idle with Done. Re-throw so the pass stops,
+                // as ReorganizeLibraryCoordinator does.
+                ok.exceptionOrNull()?.let { if (it is CancellationException) throw it }
                 if (ok.isSuccess) {
                     moved++
                 } else {
@@ -220,25 +231,72 @@ class MoveLibraryCoordinator @Inject constructor(
         }
 
         val format = localFile.extension.ifBlank { "m4a" }
-        val filename = "${location.baseName}.$format"
+        val target = createTarget(track, cursor, location, format)
 
-        // Overwrite: still scan for an existing file since we can't cache
-        // per-title dirs (they'd explode the map). This is the only O(m)
-        // lookup left per track where m = target dir size, usually <15.
-        cursor.findFile(filename)?.delete()
-        val target = cursor.createFile(mimeTypeFor(format), filename)
-            ?: error("Could not create SAF file for '${track.title}'")
-
-        localFile.inputStream().use { input ->
-            context.contentResolver.openOutputStream(target.uri)?.use { output ->
-                input.copyTo(output)
-            } ?: error("Could not open SAF output stream for '${track.title}'")
+        try {
+            localFile.inputStream().use { input ->
+                context.contentResolver.openOutputStream(target.uri)?.use { output ->
+                    input.copyTo(output)
+                } ?: error("Could not open SAF output stream for '${track.title}'")
+            }
+            // A cancel during the (blocking) copy: stop before the DB write,
+            // which would throw anyway and leave the copy behind.
+            currentCoroutineContext().ensureActive()
+        } catch (e: Throwable) {
+            // A half-written or abandoned document at the track's name would
+            // be adopted as the download by the next reconciliation; the
+            // internal file is still the real one.
+            target.delete()
+            throw e
         }
 
         // DB write first so a crash before delete leaves a duplicate (harmless)
         // rather than a dangling DB pointer.
         trackDao.markAsDownloaded(track.id, target.uri.toString(), localFile.length())
         localFile.delete()
+    }
+
+    /**
+     * Creates the document [track] is copied into, at the first free name:
+     * `<base>.<ext>`, then with the album, then with the album and track id
+     * added, as a download names a clash (see [FileOrganizer.commitDownload]).
+     *
+     * A document already at a name is replaced only when no other track
+     * records it (a leftover of a move cut short). Two internal files can
+     * resolve to ONE name (Single folder drops the album, so a studio and a
+     * live "Intro" collide), and the second track's move used to delete the
+     * first one's document, whose internal copy was already gone: the first
+     * track lost its only file, or on path-based providers silently played
+     * the second's audio from the reused URI.
+     */
+    private suspend fun createTarget(
+        track: TrackEntity,
+        cursor: DocumentFile,
+        location: LibraryLayoutResolver.ResolvedLocation,
+        format: String,
+    ): DocumentFile {
+        val album = FileOrganizerSlugs.slugify(track.album).ifEmpty { null }
+        val suffixes = listOf(null, album, listOfNotNull(album, track.id.toString()).joinToString("-")).distinct()
+        for (suffix in suffixes) {
+            val filename = if (suffix == null) "${location.baseName}.$format" else "${location.baseName}-$suffix.$format"
+            // Still scanned per track: per-title dirs can't be cached (they'd
+            // explode the map). m = target dir size, usually <15.
+            val existing = cursor.findFile(filename)
+            if (existing != null) {
+                if (trackDao.countOtherTracksWithFilePath(existing.uri.toString(), track.id) > 0) continue
+                existing.delete()
+            }
+            val target = cursor.createFile(mimeTypeFor(format), filename)
+                ?: error("Could not create SAF file for '${track.title}'")
+            // Path-based providers hand a new document a deleted one's URI,
+            // which a track whose file went missing may still record.
+            if (existing == null && trackDao.countOtherTracksWithFilePath(target.uri.toString(), track.id) > 0) {
+                target.delete()
+                continue
+            }
+            return target
+        }
+        error("No free name for '${track.title}': other tracks use every candidate")
     }
 
     private fun DocumentFile.findOrCreateDir(name: String): DocumentFile =

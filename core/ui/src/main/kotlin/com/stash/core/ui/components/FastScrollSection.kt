@@ -4,11 +4,12 @@ package com.stash.core.ui.components
  * The letter the fast-scroll bubble shows for an item while the listener drags the scrollbar
  * cap down an A–Z list ([VerticalScrollbar]'s `sectionLabel`).
  *
- * Pass the item's SORT KEY, the exact string its list is ordered by, not its display name:
- * the bubble then can't disagree with the order the rows are actually in. Nothing is folded
- * or stripped here because the Library's A–Z sort folds nothing either (it compares
- * `name.lowercase()` code point by code point): "The Beatles" files under T, and "Édith Piaf"
- * sorts after Z, so its bubble says "É" rather than claiming an E that isn't there.
+ * Pass the exact string the list is ordered by (the Library sorts its A–Z lists by title or
+ * name with `String.CASE_INSENSITIVE_ORDER`): the bubble then can't disagree with the order the
+ * rows are actually in. That comparator matches characters by their upper case, which is what
+ * this shows, and it folds or strips nothing, so neither does this: "The Beatles" files under T,
+ * and "Édith Piaf" sorts after Z, so its bubble says "É" rather than claiming an E that isn't
+ * there. If the sort ever learns to fold accents or skip a leading "The", change this with it.
  *
  * - A key starting with a letter (any script) shows that letter in upper case: "abba" → "A",
  *   "édith" → "É", "ωmega" → "Ω", "日本" → "日".

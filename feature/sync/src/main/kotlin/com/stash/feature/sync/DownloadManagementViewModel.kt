@@ -102,6 +102,7 @@ class DownloadManagementViewModel @Inject constructor(
                     PipelineStatus.COMPLETED,
                     PipelineStatus.FAILED,
                     PipelineStatus.UNMATCHED,
+                    PipelineStatus.DEFERRED,
                     -> progressByTrackId.value - update.trackId
                     else -> progressByTrackId.value + (update.trackId to update)
                 }

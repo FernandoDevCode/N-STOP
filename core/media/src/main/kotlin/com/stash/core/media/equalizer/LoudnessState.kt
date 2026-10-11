@@ -22,7 +22,7 @@ data class LoudnessState(
  *
  *  1. Hard caps at −15 / +12 dB so a podcast at −40 LUFS doesn't get +26 dB boost.
  *  2. Peak-aware cap so the gain never lifts the track's peak above −1 dBFS; the
- *     [SoftClipLimiterProcessor] catches residual peaks from EQ/Bass stages.
+ *     the output stage's limiter (FloatDspChain) catches residual peaks from EQ/Bass stages.
  *
  * Returns 0 dB (bypass) when [trackLufs] is null or NaN (un-measured or
  * measurement-failed track).

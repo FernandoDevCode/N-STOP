@@ -28,6 +28,7 @@ import org.mockito.kotlin.any
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.stub
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 
@@ -249,6 +250,62 @@ class LibraryViewModelTest {
         verify(playerRepo, org.mockito.kotlin.never()).addToQueue(onAlbum[2])
         verify(playerRepo, org.mockito.kotlin.never()).addToQueue(onAlbum[3])
         verify(playerRepo, org.mockito.kotlin.never()).addToQueue(offAlbum)
+    }
+
+    @Test
+    fun deleteArtist_deletes_only_the_downloaded_songs_on_the_card() = runTest {
+        val own = Track(1L, "God's Plan", "Drake", isDownloaded = true, filePath = "/a")
+        val ownCollab = Track(2L, "Jimmy Cooks", "Drake, 21 Savage", isDownloaded = true, filePath = "/b")
+        // Under Future's card, not Drake's.
+        val feature = Track(3L, "Life Is Good", "Future, Drake", isDownloaded = true, filePath = "/c")
+        // A synced, streamable row: not on any Library card.
+        val streamOnly = Track(4L, "Hotline Bling", "Drake", isDownloaded = false)
+        // A compilation whose album artist is Drake: credit search matches it, the card doesn't.
+        val compilation = Track(5L, "Signs", "Someone Else", albumArtist = "Drake", isDownloaded = true, filePath = "/d")
+        val musicRepo = musicRepoMock()
+        whenever(musicRepo.getTracksByArtist("Drake"))
+            .thenReturn(flowOf(listOf(own, ownCollab, feature, streamOnly, compilation)))
+        val vm = buildVm(musicRepository = musicRepo)
+        val messages = collectMessages(vm)
+
+        vm.deleteArtist("Drake")
+        runCurrent()
+
+        verify(musicRepo).deleteTrack(own)
+        verify(musicRepo).deleteTrack(ownCollab)
+        verify(musicRepo, org.mockito.kotlin.never()).deleteTrack(feature)
+        verify(musicRepo, org.mockito.kotlin.never()).deleteTrack(streamOnly)
+        verify(musicRepo, org.mockito.kotlin.never()).deleteTrack(compilation)
+        assertEquals(listOf("Deleted 2 songs."), messages)
+    }
+
+    @Test
+    fun deletePlaylist_reports_what_the_cascade_deleted_and_kept() = runTest {
+        // The dialog said "all its tracks will be removed", and the cascade's summary (songs kept
+        // because they're in Liked or another playlist) was never shown.
+        val musicRepo = musicRepoMock().stub {
+            onBlocking { deletePlaylistWithCascade(any(), any()) } doReturn
+                MusicRepository.CascadeRemovalSummary(deleted = 9, keptProtected = 2, keptElsewhere = 1, blacklisted = 0)
+        }
+        val vm = buildVm(musicRepository = musicRepo)
+        val messages = collectMessages(vm)
+
+        vm.deletePlaylist(com.stash.core.model.Playlist(id = 5L, name = "Road trip", source = com.stash.core.model.MusicSource.SPOTIFY))
+        runCurrent()
+
+        assertEquals(listOf("Deleted 9 songs. Kept 3 songs that are in Liked Songs or other playlists."), messages)
+    }
+
+    @Test
+    fun cascade_summary_message_covers_each_outcome() {
+        fun summary(deleted: Int, kept: Int) =
+            MusicRepository.CascadeRemovalSummary(deleted = deleted, keptProtected = kept, keptElsewhere = 0, blacklisted = 0)
+        assertEquals("Deleted 1 song.", cascadeSummaryMessage(summary(1, 0)))
+        assertEquals(
+            "Playlist deleted. Its 4 songs stay: they're in Liked Songs or other playlists.",
+            cascadeSummaryMessage(summary(0, 4)),
+        )
+        assertEquals("Playlist deleted.", cascadeSummaryMessage(summary(0, 0)))
     }
 
     // ------------------------------------------------------------------

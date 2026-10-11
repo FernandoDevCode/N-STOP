@@ -30,6 +30,11 @@ import com.stash.core.data.prefs.LibraryLayout
  *    the name slugifies to nothing) → falls back to ARTIST_ALBUM segments,
  *    so unfiled tracks stay grouped under their artist instead of piling
  *    into a junk folder.
+ *  - An artist, album or title that slugs to nothing ("!!!", "?", emoji
+ *    only) gets a placeholder ([UNKNOWN_ARTIST], [UNKNOWN_ALBUM],
+ *    [UNTITLED]). An empty slug made a hidden `.opus` file, or an empty
+ *    folder name that a SAF tree refuses, so every download by "!!!" failed
+ *    on an SD card.
  */
 object LibraryLayoutResolver {
 
@@ -62,8 +67,8 @@ object LibraryLayoutResolver {
         title: String,
         playlistName: String?,
     ): ResolvedLocation {
-        val artistSlug = FileOrganizerSlugs.slugify(artist)
-        val titleSlug = FileOrganizerSlugs.slugify(title)
+        val artistSlug = artistSlug(artist)
+        val titleSlug = titleSlug(title)
 
         if (layout == LibraryLayout.SINGLE_FOLDER) {
             return ResolvedLocation(emptyList(), "$artistSlug-$titleSlug")
@@ -78,9 +83,22 @@ object LibraryLayoutResolver {
         }
 
         // ARTIST_ALBUM — and the PLAYLIST fallback when no playlist resolved.
-        val albumSlug = if (!album.isNullOrBlank()) FileOrganizerSlugs.slugify(album) else "singles"
-        return ResolvedLocation(listOf(artistSlug, albumSlug), titleSlug)
+        return ResolvedLocation(listOf(artistSlug, albumSlug(album)), titleSlug)
     }
+
+    /** The artist's slug, or [UNKNOWN_ARTIST] when it slugs to nothing. */
+    fun artistSlug(artist: String): String = FileOrganizerSlugs.slugify(artist).ifEmpty { UNKNOWN_ARTIST }
+
+    private fun titleSlug(title: String): String = FileOrganizerSlugs.slugify(title).ifEmpty { UNTITLED }
+
+    /** `singles` for no album; [UNKNOWN_ALBUM] for one that slugs to nothing. */
+    private fun albumSlug(album: String?): String =
+        if (album.isNullOrBlank()) "singles" else FileOrganizerSlugs.slugify(album).ifEmpty { UNKNOWN_ALBUM }
+
+    /** Placeholder slugs for a name with no letters or digits to keep. */
+    const val UNKNOWN_ARTIST = "unknown-artist"
+    const val UNKNOWN_ALBUM = "unknown-album"
+    const val UNTITLED = "untitled"
 
     /**
      * Candidate locations to probe when looking up whether a file already
@@ -109,8 +127,8 @@ object LibraryLayoutResolver {
         playlistName: String?,
         knownFormats: List<String>,
     ): List<CandidateLocation> {
-        val artistSlug = FileOrganizerSlugs.slugify(artist)
-        val titleSlug = FileOrganizerSlugs.slugify(title)
+        val artistSlug = artistSlug(artist)
+        val titleSlug = titleSlug(title)
         val flatBase = "$artistSlug-$titleSlug"
 
         fun namesFor(base: String): List<String> =
@@ -121,8 +139,7 @@ object LibraryLayoutResolver {
             CandidateLocation(primary.dirKey, namesFor(primary.baseName)),
         )
 
-        val albumSlug = if (!album.isNullOrBlank()) FileOrganizerSlugs.slugify(album) else "singles"
-        val legacyKey = "$artistSlug/$albumSlug"
+        val legacyKey = "$artistSlug/${albumSlug(album)}"
         if (candidates.none { it.dirKey == legacyKey }) {
             candidates += CandidateLocation(legacyKey, namesFor(titleSlug))
         }

@@ -4,6 +4,21 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
+ * How long a URL with [ttlMs] left may still be handed out: its lifetime minus a
+ * margin of a tenth of it, at most [MAX_EXPIRY_MARGIN_MS].
+ *
+ * The URL is opened now but re-opened at every seek outside the buffer and every
+ * dropped connection for the rest of the song. Served up to its exact expiry, one
+ * that ran out seconds after the first open 403'd on the first reconnect, and a
+ * placeholder item has no refresh layer: the error went to the cascade guard as an
+ * audible retry. A URL this close to its end is re-resolved instead.
+ */
+internal fun usableLifetimeMs(ttlMs: Long): Long = ttlMs - minOf(MAX_EXPIRY_MARGIN_MS, ttlMs / 10)
+
+/** Longest margin [usableLifetimeMs] keeps: about the length of a song. */
+private const val MAX_EXPIRY_MARGIN_MS = 5 * 60_000L
+
+/**
  * Bounded, monotonic-TTL cache for resolved stream URLs, keyed by track id.
  *
  * Two design properties matter, both learned the hard way:
@@ -68,6 +83,9 @@ class StreamUrlCache @Inject constructor() {
             size > MAX_ENTRIES
     }
 
+    /**
+     * The entry, until its usable lifetime ([usableLifetimeMs]) runs out. Stale entries are evicted.
+     */
     fun get(trackId: Long): StreamUrl? = synchronized(lock) {
         val entry = cache[trackId] ?: return null
         if (elapsedMsProvider() < entry.expiryElapsedMs) {
@@ -83,7 +101,7 @@ class StreamUrlCache @Inject constructor() {
         // duration using the wall clock this once, then anchor it to the
         // monotonic clock. A non-positive TTL means the URL is already
         // expired by the wall clock at insert — don't cache a dead entry.
-        val ttlMs = url.expiresAtMs - nowMsProvider()
+        val ttlMs = usableLifetimeMs(url.expiresAtMs - nowMsProvider())
         if (ttlMs <= 0L) {
             synchronized(lock) { cache.remove(trackId) }
             return

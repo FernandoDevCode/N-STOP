@@ -318,11 +318,13 @@ interface MusicRepository {
      * Only deletes tracks that:
      * 1. Have is_downloaded = true (have files on disk)
      * 2. Are NOT in ANY active playlist_tracks entry (removed_at IS NULL)
-     * 3. Are NOT of source BOTH (local/custom imports)
+     * 3. Are NOT of source BOTH (custom adds) or LOCAL (device imports)
      *
-     * This prevents accidentally deleting tracks the user wants to keep.
+     * This prevents accidentally deleting tracks the user wants to keep. An
+     * orphan with listening history only loses its file: its row stays as a
+     * stream-only track so its plays, pending scrobbles and skips survive.
      *
-     * @return The number of orphaned tracks cleaned up.
+     * @return The number of orphaned tracks cleaned up (deleted or un-downloaded).
      */
     suspend fun cleanOrphanedMixTracks(): Int
 

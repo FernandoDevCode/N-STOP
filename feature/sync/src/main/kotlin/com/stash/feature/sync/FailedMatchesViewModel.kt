@@ -11,6 +11,7 @@ import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.preview.PreviewPlayer
 import com.stash.core.media.preview.PreviewState
 import com.stash.core.data.sync.TrackIdentityEvents
+import com.stash.core.model.DownloadFailureType
 import com.stash.core.model.DownloadStatus
 import com.stash.core.model.YouTubeVideoId
 import com.stash.data.download.DownloadExecutor
@@ -27,21 +28,27 @@ import com.stash.data.download.preview.PreviewUrlExtractor
 import com.stash.data.download.ytdlp.YtDlpSearchResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 
@@ -165,7 +172,40 @@ class FailedMatchesViewModel @Inject constructor(
         private val NOT_A_WORD = Regex("""[^\p{L}\p{N}]+""")
         private val SPACES = Regex("""\s+""")
 
+        /**
+         * Approved downloads at once, across every instance of this screen. Each
+         * is a yt-dlp (Python) process plus ffmpeg: Approve All on a long list
+         * used to start them all together, on devices already short of memory.
+         */
+        private const val APPROVED_DOWNLOAD_CONCURRENCY = 2
+
+        private val approvedDownloadSlots = Semaphore(APPROVED_DOWNLOAD_CONCURRENCY)
+
+        /**
+         * Where approved downloads run: the process, not this ViewModel. The
+         * approval hides the row at once, so the natural next step is Back —
+         * which cleared the ViewModel and cancelled every download still
+         * running or waiting, leaving those tracks never downloaded.
+         */
+        private val approvedDownloadProcessScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+        /**
+         * How the approved downloads are getting on, process-wide like the
+         * downloads themselves: leave the screen mid-run and come back, and the
+         * banner still counts the same run.
+         */
+        private val approvedDownloadsState = MutableStateFlow(ApprovedDownloads())
     }
+
+    /** Scope for approved downloads; a `var` only so tests can run them on the test scheduler. */
+    internal var approvedDownloadScope: CoroutineScope = approvedDownloadProcessScope
+
+    /**
+     * Drives the "Downloading 12 approved songs" banner. Approving hides the
+     * row at once, so without it the list silently emptied (often to "All
+     * caught up!") while the songs were still downloading in the background.
+     */
+    internal val approvedDownloads: StateFlow<ApprovedDownloads> = approvedDownloadsState.asStateFlow()
 
     /** Observable preview playback state for the UI to highlight the active row. */
     val previewState: StateFlow<PreviewState> = previewPlayer.previewState
@@ -558,7 +598,8 @@ class FailedMatchesViewModel @Inject constructor(
      * Optimistically approves a resync candidate: immediately marks the queue
      * entry as COMPLETED and sets the youtubeId on the track so the row
      * disappears from the reactive [getUnmatchedTracks] Flow. The actual
-     * download runs in a fire-and-forget background coroutine.
+     * download runs in the background, beyond this screen's life and at most
+     * [APPROVED_DOWNLOAD_CONCURRENCY] at a time; one that fails puts the row back.
      *
      * @param trackId      Primary key of the track in the tracks table.
      * @param queueEntryId Row ID of the download_queue entry to mark completed.
@@ -611,50 +652,93 @@ class FailedMatchesViewModel @Inject constructor(
                 return@launch
             }
 
-            // Background download — fire and forget
-            launch {
+            // Background download, outliving this screen (see approvedDownloadScope)
+            // and taking its turn behind the other approvals. Counted from here
+            // until it finishes, however it finishes (see approvedDownloads).
+            approvedDownloadsState.update { it.started() }
+            approvedDownloadScope.launch {
+                var downloaded = false
                 try {
-                    val qualityTier = qualityPrefs.qualityTier.first()
-                    val qualityArgs = qualityTier.toYtDlpArgs()
-                    val tempDir = fileOrganizer.getTempDir()
-                    val tempFilename = "approve_${candidate.videoId}"
-
-                    val result = downloadExecutor.download(
-                        url = url,
-                        outputDir = tempDir,
-                        filename = tempFilename,
-                        qualityArgs = qualityArgs,
-                    )
-
-                    if (result is DownloadResult.Success) {
-                        val track = trackDao.getById(trackId)
-                        val artist = track?.artist ?: candidate.artist
-                        val title = track?.title ?: candidate.title
-
-                        val committed = fileOrganizer.commitDownload(
-                            tempFile = result.file,
-                            artist = artist,
-                            album = null,
-                            title = title,
-                            format = result.file.extension,
-                            trackId = trackId,
-                        )
-                        // Reject a too-small "successful" download (failed
-                        // yt-dlp run leaving a tiny error body): delete it +
-                        // leave the track not-downloaded (streamable).
-                        if (localFileOps.acceptDownloadOrDelete(committed.filePath)) {
-                            trackDao.markAsDownloaded(trackId, committed.filePath, committed.sizeBytes)
-                        } else {
-                            Log.w(TAG, "resync: discarded too-small download for ${candidate.title}: ${committed.filePath}")
+                    try {
+                        approvedDownloadSlots.withPermit {
+                            downloaded = downloadApproved(trackId, url, candidate)
                         }
-                    } else {
-                        Log.w(TAG, "Background download failed for ${candidate.title}: $result")
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Background download error for ${candidate.title}", e)
                     }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Background download error for ${candidate.title}", e)
+                    if (!downloaded) {
+                        // The row was marked COMPLETED up front to hide it. Left so,
+                        // nothing would ever download this track (the downloader skips
+                        // COMPLETED rows); put it back in Failed Matches instead.
+                        try {
+                            downloadQueueDao.updateStatus(
+                                id = queueEntryId,
+                                status = DownloadStatus.FAILED,
+                                errorMessage = "Approved match didn't download",
+                                failureType = DownloadFailureType.NO_MATCH,
+                            )
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Couldn't put ${candidate.title} back in Failed Matches", e)
+                        }
+                        _userMessages.trySend("Couldn't download '${candidate.title}'. It's back in the list to try again.")
+                    }
+                } finally {
+                    val after = approvedDownloadsState.updateAndGet { it.finished(downloaded) }
+                    approvedDownloadsFinishedMessage(after)?.let { _userMessages.trySend(it) }
                 }
             }
         }
+    }
+
+    /**
+     * Downloads an approved [candidate] for [trackId] and records the file.
+     *
+     * @return true once the track is marked downloaded; false when yt-dlp
+     *   failed or left a too-small file (which is deleted, leaving the track
+     *   streamable).
+     */
+    private suspend fun downloadApproved(trackId: Long, url: String, candidate: ResyncCandidate): Boolean {
+        val qualityTier = qualityPrefs.qualityTier.first()
+        val qualityArgs = qualityTier.toYtDlpArgs()
+        val tempDir = fileOrganizer.getTempDir()
+        val tempFilename = "approve_${candidate.videoId}"
+
+        val result = downloadExecutor.download(
+            url = url,
+            outputDir = tempDir,
+            filename = tempFilename,
+            qualityArgs = qualityArgs,
+        )
+
+        if (result !is DownloadResult.Success) {
+            Log.w(TAG, "Background download failed for ${candidate.title}: $result")
+            return false
+        }
+        val track = trackDao.getById(trackId)
+        val artist = track?.artist ?: candidate.artist
+        val title = track?.title ?: candidate.title
+
+        val committed = fileOrganizer.commitDownload(
+            tempFile = result.file,
+            artist = artist,
+            album = null,
+            title = title,
+            format = result.file.extension,
+            trackId = trackId,
+        )
+        // Reject a too-small "successful" download (failed
+        // yt-dlp run leaving a tiny error body): delete it +
+        // leave the track not-downloaded (streamable).
+        if (!localFileOps.acceptDownloadOrDelete(committed.filePath)) {
+            Log.w(TAG, "resync: discarded too-small download for ${candidate.title}: ${committed.filePath}")
+            return false
+        }
+        trackDao.markAsDownloaded(trackId, committed.filePath, committed.sizeBytes)
+        return true
     }
 
     // -- Approve All: batch approve every track with a candidate ---------------

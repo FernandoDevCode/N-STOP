@@ -3,9 +3,11 @@ package com.stash.data.download.files
 import com.stash.core.data.repository.MusicRepository
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -37,6 +39,11 @@ import kotlinx.coroutines.flow.update
  *  - Walks happen on [Dispatchers.IO] via `flowOn`.
  *  - On walk failure, `scan` returns the previous value — the StateFlow
  *    never flashes to 0 mid-recompute.
+ *  - A track-count change walks again at most every [MIN_WALK_GAP_MS] after
+ *    the last walk ended. A sync inserts or downloads hundreds of tracks,
+ *    each a count change, and on an SD card a walk is thousands of binder
+ *    queries, so Home re-walked the tree back to back for the whole sync,
+ *    competing with the downloads' own writes. [refresh] still walks at once.
  *
  * Cold-start: the StateFlow starts at `LibrarySizeBreakdown(0, 0, 0)`. On
  * SAF storage with ~3000 files the first walk can take 1-2 minutes; the
@@ -51,13 +58,31 @@ class LibrarySizeHolder @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val refreshVersion = MutableStateFlow(0L)
 
+    // The one collector's (stateIn) bookkeeping for the walk gap.
+    private var lastVersion = 0L
+    private var lastWalkEndedAtMs = 0L
+
     val size: StateFlow<LibrarySizeBreakdown> = combine(
         musicRepository.getTrackCount().distinctUntilChanged(),
         refreshVersion,
-    ) { _, _ -> Unit }
-        .scan(LibrarySizeBreakdown(0L, 0L, 0)) { prev, _ ->
-            runCatching { fileOrganizer.computeMusicLibrarySize() }
-                .getOrDefault(prev)
+    ) { _, version -> version }
+        .scan(NOT_WALKED) { prev, version ->
+            // A collection's first walk (prev is still the seed) and a refresh run at once.
+            val asked = prev === NOT_WALKED || version != lastVersion
+            lastVersion = version
+            if (!asked) {
+                val wait = lastWalkEndedAtMs + MIN_WALK_GAP_MS - nowMs()
+                if (wait > 0) delay(wait)
+            }
+            try {
+                fileOrganizer.computeMusicLibrarySize()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                prev
+            } finally {
+                lastWalkEndedAtMs = nowMs()
+            }
         }
         .flowOn(Dispatchers.IO)
         .stateIn(
@@ -69,5 +94,15 @@ class LibrarySizeHolder @Inject constructor(
     /** Requests a fresh filesystem walk even when the track count is unchanged. */
     fun refresh() {
         refreshVersion.update { it + 1 }
+    }
+
+    private fun nowMs(): Long = System.nanoTime() / 1_000_000
+
+    internal companion object {
+        /** Least idle time between two walks that a track-count change starts. */
+        const val MIN_WALK_GAP_MS = 60_000L
+
+        /** [scan]'s seed: shown until the first walk of a collection ends. */
+        private val NOT_WALKED = LibrarySizeBreakdown(0L, 0L, 0)
     }
 }

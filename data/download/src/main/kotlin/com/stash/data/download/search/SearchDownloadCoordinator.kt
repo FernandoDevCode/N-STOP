@@ -159,6 +159,16 @@ class SearchDownloadCoordinator @Inject constructor(
             return@flow
         }
 
+        // A song the user blocked is refused before anything is fetched. The
+        // check in upsertSearchTrack alone ran only once the whole file (up
+        // to 140 MB of FLAC) was downloaded and committed to the library,
+        // where it then sat with no row recording it.
+        if (isBlocked(track)) {
+            Log.d(TAG, "Refused download of blocked: ${track.artist} - ${track.title}")
+            emit(SearchDownloadStatus.Failed("Track is blocked"))
+            return@flow
+        }
+
         val deferred = mutex.withLock {
             inFlight[key] ?: scope.async { performDownload(track) }.also { created ->
                 inFlight[key] = created
@@ -307,10 +317,16 @@ class SearchDownloadCoordinator @Inject constructor(
         track: TrackItem,
         match: SourceResult,
     ): SourceFinalizeAttempt {
-        // Cache key mirrors what SearchPreviewMediaSource uses so any bytes
-        // already streamed during preview are reused here.
+        // SearchPreviewMediaSource's key: only used to free the preview's bytes
+        // once this download is committed. The lossless fetch below reads under
+        // its own key, which names the exact file (SearchLosslessFile.cacheKey):
+        // the preview key names only the song, and reading under it spliced a
+        // previewed file's spans into a different file's download.
         val cacheNamespace = if (match.sourceId == JioSaavnResolver.SOURCE_ID) "jiosaavn" else "lossless"
-        val cacheKey = "$cacheNamespace:${track.videoId}"
+        val previewKey = "$cacheNamespace:${track.videoId}"
+        val cacheKey = if (match.sourceId == JioSaavnResolver.SOURCE_ID) previewKey else SearchLosslessFile.cacheKey(match)
+        var bytesWritten = 0L
+        var expectedBytes = C.LENGTH_UNSET.toLong()
         val tempFile = File(
             context.cacheDir,
             "search_lossless_${track.videoId}.${match.format.fileExtension}",
@@ -332,7 +348,7 @@ class SearchDownloadCoordinator @Inject constructor(
         } else {
             // CacheDataSource with FLAG_BLOCK_ON_CACHE reads cached spans first,
             // then fills missing byte ranges from upstream HTTP. Returns bytes
-            // contiguously regardless of which spans the preview pre-filled.
+            // contiguously regardless of which spans an earlier attempt pre-filled.
             val dataSource = CacheDataSource.Factory()
                 .setCache(previewCache)
                 .setUpstreamDataSourceFactory(httpDataSourceFactory)
@@ -346,13 +362,14 @@ class SearchDownloadCoordinator @Inject constructor(
                     .setKey(cacheKey)
                     .build()
 
-                dataSource.open(spec)
+                expectedBytes = dataSource.open(spec)
                 tempFile.outputStream().use { out ->
                     val buf = ByteArray(64 * 1024)
                     while (true) {
                         val n = dataSource.read(buf, 0, buf.size)
                         if (n == C.RESULT_END_OF_INPUT) break
                         out.write(buf, 0, n)
+                        bytesWritten += n
                     }
                 }
             }.onFailure { error ->
@@ -377,11 +394,33 @@ class SearchDownloadCoordinator @Inject constructor(
                         "expected=${(track.durationSeconds * 1_000).toLong()}",
                 )
             }
+        } else {
+            // The checks DownloadManager's lossless path has: a short copy, a file
+            // that isn't the codec asked for, or a preview-length stub never commits.
+            val metadata = audioDurationExtractor.extract(tempFile.absolutePath)
+            val problem = SearchLosslessFile.problem(
+                expectedCodec = match.format.codec,
+                bytesWritten = bytesWritten,
+                expectedBytes = expectedBytes,
+                probedFormat = metadata?.format,
+                probedMs = metadata?.durationMs,
+                expectedMs = (track.durationSeconds * 1_000).toLong(),
+            )
+            if (problem != null) {
+                Log.w(TAG, "lossless file from ${match.sourceId} rejected for ${track.videoId}: $problem")
+                runCatching { tempFile.delete() }
+                runCatching { previewCache.removeResource(cacheKey) }
+                return SourceFinalizeAttempt.BeforeCommitFailure("Lossless file rejected: $problem")
+            }
+        }
+
+        if (!localFileOps.acceptDownloadOrDelete(tempFile.absolutePath)) {
+            return SourceFinalizeAttempt.BeforeCommitFailure("Downloaded file failed validation")
         }
 
         val finalized = trackFinalizer.finalizeFile(
             sourceFile = tempFile,
-            track = track.toDomainStub(),
+            track = track.toDomainStub(existingTrackId(track)),
             format = match.format,
         )
 
@@ -405,8 +444,10 @@ class SearchDownloadCoordinator @Inject constructor(
         }
 
         // Free preview-cache space now that bytes are on permanent storage.
-        runCatching { previewCache.removeResource(cacheKey) }
-            .onFailure { e -> Log.w(TAG, "removeResource failed for $cacheKey: ${e.message}") }
+        listOf(previewKey, cacheKey).distinct().forEach { key ->
+            runCatching { previewCache.removeResource(key) }
+                .onFailure { e -> Log.w(TAG, "removeResource failed for $key: ${e.message}") }
+        }
 
         return SourceFinalizeAttempt.AfterCommit(outcome)
     }
@@ -482,12 +523,19 @@ class SearchDownloadCoordinator @Inject constructor(
                 return TrackFinalizer.FinalizeResult.Failed("yt-dlp produced no output")
         }
 
+        // Checked before the commit: a junk body (a ~274-byte yt-dlp error)
+        // committed first would take the place of the song's own library file
+        // at the same name before upsertSearchTrack rejected it.
+        if (!localFileOps.acceptDownloadOrDelete(tempFile.absolutePath)) {
+            return TrackFinalizer.FinalizeResult.Failed("Downloaded file failed validation")
+        }
+
         // opus/0 are placeholder values — TrackFinalizer probes the real codec
         // post-download and upsertSearchTrack writes the probed values if available.
         val format = AudioFormat(codec = "opus", bitrateKbps = 0)
         val finalized = trackFinalizer.finalizeFile(
             sourceFile = tempFile,
-            track = track.toDomainStub(),
+            track = track.toDomainStub(existingTrackId(track)),
             format = format,
         )
 
@@ -699,6 +747,46 @@ class SearchDownloadCoordinator @Inject constructor(
     )
 
     /**
+     * Whether the user blocked this song. A failed lookup reads as not
+     * blocked: [upsertSearchTrack] checks again before anything is recorded.
+     */
+    private suspend fun isBlocked(track: TrackItem): Boolean = try {
+        blocklistGuard.isBlocked(
+            artist = track.artist,
+            title = track.title,
+            spotifyUri = null,
+            youtubeId = track.videoId,
+        )
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "blocklist lookup failed for ${track.videoId}: ${e.message}")
+        false
+    }
+
+    /**
+     * The library row this download will be recorded on, when there is one:
+     * the same lookup [upsertSearchTrack] makes. The commit replaces a file
+     * at its name only when no OTHER track records it; without the row's id
+     * every row counts as another, so re-downloading a song already in the
+     * library would step around its own file and orphan it.
+     */
+    private suspend fun existingTrackId(track: TrackItem): Long? = try {
+        (
+            trackDao.findByYoutubeId(track.videoId)
+                ?: trackDao.findByCanonicalIdentity(
+                    title = canonicalize(track.title),
+                    artist = canonicalize(track.artist),
+                )
+            )?.id
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "existing-row lookup failed for ${track.videoId}: ${e.message}")
+        null
+    }
+
+    /**
      * Builds a minimal [com.stash.core.model.Track] stub for [TrackFinalizer].
      * The finalizer uses title/artist/album for metadata embedding and
      * artist/title for the library file path.
@@ -708,7 +796,8 @@ class SearchDownloadCoordinator @Inject constructor(
      * tracks don't show up in the Library's Albums view (TrackDao.getAllAlbums
      * filters out tracks with empty album values).
      */
-    private fun TrackItem.toDomainStub() = com.stash.core.model.Track(
+    private fun TrackItem.toDomainStub(existingId: Long?) = com.stash.core.model.Track(
+        id = existingId ?: 0L,
         title = title,
         artist = artist,
         album = album.orEmpty(),

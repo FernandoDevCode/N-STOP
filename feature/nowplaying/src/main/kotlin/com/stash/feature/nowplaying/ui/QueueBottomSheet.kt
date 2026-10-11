@@ -73,6 +73,9 @@ import coil3.compose.AsyncImage
 import com.stash.core.common.primaryArtist
 import com.stash.core.model.PlaybackSource
 import com.stash.core.model.Track
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import java.util.Collections
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -264,6 +267,29 @@ fun QueueBottomSheet(
                     var swipeX by remember { mutableFloatStateOf(0f) }
                     var rowWidthPx by remember { mutableIntStateOf(0) }
 
+                    // Remove and reorder as accessibility actions: the swipe and the handle
+                    // drag are touch gestures only, so TalkBack and switch-access users could
+                    // neither take a song out of Up Next nor move it. Both look the row up by
+                    // uid at the moment of the action, as the swipe does.
+                    val removeEntry: () -> Boolean = {
+                        val i = localQueue.indexOfFirst { it.uid == entry.uid }
+                        if (i >= 0) {
+                            localQueue.removeAt(i)
+                            onRemoveTrack(liveCurrentIndex + 1 + i)
+                        }
+                        i >= 0
+                    }
+                    val moveEntry: (Int) -> Boolean = { dir ->
+                        val i = localQueue.indexOfFirst { it.uid == entry.uid }
+                        val j = i + dir
+                        val canMove = i >= 0 && j in localQueue.indices && draggedIdx < 0
+                        if (canMove) {
+                            Collections.swap(localQueue, i, j)
+                            onMoveTrack(liveCurrentIndex + 1 + i, liveCurrentIndex + 1 + j)
+                        }
+                        canMove
+                    }
+
                     Box(
                         // The held row follows the finger through its offset, so it must not
                         // also get animateItem's slide: that tugged it back a row on every swap.
@@ -310,6 +336,16 @@ fun QueueBottomSheet(
                                 )
                                 .clickable {
                                     onTrackClick(queueIndex)
+                                }
+                                .semantics {
+                                    customActions = buildList {
+                                        add(CustomAccessibilityAction("Remove from queue") { removeEntry() })
+                                        // No reordering under shuffle (#468), as for the drag handle.
+                                        if (!isShuffleEnabled) {
+                                            add(CustomAccessibilityAction("Move up") { moveEntry(-1) })
+                                            add(CustomAccessibilityAction("Move down") { moveEntry(1) })
+                                        }
+                                    }
                                 }
                                 .padding(start = 20.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,

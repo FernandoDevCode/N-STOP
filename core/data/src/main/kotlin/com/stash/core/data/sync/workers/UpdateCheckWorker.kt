@@ -47,6 +47,14 @@ class UpdateCheckWorker(
 
     companion object {
         private const val TAG = "UpdateCheckWorker"
+
+        /**
+         * One client for every check. Each `OkHttpClient()` owns its own
+         * dispatcher threads and connection pool, and one was built per run.
+         * This worker isn't Hilt-injected, so the app's shared client can't be
+         * handed in; a process-wide instance is the next best thing.
+         */
+        private val httpClient: OkHttpClient by lazy { OkHttpClient() }
         private const val UNIQUE_WORK_NAME = "stash_update_check"
         /**
          * Unique name for the manual/cold-start check. Public so the Settings
@@ -191,20 +199,23 @@ class UpdateCheckWorker(
             } else {
                 Result.success()
             }
-            val client = OkHttpClient()
             val request = Request.Builder()
                 .url(RELEASES_URL)
                 .header("User-Agent", "Stash-Android/$installedVersion")
                 .header("Accept", "application/vnd.github.v3+json")
                 .build()
 
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) {
-                Log.w(TAG, "GitHub API returned ${response.code}")
+            // use{}: a non-2xx response used to return without closing, leaking
+            // its connection.
+            val (code, responseBody) = httpClient.newCall(request).execute().use {
+                it.code to (if (it.isSuccessful) it.body?.string() else null)
+            }
+            if (code !in 200..299) {
+                Log.w(TAG, "GitHub API returned $code")
                 return giveUpOrRetry(manual)
             }
 
-            val body = response.body?.string() ?: return giveUpOrRetry(manual)
+            val body = responseBody ?: return giveUpOrRetry(manual)
             val root = json.parseToJsonElement(body).jsonObject
             val tagName = root["tag_name"]?.jsonPrimitive?.content
                 ?: return giveUpOrRetry(manual)

@@ -54,6 +54,11 @@ enum class DownloadStatus {
     FAILED,
     /** No suitable YouTube match could be found. */
     UNMATCHED,
+    /**
+     * Ended without a file, to be retried later (WAITING_FOR_LOSSLESS): no live
+     * status applies any more, so the queue row's own status shows.
+     */
+    DEFERRED,
 }
 
 /**

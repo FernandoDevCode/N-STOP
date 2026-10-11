@@ -35,9 +35,11 @@ internal const val LYRICS_ERROR_MESSAGE = "Couldn't load lyrics"
 internal fun lyricsBodyFor(state: LyricsViewState): LyricsBody = when (state) {
     LyricsViewState.Loading -> LyricsBody.Loading
     // A TTML body that parsed to no lines would draw nothing at all: fall back to the LRC lines.
+    // Those carry their instrumental breaks as the view shows them (short gaps out, see
+    // [linesWithBreaks]), the same list the live bar follows.
     is LyricsViewState.Synced -> state.syllables?.takeIf { it.lines.isNotEmpty() }
         ?.let { LyricsBody.Words(it) }
-        ?: LyricsBody.Lines(state.lines)
+        ?: LyricsBody.Lines(linesWithBreaks(state.lines))
     is LyricsViewState.Plain -> LyricsBody.Plain(state.text)
     LyricsViewState.Instrumental -> LyricsBody.Message(INSTRUMENTAL_MESSAGE, canRetry = false)
     // "None" can be a stale miss (a source was down when it last looked), so it keeps a quiet retry.
@@ -47,7 +49,10 @@ internal fun lyricsBodyFor(state: LyricsViewState): LyricsBody = when (state) {
 
 /** The lyrics menu's items for the current state (the "Live line" switch is always there). */
 internal data class LyricsMenuItems(
-    /** Offset: synced lyrics with a lyrics row to store the offset on. */
+    /**
+     * Offset: synced lyrics with somewhere to keep an offset: the song's lyrics row, or the output
+     * playing now (so a stream, which has no row, can still calibrate the headphones).
+     */
     val offset: Boolean,
     /** Save with song file: a downloaded track with lyrics on screen. */
     val saveToFile: Boolean,
@@ -57,8 +62,9 @@ internal fun lyricsMenuItemsFor(
     state: LyricsViewState,
     offsetMs: Long?,
     canSaveToFile: Boolean,
+    outputKnown: Boolean = false,
 ): LyricsMenuItems = LyricsMenuItems(
-    offset = state is LyricsViewState.Synced && offsetMs != null,
+    offset = state is LyricsViewState.Synced && (offsetMs != null || outputKnown),
     saveToFile = canSaveToFile && (state is LyricsViewState.Synced || state is LyricsViewState.Plain),
 )
 

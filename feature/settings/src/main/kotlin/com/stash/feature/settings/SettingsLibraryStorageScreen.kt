@@ -188,11 +188,29 @@ fun SettingsLibraryStorageScreen(
         // picker. "SetOnly" = redirect new downloads; "SetAndMove" = also start
         // the library migration to the picked folder as soon as it's granted;
         // "SetAndRestart" = an import-restore re-grant, restart after.
-        var pendingLibStoragePickerIntent by remember { mutableStateOf(LibStoragePickerIntent.SetOnly) }
+        // Saveable: rotating (or "Don't keep activities") while the picker is
+        // up used to reset this to SetOnly, so a restore's re-grant never
+        // restarted the app and it kept running on the swapped files.
+        var pendingLibStoragePickerIntent by rememberSaveable { mutableStateOf(LibStoragePickerIntent.SetOnly) }
         val treePicker = rememberLauncherForActivityResult(
             ActivityResultContracts.OpenDocumentTree(),
         ) { uri ->
-            if (uri != null) {
+            if (pendingLibStoragePickerIntent == LibStoragePickerIntent.SetAndRestart) {
+                // A restore's folder re-grant: the VM restarts the app for
+                // EVERY outcome, cancel included, and records a changed folder
+                // for the next start instead of writing it through the stale
+                // in-memory DataStore (see onRestoreFolderRegrantResult).
+                if (uri != null) {
+                    runCatching {
+                        contentResolver.takePersistableUriPermission(
+                            uri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                        )
+                    }
+                }
+                viewModel.onRestoreFolderRegrantResult(uri)
+            } else if (uri != null) {
                 // Take a persistable permission BEFORE handing the URI to the
                 // VM — without this, the permission is revoked when the app
                 // is backgrounded and the persisted URI becomes useless.
@@ -206,11 +224,8 @@ fun SettingsLibraryStorageScreen(
                 viewModel.setExternalStorageUri(uri)
                 when (pendingLibStoragePickerIntent) {
                     LibStoragePickerIntent.SetAndMove -> viewModel.startMoveLibrary(uri)
-                    LibStoragePickerIntent.SetAndRestart -> {
-                        // Success: permission re-granted for the restored folder.
-                        // We can now safely restart the app.
-                        android.os.Process.killProcess(android.os.Process.myPid())
-                    }
+                    // Handled above, before any DataStore write.
+                    LibStoragePickerIntent.SetAndRestart -> Unit
                     LibStoragePickerIntent.SetOnly -> Unit
                 }
             }
@@ -563,7 +578,13 @@ fun SettingsLibraryStorageScreen(
                         onClick = {
                             viewModel.onConfirmImportDatabase(selectedScope) { restoredUri ->
                                 pendingLibStoragePickerIntent = LibStoragePickerIntent.SetAndRestart
-                                treePicker.launch(restoredUri)
+                                try {
+                                    treePicker.launch(restoredUri)
+                                } catch (e: android.content.ActivityNotFoundException) {
+                                    // No folder picker on this device: still restart.
+                                    pendingLibStoragePickerIntent = LibStoragePickerIntent.SetOnly
+                                    viewModel.onRestoreFolderRegrantResult(null)
+                                }
                             }
                         },
                         colors = ButtonDefaults.textButtonColors(

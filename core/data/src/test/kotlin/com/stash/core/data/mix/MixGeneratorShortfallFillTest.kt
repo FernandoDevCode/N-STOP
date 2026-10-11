@@ -3,12 +3,15 @@ package com.stash.core.data.mix
 import com.stash.core.data.blocklist.BlocklistGuard
 import com.stash.core.data.db.dao.DiscoveryQueueDao
 import com.stash.core.data.db.dao.ListeningEventDao
+import com.stash.core.data.db.dao.ListeningEventDao.TrackPlayCountWithLatest
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.dao.TrackSkipEventDao
 import com.stash.core.data.db.dao.TrackTagDao
 import com.stash.core.data.db.entity.StashMixRecipeEntity
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.db.entity.TrackTagEntity
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -43,7 +46,7 @@ class MixGeneratorShortfallFillTest {
         )
         coEvery { listeningEventDao.getPlayCountsSinceWithLatest(any()) } returns emptyList()
         coEvery { listeningEventDao.getTrackIdsPlayedSince(any()) } returns emptyList()
-        coEvery { trackTagDao.getByTrack(any()) } returns emptyList()
+        coEvery { trackTagDao.getByTracks(any()) } returns emptyList()
     }
 
     @Test fun `shortfall fill triggers at discoveryRatio = 0_4`() = runTest {
@@ -91,6 +94,32 @@ class MixGeneratorShortfallFillTest {
 
         // librarySlots = 0; no shortfall fill (already gated by < 0.5).
         assertTrue("expected empty, got ${result.size}", result.isEmpty())
+        // ...so the library is not even loaded, let alone scored.
+        coVerify(exactly = 0) { trackDao.getAllDownloaded() }
+    }
+
+    /**
+     * Scoring reads track tags in batches. One query per library track (and
+     * per played track) was tens of thousands of queries per refresh on a
+     * large library, repeated for every recipe.
+     */
+    @Test fun `tags are read in batched queries and not one per track`() = runTest {
+        coEvery { trackDao.getAllDownloaded() } returns (1L..50L).map { stubTrack(it) }
+        coEvery { listeningEventDao.getPlayCountsSinceWithLatest(any()) } returns listOf(
+            TrackPlayCountWithLatest(trackId = 1L, plays = 3, latestPlayedAt = System.currentTimeMillis()),
+        )
+        coEvery { trackTagDao.getByTracks(any()) } answers {
+            firstArg<List<Long>>().map { id ->
+                TrackTagEntity(trackId = id, tag = "indie", weight = 50f, source = "TRACK", fetchedAt = 0L)
+            }
+        }
+
+        val result = generator.generate(stubRecipe(discoveryRatio = 0.4f, targetLength = 50))
+
+        assertEquals(50, result.size)
+        coVerify(exactly = 0) { trackTagDao.getByTrack(any()) }
+        // One for the user's tag vector, one for the candidate pool.
+        coVerify(exactly = 2) { trackTagDao.getByTracks(any()) }
     }
 
     private fun stubRecipe(discoveryRatio: Float, targetLength: Int) = StashMixRecipeEntity(

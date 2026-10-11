@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.media3.exoplayer.source.MediaSource
 import com.stash.core.media.equalizer.EqController
 import com.stash.core.media.equalizer.LoudnessController
+import com.stash.core.media.output.HiResOutputController
 import io.mockk.mockk
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -16,6 +17,7 @@ class PreviewPlayerRequestLeaseTest {
         context = mockk<Context>(relaxed = true),
         eqController = mockk<EqController>(relaxed = true),
         loudnessController = mockk<LoudnessController>(relaxed = true),
+        hiResOutputController = mockk<HiResOutputController>(relaxed = true),
     )
 
     @Test

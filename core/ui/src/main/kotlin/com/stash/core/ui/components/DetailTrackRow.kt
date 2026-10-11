@@ -91,8 +91,10 @@ fun DetailTrackRow(
             .background(rowBackground)
             .combinedClickable(
                 onClick = onClick,
+                onLongClickLabel = selectLongClickLabel(selectionActive, onLongPress),
                 onLongClick = onLongPress,
             )
+            .selectionRowSemantics(selectionActive, selected)
             .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

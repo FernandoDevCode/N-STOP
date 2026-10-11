@@ -19,6 +19,10 @@ import com.stash.core.model.UpgradeResult
 import io.mockk.mockk
 import io.mockk.verify
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -144,6 +148,32 @@ class FlacUpgradeWorkerTest {
         assertEquals(1, dao.countByStatus(FlacUpgradeStatus.DONE))
         assertEquals(2, dao.countByStatus(FlacUpgradeStatus.PENDING))
         assertEquals(0, dao.countByStatus(FlacUpgradeStatus.NO_MATCH))
+    }
+
+    /**
+     * The cancel handler's DAO write ran in the already-cancelled coroutine, so it
+     * threw on entry: the pending rows survived and the notification was never
+     * dismissed.
+     */
+    @Test fun `cancelling mid-batch still clears the pending rows`() {
+        val ids = runBlocking { seedTracks(2) }
+        runBlocking { db.flacUpgradeQueueDao().startBatch(ids) }
+        val cancelling = object : LosslessUpgrader {
+            override suspend fun upgradeToLossless(track: Track, sweep: Boolean): UpgradeResult {
+                currentCoroutineContext().cancel()
+                currentCoroutineContext().ensureActive()
+                error("unreachable: the coroutine was just cancelled")
+            }
+
+            override suspend fun isLosslessEnabled(): Boolean = true
+        }
+        val worker = buildWorker(cancelling)
+
+        val outcome = runCatching { runBlocking { worker.doWork() } }
+
+        assertTrue(outcome.exceptionOrNull() is CancellationException)
+        assertEquals(0, runBlocking { db.flacUpgradeQueueDao().countByStatus(FlacUpgradeStatus.PENDING) })
+        verify { syncNotificationManager.cancelFlacUpgrade() }
     }
 
     @Test fun `rows whose track vanished are skipped, the rest still process`() = runBlocking {

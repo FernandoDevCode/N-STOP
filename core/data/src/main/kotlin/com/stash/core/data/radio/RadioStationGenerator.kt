@@ -5,6 +5,7 @@ import com.stash.core.data.lastfm.LastFmSimilarArtist
 import com.stash.core.model.MusicSource
 import com.stash.core.model.Track
 import com.stash.core.model.YouTubeVideoId
+import com.stash.data.ytmusic.CanonicalMatch
 import com.stash.data.ytmusic.YTMusicApiClient
 import com.stash.data.ytmusic.model.TrackSummary
 import kotlinx.coroutines.async
@@ -97,6 +98,7 @@ class RadioStationGenerator @Inject constructor(
      *  resolving any candidate that still lacks a videoId. Skips dupes + misses.
      *  Does NOT set `exhausted` — widen() owns that (the pool may still widen). */
     internal suspend fun drainBatch(session: RadioSession, size: Int): List<Track> {
+        val prefetched = prefetchMatches(session, size + RESOLVE_SLACK)
         val out = ArrayList<Track>(size)
         while (out.size < size && session.cursor < session.ordered.size) {
             val cand = session.ordered[session.cursor++]
@@ -113,7 +115,8 @@ class RadioStationGenerator @Inject constructor(
                 videoId = existingId
                 resolvedArt = null
             } else {
-                val match = yt.searchCanonicalMatch(cand.artist, cand.title) ?: continue
+                val match = (if (id in prefetched) prefetched[id] else yt.searchCanonicalMatch(cand.artist, cand.title))
+                    ?: continue
                 videoId = match.videoId
                 resolvedArt = match.thumbnailUrl
             }
@@ -127,6 +130,35 @@ class RadioStationGenerator @Inject constructor(
             out += cand.toTrack(videoId, resolvedArt)
         }
         return out
+    }
+
+    /**
+     * Resolves, concurrently, the next [count] candidates from the cursor that
+     * still need a YouTube search, keyed by [identity] (a null value is a
+     * miss). [drainBatch] used to search them one at a time: every song-radio
+     * candidate but the seed lacks a videoId, so the first batch waited on
+     * about a dozen sequential searches (5-10 s) before anything could play.
+     * Artist radio already resolves its neighbours in parallel. Candidates
+     * past [count] (when misses or duplicates use up the lookahead) are still
+     * searched one by one in [drainBatch].
+     */
+    private suspend fun prefetchMatches(session: RadioSession, count: Int): Map<String, CanonicalMatch?> {
+        val toResolve = LinkedHashMap<String, RadioCandidate>()
+        var i = session.cursor
+        while (toResolve.size < count && i < session.ordered.size) {
+            val cand = session.ordered[i++]
+            if (!cand.videoId.isNullOrBlank()) continue
+            val id = cand.identity()
+            if (id !in session.played) toResolve.putIfAbsent(id, cand)
+        }
+        if (toResolve.isEmpty()) return emptyMap()
+        return coroutineScope {
+            toResolve.entries.chunked(RESOLVE_PARALLELISM).flatMap { chunk ->
+                chunk.map { (id, cand) ->
+                    async { id to yt.searchCanonicalMatch(cand.artist, cand.title) }
+                }.awaitAll()
+            }.toMap()
+        }
     }
 
     /** The next playable batch. Widens the pool when it nears exhaustion. */
@@ -238,5 +270,11 @@ class RadioStationGenerator @Inject constructor(
         const val GROW_BATCH = 12
         const val WIDEN_THRESHOLD = 6
         const val SONG_SIMILAR_POOL = 40
+
+        /** Extra candidates resolved ahead of a batch, to cover typical misses. */
+        const val RESOLVE_SLACK = 3
+
+        /** YouTube searches in flight at once while prefetching. */
+        const val RESOLVE_PARALLELISM = 5
     }
 }

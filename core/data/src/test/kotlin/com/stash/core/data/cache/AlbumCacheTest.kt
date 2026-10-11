@@ -133,4 +133,23 @@ class AlbumCacheTest {
         assertSame(album, cache.get("X"))
         verify(api, times(2)).getAlbum(eq("X"))
     }
+
+    /** Bounded: every album opened used to stay in memory for the life of the process. */
+    @Test
+    fun `the least recently used album is evicted past the bound`() = runTest {
+        val api = mock<YTMusicApiClient>()
+        whenever(api.getAlbum(org.mockito.kotlin.any())).thenAnswer { detail(it.getArgument(0)) }
+        val cache = AlbumCache(api, noFetcher)
+
+        cache.get("first")
+        cache.get("kept")
+        repeat(AlbumCache.MAX_ENTRIES - 2) { cache.get("other$it") } // now full
+        cache.get("kept") // touched, so "first" is now the eldest
+        cache.get("new") // one past the bound
+
+        cache.get("kept")
+        cache.get("first")
+        verify(api, times(1)).getAlbum(eq("kept"))
+        verify(api, times(2)).getAlbum(eq("first"))
+    }
 }

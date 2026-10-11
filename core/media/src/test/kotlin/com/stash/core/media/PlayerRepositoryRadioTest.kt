@@ -166,6 +166,22 @@ class PlayerRepositoryRadioTest {
         assertThat(repo.radioSeedLabel.value).isNull()
     }
 
+    @Test fun `a single-track play disarms the station`() = runTest {
+        coEvery { streamingPreference.current() } returns true
+        val session = mockk<RadioSession>(relaxed = true)
+        coEvery { radioGenerator.start(any()) } returns (session to listOf(track(1)))
+        repo.startRadio(RadioSeed.Artist("MBV", "id"))
+        coEvery { trackDao.getById(9L) } returns null
+        repo.filePathExistsOnDisk = { true }
+        every { controller.mediaItemCount } returns 1
+
+        repo.playTrack(track(9).copy(filePath = "/music/t9.flac", isDownloaded = true))
+        repo.growRadio()
+
+        assertThat(repo.radioSeedLabel.value).isNull()
+        coVerify(exactly = 0) { radioGenerator.nextBatch(any()) }
+    }
+
     @Test fun `startRadio(keepCurrent) splices around the playing track without restarting it`() = runTest {
         // Now Playing "Start radio": keepCurrent=true means the seed IS the playing
         // track. startRadio must NOT setMediaItems/prepare/play (that restarts it) —

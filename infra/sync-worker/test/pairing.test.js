@@ -275,9 +275,9 @@ test("pure slot rules: shapes, the same device on both sides, claim modes", asyn
 test("new spaces per session and per phone IP per day are capped", async () => {
     const w = world();
     const oldSpace = QUOTAS.space.n;
-    const oldIp = QUOTAS.spaceIp.n;
+    const oldIp = QUOTAS.spaceIp4.n;
     QUOTAS.space.n = 2;
-    QUOTAS.spaceIp.n = 3;
+    QUOTAS.spaceIp4.n = 3;
     try {
         await linkNew(w, { headers: { "X-Stash-Session": "sess_space_1" } });
         await linkNew(w, { headers: { "X-Stash-Session": "sess_space_1" } });
@@ -288,6 +288,23 @@ test("new spaces per session and per phone IP per day are capped", async () => {
         await linkNew(w, { headers: { "X-Stash-Session": "sess_space_1" } });
     } finally {
         QUOTAS.space.n = oldSpace;
+        QUOTAS.spaceIp4.n = oldIp;
+    }
+});
+
+test("an IPv4 address (often a shared NAT) gets a bigger daily space cap than an IPv6 /64, which counts as one phone", async () => {
+    assert.ok(QUOTAS.spaceIp4.n > QUOTAS.spaceIp.n);
+    const w = world();
+    const oldIp = QUOTAS.spaceIp.n;
+    QUOTAS.spaceIp.n = 1;
+    try {
+        await linkNew(w, { headers: { "X-Stash-Session": "sess_v6_1" }, ip: "2001:db8:5:6::1" });
+        await assert.rejects(linkNew(w, { headers: { "X-Stash-Session": "sess_v6_2" }, ip: "2001:db8:5:6::99" }), "a second from one /64");
+        await linkNew(w, { headers: { "X-Stash-Session": "sess_v6_3" }, ip: "2001:db8:5:7::1" });
+        // IPv4 isn't held to the /64's cap.
+        await linkNew(w, { headers: { "X-Stash-Session": "sess_v4_1" } });
+        await linkNew(w, { headers: { "X-Stash-Session": "sess_v4_2" } });
+    } finally {
         QUOTAS.spaceIp.n = oldIp;
     }
 });

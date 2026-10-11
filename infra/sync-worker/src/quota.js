@@ -13,9 +13,18 @@ export const QUOTAS = {
     code: { n: 6, ms: 10 * 60_000 },
     /** Spaces created from one player session's codes per day. */
     space: { n: 10, ms: DAY_MS },
-    /** Spaces created from one phone IP (IPv6 /64) per day. */
+    /** Spaces created from one phone IPv6 /64 per day. */
     spaceIp: { n: 20, ms: DAY_MS },
+    /**
+     * Spaces created from one phone IPv4 address per day. Higher than the /64's: one IPv4 address is often a carrier's NAT
+     * or a campus's egress, shared by many phones each making its first link, and every space also needs a code from a
+     * signed-in player session (`space`, 10 a day), so this cap only has to stop one host fanning out over many sessions.
+     */
+    spaceIp4: { n: 100, ms: DAY_MS },
 };
+
+/** The per-IP space quota for a limitKey: IPv6 keys (a /64) contain ':'; IPv4 ones don't. */
+export const spaceIpKind = (ip) => (ip.includes(":") ? "spaceIp" : "spaceIp4");
 
 /** Pure: `{ ok, state, retryAfter }`, where `state` keeps only the timestamps still inside the window. */
 export function takeQuota(state, kind, now) {

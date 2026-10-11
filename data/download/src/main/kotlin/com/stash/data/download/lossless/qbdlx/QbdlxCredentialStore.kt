@@ -91,6 +91,9 @@ class QbdlxCredentialStore @Inject constructor(
     /** Injectable clock (epoch ms) for the dead-credential cooldown; overridable in tests. */
     internal var clock: () -> Long = { System.currentTimeMillis() }
 
+    /** The read [loginCredential]'s one-time load is built from. A seam so tests can fail or cancel it. */
+    internal var readCredentials: suspend () -> Preferences = { context.qbdlxCredentialsDataStore.data.first() }
+
     /** The connected account's email, for a "Connected as …" label. Null when none. */
     suspend fun connectedEmail(): String? =
         context.qbdlxCredentialsDataStore.data.first()[loginEmailKey]?.takeIf { it.isNotBlank() }
@@ -141,14 +144,28 @@ class QbdlxCredentialStore @Inject constructor(
         if (loginLoaded) return cachedLogin           // steady state stays lock-free
         loadMutex.withLock {
             if (loginLoaded) return cachedLogin       // lost the race — the winner already loaded
-            val p = runCatching { context.qbdlxCredentialsDataStore.data.first() }.getOrNull()
+            // Only a read that SUCCEEDED may latch loginLoaded: the latch holds for the
+            // life of the process, and this first call often runs in a cancellable
+            // coroutine (a search-row prefetch dropped by lookup(), a stream resolve cut
+            // short by a skip). Caching a cancelled or failed read as "no account" hid a
+            // paid account until restart — every download deferred while hasLogin still
+            // showed it connected. Cancellation propagates; an error leaves the load
+            // armed so the next call reads again.
+            val p = try {
+                readCredentials()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "credential read failed: ${e.javaClass.simpleName} — retrying on the next call")
+                return cachedLogin
+            }
 
             // The pool left the app; its cached tokens must leave the device too.
             purgeRetiredPoolKeys(p)
 
-            val t = p?.get(loginTokenKey)
-            val a = p?.get(loginAppIdKey)
-            val s = p?.get(loginAppSecretKey)
+            val t = p[loginTokenKey]
+            val a = p[loginAppIdKey]
+            val s = p[loginAppSecretKey]
             cachedLogin = if (!t.isNullOrBlank() && !a.isNullOrBlank() && !s.isNullOrBlank())
                 QbdlxLoginCredential(t, a, s) else null
             loginLoaded = true
@@ -156,6 +173,9 @@ class QbdlxCredentialStore @Inject constructor(
                 try {
                     migratePastedToken()
                 } catch (e: CancellationException) {
+                    // Same reasoning: a migration cut short must run again on the next
+                    // call, not wait for the next launch.
+                    loginLoaded = false
                     throw e
                 } catch (e: Exception) {
                     // This can run inside a bare launch{}; an edit{} or scrape

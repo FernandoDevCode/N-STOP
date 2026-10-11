@@ -553,6 +553,39 @@ class DownloadManagerMatchVerifyTest {
     }
 
     @Test
+    fun `a short title with punctuation matches its own song`() = runTest {
+        // Gate 2 compared the raw lowercased target ("help!") against the candidate's
+        // \W+-split words, where the "!" can never survive, so every candidate for
+        // these titles was rejected and the track ended Unmatched.
+        listOf(
+            Triple("Help!", "The Beatles", "Help! (Remastered 2009)"),
+            Triple("Don't", "Ed Sheeran", "Don't"),
+            Triple("7/11", "Beyoncé", "7/11"),
+        ).forEachIndexed { i, (title, artist, candidateTitle) ->
+            val id = "shortTitle$i"
+            val track = patientZero.copy(id = 100L + i, title = title, artist = artist)
+            everySearchReturns(ytmRow(id, candidateTitle, artist))
+            player(id, candidateTitle, 226)
+
+            newSubject().downloadTrack(track)
+
+            downloaded(id, times = 1)
+        }
+    }
+
+    @Test
+    fun `a short title is still not matched inside a longer word`() = runTest {
+        // The gate's purpose: Jaro-Winkler rates "Help!" close to "Helpless".
+        val track = patientZero.copy(id = 110L, title = "Help!", artist = "The Beatles")
+        everySearchReturns(ytmRow("helplessRow", "Helpless", "The Beatles"))
+        player("helplessRow", "Helpless", 226)
+
+        newSubject().downloadTrack(track)
+
+        downloaded("helplessRow", times = 0)
+    }
+
+    @Test
     fun `wiring - a signed-out row with no length meets the player's real answer`() = runTest {
         // The real search and player parsers, fed what YouTube sends signed out.
         val innerTube = mockk<InnerTubeClient> {

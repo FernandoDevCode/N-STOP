@@ -3,6 +3,7 @@ package com.stash.core.auth.store
 import android.content.Context
 import android.util.Base64
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -74,7 +75,7 @@ class EncryptedTokenStore @Inject constructor(
     /** Persists the Spotify token (and optionally user profile) as an encrypted blob. */
     suspend fun saveSpotifyToken(token: ServiceToken, user: UserInfo? = null) {
         val stored = token.toStoredToken(user)
-        context.authDataStore.edit { it[Keys.SPOTIFY] = encryptStored(stored) }
+        saveBlob(Keys.SPOTIFY, encryptStored(stored))
     }
 
     /** Removes the stored Spotify credentials. */
@@ -97,7 +98,7 @@ class EncryptedTokenStore @Inject constructor(
     /** Persists the YouTube Music token (and optionally user profile) as an encrypted blob. */
     suspend fun saveYouTubeToken(token: ServiceToken, user: UserInfo? = null) {
         val stored = token.toStoredToken(user)
-        context.authDataStore.edit { it[Keys.YOUTUBE] = encryptStored(stored) }
+        saveBlob(Keys.YOUTUBE, encryptStored(stored))
     }
 
     /** Removes the stored YouTube Music credentials. */
@@ -120,12 +121,29 @@ class EncryptedTokenStore @Inject constructor(
     /** Persists the Discord token (and optionally user profile) as an encrypted blob. */
     suspend fun saveDiscordToken(token: ServiceToken, user: UserInfo? = null) {
         val stored = token.toStoredToken(user)
-        context.authDataStore.edit { it[Keys.DISCORD] = encryptStored(stored) }
+        saveBlob(Keys.DISCORD, encryptStored(stored))
     }
 
     /** Removes the stored Discord credentials. */
     suspend fun clearDiscord() {
         context.authDataStore.edit { it.remove(Keys.DISCORD) }
+    }
+
+    /**
+     * Writes one service's blob. If the keyset was just replaced because the
+     * old one could no longer be opened (see [TinkEncryptionManager]), every
+     * other stored blob is sealed under a key that no longer exists: they are
+     * dropped here rather than left on disk, unreadable, for ever.
+     */
+    private suspend fun saveBlob(key: Preferences.Key<String>, blob: String) {
+        context.authDataStore.edit { prefs ->
+            if (encryption.consumeKeysetReset()) {
+                prefs.remove(Keys.SPOTIFY)
+                prefs.remove(Keys.YOUTUBE)
+                prefs.remove(Keys.DISCORD)
+            }
+            prefs[key] = blob
+        }
     }
 
     // ── Encryption helpers ───────────────────────────────────────────────

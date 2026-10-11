@@ -143,6 +143,47 @@ class DatabaseBackupMergeTest {
 
     // ── Tests ────────────────────────────────────────────────────────────
 
+    /**
+     * A replace-restore used to gate only on `integrity_check`: a sound
+     * database Room could not migrate (here schema 2, which no migration
+     * starts from) was swapped in and the rollback deleted, and the app then
+     * crashed on every launch. The staged copy is now rolled forward before
+     * the swap, so this fails up front and the live library is left alone.
+     */
+    @Test
+    fun `replace refuses a backup that cannot be migrated and leaves the live database in place`() =
+        runTest {
+            val old = File(tmpDir, "schema-2.db")
+            android.database.sqlite.SQLiteDatabase.openOrCreateDatabase(old, null).use {
+                it.execSQL("CREATE TABLE tracks(id INTEGER PRIMARY KEY, title TEXT)")
+                it.version = 2
+            }
+            val zipFile = File(tmpDir, "old-backup.zip")
+            ZipOutputStream(FileOutputStream(zipFile)).use { zip ->
+                zip.putNextEntry(ZipEntry("manifest.json"))
+                zip.write("""{"dbSchemaVersion":2,"exportTimestamp":1}""".toByteArray())
+                zip.closeEntry()
+                zip.putNextEntry(ZipEntry("stash.db"))
+                FileInputStream(old).use { it.copyTo(zip) }
+                zip.closeEntry()
+            }
+            val liveFile = context.getDatabasePath(StashDatabase.DATABASE_NAME)
+            liveFile.parentFile?.mkdirs()
+            liveFile.writeText("live library")
+            live.trackDao().insert(track("Still Here", spotifyUri = "spotify:track:here"))
+            try {
+                val result = manager.importDatabase(Uri.fromFile(zipFile), BackupImportScope.LIBRARY_REPLACE)
+
+                assertTrue("an unmigratable backup must be refused", result.isFailure)
+                assertEquals("live library", liveFile.readText())
+                assertFalse(File(liveFile.path + ".import-tmp").exists())
+                // The live instance was never closed for a swap.
+                assertEquals(listOf("Still Here"), live.trackDao().getAllForIntegrityScan().map { it.title })
+            } finally {
+                liveFile.delete()
+            }
+        }
+
     @Test
     fun `merge adds only missing tracks and unions memberships without touching settings`() =
         runTest {

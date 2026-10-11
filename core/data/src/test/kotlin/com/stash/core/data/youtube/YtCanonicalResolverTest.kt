@@ -2,11 +2,12 @@ package com.stash.core.data.youtube
 
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.data.ytmusic.CanonicalLookup
+import com.stash.data.ytmusic.CanonicalMatch
 import com.stash.data.ytmusic.InnerTubeClient
 import com.stash.data.ytmusic.model.MusicVideoType
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
@@ -27,6 +28,8 @@ class YtCanonicalResolverTest {
         ytCanonicalVideoId = ytCanonicalVideoId,
     )
 
+    private fun found(videoId: String) = CanonicalLookup.Found(CanonicalMatch(videoId, thumbnailUrl = null))
+
     @Test
     fun `ATV track uses stored youtube_id without searching`() = runTest {
         val trackDao = mock<TrackDao>()
@@ -35,8 +38,8 @@ class YtCanonicalResolverTest {
 
         val result = resolver.resolve(track(musicVideoType = MusicVideoType.ATV.name))
 
-        assertEquals("abc123", result)
-        verify(innerTube, never()).searchCanonical(any(), any())
+        assertEquals(found("abc123"), result)
+        verify(innerTube, never()).searchCanonicalLookup(any(), any())
     }
 
     @Test
@@ -47,8 +50,8 @@ class YtCanonicalResolverTest {
 
         val result = resolver.resolve(track(musicVideoType = MusicVideoType.OMV.name))
 
-        assertEquals("abc123", result)
-        verify(innerTube, never()).searchCanonical(any(), any())
+        assertEquals(found("abc123"), result)
+        verify(innerTube, never()).searchCanonicalLookup(any(), any())
     }
 
     @Test
@@ -61,33 +64,48 @@ class YtCanonicalResolverTest {
             track(musicVideoType = MusicVideoType.UGC.name, ytCanonicalVideoId = "cached123")
         )
 
-        assertEquals("cached123", result)
-        verify(innerTube, never()).searchCanonical(any(), any())
+        assertEquals(found("cached123"), result)
+        verify(innerTube, never()).searchCanonicalLookup(any(), any())
     }
 
     @Test
     fun `UGC track with no cache triggers search and caches result`() = runTest {
         val trackDao = mock<TrackDao>()
         val innerTube = mock<InnerTubeClient>()
-        whenever(innerTube.searchCanonical("Artist", "Song")).thenReturn("resolved456")
+        whenever(innerTube.searchCanonicalLookup("Artist", "Song")).thenReturn(found("resolved456"))
         val resolver = YtCanonicalResolver(trackDao, innerTube)
 
         val result = resolver.resolve(track(musicVideoType = MusicVideoType.UGC.name))
 
-        assertEquals("resolved456", result)
+        assertEquals(found("resolved456"), result)
         verify(trackDao).updateYtCanonicalVideoId(1L, "resolved456")
     }
 
     @Test
-    fun `UGC track with no canonical match returns null and does not cache`() = runTest {
+    fun `UGC track with no canonical match returns NoMatch and does not cache`() = runTest {
         val trackDao = mock<TrackDao>()
         val innerTube = mock<InnerTubeClient>()
-        whenever(innerTube.searchCanonical("Artist", "Song")).thenReturn(null)
+        whenever(innerTube.searchCanonicalLookup("Artist", "Song")).thenReturn(CanonicalLookup.NoMatch)
         val resolver = YtCanonicalResolver(trackDao, innerTube)
 
         val result = resolver.resolve(track(musicVideoType = MusicVideoType.UGC.name))
 
-        assertNull(result)
+        assertEquals(CanonicalLookup.NoMatch, result)
+        verify(trackDao, never()).updateYtCanonicalVideoId(any(), any())
+    }
+
+    @Test
+    fun `a search that did not answer is a failure, not a NoMatch`() = runTest {
+        // Offline, 429 or 5xx: the scrobbler must keep the play queued, which it
+        // can only do if this is told apart from "YouTube has no canonical version".
+        val trackDao = mock<TrackDao>()
+        val innerTube = mock<InnerTubeClient>()
+        whenever(innerTube.searchCanonicalLookup("Artist", "Song")).thenReturn(CanonicalLookup.Failed)
+        val resolver = YtCanonicalResolver(trackDao, innerTube)
+
+        val result = resolver.resolve(track(musicVideoType = null))
+
+        assertEquals(CanonicalLookup.Failed, result)
         verify(trackDao, never()).updateYtCanonicalVideoId(any(), any())
     }
 
@@ -96,11 +114,11 @@ class YtCanonicalResolverTest {
         // A track whose classification was never determined — treat like UGC.
         val trackDao = mock<TrackDao>()
         val innerTube = mock<InnerTubeClient>()
-        whenever(innerTube.searchCanonical("Artist", "Song")).thenReturn("resolved789")
+        whenever(innerTube.searchCanonicalLookup("Artist", "Song")).thenReturn(found("resolved789"))
         val resolver = YtCanonicalResolver(trackDao, innerTube)
 
         val result = resolver.resolve(track(musicVideoType = null))
 
-        assertEquals("resolved789", result)
+        assertEquals(found("resolved789"), result)
     }
 }

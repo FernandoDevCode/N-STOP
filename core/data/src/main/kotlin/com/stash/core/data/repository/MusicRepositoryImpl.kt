@@ -161,12 +161,16 @@ class MusicRepositoryImpl @Inject constructor(
             )
         }
 
-        // Fix duplicate playlist_tracks entries that accumulated from daily mix
-        // sync runs. Each sync added new tracks at the same positions without
-        // removing old ones, causing multiple tracks at position 1, 2, etc.
-        // This cleanup keeps only the most recently added entry for each
-        // (playlist_id, track_id) pair and removes the rest.
-        deduplicatePlaylistTracks()
+        // NOTE: deduplicatePlaylistTracks() was removed — it ran on every startup
+        // and hard-deleted EVERY playlist_tracks row (locally_added ones too) of
+        // any playlist holding more downloaded members than its cached
+        // track_count. True duplicates can't exist (playlist_tracks' primary key
+        // is (playlist_id, track_id) since schema 1), so it only ever fired on
+        // legitimate drift: track_count is the remote snapshot size, and
+        // ACCUMULATE keeps songs the remote dropped (un-liking one song on
+        // Spotify emptied Liked Songs until the next sync, and lost the retained
+        // song for good); in REFRESH it wiped a user's "Save to Playlist" adds
+        // (#42) and the orphan sweep below then deleted those songs and files.
 
         // v0.9.21: removed the periodic art-URL upgrade passes. ArtUrlUpgrader
         // now runs at every sync write site (PlaylistFetchWorker for both
@@ -247,11 +251,15 @@ class MusicRepositoryImpl @Inject constructor(
         // contribute no path. Best-effort, SAF-aware.
         result.junkPaths.forEach { localFileOps.delete(it) }
 
-        // Un-mark the unusable rows in chunks to stay under SQLite's parameter
-        // ceiling — they become not-downloaded and therefore streamable.
-        result.resetIds.chunked(500).forEach { chunk ->
-            trackDao.bulkResetForReDownload(chunk)
-        }
+        // Un-mark the unusable rows — they become not-downloaded and therefore
+        // streamable. Guarded on the path that was found unusable, as
+        // LibraryReconciliationUseCase does (#531 review): classifying a big
+        // SAF library takes seconds (two IPCs per file) and a FLAC upgrade or
+        // swap started at launch can record a new file for a row meanwhile;
+        // resetting by id cleared that new path and orphaned the new file.
+        // Rows that had no path at all are reset only while they still have none.
+        trackDao.resetMissingFiles(result.checkedPaths)
+        trackDao.bulkResetPathlessDownloads(result.resetIds.filter { it !in result.checkedPaths })
         android.util.Log.i(
             "StashMigrations",
             "download integrity: scanned ${refs.size} downloaded rows, reset ${result.resetIds.size} " +
@@ -280,6 +288,10 @@ class MusicRepositoryImpl @Inject constructor(
                 raced && attempt < 3
             }
             .map { rows -> rows.map { it.toDomain() } }
+            // Room queries off Main, but this conversion ran in the COLLECTOR's context: Main for
+            // every ViewModel without its own flowOn (Album detail maps all 10K rows here), again
+            // on each tracks write (a play count, a lyrics stamp, every finished download).
+            .flowOn(Dispatchers.Default)
 
     override fun getTracksByArtist(artist: String): Flow<List<Track>> =
         trackDao.getByArtist(artist)
@@ -307,6 +319,8 @@ class MusicRepositoryImpl @Inject constructor(
     override fun getTracksByPlaylist(playlistId: Long): Flow<List<Track>> =
         trackDao.getByPlaylist(playlistId, includeStreamable = true)
             .map { entities -> entities.map { it.toDomain() } }
+            // Off Main, as getAllTracks: a 5K-song Liked playlist converted per tracks write.
+            .flowOn(Dispatchers.Default)
 
     /**
      * Artists for the Library Artists tab: downloaded tracks only, like the
@@ -465,8 +479,13 @@ class MusicRepositoryImpl @Inject constructor(
         trackDao.insert(track.toEntity())
 
     override suspend fun ensureTrackPersisted(track: Track): Long {
-        // Quick exit: real DB row already.
-        if (track.id > 0L) {
+        // Quick exit: real DB row already. Not for a synthetic stream id
+        // (`videoId.hashCode().toLong()`, e.g. RadioStationGenerator): it is
+        // positive half the time, and one equal to an unrelated row's id would
+        // land the like / listen on that other song. It falls through to the
+        // youtube_id lookup below instead.
+        val syntheticId = !track.youtubeId.isNullOrBlank() && track.id == track.youtubeId.hashCode().toLong()
+        if (track.id > 0L && !syntheticId) {
             val existing = trackDao.getById(track.id)
             if (existing != null) {
                 backfillFrom(existing, track)
@@ -506,7 +525,7 @@ class MusicRepositoryImpl @Inject constructor(
         }
 
         // Insert a fresh stub — id = 0 so Room autogens.
-        return trackDao.insert(
+        return insertOrAdopt(
             track.toEntity().copy(
                 id = 0L,
                 canonicalTitle = cTitle,
@@ -515,6 +534,26 @@ class MusicRepositoryImpl @Inject constructor(
             )
         )
     }
+
+    /**
+     * Inserts [entity], or returns the row a concurrent caller inserted for
+     * the same song first. The lookups above and this insert are not atomic:
+     * ListeningRecorder recording a listen and a heart tap (or the queue's
+     * identity pass) can persist the same streamed track at once, both miss,
+     * and the second insert ABORTs on the UNIQUE youtube_id / spotify_uri
+     * index. That SQLiteConstraintException used to escape — in
+     * ListeningRecorder's handler-less scope it crashed the app and lost the
+     * listen. The winner's row is the one we wanted, so adopt it; a conflict
+     * with no such row is a real error and is rethrown.
+     */
+    private suspend fun insertOrAdopt(entity: com.stash.core.data.db.entity.TrackEntity): Long =
+        try {
+            trackDao.insert(entity)
+        } catch (e: android.database.sqlite.SQLiteConstraintException) {
+            val winner = entity.youtubeId?.takeIf { it.isNotBlank() }?.let { trackDao.findByYoutubeId(it) }
+                ?: entity.spotifyUri?.takeIf { it.isNotBlank() }?.let { trackDao.findBySpotifyUri(it) }
+            winner?.id ?: throw e
+        }
 
     override suspend fun ensureExactTrackPersisted(track: com.stash.core.model.share.SharedTrack): Long {
         // Blank ids from a peer become null, so no row gets youtube_id = "" or "spotify:track:".
@@ -532,7 +571,7 @@ class MusicRepositoryImpl @Inject constructor(
             backfillFrom(existing, incoming) // an exact match is the same recording, so its ISRC is trusted
             return existing.id
         }
-        return trackDao.insert(
+        return insertOrAdopt(
             incoming.toEntity().copy(
                 id = 0L,
                 canonicalTitle = canonicalizeIdentity(incoming.title),
@@ -985,27 +1024,87 @@ class MusicRepositoryImpl @Inject constructor(
             )
             return
         }
+        afterMembersAdded(playlistId)
+    }
+
+    /** Recount the badge and republish an owned shared mix, once per add or batch. */
+    private suspend fun afterMembersAdded(playlistId: Long) {
         // v0.9.37 — count downloaded + streamable. Stream-only tracks
         // (e.g. Liked Songs added from the Now Playing heart on a
         // streaming track) are first-class playlist members under the
         // streaming-engine model and must be reflected in the badge,
         // or the Library card lies ("1 tracks" but the detail shows 4).
-        val count = trackDao.getByPlaylist(playlistId, includeStreamable = true).first().size
-        playlistDao.updateTrackCount(playlistId, count)
+        playlistDao.updateTrackCount(playlistId, trackDao.countByPlaylist(playlistId, includeStreamable = true))
         if (sharedMixDao.forPlaylist(playlistId)?.role == com.stash.core.data.db.entity.SharedMixEntity.ROLE_OWNER) {
             com.stash.core.data.share.SharedMixPublishWorker.enqueue(context, delaySeconds = 30)
         }
     }
 
+    /**
+     * Adds a multi-select batch with one write and one recount.
+     *
+     * This used to run the single-add path per song: an autocommit (each one
+     * re-running every observing Flow — Home, the open playlist) and a full
+     * reload of the playlist just to take its size, so 1,000 songs cost ~2,000
+     * writes and ~500k row loads. Now each id is still checked on its own (a
+     * missing or failing track is skipped and logged, never fatal), but the
+     * survivors go in as one insert at consecutive positions, then the badge
+     * is recounted once.
+     */
     override suspend fun addTracksToPlaylist(trackIds: List<Long>, playlistId: Long) {
         // ponytail: no app-wide scope exists, so NonCancellable keeps the batch alive.
         withContext(NonCancellable) {
-            trackIds.forEach { id ->
-                runCatching { insertIntoPlaylist(id, playlistId) }.onFailure { e ->
-                    android.util.Log.w("MusicRepository", "addTracksToPlaylist: track $id failed", e)
+            if (playlistDao.getById(playlistId) == null) {
+                android.util.Log.w("MusicRepository", "addTracksToPlaylist: playlist $playlistId is gone")
+                return@withContext
+            }
+            val present = trackIds.filter { id ->
+                runCatching { trackDao.getById(id) != null }
+                    .onFailure { e -> android.util.Log.w("MusicRepository", "addTracksToPlaylist: track $id failed", e) }
+                    .getOrDefault(false)
+            }
+            // Callers launch this unguarded in viewModelScope, so like the old
+            // per-song loop it logs a failed write instead of throwing.
+            if (present.isNotEmpty()) {
+                try {
+                    insertBatch(present, playlistId)
+                    afterMembersAdded(playlistId)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    android.util.Log.w("MusicRepository", "addTracksToPlaylist: batch into $playlistId failed", e)
                 }
             }
             queueIfKeptOffline(playlistId)
+        }
+    }
+
+    /** One insert of [trackIds] at consecutive positions after the playlist's last member. */
+    private suspend fun insertBatch(trackIds: List<Long>, playlistId: Long) {
+        val start = playlistDao.getNextPosition(playlistId)
+        val refs = trackIds.mapIndexed { i, id ->
+            com.stash.core.data.db.entity.PlaylistTrackCrossRef(
+                playlistId = playlistId,
+                trackId = id,
+                position = start + i,
+                // Issue #42: user-added, so a REFRESH sync keeps it.
+                locallyAdded = true,
+            )
+        }
+        try {
+            playlistDao.insertAllCrossRefs(refs)
+        } catch (batchFailure: android.database.sqlite.SQLiteConstraintException) {
+            // A track or the playlist was deleted after the checks (orphan
+            // cleanup, REFRESH sync, blocklist) and the single insert rolled
+            // back as a whole: save the rest one by one.
+            android.util.Log.w("MusicRepository", "addTracksToPlaylist: batch insert raced a delete", batchFailure)
+            refs.forEach { ref ->
+                try {
+                    playlistDao.insertCrossRef(ref)
+                } catch (e: android.database.sqlite.SQLiteConstraintException) {
+                    android.util.Log.w("MusicRepository", "addTracksToPlaylist: track ${ref.trackId} raced a delete", e)
+                }
+            }
         }
     }
 
@@ -1343,8 +1442,9 @@ class MusicRepositoryImpl @Inject constructor(
         // raced and lose its fresh cross-ref + irrecoverable FLAC. Files are
         // removed only AFTER their rows are gone (a crash mid-file-delete
         // leaves a harmless orphaned file, never a row pointing at nothing).
-        val deleted = trackDao.deleteOrphanedDownloadedTracks()
-        if (deleted.isEmpty()) return 0
+        val sweep = trackDao.deleteOrphanedDownloadedTracks()
+        val deleted = sweep.deleted
+        if (deleted.isEmpty() && sweep.undownloaded.isEmpty()) return 0
 
         for (track in deleted) {
             // Delete the audio file from disk (SAF-aware — see deleteTrackFile),
@@ -1354,53 +1454,20 @@ class MusicRepositoryImpl @Inject constructor(
             track.albumArtPath?.let { deleteTrackFile(it) }
             _trackDeletions.emit(track.id)
         }
+        // Orphans with listening history kept their row (see
+        // deleteOrphanedDownloadedTracks) — only the file goes, as with
+        // removeDownload: no trackDeletions emit (the row is alive and streams)
+        // and the art stays, since the History row still shows it.
+        for (track in sweep.undownloaded) {
+            track.filePath?.let { deleteTrackAudio(track.id, it) }
+        }
 
         android.util.Log.i(
             "StashCleanup",
-            "Cleaned ${deleted.size} orphaned track(s) and their audio files",
+            "Cleaned ${deleted.size + sweep.undownloaded.size} orphaned track(s) and their audio files " +
+                "(${sweep.undownloaded.size} kept as stream-only for their listening history)",
         )
-        return deleted.size
-    }
-
-    // ── Art URL migration ──────────────────────────────────────────────
-
-    /**
-     * Upgrades low-resolution album art URLs for all existing tracks.
-     * YouTube Music InnerTube responses originally returned 60x60 thumbnails;
-     * this replaces them with 544x544. Spotify 300px URLs are upgraded to 640px.
-     * Already-upgraded URLs pass through [ArtUrlUpgrader.upgrade] unchanged,
-     * so this is safe to run on every startup.
-     */
-    /**
-     * Fixes accumulated duplicate entries in playlist_tracks. Before the
-     * DiffWorker fix, every sync run inserted new tracks without clearing
-     * old ones, causing multiple tracks per position. This query deletes
-     * all entries where duplicate positions exist within a playlist, keeping
-     * only the one with the latest added_at timestamp.
-     */
-    private suspend fun deduplicatePlaylistTracks() {
-        // Strategy: for each playlist that has duplicate positions, clear
-        // ALL entries and let the next sync rebuild them cleanly. This is
-        // aggressive but correct — the tracks themselves are not deleted,
-        // only the playlist membership. The next sync will re-associate them.
-        val allPlaylists = playlistDao.getAllActive().first()
-        var cleaned = 0
-        for (playlist in allPlaylists) {
-            // Count entries vs expected track count
-            // v0.9.27 — downloaded-only is correct: this is a duplicate-detection
-            // migration that compares the persisted track_count against actual
-            // rows, both of which historically counted downloaded entries only.
-            val tracks = trackDao.getByPlaylist(playlist.id, includeStreamable = false).first()
-            if (tracks.size > playlist.trackCount && playlist.trackCount > 0) {
-                playlistDao.clearPlaylistTracks(playlist.id)
-                cleaned++
-                android.util.Log.i("StashMigrations",
-                    "Cleared ${tracks.size} stale entries for '${playlist.name}' (expected ${playlist.trackCount})")
-            }
-        }
-        if (cleaned > 0) {
-            android.util.Log.i("StashMigrations", "Cleaned $cleaned playlists with duplicate track entries. Next sync will rebuild.")
-        }
+        return deleted.size + sweep.undownloaded.size
     }
 
     companion object {

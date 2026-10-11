@@ -3,113 +3,107 @@ package com.stash.core.media.equalizer
 
 import android.content.Context
 import androidx.annotation.OptIn
-import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.AudioTrackAudioOutputProvider
 import androidx.media3.exoplayer.audio.DefaultAudioSink
-import com.stash.core.media.equalizer.dsp.BassShelfProcessor
-import com.stash.core.media.equalizer.dsp.EqProcessor
-import com.stash.core.media.equalizer.dsp.LoudnessGainProcessor
-import com.stash.core.media.equalizer.dsp.PreampProcessor
-import com.stash.core.media.equalizer.dsp.SoftClipLimiterProcessor
+import androidx.media3.exoplayer.audio.DefaultAudioSink.AudioTrackBufferSizeProvider
+import com.stash.core.media.equalizer.dsp.FloatDspChain
+import com.stash.core.media.output.HiResOutputController
+import com.stash.core.media.output.OutputSession
+import com.stash.core.media.output.StashAudioOutputProvider
 
 /**
- * Custom RenderersFactory that builds an audio sink with our EQ + loudness chain.
+ * RenderersFactory that builds Stash's audio sink: Media3's [DefaultAudioSink]
+ * in float, feeding Stash's own output stage
+ * ([com.stash.core.media.output.StashAudioOutput]).
  *
- * The chain is built ONCE per ExoPlayer instance; "stacking on re-enable" is
- * structurally impossible because the same processor instances live for the
- * player's whole life. Which of them are IN the active pipeline is a
- * different question: each processor gates `isActive()` on its pref state, so
- * Media3 drops disabled stages entirely (a disabled stage used to burn ~10%
- * of a core copying bytes through itself). Toggles are picked up mid-track by
- * [watchDspActivation], which the playback service wires to [builtSink].
+ * Why not Media3 AudioProcessors any more: `DefaultAudioSink` only runs
+ * user-supplied processors on 16-bit audio — with float output on it routes
+ * high-resolution PCM down a branch that skips them. So keeping the EQ meant
+ * keeping float off, and every 24-bit FLAC was truncated to 16 bits before
+ * the EQ (or the DAC) ever saw it. Now:
  *
- * Chain order (see spec §3.2):
- *   PreampProcessor → EqProcessor → BassShelfProcessor →
- *   LoudnessGainProcessor → SoftClipLimiterProcessor
+ * - **Float output on.** Decoders deliver float (Media3 asks MediaCodec for it
+ *   once the sink takes float directly), 24-bit content keeps all 24 bits,
+ *   and the AudioTrack is opened at the song's own sample rate.
+ * - **The EQ, bass, loudness and limiter run in the output stage**, in float,
+ *   only while one of them is actually doing something ([FloatDspChain]).
+ *   Off, the samples pass through untouched.
+ * - **Speed goes to the AudioTrack** (`setEnableAudioOutputPlaybackParameters`):
+ *   Media3's Sonic time-stretcher lives in the processor chain the float
+ *   branch skips. AudioFlinger's time-stretch is the same algorithm, applied
+ *   instantly (good for Listen Together's drift correction too).
+ * - **Hi-res USB**: the output stage asks [HiResOutputController] how to open
+ *   each stream — rate-matched or bit-perfect on a USB DAC (Android 14+).
  *
- * Loudness sits AFTER the EQ stages so the per-track gain operates on the
- * fully-shaped signal, and the soft-clip limiter sits LAST so any positive-
- * gain transient that survives true-peak headroom is clamped before the
- * mixer ever sees it.
+ * One factory per player; [outputSession] carries that player's source format
+ * and speed to its output stage.
  */
 @OptIn(UnstableApi::class)
 class StashRenderersFactory(
     context: Context,
     private val eqController: EqController,
     private val loudnessController: LoudnessController,
+    private val hiResOutputController: HiResOutputController,
 ) : DefaultRenderersFactory(context) {
 
-    /**
-     * The sink built for this factory's player, kept so the service can wire
-     * [watchDspActivation] to it. One factory instance per player — each
-     * player build calls [buildAudioSink] exactly once.
-     */
-    var builtSink: AudioSink? = null
-        private set
+    /** This factory's player's facts for its output stage (fed by the service's analytics listener). */
+    val outputSession = OutputSession()
 
     override fun buildAudioSink(
         context: Context,
         enableFloatOutput: Boolean,
         enableAudioTrackPlaybackParams: Boolean,
     ): AudioSink {
-        return DefaultAudioSink.Builder(context)
-            // setEnableFloatOutput(true) routes high-resolution PCM through
-            // a separate Media3 branch that BYPASSES user-supplied processors —
-            // verified in DefaultAudioSink source. Keep it false so 24-bit
-            // FLAC is downsampled to 16-bit and our chain still applies.
-            .setEnableFloatOutput(false)
-            .setAudioProcessors(buildAudioProcessors())
+        val audioTrackProvider = AudioTrackAudioOutputProvider.Builder(context)
+            .setAudioTrackBufferSizeProvider(SpeedCappedBufferSizeProvider)
             .build()
-            .also { builtSink = it }
+        return DefaultAudioSink.Builder(context)
+            .setEnableFloatOutput(true)
+            .setEnableAudioOutputPlaybackParameters(true)
+            .setAudioOutputProvider(
+                StashAudioOutputProvider(audioTrackProvider, hiResOutputController, outputSession) {
+                    FloatDspChain({ eqController.state.value }) {
+                        // This player's own song gain (see OutputSession.trackGainDb).
+                        val shared = loudnessController.state.value
+                        val own = outputSession.trackGainDb
+                        if (own == null || own == shared.currentTrackGainDb) shared
+                        else shared.copy(currentTrackGainDb = own)
+                    }
+                },
+            )
+            .build()
     }
 
     /**
-     * Single source of truth for the processor chain. Called once by
-     * [buildAudioSink] for production and once by [audioProcessorsForTest] from
-     * the unit test that asserts ordering. Keep this private; expose only the
-     * `internal` accessor below so tests can verify the wiring without
-     * cracking open the sink.
+     * Media3 sizes an AudioTrack that does its own time-stretching for 8x
+     * speed: 8x the usual buffer, ~2 s of audio. The DSP runs *before* that
+     * buffer, so an EQ slider would take seconds to be heard. Stash's speeds
+     * are 0.1–4x and almost always ≤ 2x; sizing for 2x keeps EQ changes and
+     * loudness switches within ~0.5 s while leaving AudioFlinger enough frames
+     * to time-stretch.
      */
-    private fun buildAudioProcessors(): Array<AudioProcessor> {
-        // Read on the playback thread each time the pipeline is (re)built.
-        val limiterNeeded = {
-            dspActivation(eqController.state.value, loudnessController.state.value).limiter
-        }
-        return if (ENABLE_LOUDNESS) {
-            arrayOf(
-                PreampProcessor(eqController),
-                EqProcessor(eqController),
-                BassShelfProcessor(eqController),
-                LoudnessGainProcessor(loudnessController),
-                SoftClipLimiterProcessor(limiterNeeded),
-            )
-        } else {
-            arrayOf(
-                PreampProcessor(eqController),
-                EqProcessor(eqController),
-                BassShelfProcessor(eqController),
-            )
-        }
-    }
+    private object SpeedCappedBufferSizeProvider : AudioTrackBufferSizeProvider {
+        private const val MAX_SIZED_SPEED = 2.0
 
-    /**
-     * Test-only accessor that returns the exact processor array the factory
-     * would hand to [DefaultAudioSink]. Used by `StashRenderersFactoryTest` to
-     * verify chain ordering without constructing a real audio sink (which
-     * requires Android hardware mocking that isn't worth the friction).
-     */
-    internal fun audioProcessorsForTest(): Array<AudioProcessor> = buildAudioProcessors()
-
-    private companion object {
-        /**
-         * Kill-switch for the loudness stage. Flip to `false` to ship without
-         * loudness if a regression surfaces; the EQ chain continues to work
-         * exactly as before since [LoudnessGainProcessor] and
-         * [SoftClipLimiterProcessor] are conditionally appended only when this
-         * flag is true.
-         */
-        const val ENABLE_LOUDNESS = true
+        override fun getBufferSizeInBytes(
+            minBufferSizeInBytes: Int,
+            encoding: Int,
+            outputMode: Int,
+            pcmFrameSize: Int,
+            sampleRate: Int,
+            bitrate: Int,
+            maxAudioTrackPlaybackSpeed: Double,
+        ): Int = AudioTrackBufferSizeProvider.DEFAULT.getBufferSizeInBytes(
+            minBufferSizeInBytes,
+            encoding,
+            outputMode,
+            pcmFrameSize,
+            sampleRate,
+            bitrate,
+            minOf(maxAudioTrackPlaybackSpeed, MAX_SIZED_SPEED),
+        )
     }
 }

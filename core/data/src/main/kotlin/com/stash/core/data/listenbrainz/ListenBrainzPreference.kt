@@ -39,8 +39,8 @@ private val Context.listenBrainzDataStore: DataStore<Preferences> by preferences
  * never asked to import, all at once. [connectedAtMs] becomes the sink's
  * `listeningSinceMs`, so a fresh connection means "from now on".
  *
- * Deliberate backfill stays a separate, explicit action, the way Last.fm's
- * cold-start import already is.
+ * Deliberate backfill, if it is ever offered, stays a separate, explicit
+ * action.
  */
 @Singleton
 class ListenBrainzPreference @Inject constructor(

@@ -14,6 +14,7 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.lastfm.LastFmCredentials
 import com.stash.core.data.lastfm.LastFmSessionPreference
+import com.stash.core.data.lastfm.isTransientLastFmFailure
 import com.stash.core.data.sync.enqueueUniquePeriodicWorkReviving
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -50,6 +51,9 @@ class TrackInfoEnrichmentWorker @AssistedInject constructor(
         private const val WORK_NAME = "stash_track_info_enrichment"
         private const val BATCH_SIZE = 200
         private const val REQUEST_INTERVAL_MS = 250L // 4 req/sec — under LFM 5/sec limit
+
+        /** Transient failures in a row that end the batch early (Last.fm or the network is down). */
+        private const val MAX_CONSECUTIVE_ERRORS = 5
 
         suspend fun schedulePeriodic(context: Context) {
             val work = PeriodicWorkRequestBuilder<TrackInfoEnrichmentWorker>(
@@ -91,13 +95,27 @@ class TrackInfoEnrichmentWorker @AssistedInject constructor(
         Log.i(TAG, "enriching ${candidates.size} tracks")
 
         var processed = 0
+        var consecutiveErrors = 0
         for (trackId in candidates) {
             val track = trackDao.getById(trackId) ?: continue
             if (track.artist.isBlank() || track.title.isBlank()) continue
 
-            val info = apiClient
-                .getTrackInfo(track.artist, track.title, username = username)
-                .getOrNull()
+            val result = apiClient.getTrackInfo(track.artist, track.title, username = username)
+            // isTransientLastFmFailure also rethrows a captured cancellation.
+            if (result.isTransientLastFmFailure()) {
+                // Network drop, 5xx, 429 or every key throttled: write NOTHING.
+                // The "no data" sentinel below is permanent, and stamping it on
+                // an outage zeroed this track's playcount for good. Only
+                // Last.fm's own "not found" answer is allowed to reach it.
+                if (++consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                    Log.w(TAG, "stopping early after $consecutiveErrors consecutive Last.fm failures")
+                    break
+                }
+                delay(REQUEST_INTERVAL_MS)
+                continue
+            }
+            consecutiveErrors = 0
+            val info = result.getOrNull()
             if (info != null) {
                 trackDao.setLastfmEnrichment(
                     trackId = trackId,
