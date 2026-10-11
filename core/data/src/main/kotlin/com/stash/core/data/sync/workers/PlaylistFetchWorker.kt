@@ -453,7 +453,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
         // applies to those. Defaults to true — see SyncPreferencesManager.
         val discoverMixes = runCatching {
             syncPreferencesManager.discoverAutoMixes.first()
-        }.getOrDefault(true)
+        }.onFailure { if (it is CancellationException) throw it }.getOrDefault(true)
 
         // Fetch Daily Mixes (sp_dc dependent -- may return empty if GraphQL fails).
         if (!discoverMixes) {
@@ -544,6 +544,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                             // Re-throw SpotifyApiException so doWork() can decide to retry
                             throw e
                         } catch (e: Exception) {
+                            if (e is CancellationException) throw e
                             Log.e(TAG, "fetchSpotifyPlaylists: failed to fetch tracks for mix '${mix.name}'", e)
                             // Continue with next mix rather than aborting
                         }
@@ -562,6 +563,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
         } catch (e: SpotifyApiException) {
             throw e // Let doWork handle retries
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Log.e(TAG, "fetchSpotifyPlaylists: daily mixes enumeration failed (sp_dc issue), continuing", e)
             diagnostics.add(SyncStepResult("SPOTIFY", "getDailyMixes", StepStatus.ERROR, errorMessage = e.message))
         }
@@ -648,6 +650,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 Log.d(TAG, "fetchSpotifyPlaylists: liked songs empty after pagination")
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Log.e(TAG, "fetchSpotifyPlaylists: liked songs fetch failed (sp_dc issue), continuing", e)
             diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.ERROR, errorMessage = e.message))
         }
@@ -932,6 +935,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 albumsDeferred.await()
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Log.e(TAG, "YouTube Music fetch failed, continuing with other services", e)
             diagnostics.add(SyncStepResult("YOUTUBE", "fetchYouTubePlaylists", StepStatus.ERROR, errorMessage = e.message))
             markYoutubeIncomplete("top-level exception: ${e.message}")
@@ -1000,6 +1004,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 }
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Log.e(TAG, "fetchAndSnapshotMix: exception for '${mix.title}'", e)
             markYoutubeIncomplete("mix '${mix.title}' exception: ${e.message}")
         }
@@ -1024,7 +1029,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     // even though the outer try/catch would also handle a thrown exception.
                     val studioOnly = runCatching {
                         syncPreferencesManager.youtubeLikedStudioOnly.first()
-                    }.getOrDefault(false)
+                    }.onFailure { if (it is CancellationException) throw it }.getOrDefault(false)
                     val likedSongs = if (studioOnly) filterStudioOnly(rawTracks) else rawTracks
                     val filteredCount = rawTracks.size - likedSongs.size
 
@@ -1109,6 +1114,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 }
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Log.e(TAG, "fetchAndSnapshotLikedSongs: exception", e)
             diagnostics.add(SyncStepResult("YOUTUBE", "getLikedSongs", StepStatus.ERROR, errorMessage = e.message))
             reportPlaylistFetched()
@@ -1299,6 +1305,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 }
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Log.e(TAG, "fetchAndSnapshotUserPlaylist: exception for '${playlist.title}'", e)
             markYoutubeIncomplete("playlist '${playlist.title}' exception: ${e.message}")
         }
