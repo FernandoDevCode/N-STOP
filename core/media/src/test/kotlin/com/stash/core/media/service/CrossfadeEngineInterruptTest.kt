@@ -11,7 +11,6 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.runs
-import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -111,8 +110,7 @@ class CrossfadeEngineInterruptTest {
     }
 
     @Test fun `a permanent focus loss mid-fade ends the fade and focus is not taken back`() = runTest {
-        val request = slot<AudioFocusRequest>()
-        every { audioManager.requestAudioFocus(capture(request)) } returns AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        every { audioManager.requestAudioFocus(any<AudioFocusRequest>()) } returns AudioManager.AUDIOFOCUS_REQUEST_GRANTED
         var swapped: ExoPlayer? = null
         val engine = engine(backgroundScope)
         // Playback starts: the master takes focus.
@@ -122,7 +120,7 @@ class CrossfadeEngineInterruptTest {
         advanceTimeBy(500)
 
         // Another app starts playing.
-        request.captured.onAudioFocusChangeListener.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS)
+        engine.focusListener.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS)
         advanceUntilIdle()
 
         assertThat(swapped).isNull()

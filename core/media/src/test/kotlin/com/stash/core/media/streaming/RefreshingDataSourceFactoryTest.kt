@@ -225,7 +225,7 @@ class RefreshingDataSourceFactoryTest {
         every { fakeCache.get(42L) } returns StreamUrl(
             url = "https://qobuz-cdn/file.flac",
             expiresAtMs = Long.MAX_VALUE,
-            origin = QbdlxStreamResolver.ORIGIN,
+            origin = "qbdlx", // QbdlxStreamResolver's origin (its constant is private)
         )
         every { fakeInner.open(match { it.uri.toString().contains("stale-url") }) } throws
             invalidResponseCodeException(403)

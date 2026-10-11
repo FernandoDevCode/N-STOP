@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import androidx.annotation.OptIn
+import androidx.annotation.VisibleForTesting
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -70,7 +71,9 @@ class CrossfadeEngine(
     var onFocusPause: (() -> Unit)? = null
     var onFocusResume: (() -> Unit)? = null
 
-    private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
+    /** Internal for tests: [AudioFocusRequest]'s listener getter is hidden API. */
+    @VisibleForTesting
+    internal val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
         when (change) {
             AudioManager.AUDIOFOCUS_LOSS -> {
                 pausedForFocusLoss = false
