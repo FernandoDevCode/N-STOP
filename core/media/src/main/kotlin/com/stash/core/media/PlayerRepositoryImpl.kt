@@ -1995,11 +1995,17 @@ class PlayerRepositoryImpl @Inject constructor(
      * + play() pattern used by [setQueue].
      *
      * Also clears the library-shuffle armed state since the user has
-     * navigated into a specific track — same invariant as [setQueue].
+     * navigated into a specific track — same invariant as [setQueue]. A radio
+     * station ends too: left armed, its grow watcher saw a one-song queue near
+     * its tail and appended the OLD station behind a song tapped in Search,
+     * under a stale "Radio: X" label.
      */
     private suspend fun playSingleMediaItem(mediaItem: MediaItem) {
         libraryShuffleActive = false
         librarySnapshot = emptyList()
+        radioActive = false
+        radioSession = null
+        _radioSeedLabel.value = null
         val controller = ensureController() ?: return
         controller.setMediaItem(mediaItem)
         controller.prepare()
