@@ -55,6 +55,19 @@ class CrashFileStoreTest {
         assertEquals(all[0], store.latestCrashFile())
     }
 
+    /** "Share crash report" sends this file as-is, so it must already be redacted. */
+    @Test fun `the written crash file is redacted`() {
+        store.writeCrash(
+            Thread.currentThread(),
+            IllegalStateException("login failed for someone@example.com, Cookie: SAPISID=abc123secret"),
+        )
+
+        val text = store.latestCrashFile()!!.readText()
+        assertTrue("stack trace kept", text.contains("IllegalStateException"))
+        assertFalse("email leaked", text.contains("someone@example.com"))
+        assertFalse("cookie leaked", text.contains("abc123secret"))
+    }
+
     @Test fun `report body contains version, device, thread, and stack trace`() {
         val report = store.formatReport(
             Thread.currentThread(),
