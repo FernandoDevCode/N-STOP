@@ -73,7 +73,8 @@ class FileOrganizerPlannedPathTest {
         val own = File(musicDir, "evanescence/synthesis/lacrymosa.opus")
         own.parentFile!!.mkdirs()
         own.writeText("old")
-        coEvery { trackDao.countOtherTracksWithFilePath(any(), any()) } returns 1
+        // Only this track records the file.
+        coEvery { trackDao.countOtherTracksWithFilePath(any(), any()) } returns 0
 
         val committed = organizer.commitDownload(
             tmp.newFile("redownload.opus").apply { writeText("new") },
@@ -82,6 +83,56 @@ class FileOrganizerPlannedPathTest {
 
         assertEquals(own.absolutePath, committed.filePath)
         assertEquals("new", own.readText())
+    }
+
+    /**
+     * Names aren't unique per track: under Artist/Album the two halves of a
+     * Bach prelude-and-fugue slug to the same 60 characters. A commit that
+     * would land on ANOTHER track's file takes a distinct name instead of
+     * writing over that track's audio.
+     */
+    @Test
+    fun `a download never writes over another track's file at its name`() = runTest {
+        val organizer = organizer(LibraryLayout.ARTIST_ALBUM)
+        val album = "The Well-Tempered Clavier"
+        val prelude = "The Well-Tempered Clavier, Book 1: Prelude and Fugue No. 1 in C Major, BWV 846: I. Prelude"
+        val fugue = "The Well-Tempered Clavier, Book 1: Prelude and Fugue No. 1 in C Major, BWV 846: II. Fugue"
+        val first = organizer.commitDownload(temp("prelude.opus"), "Bach", album, prelude, "opus", 1L)
+        // Track 1 records the shared name, so track 2 must step past it.
+        coEvery { trackDao.countOtherTracksWithFilePath(any(), eq(2L)) } answers {
+            if (firstArg<String>() == first.filePath) 1 else 0
+        }
+
+        val second = organizer.commitDownload(
+            tmp.newFile("fugue.opus").apply { writeText("fugue") }, "Bach", album, fugue, "opus", 2L,
+        )
+
+        assertNotEquals(first.filePath, second.filePath)
+        assertEquals("audio", File(first.filePath).readText())
+        assertEquals("fugue", File(second.filePath).readText())
+        assertEquals(File(first.filePath).parent, File(second.filePath).parent)
+    }
+
+    @Test
+    fun `a clash with no album and no track id still gets a free name`() = runTest {
+        val organizer = organizer(LibraryLayout.SINGLE_FOLDER)
+        val taken = File(musicDir, "artist-intro.opus").absolutePath
+        coEvery { trackDao.countOtherTracksWithFilePath(any(), any()) } answers {
+            if (firstArg<String>() == taken) 1 else 0
+        }
+
+        val committed = organizer.commitDownload(temp("intro.opus"), "Artist", null, "Intro", "opus", null)
+
+        assertEquals(File(musicDir, "artist-intro-2.opus").absolutePath, committed.filePath)
+    }
+
+    @Test
+    fun `names that slug to nothing get a placeholder`() = runTest {
+        val organizer = organizer(LibraryLayout.ARTIST_ALBUM)
+
+        val committed = organizer.commitDownload(temp("q.opus"), "!!!", "???", "?", "opus", 7L)
+
+        assertEquals(File(musicDir, "unknown-artist/unknown-album/untitled.opus").absolutePath, committed.filePath)
     }
 
     @Test

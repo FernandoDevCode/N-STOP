@@ -381,7 +381,7 @@ class SearchDownloadCoordinator @Inject constructor(
 
         val finalized = trackFinalizer.finalizeFile(
             sourceFile = tempFile,
-            track = track.toDomainStub(),
+            track = track.toDomainStub(existingTrackId(track)),
             format = match.format,
         )
 
@@ -487,7 +487,7 @@ class SearchDownloadCoordinator @Inject constructor(
         val format = AudioFormat(codec = "opus", bitrateKbps = 0)
         val finalized = trackFinalizer.finalizeFile(
             sourceFile = tempFile,
-            track = track.toDomainStub(),
+            track = track.toDomainStub(existingTrackId(track)),
             format = format,
         )
 
@@ -699,6 +699,28 @@ class SearchDownloadCoordinator @Inject constructor(
     )
 
     /**
+     * The library row this download will be recorded on, when there is one:
+     * the same lookup [upsertSearchTrack] makes. The commit replaces a file
+     * at its name only when no OTHER track records it; without the row's id
+     * every row counts as another, so re-downloading a song already in the
+     * library would step around its own file and orphan it.
+     */
+    private suspend fun existingTrackId(track: TrackItem): Long? = try {
+        (
+            trackDao.findByYoutubeId(track.videoId)
+                ?: trackDao.findByCanonicalIdentity(
+                    title = canonicalize(track.title),
+                    artist = canonicalize(track.artist),
+                )
+            )?.id
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "existing-row lookup failed for ${track.videoId}: ${e.message}")
+        null
+    }
+
+    /**
      * Builds a minimal [com.stash.core.model.Track] stub for [TrackFinalizer].
      * The finalizer uses title/artist/album for metadata embedding and
      * artist/title for the library file path.
@@ -708,7 +730,8 @@ class SearchDownloadCoordinator @Inject constructor(
      * tracks don't show up in the Library's Albums view (TrackDao.getAllAlbums
      * filters out tracks with empty album values).
      */
-    private fun TrackItem.toDomainStub() = com.stash.core.model.Track(
+    private fun TrackItem.toDomainStub(existingId: Long?) = com.stash.core.model.Track(
+        id = existingId ?: 0L,
         title = title,
         artist = artist,
         album = album.orEmpty(),
