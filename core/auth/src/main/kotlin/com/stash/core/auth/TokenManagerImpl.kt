@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -36,7 +37,14 @@ class TokenManagerImpl @Inject constructor(
     private val youTubeCookieHelper: YouTubeCookieHelper,
 ) : TokenManager {
 
-    /** Dedicated scope for collecting store flows; survives until the process dies. */
+    /**
+     * Dedicated scope for collecting store flows; survives until the process dies.
+     * Main only for publishing the states: the store's `map { decrypt }` runs in
+     * the collector's context, so each observer applies `flowOn(Default)`.
+     * Without it the first emission built the Tink keyset (a SharedPreferences
+     * read plus Keystore binder calls) on Main during startup, and every auth
+     * write (each Spotify refresh) re-ran six decrypts + JSON parses there.
+     */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     // -- Spotify state --------------------------------------------------------
@@ -268,6 +276,7 @@ class TokenManagerImpl @Inject constructor(
         scope.launch {
             tokenStore.discordToken
                 .combine(tokenStore.discordUser) { token, user -> token to user }
+                .flowOn(Dispatchers.Default)
                 .collect { (token, user) ->
                     _discordAuthState.value = when {
                         token != null && user != null -> AuthState.Connected(user)
@@ -326,6 +335,7 @@ class TokenManagerImpl @Inject constructor(
         scope.launch {
             tokenStore.spotifyToken
                 .combine(tokenStore.spotifyUser) { token, user -> token to user }
+                .flowOn(Dispatchers.Default)
                 .collect { (token, user) ->
                     _spotifyAuthState.value = when {
                         token != null && user != null -> AuthState.Connected(user)
@@ -340,6 +350,7 @@ class TokenManagerImpl @Inject constructor(
         scope.launch {
             tokenStore.youTubeToken
                 .combine(tokenStore.youTubeUser) { token, user -> token to user }
+                .flowOn(Dispatchers.Default)
                 .collect { (token, user) ->
                     _youTubeAuthState.value = when {
                         token != null && user != null -> AuthState.Connected(user)
