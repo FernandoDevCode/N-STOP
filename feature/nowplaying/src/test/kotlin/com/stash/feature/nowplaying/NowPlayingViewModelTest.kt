@@ -938,7 +938,9 @@ class NowPlayingViewModelQueueUndoTest {
     @Before fun setUp() { Dispatchers.setMain(dispatcher) }
     @After fun tearDown() { Dispatchers.resetMain() }
 
-    private fun track(id: Long) = Track(id = id, title = "T$id", artist = "A")
+    // dateAdded pinned: it defaults to the current time, so two track(7) calls a millisecond
+    // apart were different songs to an equality check.
+    private fun track(id: Long) = Track(id = id, title = "T$id", artist = "A", dateAdded = 0L)
     private val queue = (1L..5L).map(::track)
     private val downloaded = Track(id = 4L, title = "T4", artist = "A", isDownloaded = true, filePath = "/music/4.flac")
     private val playerStateFlow = MutableStateFlow(PlayerState(currentTrack = queue[1], queue = queue, currentIndex = 1))
@@ -982,10 +984,11 @@ class NowPlayingViewModelQueueUndoTest {
         val vm = newViewModel()
         advanceUntilIdle()
 
-        vm.onRestoreToQueue(2, track(7))
+        val song = track(7)
+        vm.onRestoreToQueue(2, song)
         advanceUntilIdle()
 
-        coVerify(exactly = 1) { playerRepository.insertInQueue(2, track(7)) }
+        coVerify(exactly = 1) { playerRepository.insertInQueue(2, song) }
     }
 
     @Test fun `undo after playback moved past the row puts the song next`() = runTest(dispatcher) {
@@ -994,10 +997,11 @@ class NowPlayingViewModelQueueUndoTest {
         playerStateFlow.value = playerStateFlow.value.copy(currentTrack = queue[3], currentIndex = 3)
         advanceUntilIdle()
 
-        vm.onRestoreToQueue(2, track(7))
+        val song = track(7)
+        vm.onRestoreToQueue(2, song)
         advanceUntilIdle()
 
-        coVerify(exactly = 1) { playerRepository.insertInQueue(4, track(7)) }
+        coVerify(exactly = 1) { playerRepository.insertInQueue(4, song) }
     }
 
     @Test fun `a refused undo says so`() = runTest(dispatcher) {

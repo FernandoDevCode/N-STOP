@@ -1,5 +1,6 @@
 package com.stash.data.download.files
 
+import app.cash.turbine.ReceiveTurbine
 import app.cash.turbine.test
 import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.repository.MusicRepository
@@ -12,6 +13,17 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 class LibrarySizeHolderTest {
+
+    /**
+     * The first walk's result, past the 0 B placeholder. The walk runs on a real IO thread as soon
+     * as the test subscribes, so a fast fake can finish before the collector reads its first value,
+     * and the StateFlow (conflated) then hands it the walk's result directly: asserting the
+     * placeholder first made these tests fail now and then.
+     */
+    private suspend fun ReceiveTurbine<LibrarySizeBreakdown>.awaitFirstWalk(): LibrarySizeBreakdown {
+        val first = awaitItem()
+        return if (first == LibrarySizeBreakdown(0L, 0L, 0)) awaitItem() else first
+    }
 
     @Test
     fun `refresh recomputes and publishes size without a track count change`() = runTest {
@@ -26,8 +38,7 @@ class LibrarySizeHolderTest {
         val holder = LibrarySizeHolder(fileOrganizer, musicRepository)
 
         holder.size.test {
-            assertThat(awaitItem()).isEqualTo(LibrarySizeBreakdown(0L, 0L, 0))
-            assertThat(awaitItem()).isEqualTo(initialSize)
+            assertThat(awaitFirstWalk()).isEqualTo(initialSize)
 
             holder.refresh()
 
@@ -53,8 +64,7 @@ class LibrarySizeHolderTest {
         val holder = LibrarySizeHolder(fileOrganizer, musicRepository)
 
         holder.size.test {
-            assertThat(awaitItem()).isEqualTo(LibrarySizeBreakdown(0L, 0L, 0))
-            assertThat(awaitItem()).isEqualTo(size)
+            assertThat(awaitFirstWalk()).isEqualTo(size)
 
             (8..20).forEach { trackCount.value = it }
             Thread.sleep(500)
