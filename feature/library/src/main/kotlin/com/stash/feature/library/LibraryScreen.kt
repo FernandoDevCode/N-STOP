@@ -1131,6 +1131,8 @@ private fun PlaylistsGrid(
     var sharePlaylistId by rememberSaveable { mutableStateOf<Long?>(null) }
     // Playlist pending delete confirmation.
     var playlistToDelete by remember { mutableStateOf<Playlist?>(null) }
+    // Playlist pending remove confirmation (the list goes; its songs stay).
+    var playlistToRemove by remember { mutableStateOf<Playlist?>(null) }
     // Playlist awaiting image picker result.
     var playlistForImagePick by remember { mutableStateOf<Playlist?>(null) }
 
@@ -1394,8 +1396,10 @@ private fun PlaylistsGrid(
                 BottomSheetActionRow(
                     icon = Icons.Default.RemoveCircleOutline,
                     label = "Remove Playlist",
+                    // Confirmed like its neighbours (Delete's dialog, Unfollow's second tap): a
+                    // removed custom playlist can't be brought back, and its shared link dies too.
                     onClick = {
-                        onRemovePlaylist(playlist)
+                        playlistToRemove = playlist
                         selectedPlaylist = null
                     },
                 )
@@ -1416,6 +1420,36 @@ private fun PlaylistsGrid(
 
     sharePlaylistId?.let { id -> playlists.firstOrNull { it.id == id } }?.let {
         com.stash.feature.library.share.ShareMixSheet(it.id, it.name, it.trackCount, onDismiss = { sharePlaylistId = null })
+    }
+
+    // ── Remove confirmation dialog ──────────────────────────────────────
+    playlistToRemove?.let { playlist ->
+        AlertDialog(
+            onDismissRequest = { playlistToRemove = null },
+            title = { Text("Remove \"${playlist.name}\"?") },
+            text = {
+                Text(
+                    "The playlist is removed from your library; its songs stay. " +
+                        "If you shared it, its link stops working for everyone who follows it. " +
+                        "This cannot be undone.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onRemovePlaylist(playlist)
+                        playlistToRemove = null
+                    },
+                ) {
+                    Text("Remove", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { playlistToRemove = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 
     // ── Delete confirmation dialog ──────────────────────────────────────
