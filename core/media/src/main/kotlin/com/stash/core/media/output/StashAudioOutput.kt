@@ -44,7 +44,8 @@ class StashAudioOutput(
     private val inFormat: SampleFormat,
     private val outFormat: SampleFormat,
     val channelCount: Int,
-    val sampleRate: Int,
+    /** The stream's sample rate (named apart from AudioOutput.getSampleRate, the track's). */
+    val streamSampleRate: Int,
     plan: OutputPlan,
     private val dsp: FloatDspChain,
     private val controller: HiResOutputController,
@@ -58,7 +59,7 @@ class StashAudioOutput(
 
     private val writer = ConvertingWriter(inFormat, outFormat, channelCount)
     private val inFrameSize = inFormat.frameSize(channelCount)
-    private val volume = GainRamp().apply { configure(sampleRate) }
+    private val volume = GainRamp().apply { configure(streamSampleRate) }
     private var playerVolume = 1f
     private var framesWritten = 0L
 
@@ -68,7 +69,7 @@ class StashAudioOutput(
     private val routingListener = AudioRouting.OnRoutingChangedListener { controller.onRouted(this) }
 
     init {
-        dsp.configure(sampleRate, channelCount)
+        dsp.configure(streamSampleRate, channelCount)
         controller.register(this)
         Looper.myLooper()?.let { audioTrack?.addOnRoutingChangedListener(routingListener, Handler(it)) }
     }
@@ -166,7 +167,7 @@ class StashAudioOutput(
         val decision = p.decision
         val routed = audioTrack?.routedDevice ?: p.device
         return OutputPathState(
-            sampleRate = sampleRate,
+            sampleRate = streamSampleRate,
             channelCount = channelCount,
             decodedFormat = inFormat,
             trackFormat = outFormat,

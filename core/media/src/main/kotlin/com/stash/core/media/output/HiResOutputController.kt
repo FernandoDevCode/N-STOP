@@ -235,7 +235,7 @@ class HiResOutputController @Inject constructor(
 
     private fun recheck(output: StashAudioOutput) {
         val fresh = runCatching {
-            prepare(output.sampleRate, output.channelCount, output.session.speed, output.platformAttributes)
+            prepare(output.streamSampleRate, output.channelCount, output.session.speed, output.platformAttributes)
         }.getOrNull() ?: return
         if (fresh.key != output.plan.key) output.requestReplan()
     }

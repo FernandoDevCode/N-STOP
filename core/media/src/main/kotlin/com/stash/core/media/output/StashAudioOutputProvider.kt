@@ -56,7 +56,7 @@ class StashAudioOutputProvider(
             inFormat = inFormat,
             outFormat = plan.trackFormat,
             channelCount = channels,
-            sampleRate = config.sampleRate,
+            streamSampleRate = config.sampleRate,
             plan = plan,
             dsp = newDspChain(),
             controller = controller,

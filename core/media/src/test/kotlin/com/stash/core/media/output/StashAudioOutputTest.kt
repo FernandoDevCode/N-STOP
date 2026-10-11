@@ -73,7 +73,7 @@ class StashAudioOutputTest {
         inFormat = inFormat,
         outFormat = plan.trackFormat,
         channelCount = 2,
-        sampleRate = 48_000,
+        streamSampleRate = 48_000,
         plan = plan,
         dsp = FloatDspChain({ eq }, { loudness }),
         controller = controller,
