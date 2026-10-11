@@ -118,6 +118,24 @@ test("snapshots: parts are staged, a new upload replaces an unfinished one, the 
     assert.equal(code(stale), "stale");
 });
 
+test("two devices uploading the same snapshot shape never commit a mix of their parts", async () => {
+    const { call, phone, browser } = await setup();
+    for (let i = 0; i < 4; i++) await call(phone, "logAppend", {}, env1(32));
+    const shape = (part) => ({ upto: 4, part, count: 2 });
+    const mine = { env: box(1, 40) };
+    const theirs = { env: box(1, 48) };
+    assert.deepEqual((await call(phone, "snapshotPut", shape(0), mine)).body, { complete: false });
+    // The browser takes the staging over: the phone's part 0 is gone.
+    assert.deepEqual((await call(browser, "snapshotPut", shape(0), theirs)).body, { complete: false });
+    // The phone's part 1 doesn't complete the browser's part 0; it takes the staging back instead.
+    assert.deepEqual((await call(phone, "snapshotPut", shape(1), mine)).body, { complete: false });
+    assert.equal((await call(phone, "get")).body.head, 4);
+    assert.deepEqual((await call(phone, "logAfter", { seq: 0 })).body.entries.length, 4, "nothing compacted");
+    // One device's whole upload commits.
+    assert.deepEqual((await call(phone, "snapshotPut", shape(0), mine)).body, { complete: true });
+    for (const part of [0, 1]) assert.deepEqual((await call(browser, "snapshotGet", { part })).body.env, mine.env);
+});
+
 test("a space holds 32 MiB at most: 413 space_full (a send says to save a file instead)", async () => {
     const { call, phone, browser } = await setup();
     await withLimit("spaceBytes", 3000, async () => {
