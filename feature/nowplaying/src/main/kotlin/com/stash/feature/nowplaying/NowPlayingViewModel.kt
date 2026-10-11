@@ -945,26 +945,57 @@ class NowPlayingViewModel @Inject constructor(
     // ------------------------------------------------------------------
 
     /**
-     * Add the currently-playing track to an existing playlist.
+     * Add [track] (the playing track, or a queue row) to an existing playlist, then say so.
      *
-     * @param trackId    ID of the track to save.
-     * @param playlistId ID of the target playlist.
+     * The track is persisted first ([MusicRepository.ensureTrackPersisted], as [onLikeTap] and
+     * [toggleDownload] do): a radio/search/queue stream plays under a transient
+     * `videoId.hashCode()` id with no row until a listen persists it, and the add then found no
+     * row, logged, and returned. The sheet closed as if it had worked and nothing was added.
      */
-    fun saveTrackToPlaylist(trackId: Long, playlistId: Long) {
-        viewModelScope.launch { musicRepository.addTrackToPlaylist(trackId, playlistId) }
+    fun saveTrackToPlaylist(track: Track, playlistId: Long) {
+        viewModelScope.launch {
+            val trackId = persistOrNull(track) ?: run {
+                _userMessages.tryEmit("Couldn't save to playlist.")
+                return@launch
+            }
+            musicRepository.addTrackToPlaylist(trackId, playlistId)
+            val name = _uiState.value.userPlaylists.firstOrNull { it.id == playlistId }?.name
+            _userMessages.tryEmit(if (name != null) "Saved to $name." else "Saved to playlist.")
+        }
     }
 
     /**
-     * Create a new playlist and immediately add the given track to it.
+     * Create a new playlist and immediately add [track] to it. Persists the track first, before
+     * the playlist exists, so a transient stream id can't leave an empty new playlist behind
+     * (see [saveTrackToPlaylist]).
      *
-     * @param name    Name for the new playlist.
-     * @param trackId ID of the track to save into the newly created playlist.
+     * @param name  Name for the new playlist.
+     * @param track The track to save into the newly created playlist.
      */
-    fun createPlaylistAndAddTrack(name: String, trackId: Long) {
+    fun createPlaylistAndAddTrack(name: String, track: Track) {
         viewModelScope.launch {
+            val trackId = persistOrNull(track) ?: run {
+                _userMessages.tryEmit("Couldn't create the playlist.")
+                return@launch
+            }
             val playlistId = musicRepository.createPlaylist(name)
             musicRepository.addTrackToPlaylist(trackId, playlistId)
+            _userMessages.tryEmit("Saved to $name.")
         }
+    }
+
+    /**
+     * [track]'s real library id, writing a stream-only row for a transient stream id; null (logged)
+     * when that write fails. Every id-keyed write from Now Playing goes through this, because a
+     * write against a transient id silently does nothing.
+     */
+    private suspend fun persistOrNull(track: Track): Long? = try {
+        musicRepository.ensureTrackPersisted(track)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        android.util.Log.w("NowPlayingViewModel", "ensureTrackPersisted failed", e)
+        null
     }
 
     // ------------------------------------------------------------------
@@ -980,7 +1011,12 @@ class NowPlayingViewModel @Inject constructor(
     fun flagCurrentTrackAsWrongMatch() {
         val track = _uiState.value.currentTrack ?: return
         viewModelScope.launch {
-            musicRepository.setMatchFlagged(track.id, true)
+            // Persisted first: flagging a stream's transient id flagged no row, yet said "Flagged".
+            val trackId = persistOrNull(track) ?: run {
+                _userMessages.tryEmit("Couldn't flag this song.")
+                return@launch
+            }
+            musicRepository.setMatchFlagged(trackId, true)
             _userMessages.tryEmit("Flagged. Find it in Sync \u2192 Failed Matches to pick a replacement.")
         }
     }
@@ -1099,15 +1135,31 @@ class NowPlayingViewModel @Inject constructor(
      * naturally — cleaner than racing the delete.
      */
     fun deleteCurrentTrack(alsoBlock: Boolean) {
-        val track = _uiState.value.currentTrack ?: return
+        val state = _uiState.value
+        val track = state.currentTrack ?: return
+        // A stream with no library row (transient id): both deletes were no-ops that still
+        // toasted "Deleted…". Block persists it first so the block has an identity to keep;
+        // a plain delete has nothing to remove, so it says so and leaves playback alone.
+        val notInLibrary = state.currentTrackStored == false
+        if (!alsoBlock && notInLibrary) {
+            _userMessages.tryEmit("This song isn't in your library, so there's nothing to delete.")
+            return
+        }
         viewModelScope.launch {
-            playerRepository.skipNext()
             if (alsoBlock) {
-                musicRepository.blacklistTrack(track.id)
-                _userMessages.tryEmit("Deleted and blocked from future syncs.")
+                val trackId = persistOrNull(track) ?: run {
+                    _userMessages.tryEmit("Couldn't block this song.")
+                    return@launch
+                }
+                playerRepository.skipNext()
+                musicRepository.blacklistTrack(trackId)
+                _userMessages.tryEmit(
+                    if (notInLibrary) "Blocked from future syncs." else "Deleted and blocked from future syncs.",
+                )
             } else {
-                musicRepository.deleteTrack(track)
-                _userMessages.tryEmit("Deleted from your device.")
+                playerRepository.skipNext()
+                val deleted = musicRepository.deleteTrack(track)
+                _userMessages.tryEmit(if (deleted) "Deleted from your device." else "Couldn't delete this song.")
             }
         }
     }

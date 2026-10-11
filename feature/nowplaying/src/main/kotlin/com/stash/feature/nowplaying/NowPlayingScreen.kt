@@ -286,11 +286,11 @@ fun NowPlayingScreen(
         SaveToPlaylistSheet(
             playlists = uiState.userPlaylists,
             onSaveToPlaylist = { playlistId ->
-                viewModel.saveTrackToPlaylist(t.id, playlistId)
+                viewModel.saveTrackToPlaylist(t, playlistId)
                 queueSaveTrack = null
             },
             onCreatePlaylist = { name ->
-                viewModel.createPlaylistAndAddTrack(name, t.id)
+                viewModel.createPlaylistAndAddTrack(name, t)
                 queueSaveTrack = null
             },
             onDismiss = { queueSaveTrack = null },
@@ -404,10 +404,10 @@ fun NowPlayingScreen(
         SaveToPlaylistSheet(
             playlists = uiState.userPlaylists,
             onSaveToPlaylist = { playlistId ->
-                viewModel.saveTrackToPlaylist(track.id, playlistId)
+                viewModel.saveTrackToPlaylist(track, playlistId)
             },
             onCreatePlaylist = { name ->
-                viewModel.createPlaylistAndAddTrack(name, track.id)
+                viewModel.createPlaylistAndAddTrack(name, track)
             },
             onDismiss = { showSaveSheet = false },
         )

@@ -94,11 +94,11 @@ fun PlayerQueueSheet(
         SaveToPlaylistSheet(
             playlists = uiState.userPlaylists,
             onSaveToPlaylist = { playlistId ->
-                viewModel.saveTrackToPlaylist(t.id, playlistId)
+                viewModel.saveTrackToPlaylist(t, playlistId)
                 saveTrack = null
             },
             onCreatePlaylist = { name ->
-                viewModel.createPlaylistAndAddTrack(name, t.id)
+                viewModel.createPlaylistAndAddTrack(name, t)
                 saveTrack = null
             },
             onDismiss = { saveTrack = null },

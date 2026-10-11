@@ -727,3 +727,118 @@ class NowPlayingViewModelPlayPauseTest {
         coVerify(exactly = 0) { playerRepository.pause() }
     }
 }
+
+/**
+ * A radio/search/queue stream plays under a transient `videoId.hashCode()` id with no library
+ * row. Save to Playlist, Flag and Delete used that raw id: the writes found no row and silently
+ * did nothing, while Flag and Delete still toasted success. They now persist first (as Like and
+ * Download do), and a delete with nothing to delete says so.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+class NowPlayingViewModelTransientTrackTest {
+
+    private val dispatcher = UnconfinedTestDispatcher()
+
+    @Before fun setUp() { Dispatchers.setMain(dispatcher) }
+    @After fun tearDown() { Dispatchers.resetMain() }
+
+    private val stream = Track(id = "vid42".hashCode().toLong(), title = "song", artist = "artist", youtubeId = "vid42")
+    private val playerStateFlow = MutableStateFlow(PlayerState(currentTrack = stream))
+
+    private val playerRepository: PlayerRepository = mockk(relaxed = true) {
+        every { playerState } returns playerStateFlow
+        every { currentPosition } returns MutableStateFlow(0L)
+    }
+    private val musicRepository: MusicRepository = mockk(relaxed = true) {
+        // No row by id or by YouTube id: a stream not in the library.
+        every { observeTrackById(any()) } returns flowOf(null)
+        every { observeTrackByYoutubeId(any()) } returns flowOf(null)
+        coEvery { ensureTrackPersisted(any()) } returns 900L
+        coEvery { createPlaylist(any()) } returns 55L
+    }
+
+    private fun newViewModel(): NowPlayingViewModel = NowPlayingViewModel(
+        playerRepository = playerRepository,
+        musicRepository = musicRepository,
+        likeCoordinator = mockk(relaxed = true) { every { mirrorFailures } returns MutableSharedFlow() },
+        losslessUpgrader = mockk(relaxed = true),
+        lyricsRepository = mockk(relaxed = true),
+        lyricsPreference = mockk(relaxed = true),
+        nowPlayingPreference = mockk(relaxed = true),
+        lyricsSidecarWriter = mockk(relaxed = true),
+        appContext = mockk(relaxed = true),
+        sleepTimerController = mockk(relaxed = true),
+        ytMusicApiClient = mockk(relaxed = true),
+    )
+
+    @Test fun `save to playlist persists the stream and adds its real id`() = runTest(dispatcher) {
+        val vm = newViewModel()
+        advanceUntilIdle()
+
+        vm.userMessages.test {
+            vm.saveTrackToPlaylist(stream, playlistId = 7L)
+            advanceUntilIdle()
+            assertEquals("Saved to playlist.", awaitItem())
+        }
+        coVerify { musicRepository.addTrackToPlaylist(900L, 7L) }
+        coVerify(exactly = 0) { musicRepository.addTrackToPlaylist(stream.id, any()) }
+    }
+
+    @Test fun `new playlist gets the persisted id, not an empty list`() = runTest(dispatcher) {
+        val vm = newViewModel()
+        advanceUntilIdle()
+
+        vm.createPlaylistAndAddTrack("Road trip", stream)
+        advanceUntilIdle()
+
+        coVerify { musicRepository.addTrackToPlaylist(900L, 55L) }
+    }
+
+    @Test fun `a failed persist says so and creates nothing`() = runTest(dispatcher) {
+        coEvery { musicRepository.ensureTrackPersisted(any()) } throws IllegalStateException("db")
+        val vm = newViewModel()
+        advanceUntilIdle()
+
+        vm.userMessages.test {
+            vm.createPlaylistAndAddTrack("Road trip", stream)
+            advanceUntilIdle()
+            assertEquals("Couldn't create the playlist.", awaitItem())
+        }
+        coVerify(exactly = 0) { musicRepository.createPlaylist(any()) }
+    }
+
+    @Test fun `flag targets the persisted row`() = runTest(dispatcher) {
+        val vm = newViewModel()
+        advanceUntilIdle()
+
+        vm.flagCurrentTrackAsWrongMatch()
+        advanceUntilIdle()
+
+        coVerify { musicRepository.setMatchFlagged(900L, true) }
+    }
+
+    @Test fun `delete of a stream not in the library does nothing and says so`() = runTest(dispatcher) {
+        val vm = newViewModel()
+        advanceUntilIdle()
+
+        vm.userMessages.test {
+            vm.deleteCurrentTrack(alsoBlock = false)
+            advanceUntilIdle()
+            assertEquals("This song isn't in your library, so there's nothing to delete.", awaitItem())
+        }
+        coVerify(exactly = 0) { playerRepository.skipNext() }
+        coVerify(exactly = 0) { musicRepository.deleteTrack(any()) }
+    }
+
+    @Test fun `block persists the stream so the block has an identity`() = runTest(dispatcher) {
+        val vm = newViewModel()
+        advanceUntilIdle()
+
+        vm.userMessages.test {
+            vm.deleteCurrentTrack(alsoBlock = true)
+            advanceUntilIdle()
+            assertEquals("Blocked from future syncs.", awaitItem())
+        }
+        coVerify { musicRepository.blacklistTrack(900L) }
+    }
+}
