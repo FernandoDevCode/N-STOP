@@ -1,6 +1,7 @@
 package com.stash.core.data.weblink
 
 import com.google.common.truth.Truth.assertThat
+import com.stash.core.data.weblink.store.LinkedSpace
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
@@ -62,6 +63,23 @@ class WebLinkRepositoryTest {
         assertThat(space.envelopes.keys).doesNotContain(firefox.deviceId to 2)
         assertThat(chrome.openOwnLabel(before.spaceId, after.k).name).isEqualTo("Chrome on Windows")
         assertThat(linked().devices.map { it.name }).containsExactly("Pixel 5", "Chrome on Windows").inOrder()
+    }
+
+    @Test fun `old keys are kept across several rotations, bounded, and read back from the one sealed column`() = runTest {
+        link("Chrome on Windows")
+        val k1 = store.space()!!.k
+        for (n in 1..LinkedSpace.KEPT_EPOCHS + 1) assertThat(repo.remove(link("Firefox $n").deviceId)).isEqualTo(WebLinkResult.Ok)
+        val sp = store.space()!!
+        assertThat(sp.epoch).isEqualTo(LinkedSpace.KEPT_EPOCHS + 2)
+        assertThat(sp.keyFor(1)).isNull() // past the bound
+        assertThat((2 until sp.epoch).map { sp.keyFor(it) }).doesNotContain(null)
+
+        val back = LinkedSpace.of(sp.spaceId, sp.epoch, sp.k, sp.prevEpoch, sp.previousKeys())
+        for (e in 1..sp.epoch) assertThat(back.keyFor(e)?.let(Base64Url::encode)).isEqualTo(sp.keyFor(e)?.let(Base64Url::encode))
+        // A store written before the older keys were kept holds the previous key alone, and reads back the same.
+        val legacy = LinkedSpace.of(sp.spaceId, 2, sp.k, 1, k1)
+        assertThat(legacy.keyFor(1)).isSameInstanceAs(k1)
+        assertThat(legacy.previousKeys()).isSameInstanceAs(k1)
     }
 
     @Test fun `a rotation re-seals the mirror config under the new key`() = runTest {

@@ -757,6 +757,25 @@ class MirrorEngineTest {
         assertThat(chrome.deviceId).isEqualTo(web.id)
     }
 
+    @Test fun `two key changes before a run - the browser's batches under the first key are still read, and the log compacts`() = runTest {
+        link()
+        likesMirroring()
+        // The browser unlikes A at epoch 1 while the phone's mirror is idle; then the phone removes two devices (two rotations).
+        web.wall = server.serverNow + 60_000
+        web.post(MirrorOp.Like(song("A"), false, web.at()))
+        val space = server.spaces.getValue(web.spaceId)
+        for (gone in listOf("d_gone00000000001", "d_gone00000000002")) {
+            space.devices[gone] = FakeSyncServer.Dev(gone, "web", "x", "y", null)
+            repo.remove(gone)
+        }
+        assertThat(space.epoch).isEqualTo(3)
+        // The epoch-1 batch is read with the key kept from two rotations back: no gap, so the log compacts and unfreezes (A5).
+        assertThat(run()).isEqualTo(MirrorRun.Done)
+        assertThat(records.record!!.gaps).isEmpty()
+        assertThat(lib.likedTitles()).doesNotContain("A")
+        assertThat(space.compactDue).isFalse()
+    }
+
     @Test fun `a log entry under a key the phone never had is a gap, it never compacts over it`() = runTest {
         link()
         likesMirroring()
