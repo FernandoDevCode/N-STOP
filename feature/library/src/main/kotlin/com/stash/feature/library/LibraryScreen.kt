@@ -624,6 +624,37 @@ private fun LibraryContent(
             )
         }
 
+        // An empty tab's "Show everything" (see noMatchMessage). The source filter only narrows
+        // Songs, so only Songs clears it.
+        val clearSearch: () -> Unit = {
+            onSearchQueryChanged("")
+            searchOpen = false
+        }
+        val clearSearchAndFilter: () -> Unit = {
+            clearSearch()
+            onSourceFilterChanged(SourceFilter.ALL)
+        }
+
+        // -- Active source filter, on the tab it narrows. It's persisted and re-applied every
+        // launch, and since the chip rows moved into the sheet nothing on screen showed it: a
+        // FLAC filter from days ago left Songs at 40 of 5,000 with no hint why. Tap to clear.
+        val activeFilterLabel = sourceFilterLabel(state.sourceFilter)
+        if (activeFilterLabel != null && state.activeTab == LibraryTab.TRACKS) {
+            androidx.compose.material3.InputChip(
+                selected = true,
+                onClick = { onSourceFilterChanged(SourceFilter.ALL) },
+                label = { Text("Showing $activeFilterLabel only") },
+                trailingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Clear filter",
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
+                modifier = Modifier.padding(horizontal = 20.dp),
+            )
+        }
+
         // -- Category chips (pinned): Songs / Playlists / Artists / Albums --
         val chipTabs = listOf(
             "Songs" to LibraryTab.TRACKS,
@@ -647,6 +678,8 @@ private fun LibraryContent(
                 sortOrder = state.sortOrder,
                 sourceFilter = state.sourceFilter,
                 showDuration = state.activeTab == LibraryTab.TRACKS,
+                // The source filter narrows Songs only; offered elsewhere it looked broken.
+                showSourceFilter = state.activeTab == LibraryTab.TRACKS,
                 onSortSelected = onSortOrderChanged,
                 onFilterSelected = onSourceFilterChanged,
                 onDismiss = { sortFilterOpen = false },
@@ -711,6 +744,8 @@ private fun LibraryContent(
                         onTogglePlaylistPinned = onTogglePlaylistPinned,
                         onTogglePlaylistOnHome = onTogglePlaylistOnHome,
                         header = {},
+                        noMatch = noMatchMessage("playlists", state.searchQuery),
+                        onClearFilters = clearSearch,
                     )
                     LibraryTab.TRACKS -> TracksTab(
                         tracks = state.tracks,
@@ -728,6 +763,8 @@ private fun LibraryContent(
                         onDownloadTrack = onDownloadTrack,
                         onRemoveDownloadTrack = onRemoveDownloadTrack,
                         header = libraryHeader,
+                        noMatch = noMatchMessage("songs", state.searchQuery, state.sourceFilter),
+                        onClearFilters = clearSearchAndFilter,
                     )
                     LibraryTab.LIKED -> LikedTab(
                         tracks = likedTracks,
@@ -745,6 +782,8 @@ private fun LibraryContent(
                         onCreatePlaylistWithTrack = onCreatePlaylistWithTrack,
                         onDownloadTrack = onDownloadTrack,
                         onRemoveDownloadTrack = onRemoveDownloadTrack,
+                        noMatch = noMatchMessage("liked songs", state.searchQuery),
+                        onClearFilters = clearSearch,
                     )
                     LibraryTab.ARTISTS -> ArtistsGrid(
                         artists = state.artists,
@@ -754,6 +793,8 @@ private fun LibraryContent(
                         onAddArtistToQueue = onAddArtistToQueue,
                         onDeleteArtist = onDeleteArtist,
                         header = {},
+                        noMatch = noMatchMessage("artists", state.searchQuery),
+                        onClearFilters = clearSearch,
                     )
                     LibraryTab.ALBUMS -> AlbumsGrid(
                         albums = state.albums,
@@ -763,6 +804,8 @@ private fun LibraryContent(
                         onAddAlbumToQueue = onAddAlbumToQueue,
                         onOpenAlbum = onOpenAlbum,
                         header = {},
+                        noMatch = noMatchMessage("albums", state.searchQuery),
+                        onClearFilters = clearSearch,
                     )
                 }
             }
@@ -822,6 +865,9 @@ private fun LikedTab(
     onCreatePlaylistWithTrack: (name: String, trackId: Long) -> Unit,
     onDownloadTrack: (Long) -> Unit,
     onRemoveDownloadTrack: (Long) -> Unit,
+    /** Empty-state line when the search emptied the list (see [noMatchMessage]). */
+    noMatch: String? = null,
+    onClearFilters: () -> Unit = {},
 ) {
     // Sift chips: "All" plus only the origins that actually have likes.
     val sift = buildList {
@@ -867,7 +913,13 @@ private fun LikedTab(
                     }
                 }
                 if (tracks.isEmpty()) {
-                    item { EmptyTabMessage("No liked songs yet — tap the heart on a track to like it") }
+                    item {
+                        EmptyTabMessage(
+                            noMatch = noMatch,
+                            fallback = "No liked songs yet — tap the heart on a track to like it",
+                            onClear = onClearFilters,
+                        )
+                    }
                 }
                 items(tracks, key = { it.id }) { track ->
                     TrackListItem(
@@ -1163,6 +1215,9 @@ private fun PlaylistsGrid(
     onTogglePlaylistPinned: (Playlist) -> Unit,
     onTogglePlaylistOnHome: (Playlist) -> Unit,
     header: @Composable () -> Unit = {},
+    /** Empty-state line when the search emptied the grid (see [noMatchMessage]). */
+    noMatch: String? = null,
+    onClearFilters: () -> Unit = {},
 ) {
     // Playlist selected for the context-menu bottom sheet.
     var selectedPlaylist by remember { mutableStateOf<Playlist?>(null) }
@@ -1201,8 +1256,10 @@ private fun PlaylistsGrid(
             if (playlists.isEmpty()) {
                 item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
                     EmptyTabMessage(
-                        if (anyServiceConnected) "Sync your playlists to see them here"
+                        noMatch = noMatch,
+                        fallback = if (anyServiceConnected) "Sync your playlists to see them here"
                         else "Connect a service in Settings to see your playlists",
+                        onClear = onClearFilters,
                     )
                 }
             }
@@ -1594,13 +1651,18 @@ private fun TracksTab(
     onDownloadTrack: (Long) -> Unit,
     onRemoveDownloadTrack: (Long) -> Unit,
     header: @Composable () -> Unit = {},
+    /** Empty-state line when the search or source filter emptied the list (see [noMatchMessage]). */
+    noMatch: String? = null,
+    onClearFilters: () -> Unit = {},
 ) {
     if (tracks.isEmpty()) {
         Column {
             header()
             EmptyTabMessage(
-                if (anyServiceConnected) "Sync your library to see tracks here"
+                noMatch = noMatch,
+                fallback = if (anyServiceConnected) "Sync your library to see tracks here"
                 else "Connect a service in Settings to see your tracks",
+                onClear = onClearFilters,
             )
         }
         return
@@ -1802,13 +1864,18 @@ private fun ArtistsGrid(
     onAddArtistToQueue: (String) -> Unit,
     onDeleteArtist: (String) -> Unit,
     header: @Composable () -> Unit = {},
+    /** Empty-state line when the search emptied the grid (see [noMatchMessage]). */
+    noMatch: String? = null,
+    onClearFilters: () -> Unit = {},
 ) {
     if (artists.isEmpty() && singleTrackArtists.isEmpty()) {
         Column {
             header()
             EmptyTabMessage(
-                if (anyServiceConnected) "Sync your library to see artists here"
+                noMatch = noMatch,
+                fallback = if (anyServiceConnected) "Sync your library to see artists here"
                 else "Connect a service in Settings to see your artists",
+                onClear = onClearFilters,
             )
         }
         return
@@ -2002,13 +2069,18 @@ private fun AlbumsGrid(
     onAddAlbumToQueue: (String, String) -> Unit,
     onOpenAlbum: (AlbumInfo) -> Unit,
     header: @Composable () -> Unit = {},
+    /** Empty-state line when the search emptied the grid (see [noMatchMessage]). */
+    noMatch: String? = null,
+    onClearFilters: () -> Unit = {},
 ) {
     if (albums.isEmpty() && singleTrackAlbums.isEmpty()) {
         Column {
             header()
             EmptyTabMessage(
-                if (anyServiceConnected) "Sync your library to see albums here"
+                noMatch = noMatch,
+                fallback = if (anyServiceConnected) "Sync your library to see albums here"
                 else "Connect a service in Settings to see your albums",
+                onClear = onClearFilters,
             )
         }
         return
@@ -2328,15 +2400,27 @@ private fun ArtistInitialFallback(name: String, size: Dp) {
 // ── Empty state placeholder ──────────────────────────────────────────────────
 
 @Composable
-private fun EmptyTabMessage(message: String) {
+private fun EmptyTabMessage(message: String, onClear: (() -> Unit)? = null) {
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = message,
-            style = MaterialTheme.typography.bodyLarge,
-            color = StashTheme.extendedColors.textTertiary,
-        )
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyLarge,
+                color = StashTheme.extendedColors.textTertiary,
+            )
+            // Emptied by the user's own search/filter (see noMatchMessage): one tap undoes it.
+            if (onClear != null) {
+                TextButton(onClick = onClear) { Text("Show everything") }
+            }
+        }
     }
+}
+
+/** [EmptyTabMessage] for a tab: [noMatch] (with a Clear action) when set, else [fallback]. */
+@Composable
+private fun EmptyTabMessage(noMatch: String?, fallback: String, onClear: () -> Unit) {
+    if (noMatch != null) EmptyTabMessage(noMatch, onClear) else EmptyTabMessage(fallback)
 }
