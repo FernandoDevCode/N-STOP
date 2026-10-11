@@ -62,6 +62,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -281,6 +282,22 @@ class PlayerRepositoryImpl @Inject constructor(
                 if (remaining in 0 until RADIO_GROW_THRESHOLD) growRadio()
             }
         }
+        // Position save while playing. updateState (the only other writer) runs
+        // on player events alone, and a steady hour-long mix raises none after
+        // its track starts: a process death mid-track (an OOM kill #238/#239,
+        // LMK, force-stop, a crash) resumed near the track's beginning instead
+        // of where it was. Every POSITION_PERSIST_INTERVAL_MS while playing the
+        // position goes through the same gate; nothing runs while paused (the
+        // pause edge already saved the exact spot).
+        scope.launch {
+            _playerState.map { it.isPlaying }.distinctUntilChanged().collectLatest { playing ->
+                while (playing) {
+                    delay(POSITION_PERSIST_INTERVAL_MS)
+                    persistPositionWhilePlaying()
+                }
+            }
+        }
+
         // Autoplay radio (user ask, 2026-09-07): with the setting on, the moment
         // the LAST queued track starts, a song radio seeded from it is spliced
         // behind it, so a one-off play never ends in silence. Tried once per
@@ -2849,24 +2866,8 @@ class PlayerRepositoryImpl @Inject constructor(
         // index switch, a pause edge (exact resume position), or ≥5s drift.
         val pauseEdge = lastObservedIsPlaying && !newState.isPlaying
         lastObservedIsPlaying = newState.isPlaying
-        if (track != null &&
-            shouldPersistPosition(
-                trackChanged = track.id != lastSavedPosTrackId,
-                indexChanged = newState.currentIndex != lastSavedPosQueueIndex,
-                pauseEdge = pauseEdge,
-                positionDeltaMs = newState.positionMs - lastSavedPositionMs,
-            )
-        ) {
-            lastSavedPosTrackId = track.id
-            lastSavedPosQueueIndex = newState.currentIndex
-            lastSavedPositionMs = newState.positionMs
-            scope.launch {
-                playbackStateStore.savePosition(
-                    trackId = track.id,
-                    positionMs = newState.positionMs,
-                    queueIndex = newState.currentIndex,
-                )
-            }
+        if (track != null) {
+            savePositionIfDue(track.id, newState.positionMs, newState.currentIndex, pauseEdge)
         }
 
         // Persist the full queue so Bluetooth/Android Auto resumption can
@@ -2900,6 +2901,41 @@ class PlayerRepositoryImpl @Inject constructor(
                 }
             }
         }
+    }
+
+    /**
+     * The gated position write ([shouldPersistPosition]) shared by
+     * [updateState] and the periodic save while playing. Main thread.
+     */
+    private fun savePositionIfDue(trackId: Long, positionMs: Long, queueIndex: Int, pauseEdge: Boolean) {
+        if (!shouldPersistPosition(
+                trackChanged = trackId != lastSavedPosTrackId,
+                indexChanged = queueIndex != lastSavedPosQueueIndex,
+                pauseEdge = pauseEdge,
+                positionDeltaMs = positionMs - lastSavedPositionMs,
+            )
+        ) {
+            return
+        }
+        lastSavedPosTrackId = trackId
+        lastSavedPosQueueIndex = queueIndex
+        lastSavedPositionMs = positionMs
+        scope.launch {
+            playbackStateStore.savePosition(
+                trackId = trackId,
+                positionMs = positionMs,
+                queueIndex = queueIndex,
+            )
+        }
+    }
+
+    /** One tick of the save-while-playing loop (see init): the live position of the published track. */
+    internal fun persistPositionWhilePlaying() {
+        if (listenTogetherOwnsQueue) return // as in updateState: never over the user's own queue
+        val controller = controllerDeferred?.takeIf { it.isConnected } ?: return
+        val state = _playerState.value
+        val track = state.currentTrack ?: return
+        savePositionIfDue(track.id, controller.currentPosition.coerceAtLeast(0), state.currentIndex, pauseEdge = false)
     }
 
     // ---- Mappers ----
@@ -3085,6 +3121,9 @@ internal fun shouldPersistPosition(
 
 /** Minimum position drift before an unforced persist write. */
 internal const val POSITION_PERSIST_MIN_DELTA_MS = 5_000L
+
+/** How often the position is saved while playing, between player events. */
+internal const val POSITION_PERSIST_INTERVAL_MS = 15_000L
 
 /**
  * Playback-position stream: polls the player [pollIntervalMs] apart WHILE
