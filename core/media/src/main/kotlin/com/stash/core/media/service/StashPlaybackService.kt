@@ -2198,10 +2198,9 @@ class StashPlaybackService : MediaLibraryService() {
             params: LibraryParams?,
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
             return serviceScope.future {
-                // Sanitize for FTS (append * to each term for prefix matching)
-                val sanitized = query.split(" ")
-                    .filter { it.isNotBlank() }
-                    .joinToString(" ") { "$it*" }
+                // Sanitize for FTS (each term a quoted prefix match, see autoSearchMatchQuery)
+                val sanitized = autoSearchMatchQuery(query)
+                    ?: return@future LibraryResult.ofItemList(ImmutableList.of(), params)
 
                 val tracks = trackDao.searchDownloaded(sanitized).first()
                 val items = tracks.map { it.toAutoMediaItem(tileArt = true) }
