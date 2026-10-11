@@ -8,6 +8,7 @@ import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.flowOf
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 
 /**
  * A SAF tree in memory. Documents are mocks over maps; a document's URI is
@@ -22,6 +23,9 @@ internal class FakeSafTree(
 ) {
     val written = mutableMapOf<String, ByteArray>()
     val deleted = mutableListOf<String>()
+
+    /** Writes to a document whose URI this matches fail part-way, as on a full card. */
+    var failWritesTo: (String) -> Boolean = { false }
     private val dirs = mutableMapOf<String, MutableMap<String, DocumentFile>>()
     private val root = dir("")
 
@@ -33,6 +37,15 @@ internal class FakeSafTree(
         every { DocumentFile.fromTreeUri(any(), treeUri) } returns root
         every { resolver.openOutputStream(any<Uri>()) } answers {
             val uri = firstArg<Uri>().toString()
+            if (failWritesTo(uri)) {
+                return@answers object : ByteArrayOutputStream() {
+                    override fun write(b: ByteArray, off: Int, len: Int) {
+                        super.write(b, off, len)
+                        written[uri] = toByteArray()
+                        throw IOException("No space left on device")
+                    }
+                }
+            }
             object : ByteArrayOutputStream() {
                 override fun close() {
                     super.close()
@@ -85,18 +98,33 @@ internal class FakeSafTree(
     }
 
     private fun file(path: String, siblings: MutableMap<String, DocumentFile>): DocumentFile {
-        val name = path.substringAfterLast('/')
-        val text = uriOf(path)
+        val parent = path.substringBeforeLast('/', "")
+        var name = path.substringAfterLast('/')
         val doc = mockk<DocumentFile>()
+        // Like DocumentFile.renameTo, a rename changes the document's URI.
+        val docUri = mockk<Uri> { every { this@mockk.toString() } answers { uriOf(join(parent, name)) } }
         every { doc.isDirectory } returns false
         every { doc.isFile } returns true
-        every { doc.name } returns name
-        every { doc.uri } returns uri(path)
+        every { doc.name } answers { name }
+        every { doc.uri } returns docUri
         every { doc.delete() } answers {
+            val text = uriOf(join(parent, name))
             siblings.remove(name)
             written.remove(text)
             deleted += text
             true
+        }
+        every { doc.renameTo(any()) } answers {
+            val newName = firstArg<String>()
+            if (newName in siblings) {
+                false
+            } else {
+                written.remove(uriOf(join(parent, name)))?.let { written[uriOf(join(parent, newName))] = it }
+                siblings.remove(name)
+                siblings[newName] = doc
+                name = newName
+                true
+            }
         }
         return doc
     }

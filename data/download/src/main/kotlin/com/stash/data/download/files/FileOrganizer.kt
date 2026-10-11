@@ -10,6 +10,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.withLock
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -501,6 +503,11 @@ class FileOrganizer @Inject constructor(
         private val KNOWN_AUDIO_FORMATS = listOf("opus", "m4a", "flac", "mp3", "ogg", "wav")
         // Highest `-N` a new file's name tries before the commit gives up.
         private const val MAX_COPY_NUMBER = 999
+        // A library file being written, before one rename puts it in place.
+        private const val PART_SUFFIX = ".part"
+        // Names a SAF document written to replace one: `<name>.stash-part.<ext>`.
+        // The real extension stays last, so providers keep the name as given.
+        private const val STAGING_INFIX = ".stash-part"
     }
 
     /**
@@ -562,9 +569,7 @@ class FileOrganizer @Inject constructor(
             } else {
                 ownInternalFile(dir, location, format, replaceSuffixes(nameSuffix, album, trackId), trackId)
             }
-            // A new file never replaces one, even one that appeared since the
-            // name was picked: copyTo throws instead.
-            tempFile.copyTo(finalFile, overwrite = !asNewFile)
+            writeInternalFile(tempFile, finalFile, replace = !asNewFile)
             tempFile.delete()
             CommittedTrack(finalFile.absolutePath, size)
         } else {
@@ -650,6 +655,34 @@ class FileOrganizer @Inject constructor(
     }
 
     /**
+     * Writes [tempFile] to [finalFile] through a `.part` file beside it, put in
+     * place by one rename once complete. `copyTo(overwrite = true)` deleted
+     * the old file first and, on a full disk, left a partial one at the name:
+     * a failed re-download or upgrade destroyed the track's own audio, and the
+     * partial file could later be adopted as the download. Now a failure
+     * leaves the old file as it was. [replace] false (a new file): the move
+     * refuses a name that is taken, even one that appeared since it was picked.
+     */
+    private fun writeInternalFile(tempFile: File, finalFile: File, replace: Boolean) {
+        val part = File(finalFile.parentFile, "${finalFile.name}$PART_SUFFIX")
+        try {
+            tempFile.copyTo(part, overwrite = true)
+            if (replace) {
+                Files.move(
+                    part.toPath(),
+                    finalFile.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+            } else {
+                Files.move(part.toPath(), finalFile.toPath())
+            }
+        } finally {
+            part.delete() // gone already once moved
+        }
+    }
+
+    /**
      * Writes [tempFile] into the user's SAF tree at [location]'s relative
      * path, creating intermediate directories on demand, under the first of
      * [suffixes]' names whose document no other track records (see
@@ -671,18 +704,20 @@ class FileOrganizer @Inject constructor(
         for (suffix in suffixes) {
             val filename = fileNameFor(location, format, suffix)
             val existing = listing[filename]
-            if (existing != null && recordedByAnotherTrack(existing.uri.toString(), trackId)) continue
-            // Overwrite this track's own (or nobody's) file at the name.
-            existing?.delete()
+            if (existing != null) {
+                if (recordedByAnotherTrack(existing.uri.toString(), trackId)) continue
+                // This track's own (or nobody's) file is at the name.
+                return replaceSafDocument(tempFile, cursor, existing, filename, format)
+            }
             val target = cursor.createFile(mimeTypeFor(format), filename)
                 ?: error("Could not create SAF file '$filename' under ${cursor.uri}")
             // Path-based providers hand a new document a deleted one's URI,
             // which a track whose file went missing may still record.
-            if (existing == null && recordedByAnotherTrack(target.uri.toString(), trackId)) {
+            if (recordedByAnotherTrack(target.uri.toString(), trackId)) {
                 target.delete()
                 continue
             }
-            copyIntoDocument(tempFile, target, filename)
+            copyIntoNewDocument(tempFile, target, filename)
             return target.uri.toString()
         }
         error("No free file name for '${location.baseName}.$format' under ${cursor.uri}")
@@ -727,6 +762,49 @@ class FileOrganizer @Inject constructor(
             }
         }
         error("No free file name for '${location.baseName}.$format' under ${cursor.uri}")
+    }
+
+    /**
+     * Replaces [existing] with [tempFile]'s bytes without risking it: the new
+     * file is written in full to a staging document first, and only then is
+     * the old one deleted and the staging one renamed to [filename]. The old
+     * code deleted the document, then created and filled a new one: a full or
+     * ejected SD card left the track with no file but a partial one at its
+     * name, which the next library check adopted as the download. On a
+     * path-based provider the renamed document gets the old one's URI back,
+     * so a row still recording it stays valid.
+     */
+    private fun replaceSafDocument(
+        tempFile: File,
+        cursor: DocumentFile,
+        existing: DocumentFile,
+        filename: String,
+        format: String,
+    ): String {
+        val stagingName = "${filename.substringBeforeLast('.')}$STAGING_INFIX.$format"
+        val staging = cursor.createFile(mimeTypeFor(format), stagingName)
+            ?: error("Could not create SAF file '$stagingName' under ${cursor.uri}")
+        copyIntoNewDocument(tempFile, staging, stagingName)
+        if (!existing.delete()) {
+            staging.delete()
+            error("Could not replace SAF file '$filename' under ${cursor.uri}")
+        }
+        // A failed rename still leaves a complete file, under the staging name.
+        if (!staging.renameTo(filename)) {
+            android.util.Log.w("FileOrganizer", "commit: kept '$stagingName'; renaming it to '$filename' failed")
+        }
+        return staging.uri.toString()
+    }
+
+    /** [copyIntoDocument] into a document this call made, which goes again if the copy fails. */
+    private fun copyIntoNewDocument(tempFile: File, target: DocumentFile, filename: String) {
+        var copied = false
+        try {
+            copyIntoDocument(tempFile, target, filename)
+            copied = true
+        } finally {
+            if (!copied) target.delete()
+        }
     }
 
     /** The folder for [location] in the SAF tree, made as needed. */
