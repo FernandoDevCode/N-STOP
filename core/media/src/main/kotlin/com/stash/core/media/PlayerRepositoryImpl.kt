@@ -1393,14 +1393,24 @@ class PlayerRepositoryImpl @Inject constructor(
         return true
     }
 
-    /** Timeline slot holding [trackId], or -1 when the track was dropped by
-     * the fast-lane background fill and has no MediaItem yet. */
-    private fun timelineIndexOfTrackId(controller: MediaController, trackId: Long): Int {
+    /** Timeline slot holding the [copy]-th (0-based) occurrence of [trackId], or -1
+     * when the track was dropped by the fast-lane background fill and has no
+     * MediaItem yet.
+     *
+     * By copy, not by id: with a song queued twice (`[A(playing), B, C, A]`)
+     * the first match turned a swipe on the second A into removing the PLAYING
+     * one, and a tap on it into replaying B and C. The timeline holds a
+     * subsequence of the logical queue in the same order, so the k-th copy in
+     * the logical queue ([QueueDisplay.copyOrdinal]) is the k-th copy here. */
+    private fun timelineIndexOfTrackId(controller: MediaController, trackId: Long, copy: Int): Int {
+        var seen = 0
         for (i in 0 until controller.mediaItemCount) {
             val item = controller.getMediaItemAt(i)
             val id = item.mediaMetadata.extras?.getLong(EXTRA_TRACK_ID)
                 ?: item.mediaId.toLongOrNull()
-            if (id == trackId) return i
+            if (id != trackId) continue
+            if (seen == copy) return i
+            seen++
         }
         return -1
     }
@@ -1421,7 +1431,8 @@ class PlayerRepositoryImpl @Inject constructor(
             val logical = currentQueueTracks
             val target = logical.getOrNull(index) ?: return
             currentQueueTracks = logical.filterIndexed { i, _ -> i != index }
-            val timelineIdx = timelineIndexOfTrackId(controller, target.id)
+            val timelineIdx =
+                timelineIndexOfTrackId(controller, target.id, QueueDisplay.copyOrdinal(logical, index))
             if (timelineIdx >= 0) {
                 controller.removeMediaItem(timelineIdx)
             } else {
@@ -1453,7 +1464,8 @@ class PlayerRepositoryImpl @Inject constructor(
             mutable.add(to, moved)
             currentQueueTracks = mutable
 
-            val timelineFrom = timelineIndexOfTrackId(controller, moved.id)
+            val timelineFrom =
+                timelineIndexOfTrackId(controller, moved.id, QueueDisplay.copyOrdinal(logical, from))
             if (timelineFrom >= 0) {
                 val timelineIdsWithoutMoved = buildList {
                     for (i in 0 until controller.mediaItemCount) {
@@ -1501,7 +1513,11 @@ class PlayerRepositoryImpl @Inject constructor(
         }
         if (logicalDisplayActive(controller)) {
             val target = currentQueueTracks.getOrNull(index) ?: return
-            val timelineIdx = timelineIndexOfTrackId(controller, target.id)
+            val timelineIdx = timelineIndexOfTrackId(
+                controller,
+                target.id,
+                QueueDisplay.copyOrdinal(currentQueueTracks, index),
+            )
             if (timelineIdx >= 0) {
                 if (prepareExplicitTimelineTarget(controller, timelineIdx, target)) {
                     controller.seekToDefaultPosition(timelineIdx)

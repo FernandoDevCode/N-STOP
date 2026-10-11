@@ -113,4 +113,26 @@ class PlaybackResumerTest {
 
         assertThat(resumer.buildResumePlan()).isNull()
     }
+
+    @Test
+    fun songQueuedTwice_resumesAtTheSavedCopy() = runTest {
+        // [10, 20, 30, 10] paused on the SECOND 10: the first match resumed at slot 0 and
+        // replayed 20 and 30.
+        coEvery { playbackStateStore.getLastPlaybackState() } returns SavedPlaybackState(
+            trackId = 10,
+            positionMs = 30_000,
+            queueIndex = 3,
+            queueTrackIds = listOf(10, 20, 30, 10),
+            isShuffled = false,
+            repeatMode = RepeatMode.OFF,
+            source = PlaybackSource.Unknown,
+        )
+        coEvery { trackDao.getByIds(listOf(10, 20, 30, 10)) } returns listOf(track(10), track(20), track(30))
+
+        val plan = resumer.buildResumePlan()!!
+
+        assertThat(plan.tracks.map { it.id }).containsExactly(10L, 20L, 30L, 10L).inOrder()
+        assertThat(plan.startIndex).isEqualTo(3)
+        assertThat(plan.positionMs).isEqualTo(30_000)
+    }
 }

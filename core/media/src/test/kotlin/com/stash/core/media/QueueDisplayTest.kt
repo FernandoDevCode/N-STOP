@@ -160,4 +160,52 @@ class QueueDisplayTest {
     )
     assertThat(target).isEqualTo(2)
   }
+
+  // ---- the same song queued twice ----
+
+  @Test
+  fun `while the second copy plays, the current index is that copy`() {
+    // [A, B, C, A] with the second A playing: the first match highlighted row 0 and listed
+    // B and C, already played, as "Up next".
+    val result = QueueDisplay.compute(
+      timelineQueue = listOf(t1, t2, t3, t1),
+      timelineIndex = 3,
+      logicalQueue = listOf(t1, t2, t3, t1),
+      currentTrackId = 1L,
+    )
+    assertThat(result.currentIndex).isEqualTo(3)
+  }
+
+  @Test
+  fun `the first copy playing stays on the first copy`() {
+    val result = QueueDisplay.compute(
+      timelineQueue = listOf(t1, t2, t3, t1),
+      timelineIndex = 0,
+      logicalQueue = listOf(t1, t2, t3, t1),
+      currentTrackId = 1L,
+    )
+    assertThat(result.currentIndex).isEqualTo(0)
+  }
+
+  @Test
+  fun `copyOrdinal and indexOfCopy find a row again by its copy`() {
+    val queue = listOf(t1, t2, t1, t3, t1)
+    assertThat(QueueDisplay.copyOrdinal(queue, 0)).isEqualTo(0)
+    assertThat(QueueDisplay.copyOrdinal(queue, 4)).isEqualTo(2)
+    assertThat(QueueDisplay.indexOfCopy(queue, 1L, 1)).isEqualTo(2)
+    assertThat(QueueDisplay.indexOfCopy(queue, 1L, 3)).isEqualTo(-1)
+  }
+
+  @Test
+  fun `move counts only the copies of a repeated song that sit before the target`() {
+    // [A, B, C, B]: move A to logical position 2 -> newLogical [B, C, A, B]. Timeline without
+    // the moved item: [B, C, B]. Only the FIRST B and C precede position 2 -> insert at 2.
+    // An id set counted both Bs and answered 3.
+    val target = QueueDisplay.moveTimelineTarget(
+      newLogical = listOf(t2, t3, t1, t2),
+      toIndex = 2,
+      timelineIdsWithoutMoved = listOf(2L, 3L, 2L),
+    )
+    assertThat(target).isEqualTo(2)
+  }
 }
