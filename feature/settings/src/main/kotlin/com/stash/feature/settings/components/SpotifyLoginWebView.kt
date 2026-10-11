@@ -155,17 +155,7 @@ fun SpotifyLoginWebView(
                     // particular Google's `_GRECAPTCHA` reputation cookie, which
                     // the old `removeAllCookies` wiped on every launch, hurting
                     // the invisible reCAPTCHA v3 score (issue #231).
-                    CookieManager.getInstance().apply {
-                        SPOTIFY_COOKIE_DOMAINS.forEach { domain ->
-                            SPOTIFY_SESSION_COOKIES.forEach { name ->
-                                setCookie(
-                                    domain,
-                                    "$name=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/",
-                                )
-                            }
-                        }
-                        flush()
-                    }
+                    clearSpotifyWebSession()
 
                     WebView(context).apply {
                         layoutParams = ViewGroup.LayoutParams(
@@ -258,6 +248,31 @@ fun SpotifyLoginWebView(
             }
         }
     }
+}
+
+/**
+ * Expires Spotify's session cookies (the account's `sp_dc` among them) in the
+ * shared WebView cookie jar, leaving every other cookie alone. Runs when the
+ * sign-in opens, so it starts from a fresh login form instead of re-submitting
+ * an old (possibly revoked) `sp_dc`, and on Disconnect, so the credential does
+ * not stay on disk in the WebView profile.
+ *
+ * Expires both the host-only and the `Domain=.spotify.com` form (see
+ * [WebSessionCookies.expiryHeaders]); the old host-only-only expiry never
+ * matched the real `sp_dc`. Best-effort: a device without a working WebView
+ * throws from [CookieManager.getInstance].
+ */
+internal fun clearSpotifyWebSession() {
+    runCatching {
+        CookieManager.getInstance().apply {
+            SPOTIFY_COOKIE_DOMAINS.forEach { url ->
+                SPOTIFY_SESSION_COOKIES.forEach { name ->
+                    WebSessionCookies.expiryHeaders(name, ".spotify.com").forEach { setCookie(url, it) }
+                }
+            }
+            flush()
+        }
+    }.onFailure { Log.w(TAG, "clearing the Spotify web session failed", it) }
 }
 
 /**

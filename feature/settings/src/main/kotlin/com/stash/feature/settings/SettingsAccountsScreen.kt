@@ -165,7 +165,11 @@ fun SettingsAccountsScreen(
             accentColor = extendedColors.spotifyGreen,
             authState = uiState.spotifyAuthState,
             onConnect = viewModel::onConnectSpotify,
-            onDisconnect = viewModel::onDisconnectSpotify,
+            onDisconnect = {
+                // Also sign the WebView out, or the next Connect re-submits the old sp_dc.
+                com.stash.feature.settings.components.clearSpotifyWebSession()
+                viewModel.onDisconnectSpotify()
+            },
             extraContent = {
                 com.stash.feature.settings.components.SpotifyAutoSaveSection(
                     enabled = uiState.autoSaveEnabled,
@@ -247,7 +251,11 @@ fun SettingsAccountsScreen(
             accentColor = androidx.compose.ui.graphics.Color(0xFF5865F2), // Discord blurple
             authState = uiState.discordAuthState,
             onConnect = { showDiscordRisk = true },
-            onDisconnect = viewModel::onDisconnectDiscord,
+            onDisconnect = {
+                // Also sign the WebView out (the token otherwise stays in its storage).
+                com.stash.feature.settings.components.clearDiscordWebSession()
+                viewModel.onDisconnectDiscord()
+            },
             needsAction = discordNeedsConsent,
             needsActionLabel = "Finish connecting",
             onNeedsAction = {
