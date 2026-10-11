@@ -9,17 +9,23 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.ListeningEventEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.prefs.YouTubeHistoryPreference
+import com.stash.data.ytmusic.CanonicalLookup
 import com.stash.data.ytmusic.InnerTubeClient
 import com.stash.data.ytmusic.YouTubeCredentialUrl
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
@@ -167,14 +173,29 @@ class YouTubeHistoryScrobbler @Inject constructor(
     private val _health = MutableStateFlow(YouTubeScrobblerHealth.DISABLED)
     val health: StateFlow<YouTubeScrobblerHealth> = _health.asStateFlow()
 
+    /**
+     * Outstanding plays: only those since the opt-in instant
+     * ([YouTubeHistoryPreference.sendPlaysSince]), so Settings never counts the
+     * history from before the user turned the feature on, which is never sent.
+     * A function, not a property, so constructing the scrobbler reads no flow.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun pendingCount(): Flow<Int> = preference.sendPlaysSince.flatMapLatest { sinceMs ->
+        if (sinceMs == null) flowOf(0) else listeningEventDao.pendingYtScrobbleCount(sinceMs)
+    }
+
     /** Must be called once from `Application.onCreate`. */
     fun start() {
         scope.launch { maybeClearKillSwitchOnUpdate() }
+        // Stamps the cutoff for an install that turned the feature on before it
+        // existed, from app start rather than from the first drain (which waits
+        // for a YouTube connection), so plays made meanwhile still count.
+        scope.launch { readCutoff() }
         scope.launch {
             combine(
                 preference.enabled,
                 tokenManager.youTubeAuthState,
-                listeningEventDao.pendingYtScrobbleCount().distinctUntilChanged(),
+                pendingCount().distinctUntilChanged(),
                 state.disabledReason,
             ) { enabled, _, _, disabledReason ->
                 Triple(enabled, tokenManager.isAuthenticated(AuthService.YOUTUBE_MUSIC), disabledReason)
@@ -210,24 +231,64 @@ class YouTubeHistoryScrobbler @Inject constructor(
     @Suppress("FunctionName")
     suspend fun maybeClearKillSwitchOnUpdateForTest() = maybeClearKillSwitchOnUpdate()
 
-    private suspend fun drainQueue() {
-        val pending = runCatching { listeningEventDao.pendingYtScrobbles(limit = 50) }
+    /** The opt-in cutoff, or null when the feature is off (or it cannot be read). */
+    private suspend fun readCutoff(): Long? = try {
+        preference.sendPlaysSinceMs()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "could not read the history cutoff", e)
+        null
+    }
+
+    /** An unreadable kill-switch counts as tripped: stopping is the safe side. */
+    private suspend fun killSwitchTripped(): Boolean = try {
+        state.currentDisabledReason() != null
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "could not read the kill-switch", e)
+        true
+    }
+
+    internal suspend fun drainQueue() {
+        // No cutoff means the feature is off: never fall back to "everything",
+        // which would send the user's whole history (see YouTubeHistoryPreference).
+        val sinceMs = readCutoff() ?: return
+        val pending = runCatching { listeningEventDao.pendingYtScrobbles(sinceMs = sinceMs, limit = 50) }
             .getOrElse {
                 Log.w(TAG, "drainQueue: failed to load pending events", it)
                 return
             }
         if (pending.isEmpty()) return
         for (event in pending) {
+            // Re-checked before every event, not once per pass: the collector only
+            // sees a turn-off or a tripped kill-switch after this pass returns, and
+            // a 50-event pass runs for about a minute. A cutoff that moved means the
+            // user turned the feature off and on again, so older plays are skipped.
+            val cutoff = readCutoff() ?: break
+            if (event.startedAt < cutoff) continue
+            if (killSwitchTripped()) break
+
             val track = runCatching { trackDao.getById(event.trackId) }.getOrNull()
             if (track == null) {
                 // Track deleted between recording and scrobbling — mark handled.
                 runCatching { listeningEventDao.markYtScrobbled(event.id) }
                 continue
             }
-            submit(event, track)
+            if (submit(event, track) == SubmitOutcome.STOP_PASS) break
             delay(REQUEST_INTERVAL_MS + Random.nextLong(-JITTER_MS, JITTER_MS))
         }
     }
+
+    /**
+     * Whether the rest of a drain pass can still succeed after one [submit].
+     * A failure every later event would hit too (no network, dead cookies, the
+     * kill-switch tripping) ends the pass; otherwise each new listen re-walked
+     * the whole batch, about three requests per event, against a YouTube that
+     * could not accept any of them. Outcomes tied to one track do not.
+     */
+    internal enum class SubmitOutcome { CONTINUE, STOP_PASS }
 
     /**
      * Resolves the canonical video id, fetches its tracking URL, then fires
@@ -235,55 +296,83 @@ class YouTubeHistoryScrobbler @Inject constructor(
      * `on*` handlers which update [_health] and, when appropriate, the
      * kill-switch in [state].
      */
-    internal suspend fun submit(event: ListeningEventEntity, track: TrackEntity) {
-        val canonicalId = runCatching { resolver.resolve(track) }.getOrNull()
-        if (canonicalId.isNullOrBlank()) {
-            // No ATV/OMV version found — mark handled to avoid UGC pollution.
-            runCatching { listeningEventDao.markYtScrobbled(event.id) }
-            return
+    internal suspend fun submit(event: ListeningEventEntity, track: TrackEntity): SubmitOutcome {
+        val lookup = try {
+            resolver.resolve(track)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "submit: canonical lookup threw for event=${event.id}", e)
+            CanonicalLookup.Failed
+        }
+        val canonicalId = when (lookup) {
+            is CanonicalLookup.Found -> lookup.match.videoId
+            CanonicalLookup.NoMatch -> {
+                // No ATV/OMV version found — mark handled to avoid UGC pollution.
+                runCatching { listeningEventDao.markYtScrobbled(event.id) }
+                return SubmitOutcome.CONTINUE
+            }
+            CanonicalLookup.Failed -> {
+                // The search did not answer (offline, 429, 5xx). That says nothing
+                // about whether a canonical version exists, so the play stays
+                // queued; marking it handled here dropped every offline listen.
+                onTransientFailure("search_failed")
+                return SubmitOutcome.STOP_PASS
+            }
         }
 
         val trackingUrl = runCatching {
             innerTubeClient.getPlaybackTracking(canonicalId)
         }.getOrNull()
         if (trackingUrl.isNullOrBlank()) {
+            // Also returned for one unplayable video, so it does not end the pass:
+            // that would let a single such play at the head block the whole queue.
             onTransientFailure("no_tracking_url")
-            return
+            return SubmitOutcome.CONTINUE
         }
 
         val cookies = tokenManager.getYouTubeCookie() ?: run {
             onAuthFailure()
-            return
+            return SubmitOutcome.STOP_PASS
         }
         val sapiSid = cookieHelper.extractSapiSid(cookies) ?: run {
             onAuthFailure()
-            return
+            return SubmitOutcome.STOP_PASS
         }
 
         // PlaybackTrackingParser returns only URLs that may receive the user's
         // YouTube credentials, and the submitter sends no ping to any other.
-        val code = runCatching {
+        val code = try {
             pingSubmitter.submit(trackingUrl, cookies, sapiSid)
-        }.getOrElse { e ->
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
             Log.w(TAG, "submit: network error for event=${event.id}", e)
             onTransientFailure("io_error")
-            return
+            return SubmitOutcome.STOP_PASS
         }
 
-        when (code) {
-            in 200..299 -> onSuccess(event.id)
-            401, 403 -> onAuthFailure()
+        return when (code) {
+            in 200..299 -> {
+                onSuccess(event.id)
+                SubmitOutcome.CONTINUE
+            }
+            401, 403 -> {
+                onAuthFailure()
+                SubmitOutcome.STOP_PASS
+            }
             else -> {
                 Log.w(TAG, "submit: unexpected HTTP $code for event=${event.id}")
-                onProtocolFailure()
+                if (onProtocolFailure()) SubmitOutcome.STOP_PASS else SubmitOutcome.CONTINUE
             }
         }
     }
 
     /** Test entry-point: exposes [submit] to the test package. */
     @Suppress("FunctionName")
-    suspend fun submitForTest(event: ListeningEventEntity, track: TrackEntity) =
+    suspend fun submitForTest(event: ListeningEventEntity, track: TrackEntity) {
         submit(event, track)
+    }
 
     private suspend fun onSuccess(eventId: Long) {
         runCatching { listeningEventDao.markYtScrobbled(eventId) }
@@ -300,13 +389,16 @@ class YouTubeHistoryScrobbler @Inject constructor(
         _health.value = YouTubeScrobblerHealth.AUTH_FAILED
     }
 
-    private suspend fun onProtocolFailure() {
+    /** @return true when this failure tripped the kill-switch. */
+    private suspend fun onProtocolFailure(): Boolean {
         val count = state.incrementConsecutiveFailures()
-        if (count >= KILL_SWITCH_THRESHOLD) {
+        return if (count >= KILL_SWITCH_THRESHOLD) {
             state.setDisabledReason("protocol_errors")
             _health.value = YouTubeScrobblerHealth.PROTOCOL_BROKEN
+            true
         } else {
             _health.value = YouTubeScrobblerHealth.OFFLINE
+            false
         }
     }
 
