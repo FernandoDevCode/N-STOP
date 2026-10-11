@@ -130,6 +130,38 @@ class MetadataEmbedderExecutionTest {
         assertFalse(root.listFiles().orEmpty().any { "_untagged_" in it.name })
     }
 
+    @Test(timeout = 30_000)
+    fun `ffmpeg that fills stderr past the pipe buffer before exiting does not deadlock`() = runTest {
+        // Reading stdout to EOF first left ffmpeg blocked on a full stderr pipe:
+        // neither side progressed and the download slot was lost for good.
+        installFfmpeg(
+            """#!/bin/sh
+                |for arg do output="${'$'}arg"; done
+                |head -c 300000 /dev/zero | tr '\0' 'w' >&2
+                |printf tagged > "${'$'}output"
+                |exit 0
+                |""".trimMargin(),
+        )
+        val audio = newAudio()
+
+        MetadataEmbedder(context, versionProvider).embedMetadata(audio, track)
+
+        assertEquals("tagged", audio.readText())
+    }
+
+    @Test(timeout = 30_000)
+    fun `a hung ffmpeg is killed at the timeout and the original is kept`() = runTest {
+        installFfmpeg("#!/bin/sh\nexec sleep 60\n")
+        val audio = newAudio()
+        val embedder = MetadataEmbedder(context, versionProvider).apply { ffmpegTimeoutSec = 1 }
+
+        val failure = assertFailurePreservesOriginal(audio, embedder)
+
+        assertTrue(failure is IOException)
+        assertTrue(failure.message.orEmpty().contains("timed out"))
+        assertFalse(taggedOutput(audio).exists())
+    }
+
     private suspend fun assertFailurePreservesOriginal(
         audio: File,
         embedder: MetadataEmbedder = MetadataEmbedder(context, versionProvider),
