@@ -864,7 +864,10 @@ class SpotifyApiClient @Inject constructor(
      * @return List of tracks, or null on failure.
      */
     private suspend fun tryGetPlaylistTracksViaWebApi(playlistId: String): List<SpotifyTrackItem>? {
-        val token = getClientCredentialsToken()
+        // var: replaced after a mid-pagination 401 refresh. As a val, every
+        // later page still sent the stale token, 401'd again and fetched yet
+        // another client_credentials token.
+        var token = getClientCredentialsToken()
         if (token == null) {
             Log.w(TAG, "tryGetPlaylistTracksViaWebApi: no client_credentials token")
             return null
@@ -909,6 +912,7 @@ class SpotifyApiClient @Inject constructor(
                 if (responseCode == 401) {
                     clientCredentialsToken = null
                     val refreshedToken = getClientCredentialsToken() ?: return null
+                    token = refreshedToken
                     Log.d(TAG, "tryGetPlaylistTracksViaWebApi: retrying with refreshed token")
                     val retryRequest = Request.Builder()
                         .url(url!!)
@@ -916,12 +920,16 @@ class SpotifyApiClient @Inject constructor(
                         .header("Authorization", "Bearer $refreshedToken")
                         .header("Accept", "application/json")
                         .build()
-                    val retryResponse = okHttpClient.newCall(retryRequest).execute()
-                    if (!retryResponse.isSuccessful) {
-                        Log.e(TAG, "tryGetPlaylistTracksViaWebApi: retry also failed HTTP ${retryResponse.code}")
+                    // use{}: an unsuccessful retry returned without ever
+                    // reading or closing its body, leaking the connection.
+                    val (retryCode, retryBody) = okHttpClient.newCall(retryRequest).execute().use {
+                        it.code to (if (it.isSuccessful) it.body?.string() else null)
+                    }
+                    if (retryCode !in 200..299) {
+                        Log.e(TAG, "tryGetPlaylistTracksViaWebApi: retry also failed HTTP $retryCode")
                         return null
                     }
-                    val retryBody = retryResponse.body?.string() ?: return null
+                    if (retryBody == null) return null
                     val parsed = parseWebApiPlaylistPage(retryBody)
                     allTracks.addAll(parsed.first)
                     url = parsed.second
