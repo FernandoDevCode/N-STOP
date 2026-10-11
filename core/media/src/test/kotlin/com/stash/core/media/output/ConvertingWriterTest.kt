@@ -25,7 +25,8 @@ class ConvertingWriterTest {
     private fun int16Stereo(frames: Int): ByteBuffer {
         val b = ByteBuffer.allocateDirect(frames * 4).order(ByteOrder.nativeOrder())
         for (i in 0 until frames) { b.putShort(i.toShort()); b.putShort((-i).toShort()) }
-        return b.flip()
+        b.flip()
+        return b
     }
 
     private val identity: (FloatArray, Int) -> Unit = { _, _ -> }
@@ -105,7 +106,7 @@ class ConvertingWriterTest {
     @Test fun `transform output reaches the device`() {
         val w = ConvertingWriter(SampleFormat.FLOAT, SampleFormat.FLOAT, 1)
         val out = FakeOutput(Int.MAX_VALUE)
-        val input = ByteBuffer.allocateDirect(8).order(ByteOrder.nativeOrder()).putFloat(0.5f).putFloat(-0.25f).flip()
+        val input = ByteBuffer.allocateDirect(8).order(ByteOrder.nativeOrder()).putFloat(0.5f).putFloat(-0.25f).apply { flip() }
         w.write(input, { s, f -> for (i in 0 until f) s[i] *= 2f }, out::write)
         out.received.flip()
         assertThat(out.received.getFloat(0)).isEqualTo(1f)

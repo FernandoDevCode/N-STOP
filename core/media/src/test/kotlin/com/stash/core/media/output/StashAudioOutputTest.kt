@@ -82,7 +82,7 @@ class StashAudioOutputTest {
     )
 
     private fun floats(vararg v: Float): ByteBuffer =
-        ByteBuffer.allocateDirect(v.size * 4).order(ByteOrder.nativeOrder()).apply { v.forEach { putFloat(it) } }.flip()
+        ByteBuffer.allocateDirect(v.size * 4).order(ByteOrder.nativeOrder()).apply { v.forEach { putFloat(it) }; flip() }
 
     private fun ByteArrayOutputStream.asBuffer(): ByteBuffer =
         ByteBuffer.wrap(toByteArray()).order(ByteOrder.nativeOrder())
@@ -99,7 +99,7 @@ class StashAudioOutputTest {
         val inner = FakeOutput()
         val out = output(inner, SampleFormat.INT16, sharedPlan())
         val buf = ByteBuffer.allocateDirect(8).order(ByteOrder.nativeOrder())
-            .putShort(16384).putShort(-32768).putShort(1).putShort(0).flip()
+            .putShort(16384).putShort(-32768).putShort(1).putShort(0).apply { flip() }
         assertThat(out.write(buf, 1, 0L)).isTrue()
         val got = inner.bytes.asBuffer()
         assertThat(got.getFloat(0)).isEqualTo(0.5f)
