@@ -307,10 +307,16 @@ class SearchDownloadCoordinator @Inject constructor(
         track: TrackItem,
         match: SourceResult,
     ): SourceFinalizeAttempt {
-        // Cache key mirrors what SearchPreviewMediaSource uses so any bytes
-        // already streamed during preview are reused here.
+        // SearchPreviewMediaSource's key: only used to free the preview's bytes
+        // once this download is committed. The lossless fetch below reads under
+        // its own key, which names the exact file (SearchLosslessFile.cacheKey):
+        // the preview key names only the song, and reading under it spliced a
+        // previewed file's spans into a different file's download.
         val cacheNamespace = if (match.sourceId == JioSaavnResolver.SOURCE_ID) "jiosaavn" else "lossless"
-        val cacheKey = "$cacheNamespace:${track.videoId}"
+        val previewKey = "$cacheNamespace:${track.videoId}"
+        val cacheKey = if (match.sourceId == JioSaavnResolver.SOURCE_ID) previewKey else SearchLosslessFile.cacheKey(match)
+        var bytesWritten = 0L
+        var expectedBytes = C.LENGTH_UNSET.toLong()
         val tempFile = File(
             context.cacheDir,
             "search_lossless_${track.videoId}.${match.format.fileExtension}",
@@ -332,7 +338,7 @@ class SearchDownloadCoordinator @Inject constructor(
         } else {
             // CacheDataSource with FLAG_BLOCK_ON_CACHE reads cached spans first,
             // then fills missing byte ranges from upstream HTTP. Returns bytes
-            // contiguously regardless of which spans the preview pre-filled.
+            // contiguously regardless of which spans an earlier attempt pre-filled.
             val dataSource = CacheDataSource.Factory()
                 .setCache(previewCache)
                 .setUpstreamDataSourceFactory(httpDataSourceFactory)
@@ -346,13 +352,14 @@ class SearchDownloadCoordinator @Inject constructor(
                     .setKey(cacheKey)
                     .build()
 
-                dataSource.open(spec)
+                expectedBytes = dataSource.open(spec)
                 tempFile.outputStream().use { out ->
                     val buf = ByteArray(64 * 1024)
                     while (true) {
                         val n = dataSource.read(buf, 0, buf.size)
                         if (n == C.RESULT_END_OF_INPUT) break
                         out.write(buf, 0, n)
+                        bytesWritten += n
                     }
                 }
             }.onFailure { error ->
@@ -376,6 +383,24 @@ class SearchDownloadCoordinator @Inject constructor(
                         "duration=${metadata?.durationMs}, " +
                         "expected=${(track.durationSeconds * 1_000).toLong()}",
                 )
+            }
+        } else {
+            // The checks DownloadManager's lossless path has: a short copy, a file
+            // that isn't the codec asked for, or a preview-length stub never commits.
+            val metadata = audioDurationExtractor.extract(tempFile.absolutePath)
+            val problem = SearchLosslessFile.problem(
+                expectedCodec = match.format.codec,
+                bytesWritten = bytesWritten,
+                expectedBytes = expectedBytes,
+                probedFormat = metadata?.format,
+                probedMs = metadata?.durationMs,
+                expectedMs = (track.durationSeconds * 1_000).toLong(),
+            )
+            if (problem != null) {
+                Log.w(TAG, "lossless file from ${match.sourceId} rejected for ${track.videoId}: $problem")
+                runCatching { tempFile.delete() }
+                runCatching { previewCache.removeResource(cacheKey) }
+                return SourceFinalizeAttempt.BeforeCommitFailure("Lossless file rejected: $problem")
             }
         }
 
@@ -405,8 +430,10 @@ class SearchDownloadCoordinator @Inject constructor(
         }
 
         // Free preview-cache space now that bytes are on permanent storage.
-        runCatching { previewCache.removeResource(cacheKey) }
-            .onFailure { e -> Log.w(TAG, "removeResource failed for $cacheKey: ${e.message}") }
+        listOf(previewKey, cacheKey).distinct().forEach { key ->
+            runCatching { previewCache.removeResource(key) }
+                .onFailure { e -> Log.w(TAG, "removeResource failed for $key: ${e.message}") }
+        }
 
         return SourceFinalizeAttempt.AfterCommit(outcome)
     }
