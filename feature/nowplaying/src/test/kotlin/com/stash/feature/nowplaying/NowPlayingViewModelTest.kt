@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -864,5 +865,62 @@ class NowPlayingViewModelTransientTrackTest {
             assertEquals("Blocked from future syncs.", awaitItem())
         }
         coVerify { musicRepository.blacklistTrack(900L) }
+    }
+}
+
+/**
+ * The 250ms position tick lives in its own StateFlow, not in [NowPlayingUiState]: as a uiState
+ * field it re-ran all of Now Playing and the app-wide MiniPlayer four times a second.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+class NowPlayingViewModelPositionTest {
+
+    private val dispatcher = UnconfinedTestDispatcher()
+
+    @Before fun setUp() { Dispatchers.setMain(dispatcher) }
+    @After fun tearDown() { Dispatchers.resetMain() }
+
+    private val positionFlow = MutableStateFlow(0L)
+    private val playerRepository: PlayerRepository = mockk(relaxed = true) {
+        every { playerState } returns MutableStateFlow(
+            PlayerState(currentTrack = Track(id = 7L, title = "song", artist = "artist"), isPlaying = true, durationMs = 200_000L),
+        )
+        every { currentPosition } returns positionFlow
+    }
+
+    private fun newViewModel(): NowPlayingViewModel = NowPlayingViewModel(
+        playerRepository = playerRepository,
+        musicRepository = mockk(relaxed = true) {
+            every { observeTrackById(any()) } returns flowOf(null)
+            every { observeTrackByYoutubeId(any()) } returns flowOf(null)
+        },
+        likeCoordinator = mockk(relaxed = true) { every { mirrorFailures } returns MutableSharedFlow() },
+        losslessUpgrader = mockk(relaxed = true),
+        lyricsRepository = mockk(relaxed = true),
+        lyricsPreference = mockk(relaxed = true),
+        nowPlayingPreference = mockk(relaxed = true),
+        lyricsSidecarWriter = mockk(relaxed = true),
+        appContext = mockk(relaxed = true),
+        sleepTimerController = mockk(relaxed = true),
+        ytMusicApiClient = mockk(relaxed = true),
+    )
+
+    @Test fun `position ticks move positionMs without re-emitting uiState`() = runTest(dispatcher) {
+        val vm = newViewModel()
+        advanceUntilIdle()
+        val positions = mutableListOf<Long>()
+        backgroundScope.launch { vm.positionMs.collect { positions += it } }
+        advanceUntilIdle()
+
+        vm.uiState.test {
+            awaitItem() // the settled state
+            positionFlow.value = 250L
+            positionFlow.value = 500L
+            advanceUntilIdle()
+            expectNoEvents()
+        }
+        assertEquals(500L, positions.last())
+        assertEquals(0.0025f, progressFraction(500L, 200_000L), 0.00001f)
+        assertEquals(0f, progressFraction(500L, 0L), 0f)
     }
 }

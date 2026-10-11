@@ -95,7 +95,8 @@ import kotlin.math.roundToLong
 @Composable
 internal fun LyricsPane(
     state: LyricsViewState,
-    currentPositionMs: Long,
+    /** Read inside the renderers only, so the 250ms tick doesn't recompose this pane. */
+    currentPositionMs: () -> Long,
     isPlaying: Boolean,
     playbackSpeed: Float,
     onSeek: (Long) -> Unit,
@@ -140,13 +141,13 @@ internal fun LyricsPane(
                 LyricsBody.Loading -> LyricsMessage("Looking for lyrics", look, quiet = true)
                 is LyricsBody.Words -> LyricsSyllableRenderer(
                     lyrics = b.lyrics,
-                    currentPositionMs = currentPositionMs,
+                    currentPositionMs = currentPositionMs(),
                     onLineTap = onSeek,
                     look = look,
                     isPlaying = isPlaying,
                     playbackSpeed = playbackSpeed,
                 )
-                is LyricsBody.Lines -> LyricsLineRenderer(b.lines, currentPositionMs, onSeek, look)
+                is LyricsBody.Lines -> LyricsLineRenderer(b.lines, currentPositionMs(), onSeek, look)
                 is LyricsBody.Plain -> LyricsPlainRenderer(b.text, look)
                 is LyricsBody.Message -> LyricsMessage(
                     text = b.text,

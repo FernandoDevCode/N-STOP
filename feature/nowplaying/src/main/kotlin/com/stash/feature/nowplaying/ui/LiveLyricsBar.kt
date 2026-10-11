@@ -85,7 +85,8 @@ private val BarInkLight = Color(0xFF241C36)
 @Composable
 fun LiveLyricsBar(
     state: LyricsViewState,
-    currentPositionMs: Long,
+    /** Read inside the bar's content only, so the 250ms tick doesn't recompose Now Playing. */
+    currentPositionMs: () -> Long,
     accentColor: Color,
     liveEnabled: Boolean,
     onTap: () -> Unit,
@@ -127,18 +128,19 @@ fun LiveLyricsBar(
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             contentAlignment = Alignment.Center,
         ) {
+            val positionMs = currentPositionMs()
             when (mode) {
                 is LiveBarMode.Live -> if (mode.syllables != null) {
                     WordSyncedBarLine(
                         lyrics = mode.syllables,
-                        currentPositionMs = currentPositionMs,
+                        currentPositionMs = positionMs,
                         isPlaying = isPlaying,
                         accent = animAccent,
                         playbackSpeed = playbackSpeed,
                     )
                 } else {
-                    val index = remember(mode.lines, currentPositionMs) {
-                        currentLineIndex(mode.lines, currentPositionMs)
+                    val index = remember(mode.lines, positionMs) {
+                        currentLineIndex(mode.lines, positionMs)
                     }
                     val line = mode.lines.getOrNull(index)?.text.orEmpty()
                     AnimatedContent(

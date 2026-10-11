@@ -21,7 +21,9 @@ data class NowPlayingUiState(
      */
     val currentTrackStored: Boolean? = null,
     val isPlaying: Boolean = false,
-    val currentPositionMs: Long = 0L,
+    // No playback position here, deliberately: it ticks 4x/s, and as a field of this state it
+    // recomposed all of Now Playing and the app-wide MiniPlayer on every tick. Readers take
+    // NowPlayingViewModel.positionMs and read it as late as they can (draw, or a small child).
     val durationMs: Long = 0L,
     val shuffleEnabled: Boolean = false,
     val repeatMode: RepeatMode = RepeatMode.OFF,
@@ -61,18 +63,14 @@ data class NowPlayingUiState(
     val source: PlaybackSource = PlaybackSource.Unknown,
 ) {
 
-    /**
-     * Playback progress as a fraction in `[0f, 1f]`.
-     * Returns `0f` when duration is zero to avoid division-by-zero.
-     */
-    val progressFraction: Float
-        get() = if (durationMs > 0) {
-            (currentPositionMs.toFloat() / durationMs).coerceIn(0f, 1f)
-        } else {
-            0f
-        }
-
     /** `true` when a track is loaded and ready to display. */
     val hasTrack: Boolean
         get() = currentTrack != null
 }
+
+/**
+ * Playback progress as a fraction in `[0f, 1f]`.
+ * Returns `0f` when duration is zero to avoid division-by-zero.
+ */
+internal fun progressFraction(positionMs: Long, durationMs: Long): Float =
+    if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f

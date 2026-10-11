@@ -113,6 +113,9 @@ fun MiniPlayer(
     listen: ListenTogetherViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    // Kept as a State and read only inside drawBehind below: the progress line redraws per
+    // 250ms tick without recomposing the card (which shows on every screen).
+    val position = viewModel.positionMs.collectAsStateWithLifecycle()
     val together by listen.state.collectAsStateWithLifecycle()
     val room = together as? ListenTogetherState.InRoom
     val chrome = LocalAlbumChrome.current
@@ -140,7 +143,8 @@ fun MiniPlayer(
                     .fillMaxWidth()
                     .height(2.dp)
                     .drawBehind {
-                        drawRect(color = chrome.vib, size = Size(size.width * uiState.progressFraction, size.height))
+                        val fraction = progressFraction(position.value, uiState.durationMs)
+                        drawRect(color = chrome.vib, size = Size(size.width * fraction, size.height))
                     },
             )
 
@@ -156,10 +160,14 @@ fun MiniPlayer(
                 val artModel = track?.albumArtPath ?: track?.albumArtUrl
                 val coverShape = RoundedCornerShape(6.dp)
                 if (artModel != null) {
+                    // Remembered per cover: a fresh request each recomposition makes Coil treat
+                    // it as a new load.
+                    val context = LocalContext.current
+                    val artRequest = remember(artModel) {
+                        ImageRequest.Builder(context).data(artModel).build()
+                    }
                     AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current)
-                            .data(artModel)
-                            .build(),
+                        model = artRequest,
                         contentDescription = "Album art",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier

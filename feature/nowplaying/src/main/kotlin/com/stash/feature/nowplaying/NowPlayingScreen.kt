@@ -302,11 +302,14 @@ fun NowPlayingScreen(
     val lyricsMode by viewModel.lyricsMode.collectAsStateWithLifecycle()
     // Collected unconditionally (not just while lyrics are up): the bar
     // needs the state, and this subscription is what arms the ViewModel's
-    // WhileSubscribed fetch trigger from screen-open onward. The screen
-    // already recomposes every 250ms from uiState position ticks, so the
-    // extra position collect adds no new recomposition pressure.
+    // WhileSubscribed fetch trigger from screen-open onward.
     val lyricsState by viewModel.lyricsViewState.collectAsStateWithLifecycle()
-    val lyricsPositionMs by viewModel.currentPositionMs.collectAsStateWithLifecycle()
+    // Positions tick every 250ms while playing. Both are kept as State objects and handed down
+    // as lambdas, read only inside the progress bar and the lyrics, so a tick recomposes those
+    // and not this whole screen (the position used to be a uiState field, which re-ran the root,
+    // the art and the stack four times a second).
+    val lyricsPosition = viewModel.currentPositionMs.collectAsStateWithLifecycle()
+    val playerPosition = viewModel.positionMs.collectAsStateWithLifecycle()
     val liveLyricsEnabled by viewModel.liveLyricsBarEnabled.collectAsStateWithLifecycle()
     val lyricsSyncOffsetMs by viewModel.lyricsSyncOffsetMs.collectAsStateWithLifecycle()
     val reading = lyricsMode && track != null
@@ -662,9 +665,9 @@ fun NowPlayingScreen(
             Column(modifier = footModifier.fillMaxWidth()) {
                 // -- Progress bar --
                 GlowingProgressBar(
-                    progress = uiState.progressFraction,
+                    progress = { progressFraction(playerPosition.value, uiState.durationMs) },
                     accentColor = npAccent(uiState.vibrantColor),
-                    elapsedMs = uiState.currentPositionMs,
+                    elapsedMs = { playerPosition.value },
                     totalMs = uiState.durationMs,
                     onSeek = viewModel::onSeekTo,
                     seekable = !isListener,
@@ -854,7 +857,7 @@ fun NowPlayingScreen(
                             // column keeps the full screen for lyric-less tracks.
                             LiveLyricsBar(
                                 state = lyricsState,
-                                currentPositionMs = lyricsPositionMs,
+                                currentPositionMs = { lyricsPosition.value },
                                 accentColor = npAccent(uiState.vibrantColor),
                                 liveEnabled = liveLyricsEnabled,
                                 onTap = viewModel::onShowLyrics,
@@ -936,7 +939,7 @@ fun NowPlayingScreen(
                             }
                             LyricsPane(
                                 state = lyricsState,
-                                currentPositionMs = lyricsPositionMs,
+                                currentPositionMs = { lyricsPosition.value },
                                 isPlaying = uiState.isPlaying && !uiState.isBuffering,
                                 playbackSpeed = playbackSpeed,
                                 onSeek = { if (!isListener) viewModel.onLyricsLineSeek(it) }, // a listener follows the room

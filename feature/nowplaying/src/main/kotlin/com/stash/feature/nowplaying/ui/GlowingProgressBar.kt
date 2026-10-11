@@ -68,7 +68,8 @@ private const val GLOW_RADIUS = 14f
  * at the playhead position, and an optional thumb that appears while the
  * user is dragging. Elapsed and remaining time labels sit below the bar.
  *
- * @param progress    Current playback progress as a fraction in `[0f, 1f]`.
+ * @param progress    Current playback progress as a fraction in `[0f, 1f]` (a lambda, read
+ *                    inside this composable so the position tick recomposes only the bar).
  * @param accentColor Primary accent color used for the gradient and glow.
  * @param elapsedMs   Current playback position in milliseconds.
  * @param totalMs     Total track duration in milliseconds.
@@ -78,9 +79,9 @@ private const val GLOW_RADIUS = 14f
  */
 @Composable
 fun GlowingProgressBar(
-    progress: Float,
+    progress: () -> Float,
     accentColor: Color,
-    elapsedMs: Long,
+    elapsedMs: () -> Long,
     totalMs: Long,
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
@@ -89,8 +90,12 @@ fun GlowingProgressBar(
     /** Centred between the two times, so it costs no height: a listener's LIVE / Back to live. */
     center: @Composable () -> Unit = {},
 ) {
+    // The position is read HERE, through lambdas, so its 250ms tick recomposes only this bar,
+    // not the Now Playing screen that hosts it.
+    val progressNow = progress()
+    val elapsedNow = elapsedMs()
     var isDragging by remember { mutableStateOf(false) }
-    var dragProgress by remember { mutableFloatStateOf(progress) }
+    var dragProgress by remember { mutableFloatStateOf(progressNow) }
     // A released seek's target, held as the display value until the reported progress catches
     // up (or SEEK_HOLD_MS passes): see [seekArrived].
     var pendingSeek by remember { mutableStateOf<Float?>(null) }
@@ -101,7 +106,7 @@ fun GlowingProgressBar(
     // scrub was dropped and isDragging stuck true, freezing the bar until the next full drag.
     val currentTotalMs by rememberUpdatedState(totalMs)
     val currentOnSeek by rememberUpdatedState(onSeek)
-    val currentProgress by rememberUpdatedState(progress)
+    val currentProgress by rememberUpdatedState(progressNow)
     val seekTo: (Float) -> Unit = { fraction ->
         pendingSeek = fraction.coerceIn(0f, 1f)
         currentOnSeek(seekTargetMs(fraction, currentTotalMs))
@@ -130,7 +135,7 @@ fun GlowingProgressBar(
         targetValue = when {
             isDragging -> dragProgress
             heldProgress != null -> heldProgress
-            else -> progress
+            else -> progressNow
         },
         animationSpec = tween(durationMillis = if (isDragging || heldProgress != null) 0 else 150),
         label = "progressAnim",
@@ -138,7 +143,7 @@ fun GlowingProgressBar(
     val displayMs = when {
         isDragging -> seekTargetMs(dragProgress, totalMs)
         heldProgress != null -> seekTargetMs(heldProgress, totalMs)
-        else -> elapsedMs
+        else -> elapsedNow
     }
 
     Column(modifier = modifier.fillMaxWidth()) {

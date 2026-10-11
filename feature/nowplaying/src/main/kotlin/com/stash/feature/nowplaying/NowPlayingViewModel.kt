@@ -672,6 +672,19 @@ class NowPlayingViewModel @Inject constructor(
             initialValue = 0L,
         )
 
+    /**
+     * The player's raw position (no lyrics offset), for the progress bar, the elapsed/remaining
+     * times and the MiniPlayer's progress line. Its own StateFlow, not a [uiState] field: it ticks
+     * every 250ms while playing, and readers should read it as late as possible (in draw, or in a
+     * small child composable) so only they redraw per tick.
+     */
+    val positionMs: StateFlow<Long> = playerRepository.currentPosition
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000L),
+            initialValue = 0L,
+        )
+
     // Player-level notices (PlayerRepository.userMessages, streamingHaltedEvents) and like-mirror
     // failures are NOT forwarded here: MainActivity shows them on every screen. Forwarded into
     // this flow they reached the user only while Now Playing or the queue sheet collected it.
@@ -736,12 +749,13 @@ class NowPlayingViewModel @Inject constructor(
                 }
             }
 
+        // The 250ms position tick is NOT combined in here (see [positionMs]): it made uiState,
+        // and so every reader of it, re-emit four times a second.
         combine(
             playerRepository.playerState,
-            playerRepository.currentPosition,
             liveTrackFlow,
             optimisticLikeState,
-        ) { state, positionMs, live, optimistic ->
+        ) { state, live, optimistic ->
             val (liveKey, liveTrack) = live
             // Room answers a moment after the player moves on: until it has answered for THIS
             // track, whether the track is in the library is unknown (null), not "no".
@@ -787,7 +801,6 @@ class NowPlayingViewModel @Inject constructor(
                     currentTrack = finalTrack,
                     currentTrackStored = if (liveResolved) liveTrack != null else null,
                     isPlaying = state.isPlaying,
-                    currentPositionMs = positionMs,
                     durationMs = state.durationMs,
                     shuffleEnabled = state.isShuffleEnabled,
                     repeatMode = state.repeatMode,
