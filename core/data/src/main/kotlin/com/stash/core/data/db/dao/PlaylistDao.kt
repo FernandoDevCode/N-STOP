@@ -749,6 +749,27 @@ interface PlaylistDao {
         currentSourceIds: List<String>,
     ): Int
 
+    /**
+     * Whether any ACTIVE YouTube row of [type] exists, split on whether its
+     * source_id is a saved-album browseId (`MPREb_…`): saved albums and
+     * library playlists are both typed CUSTOM but come from different
+     * listings. The sync fetch asks this when a library-level listing comes
+     * back Empty. A logged-out (expired-cookie) browse returns an empty
+     * library rather than an error, so "the listing is empty but we hold
+     * active rows of that kind" is read as an incomplete inventory instead
+     * of letting REFRESH hide the user's whole YouTube library.
+     */
+    @Query(
+        """
+        SELECT EXISTS(
+            SELECT 1 FROM playlists
+            WHERE source = 'YOUTUBE' AND is_active = 1 AND type = :type
+              AND (source_id LIKE 'MPREb%') = :savedAlbums
+        )
+        """
+    )
+    suspend fun hasActiveYouTubeRows(type: PlaylistType, savedAlbums: Boolean): Boolean
+
     /** Soft-deactivate only Spotify CUSTOM playlists absent from a complete inventory. */
     @Query(
         """
