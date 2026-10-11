@@ -194,7 +194,7 @@ fun SearchScreen(
                     onVisibleSongIdsChanged = viewModel::prefetchVisible,
                 )
                 SearchStatus.Empty -> NoResultsMessage()
-                is SearchStatus.Error -> ErrorMessage(status.message)
+                is SearchStatus.Error -> ErrorMessage(status.message, onRetry = viewModel::retry)
             }
         }
 
@@ -793,7 +793,7 @@ private fun LoadingSkeletons() {
 }
 
 @Composable
-private fun ErrorMessage(message: String) {
+private fun ErrorMessage(message: String, onRetry: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -819,6 +819,10 @@ private fun ErrorMessage(message: String) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Spacer(modifier = Modifier.height(8.dp))
+            TextButton(onClick = onRetry) {
+                Text("Retry")
+            }
         }
     }
 }

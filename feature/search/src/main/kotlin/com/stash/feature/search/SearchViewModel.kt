@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
@@ -154,6 +155,9 @@ class SearchViewModel @Inject constructor(
      * every keystroke (that would save every prefix: "bea", "beat", "beatl"…).
      */
     fun onSearchCommitted() {
+        // The keyboard Search key on a failed search re-runs it: retyping the
+        // same text could not, the pipeline drops a repeated query.
+        if (_uiState.value.status is SearchStatus.Error) retry()
         val q = _uiState.value.query.trim()
         if (q.isNotEmpty()) {
             viewModelScope.launch {
@@ -216,6 +220,18 @@ class SearchViewModel @Inject constructor(
     /** Drives [flatMapLatest] — every keystroke replaces the value. */
     private val queryFlow = MutableStateFlow("")
 
+    /**
+     * Re-runs the current query. A failed search used to be a dead end: no
+     * Retry, and typing the same text again was swallowed by the pipeline's
+     * `distinctUntilChanged`, so the user had to change the query to retry.
+     */
+    private val retryRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
+    /** Runs the current query again (the error screen's Retry). */
+    fun retry() {
+        retryRequests.tryEmit(Unit)
+    }
+
     init {
         // Must happen before any downloadTrack/previewTrack call — the delegate
         // reads `scope()` lazily and throws if invoked before binding.
@@ -223,9 +239,10 @@ class SearchViewModel @Inject constructor(
 
         // Search pipeline — keystrokes → debounce → searchAll → status.
         viewModelScope.launch {
-            queryFlow
-                .debounce(DEBOUNCE_MS)
-                .distinctUntilChanged()
+            merge(
+                queryFlow.debounce(DEBOUNCE_MS).distinctUntilChanged(),
+                retryRequests.map { queryFlow.value },
+            )
                 .flatMapLatest { q -> runSearch(q) }
                 .collect { status -> _uiState.update { it.copy(status = status) } }
         }
@@ -271,7 +288,7 @@ class SearchViewModel @Inject constructor(
             if (t is CancellationException) throw t
             Log.e(TAG, "search failed for '$query'", t)
             _userMessages.emit("Search failed — please try again.")
-            emit(SearchStatus.Error(t.message ?: "Search failed"))
+            emit(SearchStatus.Error(searchErrorMessage(t)))
         }
     }
 
@@ -429,3 +446,16 @@ internal fun SearchResultItem.toTrackItem() = com.stash.core.model.TrackItem(
     durationSeconds = durationSeconds,
     thumbnailUrl = thumbnailUrl,
 )
+
+/**
+ * Plain words for a failed search, instead of the raw exception text
+ * ("Unable to resolve host music.youtube.com: No address associated…").
+ */
+internal fun searchErrorMessage(t: Throwable): String = when (t) {
+    is java.net.UnknownHostException,
+    is java.net.ConnectException,
+    is java.net.NoRouteToHostException,
+    -> "You're offline, or YouTube Music can't be reached."
+    is java.net.SocketTimeoutException -> "YouTube Music took too long to answer."
+    else -> "YouTube Music didn't answer."
+}
