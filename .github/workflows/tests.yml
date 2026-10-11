@@ -49,8 +49,10 @@ jobs:
       - name: Fix gradlew permission
         run: chmod +x gradlew
 
+      # `--continue` for the same reason as the unit-tests job: a compile error
+      # in one module otherwise hides every other module's.
       - name: Compile every module's unit tests
-        run: ./gradlew compileDebugUnitTestKotlin --no-daemon
+        run: ./gradlew compileDebugUnitTestKotlin --continue --no-daemon
 
   # The share Worker's tests (mixes, rooms, Community), then the sync Worker, tip jar, lossless relay and Last.fm proxy.
   # They import only local files, so no npm install.
