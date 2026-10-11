@@ -19,6 +19,14 @@ class LastFmApiException(
     val code: String,
     message: String,
 ) : IllegalStateException(message) {
+    constructor(errorCode: Int, message: String) : this(errorCode.toString(), message)
+
+    /**
+     * [code] as a number (one of https://www.last.fm/api/errorcodes), or -1
+     * when Last.fm sent something that isn't one.
+     */
+    val errorCode: Int get() = code.toIntOrNull() ?: -1
+
     companion object {
         /** Last.fm's "Track not found" / "The artist you supplied could not be found". */
         const val NOT_FOUND = "6"

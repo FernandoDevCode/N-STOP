@@ -57,7 +57,13 @@ open class CrashFileStore @Inject constructor(
             if (!crashDir.exists()) crashDir.mkdirs()
             val timestamp = TIMESTAMP_FORMAT.format(Date())
             val file = File(crashDir, "crash-$timestamp.txt")
-            file.writeText(formatReport(thread, throwable))
+            val report = formatReport(thread, throwable)
+            // Redacted on disk, not only in the diagnostics bundle: "Share
+            // crash report" hands this file out as-is, and an exception
+            // message can carry a cookie, token or email from an upstream API
+            // failure. If redacting itself fails (it runs after an OOM, say)
+            // the raw report is kept rather than losing the crash.
+            file.writeText(runCatching { DiagnosticsRedactor.redact(report) }.getOrDefault(report))
             rotate()
         }.onFailure { e ->
             Log.w(TAG, "writeCrash failed", e)

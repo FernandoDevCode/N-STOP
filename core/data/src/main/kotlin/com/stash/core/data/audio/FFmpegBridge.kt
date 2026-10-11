@@ -3,7 +3,12 @@ package com.stash.core.data.audio
 import android.content.Context
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
@@ -101,32 +106,7 @@ class FFmpegBridgeImpl @Inject constructor(
                 .redirectErrorStream(false)
                 .start()
 
-            // Drain stdout on a side thread so the pipe buffer can't fill up
-            // and block ffmpeg's writes. Content is discarded — ebur128's
-            // Summary lives on stderr.
-            val stdoutDrainer = Thread {
-                try {
-                    process.inputStream.use { it.copyTo(NullOutputStream) }
-                } catch (_: Exception) {
-                    // Stream closed while draining — fine.
-                }
-            }.also { it.isDaemon = true; it.start() }
-
-            val stderr = try {
-                process.errorStream.bufferedReader().use { it.readText() }
-            } catch (e: Exception) {
-                Log.w(TAG, "stderr read failed: ${e.message}")
-                ""
-            }
-
-            val exit = try {
-                process.waitFor()
-            } catch (ie: InterruptedException) {
-                process.destroy()
-                Thread.currentThread().interrupt()
-                throw ie
-            }
-            stdoutDrainer.join(500)
+            val (exit, stderr) = awaitCapturingStderr(process)
 
             if (exit != 0) {
                 Log.w(TAG, "ffmpeg exited with code $exit; stderr length=${stderr.length}")
@@ -166,6 +146,65 @@ class FFmpegBridgeImpl @Inject constructor(
 
     companion object {
         private const val TAG = "FFmpegBridge"
+
+        /**
+         * Reads [process]'s stderr to the end, waits for it to exit and returns
+         * (exit code, stderr). stdout is drained and discarded.
+         *
+         * Kills the process if the calling coroutine is cancelled first. The
+         * reads block a thread, and cancellation cannot interrupt a blocked
+         * read: a cancelled LoudnessBackfillWorker (the charger unplugged) left
+         * ffmpeg decoding the whole file, 25-50 s for a FLAC, on battery, which
+         * is what deferring to charging exists to avoid. A watcher waiting on
+         * another thread destroys the process on cancellation, which ends the
+         * reads, and the cancellation is then rethrown rather than reported
+         * as an ffmpeg failure.
+         */
+        internal suspend fun awaitCapturingStderr(process: Process): Pair<Int, String> = coroutineScope {
+            // UNDISPATCHED so the watcher is armed before the first blocking
+            // read, even if this coroutine is already cancelled.
+            val killer = launch(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) {
+                try {
+                    awaitCancellation()
+                } finally {
+                    process.destroy()
+                }
+            }
+            try {
+                // Drain stdout on a side thread so the pipe buffer can't fill up
+                // and block ffmpeg's writes. Content is discarded — ebur128's
+                // Summary lives on stderr.
+                val stdoutDrainer = Thread {
+                    try {
+                        process.inputStream.use { it.copyTo(NullOutputStream) }
+                    } catch (_: Exception) {
+                        // Stream closed while draining — fine.
+                    }
+                }.also { it.isDaemon = true; it.start() }
+
+                val stderr = try {
+                    process.errorStream.bufferedReader().use { it.readText() }
+                } catch (e: Exception) {
+                    Log.w(TAG, "stderr read failed: ${e.message}")
+                    ""
+                }
+
+                val exit = try {
+                    process.waitFor()
+                } catch (ie: InterruptedException) {
+                    process.destroy()
+                    Thread.currentThread().interrupt()
+                    throw ie
+                }
+                stdoutDrainer.join(500)
+                ensureActive()
+                exit to stderr
+            } finally {
+                // Normal exit: the process has already ended, so the watcher's
+                // destroy() is a no-op.
+                killer.cancel()
+            }
+        }
 
         // youtubedl-android extracts the ffmpeg binary into nativeLibraryDir
         // under this name. Confirmed by disassembling the library AAR:

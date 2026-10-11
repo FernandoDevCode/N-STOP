@@ -131,7 +131,11 @@ class ListenSinkDrainer internal constructor(
                     submissionDao.markFailed(listen.eventId, sink.id, clock())
                     failed++
                 }
-                is SinkResult.Transient -> Unit // held, attempts untouched
+                // Held, attempts untouched, and the split stops here: the service is
+                // down or throttling, so the rest of the burst would only fail the
+                // same way (or, while rate limited, get worse). The remaining
+                // listens stay pending for the next drain.
+                is SinkResult.Transient -> break
             }
         }
         return DrainReport(sink.id, submitted = submitted, failed = failed)

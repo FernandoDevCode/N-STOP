@@ -7,6 +7,7 @@ import com.stash.data.ytmusic.YTMusicApiClient
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -51,5 +52,29 @@ class RadioStationGeneratorSongTest {
         // low-res video frame.
         assertTrue("all tracks have album art", batch.all { !it.albumArtUrl.isNullOrBlank() })
         assertTrue("resolved cover used", batch.any { it.albumArtUrl!!.contains("lh3.googleusercontent.com") })
+    }
+
+    /**
+     * Every song-radio candidate but the seed needs a YouTube search, and the
+     * first batch used to run them one after another: about a dozen searches,
+     * 5-10 s before anything could play.
+     */
+    @Test fun `the first batch resolves its candidates concurrently`() = runTest {
+        coEvery { lastFm.getSimilarTracks(any(), any(), any()) } returns
+            Result.success((1..20).map { LastFmSimilarTrack("Artist $it", "Song $it", 0.5f) })
+        coEvery { lastFm.getArtistTopTracks(any(), any()) } returns Result.success(emptyList())
+        coEvery { yt.searchCanonicalMatch(any(), any()) } coAnswers {
+            kotlinx.coroutines.delay(500) // one search's latency
+            com.stash.data.ytmusic.CanonicalMatch(
+                videoId = "v%010d".format("${firstArg<String>()}|${secondArg<String>()}".hashCode().toLong() and 0x7fffffffL),
+                thumbnailUrl = null,
+            )
+        }
+
+        val (_, batch) = gen().start(RadioSeed.Song("Seed", "Seed Artist", ytVideoId = "vSeed000001"))
+
+        assertEquals(RadioStationGenerator.FIRST_BATCH, batch.size)
+        // 11 searches back to back would take 5.5 s; in parallel a few rounds do.
+        assertTrue("took ${testScheduler.currentTime} ms", testScheduler.currentTime <= 2_000)
     }
 }

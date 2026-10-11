@@ -119,14 +119,24 @@ class MixGenerator @Inject constructor(
         recipe: StashMixRecipeEntity,
         excludeIds: Set<Long> = emptySet(),
     ): List<TrackEntity> {
+        // Library slots = targetLength * (1 - discoveryRatio); see Step 7.
+        val librarySlots = (recipe.targetLength * (1f - recipe.discoveryRatio)).toInt()
+            .coerceAtLeast(0)
+        // No library slots and no shortfall backfill (Step 8 is gated on a
+        // ratio below 0.5): the result is empty whatever the library holds, so
+        // skip scoring the whole library ("Recommended by Last.fm" at 1.0, and
+        // custom mixes at the "Discover" end of the slider).
+        if (librarySlots == 0 && recipe.discoveryRatio >= 0.5f) return emptyList()
+
         // Step 1: candidate pool — start from every downloaded,
         // non-blacklisted track in the library. v0.9.20: filter through
         // excludeIds first (cheap O(n) set lookup, before any other filtering).
         val rawPool = trackDao.getAllDownloaded()
         val pool0 = if (excludeIds.isEmpty()) rawPool else rawPool.filter { it.id !in excludeIds }
 
-        // Step 2: era filter (cheap, done in-memory).
-        var pool = filterByEra(pool0, recipe)
+        // Step 2: the era filter runs last (Step 5b), because it may be relaxed
+        // when nothing in what the other filters left matches it.
+        var pool = pool0
 
         // Step 3: include-tag filter (one DAO hit if recipe has tags).
         val includeTags = recipe.includeTagsCsv.splitTrim()
@@ -151,6 +161,10 @@ class MixGenerator @Inject constructor(
                 .toSet()
             pool = pool.filter { it.id !in recentlyPlayedIds }
         }
+
+        // Step 5b: era and mood filters.
+        pool = filterByEra(pool, recipe)
+        pool = filterByMood(pool, recipe)
 
         if (pool.isEmpty()) return emptyList()
 
@@ -193,8 +207,6 @@ class MixGenerator @Inject constructor(
         // Step 7: library slots = targetLength * (1 - discoveryRatio), but
         // if we ran out of library candidates we fill up to targetLength.
         // Avoid back-to-back same-artist within the first stretch.
-        val librarySlots = (recipe.targetLength * (1f - recipe.discoveryRatio)).toInt()
-            .coerceAtLeast(0)
         val ordered = scored.sortedByDescending { it.second }.map { it.first }
 
         val picked = pickWithArtistSpread(
@@ -286,16 +298,29 @@ class MixGenerator @Inject constructor(
         val rows = listeningEventDao.getPlayCountsSinceWithLatest(since)
         if (rows.isEmpty()) return emptyMap()
 
+        val tagsByTrack = loadTagVectors(rows.map { it.trackId })
         val plays = rows.map { row ->
             val ageMs = (now - row.latestPlayedAt).coerceAtLeast(0)
             val decay = 0.5f.pow(ageMs.toFloat() / AFFINITY_HALF_LIFE_MS)
             val weight = ln(1f + row.plays.toFloat()) * decay
-            val tags = trackTagDao.getByTrack(row.trackId)
-                .filter { it.tag != "__untaggable__" }
-                .associate { it.tag.lowercase() to it.weight }
+            val tags = tagsByTrack[row.trackId].orEmpty()
             UserTagAffinity.PlayWithTags(weight = weight, tags = tags)
         }
         return UserTagAffinity.compute(plays)
+    }
+
+    /**
+     * Tag-weight vectors (lowercased tag to weight) for [trackIds], read in a
+     * few bind-chunked queries instead of one query per track. Drops the
+     * `__untaggable__` sentinel; tracks with no tags are absent.
+     */
+    private suspend fun loadTagVectors(trackIds: List<Long>): Map<Long, Map<String, Float>> {
+        if (trackIds.isEmpty()) return emptyMap()
+        return trackTagDao.getByTracks(trackIds)
+            .asSequence()
+            .filter { it.tag != "__untaggable__" }
+            .groupBy({ it.trackId }, { it.tag.lowercase() to it.weight })
+            .mapValues { (_, pairs) -> pairs.toMap() }
     }
 
     /**
@@ -309,11 +334,10 @@ class MixGenerator @Inject constructor(
         userVector: Map<String, Float>,
     ): Map<Long, Float> {
         if (userVector.isEmpty()) return emptyMap()
+        val tagsByTrack = loadTagVectors(pool.map { it.id })
         val result = HashMap<Long, Float>(pool.size)
         for (track in pool) {
-            val tags = trackTagDao.getByTrack(track.id)
-                .filter { it.tag != "__untaggable__" }
-                .associate { it.tag.lowercase() to it.weight }
+            val tags = tagsByTrack[track.id] ?: continue
             if (tags.isEmpty()) continue
             result[track.id] = UserTagAffinity.cosine(tags, userVector)
         }
@@ -425,25 +449,49 @@ class MixGenerator @Inject constructor(
         return result
     }
 
-    private fun filterByEra(
+    /**
+     * Keeps the tracks Last.fm tags with the recipe's decade(s) ("80s", via
+     * [RecipeTagResolver.decadeTag], the same tags the discovery side seeds
+     * from). A Mix Builder era chip means *released* in that decade.
+     *
+     * This used to compare the era with the year of `date_added`, the day the
+     * track entered Stash, so an "80s" mix kept no library tracks at all for a
+     * library built in recent years: the mix was empty at the "Familiar" end
+     * of the slider, and the library share was always empty otherwise.
+     * TrackEntity has no release year, so the decade tag is the best signal
+     * there is. When no remaining candidate carries one (tag enrichment has
+     * not reached them, or the library has no music from that era), the era
+     * is dropped for the library slice rather than leaving it empty, the
+     * same relaxation the refresh worker applies to the discovery pool.
+     */
+    private suspend fun filterByEra(
         pool: List<TrackEntity>,
         recipe: StashMixRecipeEntity,
     ): List<TrackEntity> {
-        if (recipe.eraStartYear == null && recipe.eraEndYear == null) return pool
-        // TrackEntity has no direct `year`. Best available proxy is the
-        // `date_added` Instant for now; a real year column would require
-        // another migration and tag-scanner work. For v0.4.0 we treat
-        // era_{start,end} as date_added year, which is approximate but
-        // matches "Throwback" (library tracks older than N years) well
-        // enough. Tag-based recipes (90s Alternative) should rely on tags
-        // rather than era for accurate results.
-        val startYear = recipe.eraStartYear
-        val endYear = recipe.eraEndYear
-        return pool.filter { track ->
-            val year = track.dateAdded.atZone(java.time.ZoneId.systemDefault()).year
-            (startYear == null || year >= startYear) &&
-                (endYear == null || year <= endYear)
-        }
+        val startYear = recipe.eraStartYear ?: recipe.eraEndYear ?: return pool
+        val endYear = recipe.eraEndYear ?: startYear
+        if (pool.isEmpty()) return pool
+        val decadeTags = (startYear / 10 * 10..endYear step 10).map { RecipeTagResolver.decadeTag(it) }
+        if (decadeTags.isEmpty()) return pool
+        val inEraIds = trackTagDao.getTrackIdsByTags(decadeTags).toSet()
+        return pool.filter { it.id in inEraIds }.ifEmpty { pool }
+    }
+
+    /**
+     * Keeps the tracks tagged with any of the recipe's mood tags
+     * ([MoodTagMap.expand]: "chill" covers chillout, mellow, downtempo...).
+     * Moods used to steer only discovery seeding, so a "Chill" mix at the
+     * "Familiar" end of the slider was the user's heaviest rotation whatever
+     * its mood. Relaxed like [filterByEra] when nothing left matches.
+     */
+    private suspend fun filterByMood(
+        pool: List<TrackEntity>,
+        recipe: StashMixRecipeEntity,
+    ): List<TrackEntity> {
+        val moodTags = MoodTagMap.expand(recipe.moodKeysCsv)
+        if (moodTags.isEmpty() || pool.isEmpty()) return pool
+        val moodIds = trackTagDao.getTrackIdsByTags(moodTags).toSet()
+        return pool.filter { it.id in moodIds }.ifEmpty { pool }
     }
 
     /**

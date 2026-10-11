@@ -1,5 +1,6 @@
 package com.stash.core.data.lastfm
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -449,11 +450,22 @@ suspend fun updateNowPlaying(
                 signed.forEach { (k, v) -> add(k, v) }
             }.build()
             val request = Request.Builder().url(API_URL).post(form).build()
-            val body = okHttpClient.newCall(request).execute().use {
-                check(it.isSuccessful) { "Last.fm POST failed: HTTP ${it.code}" }
-                it.body?.string() ?: error("Empty Last.fm response")
+            val (code, body) = okHttpClient.newCall(request).execute().use {
+                it.code to it.body?.string()
             }
-            json.parseToJsonElement(body).jsonObject
+            // Last.fm explains a failed write in an `{ error, message }` body,
+            // sent with a 4xx and sometimes with a 200. The code is what tells a
+            // revoked session (9) from a bad row (6) from an outage, so it is
+            // kept: reducing every failure to "HTTP 4xx" left the scrobbler
+            // retrying a revoked session forever, and a 200 carrying an error
+            // was taken for success.
+            val root = body?.let { runCatching { json.parseToJsonElement(it).jsonObject }.getOrNull() }
+            root?.get("error")?.jsonPrimitive?.content?.toIntOrNull()?.let { err ->
+                val msg = root["message"]?.jsonPrimitive?.content ?: "unknown"
+                throw LastFmApiException(err, "Last.fm API error $err: $msg (HTTP $code)")
+            }
+            check(code in 200..299) { "Last.fm POST failed: HTTP $code" }
+            root ?: error("Empty or unreadable Last.fm response")
         }
 
     /**
@@ -553,10 +565,21 @@ suspend fun updateNowPlaying(
             val useProxy = cacheable && !proxyUrl.isNullOrBlank()
             if (useProxy && !rateLimitGate.isOpen(PROXY_BREAKER_KEY, now)) {
                 val proxyOutgoing = params.toMutableMap().apply { remove("api_key") }
-                runCatching { send(proxyUrl!!, PROXY_BREAKER_KEY, proxyOutgoing) }
-                    .getOrNull()
-                    ?.let { return@withContext it }
-                // proxy failed (429 / network / API error) → fall through to direct
+                try {
+                    return@withContext send(proxyUrl!!, PROXY_BREAKER_KEY, proxyOutgoing)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: LastFmApiException) {
+                    // Last.fm itself answered "not found" (6) or "invalid
+                    // resource" (7), as it does for most deep cuts. The direct
+                    // path would get the same answer, so retrying there only
+                    // doubled the traffic on the shared read key the proxy
+                    // exists to shield, on every such lookup.
+                    if (e.errorCode in PROXY_FINAL_ERRORS) throw e
+                } catch (e: Exception) {
+                    // Throttled, unreachable, or a failure of the proxy itself.
+                }
+                // proxy failed (429 / network / other API error) → fall through to direct
             }
 
             // Direct path: round-robin a read key from the pool, skipping any
@@ -655,6 +678,9 @@ suspend fun updateNowPlaying(
 
     companion object {
         private const val API_URL = "https://ws.audioscrobbler.com/2.0/"
+
+        /** API errors from the proxy that are Last.fm's final answer: no direct retry. */
+        private val PROXY_FINAL_ERRORS = setOf(6, 7)
         private val json = Json { ignoreUnknownKeys = true }
 
         /**
