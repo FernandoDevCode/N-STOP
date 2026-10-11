@@ -12,6 +12,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.stash.core.model.MusicSource
@@ -24,7 +26,8 @@ import com.stash.core.ui.theme.StashTheme
  * @param modifier   Optional [Modifier] applied to the root row.
  * @param size       Diameter of the indicator dot. Defaults to 6 dp.
  * @param showLabel  When true, a short text label ("Spotify" / "YouTube") is
- *                   displayed next to the dot for extra clarity.
+ *                   displayed next to the dot for extra clarity. When false,
+ *                   the dots carry the same names as their content description.
  */
 @Composable
 fun SourceIndicator(
@@ -35,8 +38,13 @@ fun SourceIndicator(
 ) {
     val extendedColors = StashTheme.extendedColors
     Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        // Dots alone say nothing to TalkBack: give them the names the labels would have read.
+        modifier = if (showLabel) {
+            modifier
+        } else {
+            modifier.semantics { contentDescription = sourceIndicatorLabels(source).joinToString(", ") }
+        },
+        horizontalArrangement = Arrangement.spacedBy(SourceIndicatorSpacing),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (source == MusicSource.SPOTIFY || source == MusicSource.BOTH) {
@@ -70,4 +78,19 @@ fun SourceIndicator(
             }
         }
     }
+}
+
+/** Gap between the dots and labels inside [SourceIndicator]. */
+internal val SourceIndicatorSpacing = 3.dp
+
+/**
+ * The text labels [SourceIndicator] draws for [source], in order. Kept beside
+ * the composable so a row that measures the labels (see [TrackListItem]) uses
+ * the same strings that are drawn.
+ */
+internal fun sourceIndicatorLabels(source: MusicSource): List<String> = when (source) {
+    MusicSource.SPOTIFY -> listOf("Spotify")
+    MusicSource.YOUTUBE -> listOf("YouTube")
+    MusicSource.BOTH -> listOf("Spotify", "YouTube")
+    MusicSource.LOCAL -> listOf("Local")
 }

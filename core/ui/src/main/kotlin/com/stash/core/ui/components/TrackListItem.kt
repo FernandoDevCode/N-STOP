@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -26,9 +27,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -43,6 +47,13 @@ import com.stash.core.ui.theme.StashTheme
  *
  * Displays a 48 dp album-art placeholder, title + artist column,
  * formatted duration, source indicator dot, and an overflow menu icon.
+ *
+ * When the row is crowded (a Hi-Res pill plus two source labels on a narrow
+ * phone or at a large display size) the decoration steps aside so the title
+ * keeps a fair share: labels collapse to dots, then the pill drops its
+ * qualifier, then the pill hides. See [decideTrackRowFit]. TalkBack still hears
+ * the full source names and pill text. Wrap a list of these rows in
+ * [TrackRowFitScope] so they share one width reading and one text measurer.
  *
  * @param track       The [Track] to display.
  * @param onClick     Callback invoked when the row is tapped.
@@ -70,6 +81,45 @@ fun TrackListItem(
     selectionActive: Boolean = false,
     selected: Boolean = false,
 ) {
+    val hasMoreButton = !selectionActive && onMoreClick != null
+    // Inside a TrackRowFitScope the list shares one width reading and one text measurer; on its own
+    // the row reads its width with BoxWithConstraints. Either way the optional decoration (source
+    // labels, Hi-Res qualifier) steps aside before it squeezes the title to "…". See [decideTrackRowFit].
+    val environment = LocalTrackRowFitEnvironment.current
+    if (environment != null) {
+        val fit = rememberTrackListItemFit(
+            track, environment.rowWidth, environment.measurer, isPlaying, isResolving, selectionActive, hasMoreButton,
+        )
+        TrackListItemRow(
+            track, onClick, modifier, isPlaying, onMoreClick, onLongPress, isResolving, selectionActive, selected, fit,
+        )
+    } else {
+        BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+            val fit = rememberTrackListItemFit(
+                track, maxWidth, rememberTextMeasurer(), isPlaying, isResolving, selectionActive, hasMoreButton,
+            )
+            TrackListItemRow(
+                track, onClick, Modifier, isPlaying, onMoreClick, onLongPress, isResolving, selectionActive, selected, fit,
+            )
+        }
+    }
+}
+
+/** The row itself, laid out with the decoration [fit] allows. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun TrackListItemRow(
+    track: Track,
+    onClick: () -> Unit,
+    modifier: Modifier,
+    isPlaying: Boolean,
+    onMoreClick: (() -> Unit)?,
+    onLongPress: (() -> Unit)?,
+    isResolving: Boolean,
+    selectionActive: Boolean,
+    selected: Boolean,
+    fit: TrackRowFit,
+) {
     val extendedColors = StashTheme.extendedColors
     val primaryColor = MaterialTheme.colorScheme.primary
 
@@ -88,7 +138,7 @@ fun TrackListItem(
                 onClick = onClick,
                 onLongClick = onLongPress,
             )
-            .padding(horizontal = 20.dp, vertical = 8.dp),
+            .padding(horizontal = RowHorizontalPadding, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // -- Leading selection checkbox (only while selecting) --
@@ -98,7 +148,7 @@ fun TrackListItem(
                     checked = selected,
                     onCheckedChange = null,
                 )
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(SmallGap))
             }
         }
 
@@ -106,7 +156,7 @@ fun TrackListItem(
         val artUrl = track.albumArtPath ?: track.albumArtUrl
         Box(
             modifier = Modifier
-                .size(48.dp)
+                .size(ArtSize)
                 .clip(RoundedCornerShape(8.dp))
                 .background(extendedColors.elevatedSurface),
             contentAlignment = Alignment.Center,
@@ -128,16 +178,29 @@ fun TrackListItem(
             }
         }
 
-        Spacer(modifier = Modifier.width(12.dp))
+        Spacer(modifier = Modifier.width(ArtGap))
 
         // -- Title + artist column (takes available space) --
         Column(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .then(
+                    // A hidden pill keeps its words for TalkBack ("FLAC 24/44"), so a crowded row reads
+                    // the same as a roomy one.
+                    if (fit.badge == BadgeFit.HIDDEN && isLossless(track.fileFormat)) {
+                        Modifier.semantics {
+                            contentDescription =
+                                flacBadgeText(track.fileFormat, track.bitsPerSample, track.sampleRateHz)
+                        }
+                    } else {
+                        Modifier
+                    },
+                ),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(BadgeGap),
             ) {
                 Text(
                     text = track.title,
@@ -147,11 +210,14 @@ fun TrackListItem(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                FlacBadge(
-                    fileFormat = track.fileFormat,
-                    bitsPerSample = track.bitsPerSample,
-                    sampleRateHz = track.sampleRateHz,
-                )
+                if (fit.badge != BadgeFit.HIDDEN) {
+                    FlacBadge(
+                        fileFormat = track.fileFormat,
+                        bitsPerSample = track.bitsPerSample,
+                        sampleRateHz = track.sampleRateHz,
+                        compact = fit.badge == BadgeFit.COMPACT,
+                    )
+                }
             }
             Text(
                 text = track.artist,
@@ -162,12 +228,12 @@ fun TrackListItem(
             )
         }
 
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.width(SmallGap))
 
         // -- Resolving spinner / now-playing indicator / duration --
         when {
             isResolving -> CircularProgressIndicator(
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(ResolvingSize),
                 color = primaryColor,
                 strokeWidth = 2.dp,
             )
@@ -175,7 +241,7 @@ fun TrackListItem(
                 imageVector = Icons.Default.GraphicEq,
                 contentDescription = "Now playing",
                 tint = primaryColor,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(PlayingIconSize),
             )
             else -> Text(
                 text = formatDuration(track.durationMs),
@@ -184,14 +250,14 @@ fun TrackListItem(
             )
         }
 
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.width(SmallGap))
 
-        // -- Source indicator dot + label --
-        SourceIndicator(source = track.source, showLabel = true)
+        // -- Source indicator dot + label (dots only when space is tight) --
+        SourceIndicator(source = track.source, showLabel = fit.showSourceLabels)
 
         // -- Overflow menu (only when not selecting) --
         if (!selectionActive && onMoreClick != null) {
-            IconButton(onClick = onMoreClick, modifier = Modifier.size(32.dp)) {
+            IconButton(onClick = onMoreClick, modifier = Modifier.size(MoreButtonSize)) {
                 Icon(
                     imageVector = Icons.Default.MoreVert,
                     contentDescription = "More options",
