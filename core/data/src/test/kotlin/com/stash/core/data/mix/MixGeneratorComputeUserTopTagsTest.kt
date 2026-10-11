@@ -47,7 +47,7 @@ class MixGeneratorComputeUserTopTagsTest {
         coEvery { listeningEventDao.getPlayCountsSinceWithLatest(any()) } returns listOf(
             TrackPlayCountWithLatest(trackId = 1L, plays = 5, latestPlayedAt = now),
         )
-        coEvery { trackTagDao.getByTrack(1L) } returns listOf(
+        coEvery { trackTagDao.getByTracks(listOf(1L)) } returns listOf(
             TrackTagEntity(trackId = 1L, tag = "indie", weight = 80f, source = "ARTIST", fetchedAt = now),
             TrackTagEntity(trackId = 1L, tag = "dream pop", weight = 50f, source = "ARTIST", fetchedAt = now),
         )
@@ -59,7 +59,7 @@ class MixGeneratorComputeUserTopTagsTest {
         coEvery { listeningEventDao.getPlayCountsSinceWithLatest(any()) } returns listOf(
             TrackPlayCountWithLatest(trackId = 1L, plays = 5, latestPlayedAt = now),
         )
-        coEvery { trackTagDao.getByTrack(1L) } returns listOf(
+        coEvery { trackTagDao.getByTracks(listOf(1L)) } returns listOf(
             TrackTagEntity(trackId = 1L, tag = "__untaggable__", weight = 0f, source = "ARTIST", fetchedAt = now),
         )
     }

@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import com.stash.core.data.db.chunkedForBind
 import com.stash.core.data.db.entity.TrackTagEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -39,6 +40,18 @@ interface TrackTagDao {
     /** All tags for a given track (used by MixGenerator's tag-match score). */
     @Query("SELECT * FROM track_tags WHERE track_id = :trackId")
     suspend fun getByTrack(trackId: Long): List<TrackTagEntity>
+
+    /**
+     * All tags for many tracks at once, bind-safe for a library-sized id list
+     * (#337). MixGenerator scores the whole library per recipe, and reading
+     * tags one track at a time was a query per track, tens of thousands per
+     * refresh on a large library.
+     */
+    suspend fun getByTracks(trackIds: List<Long>): List<TrackTagEntity> =
+        trackIds.chunkedForBind { getByTracksRaw(it) }
+
+    @Query("SELECT * FROM track_tags WHERE track_id IN (:trackIds)")
+    suspend fun getByTracksRaw(trackIds: List<Long>): List<TrackTagEntity>
 
     /**
      * Tracks whose title+artist canonical identity matches any of the

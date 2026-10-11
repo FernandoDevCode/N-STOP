@@ -119,6 +119,15 @@ class MixGenerator @Inject constructor(
         recipe: StashMixRecipeEntity,
         excludeIds: Set<Long> = emptySet(),
     ): List<TrackEntity> {
+        // Library slots = targetLength * (1 - discoveryRatio); see Step 7.
+        val librarySlots = (recipe.targetLength * (1f - recipe.discoveryRatio)).toInt()
+            .coerceAtLeast(0)
+        // No library slots and no shortfall backfill (Step 8 is gated on a
+        // ratio below 0.5): the result is empty whatever the library holds, so
+        // skip scoring the whole library ("Recommended by Last.fm" at 1.0, and
+        // custom mixes at the "Discover" end of the slider).
+        if (librarySlots == 0 && recipe.discoveryRatio >= 0.5f) return emptyList()
+
         // Step 1: candidate pool — start from every downloaded,
         // non-blacklisted track in the library. v0.9.20: filter through
         // excludeIds first (cheap O(n) set lookup, before any other filtering).
@@ -197,8 +206,6 @@ class MixGenerator @Inject constructor(
         // Step 7: library slots = targetLength * (1 - discoveryRatio), but
         // if we ran out of library candidates we fill up to targetLength.
         // Avoid back-to-back same-artist within the first stretch.
-        val librarySlots = (recipe.targetLength * (1f - recipe.discoveryRatio)).toInt()
-            .coerceAtLeast(0)
         val ordered = scored.sortedByDescending { it.second }.map { it.first }
 
         val picked = pickWithArtistSpread(
@@ -290,16 +297,29 @@ class MixGenerator @Inject constructor(
         val rows = listeningEventDao.getPlayCountsSinceWithLatest(since)
         if (rows.isEmpty()) return emptyMap()
 
+        val tagsByTrack = loadTagVectors(rows.map { it.trackId })
         val plays = rows.map { row ->
             val ageMs = (now - row.latestPlayedAt).coerceAtLeast(0)
             val decay = 0.5f.pow(ageMs.toFloat() / AFFINITY_HALF_LIFE_MS)
             val weight = ln(1f + row.plays.toFloat()) * decay
-            val tags = trackTagDao.getByTrack(row.trackId)
-                .filter { it.tag != "__untaggable__" }
-                .associate { it.tag.lowercase() to it.weight }
+            val tags = tagsByTrack[row.trackId].orEmpty()
             UserTagAffinity.PlayWithTags(weight = weight, tags = tags)
         }
         return UserTagAffinity.compute(plays)
+    }
+
+    /**
+     * Tag-weight vectors (lowercased tag to weight) for [trackIds], read in a
+     * few bind-chunked queries instead of one query per track. Drops the
+     * `__untaggable__` sentinel; tracks with no tags are absent.
+     */
+    private suspend fun loadTagVectors(trackIds: List<Long>): Map<Long, Map<String, Float>> {
+        if (trackIds.isEmpty()) return emptyMap()
+        return trackTagDao.getByTracks(trackIds)
+            .asSequence()
+            .filter { it.tag != "__untaggable__" }
+            .groupBy({ it.trackId }, { it.tag.lowercase() to it.weight })
+            .mapValues { (_, pairs) -> pairs.toMap() }
     }
 
     /**
@@ -313,11 +333,10 @@ class MixGenerator @Inject constructor(
         userVector: Map<String, Float>,
     ): Map<Long, Float> {
         if (userVector.isEmpty()) return emptyMap()
+        val tagsByTrack = loadTagVectors(pool.map { it.id })
         val result = HashMap<Long, Float>(pool.size)
         for (track in pool) {
-            val tags = trackTagDao.getByTrack(track.id)
-                .filter { it.tag != "__untaggable__" }
-                .associate { it.tag.lowercase() to it.weight }
+            val tags = tagsByTrack[track.id] ?: continue
             if (tags.isEmpty()) continue
             result[track.id] = UserTagAffinity.cosine(tags, userVector)
         }
