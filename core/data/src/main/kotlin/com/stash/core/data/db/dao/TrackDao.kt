@@ -230,6 +230,22 @@ data class DownloadedFileRef(
 )
 
 /**
+ * What one [TrackDao.deleteOrphanedDownloadedTracks] pass swept. Both lists
+ * hold the rows as they were BEFORE the sweep (file paths intact), so the
+ * caller can remove their audio files afterward.
+ *
+ * @property deleted orphans with no listening history — their rows are gone.
+ * @property undownloaded orphans that carry plays or skips — the row stays
+ *   (un-marked as downloaded, so it leaves the Library and only streams) and
+ *   only the file goes, because deleting the row would CASCADE away the
+ *   listening history, any unsent scrobbles under it, and the skip signal.
+ */
+data class OrphanSweep(
+    val deleted: List<TrackEntity>,
+    val undownloaded: List<TrackEntity>,
+)
+
+/**
  * A download this device lost and that is not already on its way back.
  *
  * Without the queue check, "Download N again" queued tracks the sync's requeue
@@ -1620,7 +1636,10 @@ interface TrackDao {
      * A track is "orphaned" when it was part of a daily mix that refreshed
      * (its playlist_tracks rows were cleared) and it does not belong to any
      * other playlist (liked songs, custom, or another mix). Tracks with
-     * source = 'BOTH' are local/custom imports and are never swept.
+     * source = 'BOTH' (custom / shared / web-library adds) or 'LOCAL'
+     * ("Import from device" — LocalImportCoordinator writes LOCAL, with no
+     * playlist membership at all) are never swept: they were never a sync's
+     * to take back, and an imported file may exist nowhere else.
      *
      * The discovery-queue exclusion mirrors [com.stash.core.data.db.dao.DiscoveryQueueDao.getActiveTrackIds]
      * (status PENDING/DONE): a discovery download completes, then the weekly
@@ -1636,7 +1655,7 @@ interface TrackDao {
         """
         SELECT t.* FROM tracks t
         WHERE t.is_downloaded = 1
-          AND t.source != 'BOTH'
+          AND t.source NOT IN ('BOTH', 'LOCAL')
           AND t.id NOT IN (
               SELECT pt.track_id FROM playlist_tracks pt
               WHERE pt.removed_at IS NULL
@@ -1660,13 +1679,40 @@ interface TrackDao {
      * its fresh cross-ref (CASCADE) and its irrecoverable FLAC with it
      * (2026-04-21 audit: 9/10 DONE discovery rows lost this way). Selecting and
      * deleting in one transaction closes the window.
+     *
+     * An orphan with listening history (a play or a skip) keeps its row and
+     * only loses its download ([clearDownloadState]): every FK to tracks is
+     * CASCADE, so deleting a played REFRESH-mode mix track used to delete its
+     * plays from History, the unsent Last.fm / ListenBrainz scrobbles queued
+     * under them (listen_submissions), and the mix-affinity skip signal. The
+     * file is still freed, which is what the sweep is for.
      */
     @Transaction
-    suspend fun deleteOrphanedDownloadedTracks(): List<TrackEntity> {
+    suspend fun deleteOrphanedDownloadedTracks(): OrphanSweep {
         val orphans = selectDeletableOrphans()
-        orphans.forEach { delete(it) }
-        return orphans
+        if (orphans.isEmpty()) return OrphanSweep(emptyList(), emptyList())
+        val withHistory = orphans.map { it.id }.chunkedForBind { idsWithListeningHistory(it) }.toSet()
+        val (keep, drop) = orphans.partition { it.id in withHistory }
+        drop.forEach { delete(it) }
+        keep.forEach { clearDownloadState(it.id) }
+        return OrphanSweep(deleted = drop, undownloaded = keep)
     }
+
+    /**
+     * The ids among [ids] that have listening history — a listening_events
+     * row (which listen_submissions hangs off) or a track_skip_events row —
+     * i.e. the tracks whose row a delete would take that history with.
+     * Route through [chunkedForBind]: the orphan set can be library-sized.
+     */
+    @Query(
+        """
+        SELECT t.id FROM tracks t
+        WHERE t.id IN (:ids)
+          AND (EXISTS (SELECT 1 FROM listening_events le WHERE le.track_id = t.id)
+               OR EXISTS (SELECT 1 FROM track_skip_events se WHERE se.track_id = t.id))
+        """
+    )
+    suspend fun idsWithListeningHistory(ids: List<Long>): List<Long>
 
     /**
      * Shared mixes: after an unfollow, delete the tracks among [ids] that nothing else claims.

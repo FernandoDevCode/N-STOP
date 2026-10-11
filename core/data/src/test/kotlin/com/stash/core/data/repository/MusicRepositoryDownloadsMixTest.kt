@@ -4,6 +4,7 @@ import android.content.Context
 import com.stash.core.common.ArtUrlUpgrader
 import com.stash.core.data.db.dao.DiscoveryQueueDao
 import com.stash.core.data.db.dao.DownloadQueueDao
+import com.stash.core.data.db.dao.OrphanSweep
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.db.dao.TrackDao
@@ -200,7 +201,8 @@ class MusicRepositoryDownloadsMixTest {
         coEvery { prefs.anyAccumulate() } returns false
         // The atomic DAO method returns the rows it deleted; the repo then
         // removes their files and emits deletions.
-        coEvery { trackDao.deleteOrphanedDownloadedTracks() } returns listOf(downloadedTrack(1L))
+        coEvery { trackDao.deleteOrphanedDownloadedTracks() } returns
+            OrphanSweep(deleted = listOf(downloadedTrack(1L)), undownloaded = emptyList())
         val repo = buildRepo(trackDao = trackDao, syncPreferencesManager = prefs)
 
         val cleaned = repo.cleanOrphanedMixTracks()
