@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -68,6 +69,7 @@ import coil3.compose.rememberAsyncImagePainter
 import com.stash.core.media.BulkPlayAction
 import com.stash.core.model.Track
 import com.stash.core.ui.components.DetailTrackRow
+import com.stash.core.ui.components.NowPlayingJumpChip
 import com.stash.core.ui.components.SearchFilterBar
 import com.stash.core.ui.components.TrackOptionsSheet
 import com.stash.core.ui.selection.SelectionAction
@@ -121,6 +123,7 @@ fun ArtistDetailScreen(
         viewModel.userMessages.collect { snackbarHostState.showSnackbar(it) }
     }
 
+    val listState = rememberLazyListState()
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -133,6 +136,7 @@ fun ArtistDetailScreen(
             )
         } else {
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = bottomChromePadding(if (selection.isActive) 140.dp else 120.dp)),
             ) {
@@ -210,6 +214,15 @@ fun ArtistDetailScreen(
                     }
                 }
             }
+            // "Now playing ↑/↓" while the playing song is scrolled out of sight.
+            NowPlayingJumpChip(
+                listState = listState,
+                trackIndex = remember(state.tracks, state.currentlyPlayingTrackId) {
+                    state.tracks.indexOfFirst { it.id == state.currentlyPlayingTrackId }
+                },
+                trackCount = state.tracks.size,
+                enabled = !selection.isActive,
+            )
         }
 
         // ── Selection chrome (overlaid contextual top + bottom bars) ────────

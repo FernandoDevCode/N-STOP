@@ -112,6 +112,7 @@ import com.stash.core.model.Playlist
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.Track
 import com.stash.core.ui.components.GlassCard
+import com.stash.core.ui.components.NowPlayingJumpChip
 import com.stash.core.ui.components.SourceIndicator
 import com.stash.core.ui.components.TrackListItem
 import com.stash.core.ui.components.VerticalScrollbar
@@ -857,6 +858,15 @@ private fun LikedTab(
             }
         }
         VerticalScrollbar(state = listState)
+        // "Now playing ↑/↓" while the playing like is scrolled out of sight.
+        NowPlayingJumpChip(
+            listState = listState,
+            trackIndex = remember(tracks, currentlyPlayingTrackId) {
+                tracks.indexOfFirst { it.id == currentlyPlayingTrackId }
+            },
+            trackCount = tracks.size,
+            enabled = !selection.isActive,
+        )
     }
 
     // ── Context-menu bottom sheet (shared component) ────────────────────
@@ -1577,6 +1587,16 @@ private fun TracksTab(
             }
         }
         VerticalScrollbar(state = listState)
+        // "Now playing ↑/↓" while the playing song is scrolled out of sight: one tap back
+        // to it from anywhere in a long library.
+        NowPlayingJumpChip(
+            listState = listState,
+            trackIndex = remember(tracks, currentlyPlayingTrackId) {
+                tracks.indexOfFirst { it.id == currentlyPlayingTrackId }
+            },
+            trackCount = tracks.size,
+            enabled = !selection.isActive,
+        )
     }
 
     // ── Context-menu bottom sheet (shared component) ────────────────────
