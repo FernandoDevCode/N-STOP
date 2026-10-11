@@ -19,6 +19,8 @@ import com.stash.core.model.UpgradeResult
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 
 /**
  * Drains the flac_upgrade_queue: one lossless upgrade per PENDING row
@@ -117,7 +119,10 @@ class FlacUpgradeWorker @AssistedInject constructor(
         } catch (ce: CancellationException) {
             // User hit Cancel (or the system pulled the plug): drop the
             // remainder so the batch doesn't zombie-resume on retry.
-            queueDao.clearPending()
+            // NonCancellable: this coroutine is already cancelled, so the
+            // suspend DAO call threw on entry, the pending rows survived and
+            // cancelFlacUpgrade() below was never reached.
+            withContext(NonCancellable) { queueDao.clearPending() }
             syncNotificationManager.cancelFlacUpgrade()
             throw ce
         }

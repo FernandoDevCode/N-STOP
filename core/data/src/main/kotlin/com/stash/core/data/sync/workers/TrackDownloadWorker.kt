@@ -660,12 +660,17 @@ class TrackDownloadWorker @AssistedInject constructor(
             // IN_PROGRESS queue rows will be reset to PENDING by the next
             // run's resetStaleInProgress() sweep.
             Log.i(TAG, "Sync cancelled by user or system")
-            syncHistoryDao.updateStatus(
-                id = syncId,
-                status = SyncState.CANCELLED,
-                completedAt = System.currentTimeMillis(),
-                errorMessage = "Cancelled",
-            )
+            // NonCancellable: this coroutine is already cancelled, so a plain
+            // suspend DAO call throws on entry and the row stayed DOWNLOADING
+            // ("Running") until the next startup flipped it to Interrupted.
+            withContext(NonCancellable) {
+                syncHistoryDao.updateStatus(
+                    id = syncId,
+                    status = SyncState.CANCELLED,
+                    completedAt = System.currentTimeMillis(),
+                    errorMessage = "Cancelled",
+                )
+            }
             syncStateManager.reset()
             throw ce
         } catch (e: Exception) {
