@@ -937,6 +937,20 @@ fun NowPlayingScreen(
                                 Spacer(modifier = Modifier.height(StackRhythm.InfoToProgress))
 
                                 foot(footShared)
+
+                                // "Up next · Title — Artist": a tap opens the queue, or the session
+                                // in a room (whose Up next is the room's). Art view only: lyrics
+                                // mode keeps the bottom for the lyrics.
+                                Spacer(modifier = Modifier.height(StackRhythm.ControlsToUpNext))
+                                UpNextLine(
+                                    peek = if (room != null) {
+                                        roomUpNextPeek(room.queue)
+                                    } else {
+                                        upNextPeek(uiState.queue, uiState.currentIndex, uiState.repeatMode)
+                                    },
+                                    inRoom = room != null,
+                                    onOpen = { if (room != null) showSession = true else showQueue = true },
+                                )
                                 },
                             )
 
@@ -1082,6 +1096,7 @@ private object StackRhythm {
     val ArtistToQuality = 6.dp
     val InfoToProgress = 16.dp
     val ProgressToControls = 12.dp
+    val ControlsToUpNext = 2.dp
 }
 
 /** The art's design ceiling. */
