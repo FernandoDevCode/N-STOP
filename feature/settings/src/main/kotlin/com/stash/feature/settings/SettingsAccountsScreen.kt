@@ -44,6 +44,9 @@ fun SettingsAccountsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val extendedColors = com.stash.core.ui.theme.StashTheme.extendedColors
+    // The last sync's verdict on each stored sign-in: an expired card leads with
+    // Reconnect (the Sync tab's "Re-authenticate" lands here).
+    val authExpiry by viewModel.authExpiry.collectAsStateWithLifecycle()
 
     // The sign-in flags live in the Settings-wide ViewModel, which outlives this
     // screen: leaving Accounts with a sign-in open (any route Back doesn't
@@ -159,17 +162,44 @@ fun SettingsAccountsScreen(
 
         SettingsSectionLabel("Connections")
 
+        // Disconnecting a source also drops its queued downloads, so each asks
+        // first (as Discord's connect does). Saveable, like showDiscordRisk, so
+        // a rotation keeps the question up.
+        var confirmSpotifyDisconnect by rememberSaveable { mutableStateOf(false) }
+        var confirmYouTubeDisconnect by rememberSaveable { mutableStateOf(false) }
+        if (confirmSpotifyDisconnect) {
+            com.stash.feature.settings.components.DisconnectAccountDialog(
+                serviceName = "Spotify",
+                onConfirm = {
+                    confirmSpotifyDisconnect = false
+                    // Also sign the WebView out, or the next Connect re-submits the old sp_dc.
+                    com.stash.feature.settings.components.clearSpotifyWebSession()
+                    viewModel.onDisconnectSpotify()
+                },
+                onDismiss = { confirmSpotifyDisconnect = false },
+            )
+        }
+        if (confirmYouTubeDisconnect) {
+            com.stash.feature.settings.components.DisconnectAccountDialog(
+                serviceName = "YouTube Music",
+                onConfirm = {
+                    confirmYouTubeDisconnect = false
+                    // Also sign the WebView out of Google, so the account isn't left behind in it.
+                    com.stash.feature.settings.components.clearYouTubeWebSession()
+                    viewModel.onDisconnectYouTube()
+                },
+                onDismiss = { confirmYouTubeDisconnect = false },
+            )
+        }
+
         AccountConnectionCard(
             serviceName = "Spotify",
             icon = Icons.Rounded.MusicNote,
             accentColor = extendedColors.spotifyGreen,
             authState = uiState.spotifyAuthState,
+            expired = authExpiry.spotifyExpired,
             onConnect = viewModel::onConnectSpotify,
-            onDisconnect = {
-                // Also sign the WebView out, or the next Connect re-submits the old sp_dc.
-                com.stash.feature.settings.components.clearSpotifyWebSession()
-                viewModel.onDisconnectSpotify()
-            },
+            onDisconnect = { confirmSpotifyDisconnect = true },
             extraContent = {
                 com.stash.feature.settings.components.SpotifyAutoSaveSection(
                     enabled = uiState.autoSaveEnabled,
@@ -188,12 +218,9 @@ fun SettingsAccountsScreen(
             icon = Icons.Rounded.PlayCircle,
             accentColor = extendedColors.youtubeRed,
             authState = uiState.youTubeAuthState,
+            expired = authExpiry.youtubeExpired,
             onConnect = viewModel::onConnectYouTube,
-            onDisconnect = {
-                // Also sign the WebView out of Google, so the account isn't left behind in it.
-                com.stash.feature.settings.components.clearYouTubeWebSession()
-                viewModel.onDisconnectYouTube()
-            },
+            onDisconnect = { confirmYouTubeDisconnect = true },
             extraContent = {
                 com.stash.feature.settings.components.YouTubeHistorySyncSection(
                     enabled = uiState.ytHistoryEnabled,

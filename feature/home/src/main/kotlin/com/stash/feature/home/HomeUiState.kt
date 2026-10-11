@@ -23,6 +23,13 @@ data class HomeUiState(
     /** The Discover hero. Null until the Daily Discover playlist materializes. */
     val hero: DiscoverHeroState? = null,
 
+    /**
+     * True while [hero] is null but Daily Discover is on its way (see
+     * [dailyDiscoverBuilding]): Home shows a "Building your Daily Discover…"
+     * card in the hero slot instead of leaving it empty.
+     */
+    val heroBuilding: Boolean = false,
+
     val isLoading: Boolean = true,
     /**
      * Non-null when the user has not enabled lossless AND has not

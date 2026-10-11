@@ -336,7 +336,8 @@ private fun RecentSearches(
                 TextButton(onClick = onClearAll) { Text("Clear") }
             }
         }
-        items(entries, key = { "${it.type}:${it.text.lowercase()}" }) { entry ->
+        // By identity: two songs called "Intro" are two rows now, so the title alone would collide.
+        items(entries, key = { it.identityKey }) { entry ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()

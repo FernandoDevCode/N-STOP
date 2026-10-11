@@ -193,6 +193,7 @@ class HomeViewModel @Inject constructor(
     /** Everything derived from the playlists + recipe streams in one holder. */
     private data class HomePlaylistData(
         val hero: DiscoverHeroState?,
+        val heroBuilding: Boolean,
         val madeForYou: List<HomeMix>,
         val radios: List<HomeMix>,
         val moodDecades: List<HomeMix>,
@@ -251,6 +252,17 @@ class HomeViewModel @Inject constructor(
                 )
             }
 
+        // No hero yet, but Daily Discover is on its way (fresh install, before
+        // its first tracks land): Home holds the slot with a "Building…" card
+        // rather than nothing. The recipe is the same first builtin the hero reads.
+        val dailyRecipe = recipes.filter { it.isBuiltin }.minByOrNull { it.id }
+        val heroBuilding = hero == null && dailyRecipe != null && dailyDiscoverBuilding(
+            active = dailyRecipe.isActive,
+            materialized = dailyRecipe.playlistId != null,
+            trackCount = dailyRecipe.playlistId?.let { trackCounts[it] } ?: 0,
+            pendingDiscoveryCount = discoveryByRecipe[dailyRecipe.id] ?: 0,
+        )
+
         // Classify each playlist into its Home rail. buildState only carries for
         // STASH_MIX (YOUR_MIXES); builtin Daily Discover is excluded from YOUR_MIXES.
         val madeForYou = mutableListOf<HomeMix>()
@@ -280,6 +292,7 @@ class HomeViewModel @Inject constructor(
         val recencyById = recency.associate { it.playlistId to it.latestAddedAt }
         HomePlaylistData(
             hero = hero,
+            heroBuilding = heroBuilding,
             madeForYou = madeForYou.pinnedThenFreshest(recencyById),
             radios = radios.pinnedThenFreshest(recencyById),
             moodDecades = moodDecades.pinnedThenFreshest(recencyById),
@@ -473,6 +486,7 @@ class HomeViewModel @Inject constructor(
     ) { (home, likedCard), (losslessPrompt, showLosslessOffline), tipJar, metadataBackfillBanner, discovery ->
         HomeUiState(
             hero = home.hero,
+            heroBuilding = home.heroBuilding,
             isLoading = false,
             losslessPrompt = losslessPrompt,
             showLosslessOffline = showLosslessOffline,
