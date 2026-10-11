@@ -14,7 +14,11 @@ export function limitKey(addr) {
     return groups.slice(0, 4).join(":");
 }
 
-export const ip = (request) => limitKey(request.headers.get("CF-Connecting-IP") || "?");
+/**
+ * The per-minute limits' key: the client's network (networkOf below: an IPv4 address, or an IPv6 /56), as Community's
+ * limits use. A /64 key let one host with a routed /48 (common on VPSes and tunnel brokers) spread over 65,536 buckets.
+ */
+export const ip = (request) => networkOf(request.headers.get("CF-Connecting-IP") || "?");
 
 /**
  * Community's "network" (spec 2026-09-26 §2): an IPv4 address as is, an IPv6 address by its /56.

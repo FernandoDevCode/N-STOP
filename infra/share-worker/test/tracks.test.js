@@ -190,12 +190,12 @@ test("a body over the cap is 413; a rate-limited client gets 429 before anything
     assert.equal(limited.SHARE_KV.map.size, 0);
 });
 
-test("the track rate limiter is keyed like the others (IPv4 as is, IPv6 by its /64)", async () => {
+test("the track rate limiter is keyed like the others (IPv4 as is, IPv6 by its /56)", async () => {
     const keys = [];
     const e = env({ TRACK_RL: { limit: async (o) => { keys.push(o); return { success: true }; } } });
     await post(song(), e);
     await post(song(), e, { headers: { "CF-Connecting-IP": "2001:db8::1" } });
-    assert.deepEqual(keys, [{ key: "203.0.113.9" }, { key: "2001:db8:0:0" }]);
+    assert.deepEqual(keys, [{ key: "203.0.113.9" }, { key: "2001:db8:0:0/56" }]);
 });
 
 test("GET /v1/tracks/{id}: 200 with the song (absent fields omitted) and cacheable; unknown is 404", async () => {

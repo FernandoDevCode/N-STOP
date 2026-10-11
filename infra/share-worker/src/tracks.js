@@ -40,13 +40,15 @@ export const writeTrack = (kv, id, record) => kv.put(kvKey(id), JSON.stringify(r
 
 /**
  * Stores a cleaned song under its id: { id, created }, or null when all five ids hold other songs. A stored song is
- * never changed by a share, so nobody can alter a link they didn't make.
+ * never changed by a share, so nobody can alter a link they didn't make. [mayCreate] is asked only before a new
+ * record is written (the network's daily budget); when it says no, the answer is { overBudget: true }.
  */
-export async function saveTrack(kv, track, now = Date.now()) {
+export async function saveTrack(kv, track, now = Date.now(), mayCreate = async () => true) {
     const identity = trackIdentity(track);
     for (const id of await candidateIds(identity)) {
         const record = await readTrack(kv, id);
         if (record === null) {
+            if (!(await mayCreate())) return { overBudget: true };
             await writeTrack(kv, id, { v: 1, track, createdAt: now });
             return { id, created: true };
         }
