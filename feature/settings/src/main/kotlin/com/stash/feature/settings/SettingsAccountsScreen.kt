@@ -270,6 +270,8 @@ fun SettingsAccountsScreen(
                 Text(
                     text = when {
                         !result.sessionPresent -> "Connect Last.fm first."
+                        result.held && result.submitted == 0 ->
+                            "Couldn't reach Last.fm. Your plays stay queued and will be sent later."
                         result.submitted == 0 -> "No new scrobbles to send."
                         else -> "Sent ${result.submitted} scrobble${if (result.submitted == 1) "" else "s"} to Last.fm."
                     },

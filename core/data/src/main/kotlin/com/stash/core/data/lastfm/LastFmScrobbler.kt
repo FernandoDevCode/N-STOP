@@ -74,9 +74,14 @@ class LastFmScrobbler @Inject constructor(
      * the Settings "Sync scrobbles now" button — after the user finishes
      * the Last.fm connect handshake, they can tap this to push the full
      * backlog (cold-start import can leave ~300 synthetic plays +
-     * accumulated real plays pending). Returns the pair
-     * (submitted, session-present). When the session is null the call is
+     * accumulated real plays pending). When the session is null the call is
      * a cheap no-op so the UI can surface a "Connect first" message.
+     *
+     * A tap is a deliberate probe, so it goes out even while the automatic
+     * drain is backing off: the user taps because the network is back.
+     * Honouring the breaker here made the button do nothing for up to an hour
+     * after one failed pass and report "No new scrobbles to send" beside a
+     * card still showing plays queued.
      */
     suspend fun drainNow(): DrainResult {
         val session = runCatching { sessionPreference.session.firstOrNull() }.getOrNull()
@@ -84,11 +89,15 @@ class LastFmScrobbler @Inject constructor(
         val before = runCatching { listeningEventDao.pendingScrobbles(limit = Int.MAX_VALUE) }
             .getOrElse { emptyList() }
             .size
-        drainQueue(session)
+        val end = drainQueue(session, manual = true)
         val after = runCatching { listeningEventDao.pendingScrobbles(limit = Int.MAX_VALUE) }
             .getOrElse { emptyList() }
             .size
-        return DrainResult(submitted = (before - after).coerceAtLeast(0), sessionPresent = true)
+        return DrainResult(
+            submitted = (before - after).coerceAtLeast(0),
+            sessionPresent = end != PassEnd.SESSION_REVOKED,
+            held = end == PassEnd.HELD,
+        )
     }
 
     /**
@@ -113,8 +122,30 @@ class LastFmScrobbler @Inject constructor(
         }
     }
 
-    /** Result of a [drainNow] invocation, surfaced to the Settings UI. */
-    data class DrainResult(val submitted: Int, val sessionPresent: Boolean)
+    /**
+     * Result of a [drainNow] invocation, surfaced to the Settings UI.
+     *
+     * @property held true when the pass stopped on a failure (offline, Last.fm
+     *   down) and left plays queued for a later retry, so the UI can say so
+     *   instead of "No new scrobbles to send".
+     */
+    data class DrainResult(
+        val submitted: Int,
+        val sessionPresent: Boolean,
+        val held: Boolean = false,
+    )
+
+    /** How a drain pass ended. */
+    internal enum class PassEnd {
+        /** Everything it loaded was handled (or there was nothing to send). */
+        DRAINED,
+
+        /** Stopped on a failure, or skipped by the backoff; plays stay queued. */
+        HELD,
+
+        /** Last.fm rejected the session key, which is now cleared. */
+        SESSION_REVOKED,
+    }
 
     /**
      * Submits up to 100 pending events per pass. Last.fm allows
@@ -122,23 +153,24 @@ class LastFmScrobbler @Inject constructor(
      * `artist[0]`/`track[0]`/etc. array syntax, but the simpler per-call
      * submission works fine for the low volumes we expect here.
      */
-    private suspend fun drainQueue(session: LastFmSession) {
-        drainLock.withLock { drainQueueLocked(session) }
-    }
+    // Internal so tests can run an automatic pass ([manual] false) directly.
+    internal suspend fun drainQueue(session: LastFmSession, manual: Boolean = false): PassEnd =
+        drainLock.withLock { drainQueueLocked(session, manual) }
 
-    private suspend fun drainQueueLocked(session: LastFmSession) {
+    private suspend fun drainQueueLocked(session: LastFmSession, manual: Boolean): PassEnd {
         // Offline, every submission in this pass is doomed, and a pass runs
         // on EVERY recorded listen. Backing off after consecutive failures
         // turns a session's worth of guaranteed-to-fail requests — each one
         // paying DNS plus a connect timeout and holding the radio awake —
         // into one probe per cooldown. Rows are never dropped, only deferred.
+        // A manual sync is that probe, so it skips the check (see [drainNow]).
         val now = System.currentTimeMillis()
-        if (rateLimitGate.isOpen(SCROBBLE_GATE_KEY, now)) return
+        if (!manual && rateLimitGate.isOpen(SCROBBLE_GATE_KEY, now)) return PassEnd.HELD
 
         val pending = runCatching { listeningEventDao.pendingScrobbles(limit = 100) }
             .getOrElse {
                 Log.w(TAG, "Failed to load pending scrobbles", it)
-                return
+                return PassEnd.HELD
             }
         for (event in pending) {
             val track = runCatching { trackDao.getById(event.trackId) }.getOrNull()
@@ -156,15 +188,16 @@ class LastFmScrobbler @Inject constructor(
                     // succeed for a reason row 1 did not already disprove. The
                     // remaining rows stay pending for the next trigger.
                     rateLimitGate.recordRateLimited(SCROBBLE_GATE_KEY, now)
-                    return
+                    return PassEnd.HELD
                 }
                 SubmitOutcome.SESSION_REVOKED -> {
                     forgetRevokedSession(session)
-                    return
+                    return PassEnd.SESSION_REVOKED
                 }
             }
         }
         rateLimitGate.recordSuccess(SCROBBLE_GATE_KEY)
+        return PassEnd.DRAINED
     }
 
     /** What one [submit] means for the rest of the pass. */

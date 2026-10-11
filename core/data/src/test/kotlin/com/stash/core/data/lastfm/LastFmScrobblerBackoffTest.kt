@@ -100,12 +100,46 @@ class LastFmScrobblerBackoffTest {
             h.apiClient.scrobble(any(), any(), any(), any(), any())
         } returns Result.failure(java.net.UnknownHostException("offline"))
 
+        // Automatic passes (the collector's): a manual sync is a deliberate
+        // probe and goes out anyway, see the test below.
         val s = scrobbler(h)
-        s.drainNow() // trips the breaker
-        s.drainNow() // must not reach the network
-        s.drainNow()
+        s.drainQueue(session) // trips the breaker
+        s.drainQueue(session) // must not reach the network
+        s.drainQueue(session)
 
         coVerify(exactly = 1) { h.apiClient.scrobble(any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `a manual sync during the backoff still tries and says the plays are held`() = runTest {
+        val h = Harness()
+        coEvery { h.listeningEventDao.pendingScrobbles(any()) } returns listOf(event(1))
+        coEvery { h.trackDao.getById(any()) } answers { track(firstArg()) }
+        coEvery {
+            h.apiClient.scrobble(any(), any(), any(), any(), any())
+        } returns Result.failure(java.net.UnknownHostException("offline"))
+
+        val s = scrobbler(h)
+        s.drainQueue(session) // an automatic pass fails and opens the breaker
+        coEvery {
+            h.apiClient.scrobble(any(), any(), any(), any(), any())
+        } returns Result.success(Unit)
+        coEvery { h.listeningEventDao.pendingScrobbles(any()) } returnsMany listOf(listOf(event(1)), listOf(event(1)), emptyList())
+
+        val result = s.drainNow() // the network is back; the user taps
+
+        coVerify(exactly = 2) { h.apiClient.scrobble(any(), any(), any(), any(), any()) }
+        assertThat(result.submitted).isEqualTo(1)
+        assertThat(result.held).isFalse()
+
+        // And a tap that fails says so instead of "No new scrobbles to send".
+        coEvery {
+            h.apiClient.scrobble(any(), any(), any(), any(), any())
+        } returns Result.failure(java.net.UnknownHostException("offline"))
+        coEvery { h.listeningEventDao.pendingScrobbles(any()) } returns listOf(event(1))
+        val failed = s.drainNow()
+        assertThat(failed.held).isTrue()
+        assertThat(failed.submitted).isEqualTo(0)
     }
 
     @Test
@@ -224,8 +258,8 @@ class LastFmScrobblerBackoffTest {
         } returns Result.failure(LastFmApiException(16, "Temporary error"))
 
         val s = scrobbler(h)
-        s.drainNow()
-        s.drainNow() // breaker open
+        s.drainQueue(session)
+        s.drainQueue(session) // breaker open
 
         coVerify(exactly = 1) { h.apiClient.scrobble(any(), any(), any(), any(), any()) }
         coVerify(exactly = 0) { h.listeningEventDao.markScrobbled(any()) }
