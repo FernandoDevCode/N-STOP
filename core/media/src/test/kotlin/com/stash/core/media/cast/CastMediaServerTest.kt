@@ -368,6 +368,15 @@ class CastMediaServerTest {
         }
     }
 
+    @Test fun `a connection stop() closed before its worker set it up doesn't escape the worker`() {
+        // The race: the speaker connects just as stop() closes every client socket.
+        // setSoTimeout on the closed socket threw out of the pool thread — an
+        // uncaught exception there kills the app.
+        val closedUnderUs = Socket().apply { close() }
+
+        server.serveConnection(closedUnderUs) // must return, not throw
+    }
+
     @Test fun `range parsing`() {
         assertThat(CastMediaServer.parseRange("bytes=0-")).isEqualTo(0L to null)
         assertThat(CastMediaServer.parseRange("bytes=10-20")).isEqualTo(10L to 20L)

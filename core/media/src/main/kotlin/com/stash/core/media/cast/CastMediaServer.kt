@@ -228,7 +228,7 @@ class CastMediaServer(
             try {
                 pool.execute {
                     try {
-                        client.use { handle(it) }
+                        serveConnection(client)
                     } finally {
                         clients -= client
                     }
@@ -237,6 +237,27 @@ class CastMediaServer(
                 clients -= client
                 runCatching { client.close() }
             }
+        }
+    }
+
+    /**
+     * One connection, start to finish, on a pool thread. Nothing may escape it: an
+     * exception leaving a worker reaches the default handler and kills the app.
+     *
+     * [stop] (leaving cast, or [ensureCurrentAddress] after a DHCP change) closes
+     * every client socket while a worker may still be setting its connection up,
+     * and `setSoTimeout` / `getInputStream` on a closed socket throw
+     * "Socket is closed" before [handle] reaches the guarded part. A speaker
+     * opening its next-song or seek request at that moment crashed the app.
+     */
+    internal fun serveConnection(client: Socket) {
+        try {
+            client.use { handle(it) }
+        } catch (e: IOException) {
+            // Closed under us by stop(), or the speaker hung up. Routine.
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "connection failed", e)
+            onEvent("server: connection failed (${e.javaClass.simpleName})")
         }
     }
 
