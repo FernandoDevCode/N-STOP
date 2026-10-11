@@ -55,10 +55,11 @@ class LastFmScrobblerBackoffTest {
         val listeningEventDao: ListeningEventDao = mockk(relaxed = true),
         val trackDao: TrackDao = mockk(relaxed = true),
         val gate: LastFmRateLimitGate = LastFmRateLimitGate(),
+        val sessionPreference: LastFmSessionPreference = mockk(relaxed = true),
     )
 
     private fun scrobbler(h: Harness): LastFmScrobbler {
-        val sessionPreference: LastFmSessionPreference = mockk()
+        val sessionPreference = h.sessionPreference
         every { sessionPreference.session } returns flowOf(session)
         every { sessionPreference.firstArtistOnly } returns flowOf(false)
         val credentials: LastFmCredentials = mockk()
@@ -174,5 +175,59 @@ class LastFmScrobblerBackoffTest {
 
         // Each play once. Without single-flight both passes held rows 1-3.
         coVerify(exactly = 3) { h.apiClient.scrobble(any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `a revoked session disconnects Last-fm instead of retrying forever`() = runTest {
+        val h = Harness()
+        coEvery { h.listeningEventDao.pendingScrobbles(any()) } returns (1L..3L).map { event(it) }
+        coEvery { h.trackDao.getById(any()) } answers { track(firstArg()) }
+        coEvery {
+            h.apiClient.scrobble(any(), any(), any(), any(), any())
+        } returns Result.failure(LastFmApiException(9, "Invalid session key"))
+
+        scrobbler(h).drainNow()
+
+        coVerify(exactly = 1) { h.apiClient.scrobble(any(), any(), any(), any(), any()) }
+        coVerify(exactly = 1) { h.sessionPreference.clear() }
+        // The plays stay queued for after the user reconnects.
+        coVerify(exactly = 0) { h.listeningEventDao.markScrobbled(any()) }
+    }
+
+    @Test
+    fun `a play Last-fm refuses does not block the plays behind it`() = runTest {
+        val h = Harness()
+        coEvery { h.listeningEventDao.pendingScrobbles(any()) } returns (1L..3L).map { event(it) }
+        coEvery { h.trackDao.getById(any()) } answers { track(firstArg()) }
+        coEvery {
+            h.apiClient.scrobble(any(), any(), any(), any(), any())
+        } returns Result.success(Unit)
+        coEvery {
+            h.apiClient.scrobble(any(), "a1", any(), any(), any())
+        } returns Result.failure(LastFmApiException(6, "Invalid parameters"))
+
+        scrobbler(h).drainNow()
+
+        coVerify(exactly = 3) { h.apiClient.scrobble(any(), any(), any(), any(), any()) }
+        coVerify { h.listeningEventDao.markScrobbled(1L) }
+        coVerify { h.listeningEventDao.markScrobbled(3L) }
+        coVerify(exactly = 0) { h.sessionPreference.clear() }
+    }
+
+    @Test
+    fun `a Last-fm outage still backs off and keeps the play`() = runTest {
+        val h = Harness()
+        coEvery { h.listeningEventDao.pendingScrobbles(any()) } returns (1L..3L).map { event(it) }
+        coEvery { h.trackDao.getById(any()) } answers { track(firstArg()) }
+        coEvery {
+            h.apiClient.scrobble(any(), any(), any(), any(), any())
+        } returns Result.failure(LastFmApiException(16, "Temporary error"))
+
+        val s = scrobbler(h)
+        s.drainNow()
+        s.drainNow() // breaker open
+
+        coVerify(exactly = 1) { h.apiClient.scrobble(any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { h.listeningEventDao.markScrobbled(any()) }
     }
 }

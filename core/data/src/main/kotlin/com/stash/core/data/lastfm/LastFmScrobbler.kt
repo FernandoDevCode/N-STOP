@@ -6,6 +6,7 @@ import com.stash.core.data.db.dao.ListeningEventDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.ListeningEventEntity
 import com.stash.core.data.db.entity.TrackEntity
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -147,24 +148,42 @@ class LastFmScrobbler @Inject constructor(
                 runCatching { listeningEventDao.markScrobbled(event.id) }
                 continue
             }
-            if (!submit(session, event, track)) {
-                // Stop at the first failure rather than marching the rest of
-                // the backlog into the same wall: nothing about row 2 can
-                // succeed for a reason row 1 did not already disprove. The
-                // remaining rows stay pending for the next trigger.
-                rateLimitGate.recordRateLimited(SCROBBLE_GATE_KEY, now)
-                return
+            when (submit(session, event, track)) {
+                SubmitOutcome.HANDLED -> Unit
+                SubmitOutcome.RETRY_LATER -> {
+                    // Stop at the first failure rather than marching the rest of
+                    // the backlog into the same wall: nothing about row 2 can
+                    // succeed for a reason row 1 did not already disprove. The
+                    // remaining rows stay pending for the next trigger.
+                    rateLimitGate.recordRateLimited(SCROBBLE_GATE_KEY, now)
+                    return
+                }
+                SubmitOutcome.SESSION_REVOKED -> {
+                    forgetRevokedSession(session)
+                    return
+                }
             }
         }
         rateLimitGate.recordSuccess(SCROBBLE_GATE_KEY)
     }
 
-    /** True when the event was accepted (or is permanently unscrobblable). */
+    /** What one [submit] means for the rest of the pass. */
+    private enum class SubmitOutcome {
+        /** Scrobbled, or permanently refused for this row alone: the pass goes on. */
+        HANDLED,
+
+        /** A failure the next row would hit too (offline, outage, throttling). */
+        RETRY_LATER,
+
+        /** Last.fm no longer accepts the stored session key. */
+        SESSION_REVOKED,
+    }
+
     private suspend fun submit(
         session: LastFmSession,
         event: ListeningEventEntity,
         track: TrackEntity,
-    ): Boolean {
+    ): SubmitOutcome {
         val result = apiClient.scrobble(
             sessionKey = session.sessionKey,
             artist = scrobbleArtist(track.artist),
@@ -174,11 +193,48 @@ class LastFmScrobbler @Inject constructor(
         )
         if (result.isSuccess) {
             runCatching { listeningEventDao.markScrobbled(event.id) }
-            return true
+            return SubmitOutcome.HANDLED
         }
-        Log.w(TAG, "Scrobble failed for event ${event.id}", result.exceptionOrNull())
-        // Leave unscrobbled; next trigger retries.
-        return false
+        val error = result.exceptionOrNull()
+        Log.w(TAG, "Scrobble failed for event ${event.id}", error)
+        return when ((error as? LastFmApiException)?.errorCode) {
+            // Invalid session key: the user revoked Stash at last.fm, or a
+            // password reset ended the session. Session keys never expire on
+            // their own, so retrying cannot help; before, this backed off and
+            // retried forever while Settings still said "Connected".
+            ERROR_INVALID_SESSION -> SubmitOutcome.SESSION_REVOKED
+            // Invalid parameters / resource: Last.fm refuses this play itself
+            // (a blank artist or title, say). It is marked handled so it cannot
+            // sit at the head of the queue, oldest first, and block every
+            // later play for good.
+            ERROR_INVALID_PARAMETERS, ERROR_INVALID_RESOURCE -> {
+                runCatching { listeningEventDao.markScrobbled(event.id) }
+                SubmitOutcome.HANDLED
+            }
+            // Everything else (network, 5xx, 11/16 outages, 29 throttling, and
+            // app-key errors that are not the user's to fix) leaves the row
+            // queued for the next trigger.
+            else -> SubmitOutcome.RETRY_LATER
+        }
+    }
+
+    /**
+     * Disconnects Last.fm after it rejected the session key, so Settings shows
+     * "Connect" instead of a queue that can never drain. The plays stay queued
+     * and go out once the user reconnects. Only the session that failed is
+     * cleared: a reconnect made while this pass was running is left alone.
+     */
+    private suspend fun forgetRevokedSession(session: LastFmSession) {
+        Log.w(TAG, "Last.fm rejected the session key; disconnecting so the user can reconnect")
+        try {
+            if (sessionPreference.session.firstOrNull()?.sessionKey == session.sessionKey) {
+                sessionPreference.clear()
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "could not clear the revoked Last.fm session", e)
+        }
     }
 
     /**
@@ -196,5 +252,10 @@ class LastFmScrobbler @Inject constructor(
          * never blocks writes and a dead network never blocks reads.
          */
         const val SCROBBLE_GATE_KEY = "scrobble-submit"
+
+        /** Last.fm API error codes (https://www.last.fm/api/errorcodes) the drain acts on. */
+        private const val ERROR_INVALID_PARAMETERS = 6
+        private const val ERROR_INVALID_RESOURCE = 7
+        private const val ERROR_INVALID_SESSION = 9
     }
 }

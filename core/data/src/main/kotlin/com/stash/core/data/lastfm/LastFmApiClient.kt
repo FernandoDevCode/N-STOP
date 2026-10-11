@@ -449,11 +449,22 @@ suspend fun updateNowPlaying(
                 signed.forEach { (k, v) -> add(k, v) }
             }.build()
             val request = Request.Builder().url(API_URL).post(form).build()
-            val body = okHttpClient.newCall(request).execute().use {
-                check(it.isSuccessful) { "Last.fm POST failed: HTTP ${it.code}" }
-                it.body?.string() ?: error("Empty Last.fm response")
+            val (code, body) = okHttpClient.newCall(request).execute().use {
+                it.code to it.body?.string()
             }
-            json.parseToJsonElement(body).jsonObject
+            // Last.fm explains a failed write in an `{ error, message }` body,
+            // sent with a 4xx and sometimes with a 200. The code is what tells a
+            // revoked session (9) from a bad row (6) from an outage, so it is
+            // kept: reducing every failure to "HTTP 4xx" left the scrobbler
+            // retrying a revoked session forever, and a 200 carrying an error
+            // was taken for success.
+            val root = body?.let { runCatching { json.parseToJsonElement(it).jsonObject }.getOrNull() }
+            root?.get("error")?.jsonPrimitive?.content?.toIntOrNull()?.let { err ->
+                val msg = root["message"]?.jsonPrimitive?.content ?: "unknown"
+                throw LastFmApiException(err, "Last.fm API error $err: $msg (HTTP $code)")
+            }
+            check(code in 200..299) { "Last.fm POST failed: HTTP $code" }
+            root ?: error("Empty or unreadable Last.fm response")
         }
 
     /**
@@ -657,6 +668,14 @@ suspend fun updateNowPlaying(
 }
 
 /** Parsed tag row from track/artist top-tag endpoints. [weight] in 0..1. */
+/**
+ * A request Last.fm answered with an API error ([errorCode], one of the codes
+ * in https://www.last.fm/api/errorcodes), as opposed to a network or HTTP
+ * failure. Extends [IllegalStateException], which is what the client threw
+ * for every failure before, so existing handlers are unchanged.
+ */
+class LastFmApiException(val errorCode: Int, message: String) : IllegalStateException(message)
+
 data class LastFmTag(val name: String, val weight: Float)
 
 /** Parsed similar-artist from `artist.getSimilar`. [match] in 0..1. */
