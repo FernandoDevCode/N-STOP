@@ -161,12 +161,16 @@ class MusicRepositoryImpl @Inject constructor(
             )
         }
 
-        // Fix duplicate playlist_tracks entries that accumulated from daily mix
-        // sync runs. Each sync added new tracks at the same positions without
-        // removing old ones, causing multiple tracks at position 1, 2, etc.
-        // This cleanup keeps only the most recently added entry for each
-        // (playlist_id, track_id) pair and removes the rest.
-        deduplicatePlaylistTracks()
+        // NOTE: deduplicatePlaylistTracks() was removed — it ran on every startup
+        // and hard-deleted EVERY playlist_tracks row (locally_added ones too) of
+        // any playlist holding more downloaded members than its cached
+        // track_count. True duplicates can't exist (playlist_tracks' primary key
+        // is (playlist_id, track_id) since schema 1), so it only ever fired on
+        // legitimate drift: track_count is the remote snapshot size, and
+        // ACCUMULATE keeps songs the remote dropped (un-liking one song on
+        // Spotify emptied Liked Songs until the next sync, and lost the retained
+        // song for good); in REFRESH it wiped a user's "Save to Playlist" adds
+        // (#42) and the orphan sweep below then deleted those songs and files.
 
         // v0.9.21: removed the periodic art-URL upgrade passes. ArtUrlUpgrader
         // now runs at every sync write site (PlaylistFetchWorker for both
@@ -1360,47 +1364,6 @@ class MusicRepositoryImpl @Inject constructor(
             "Cleaned ${deleted.size} orphaned track(s) and their audio files",
         )
         return deleted.size
-    }
-
-    // ── Art URL migration ──────────────────────────────────────────────
-
-    /**
-     * Upgrades low-resolution album art URLs for all existing tracks.
-     * YouTube Music InnerTube responses originally returned 60x60 thumbnails;
-     * this replaces them with 544x544. Spotify 300px URLs are upgraded to 640px.
-     * Already-upgraded URLs pass through [ArtUrlUpgrader.upgrade] unchanged,
-     * so this is safe to run on every startup.
-     */
-    /**
-     * Fixes accumulated duplicate entries in playlist_tracks. Before the
-     * DiffWorker fix, every sync run inserted new tracks without clearing
-     * old ones, causing multiple tracks per position. This query deletes
-     * all entries where duplicate positions exist within a playlist, keeping
-     * only the one with the latest added_at timestamp.
-     */
-    private suspend fun deduplicatePlaylistTracks() {
-        // Strategy: for each playlist that has duplicate positions, clear
-        // ALL entries and let the next sync rebuild them cleanly. This is
-        // aggressive but correct — the tracks themselves are not deleted,
-        // only the playlist membership. The next sync will re-associate them.
-        val allPlaylists = playlistDao.getAllActive().first()
-        var cleaned = 0
-        for (playlist in allPlaylists) {
-            // Count entries vs expected track count
-            // v0.9.27 — downloaded-only is correct: this is a duplicate-detection
-            // migration that compares the persisted track_count against actual
-            // rows, both of which historically counted downloaded entries only.
-            val tracks = trackDao.getByPlaylist(playlist.id, includeStreamable = false).first()
-            if (tracks.size > playlist.trackCount && playlist.trackCount > 0) {
-                playlistDao.clearPlaylistTracks(playlist.id)
-                cleaned++
-                android.util.Log.i("StashMigrations",
-                    "Cleared ${tracks.size} stale entries for '${playlist.name}' (expected ${playlist.trackCount})")
-            }
-        }
-        if (cleaned > 0) {
-            android.util.Log.i("StashMigrations", "Cleaned $cleaned playlists with duplicate track entries. Next sync will rebuild.")
-        }
     }
 
     companion object {
