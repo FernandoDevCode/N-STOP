@@ -535,25 +535,19 @@ abstract class StashDatabase : RoomDatabase() {
          * verbatim createSql from core/data/schemas/.../20.json — DO NOT
          * hand-edit. Likewise the index list below mirrors 20.json's
          * indices array exactly.
-         *
-         * Order matters: create `tracks_new`, copy, drop `tracks`, rename
-         * `tracks_new` to `tracks` — SQLite's documented procedure, and what
-         * Room's own auto-migrations emit. This used to rename the OLD table
-         * away first (`tracks` -> `tracks_v19`). Since SQLite 3.26 (Android
-         * 11+) a rename rewrites every child table's REFERENCES clause, and
-         * at v19 four tables point at `tracks` (playlist_tracks,
-         * download_queue, listening_events, track_tags): they were repointed
-         * at `tracks_v19`, left dangling by its DROP, and Room's post-
-         * migration validation threw on every launch for anyone upgrading
-         * from v19 or restoring a v19 backup. Renaming the NEW table instead
-         * leaves those references naming `tracks`, which it then becomes.
-         * Foreign keys are off here (Room turns them on only after
-         * migrating), so the DROP does not cascade into the child rows.
          */
         val MIGRATION_19_20 = object : Migration(19, 20) {
             override fun migrate(db: SupportSQLiteDatabase) {
+                // Defensively disable FK enforcement during the dance
+                // (no FK targets `tracks.id` directly today, but the
+                // pragma is cheap insurance against a future FK addition
+                // running during the recreate).
+                db.execSQL("PRAGMA foreign_keys=OFF")
+
+                db.execSQL("ALTER TABLE tracks RENAME TO tracks_v19")
+
                 db.execSQL(
-                    "CREATE TABLE IF NOT EXISTS `tracks_new` (" +
+                    "CREATE TABLE IF NOT EXISTS `tracks` (" +
                         "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
                         "`title` TEXT NOT NULL, " +
                         "`artist` TEXT NOT NULL, " +
@@ -593,7 +587,7 @@ abstract class StashDatabase : RoomDatabase() {
                 // explicitly to avoid SELECT * pulling the dropped column.
                 db.execSQL(
                     """
-                    INSERT INTO tracks_new (
+                    INSERT INTO tracks (
                         id, title, artist, album, duration_ms, file_path, file_format,
                         quality_kbps, file_size_bytes, source, spotify_uri, youtube_id,
                         album_art_url, album_art_path, date_added, last_played, play_count,
@@ -610,12 +604,11 @@ abstract class StashDatabase : RoomDatabase() {
                         match_dismissed, match_flagged, isrc, explicit, music_video_type,
                         yt_canonical_video_id, bits_per_sample, sample_rate_hz,
                         spotify_saved_at, ytmusic_saved_at, stash_liked_at
-                    FROM tracks
+                    FROM tracks_v19
                     """.trimIndent()
                 )
 
-                db.execSQL("DROP TABLE tracks")
-                db.execSQL("ALTER TABLE tracks_new RENAME TO tracks")
+                db.execSQL("DROP TABLE tracks_v19")
 
                 // Re-create every index from 20.json#indices. Names must
                 // match exactly or runMigrationsAndValidate will fail.
@@ -627,6 +620,8 @@ abstract class StashDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_tracks_last_played` ON `tracks` (`last_played`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_tracks_play_count` ON `tracks` (`play_count`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_tracks_title_artist` ON `tracks` (`title`, `artist`)")
+
+                db.execSQL("PRAGMA foreign_keys=ON")
             }
         }
 
