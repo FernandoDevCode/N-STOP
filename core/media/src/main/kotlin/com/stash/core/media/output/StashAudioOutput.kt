@@ -124,6 +124,10 @@ class StashAudioOutput(
     }
 
     override fun flush() {
+        // Mirrors DefaultAudioSink, which zeroes its written-frame count on
+        // flush: a replan thrown before any new audio is written after a seek
+        // would reach it as NON-recoverable and stop playback.
+        framesWritten = 0
         writer.flush()
         dsp.reset()
         volume.snapTo(playerVolume)

@@ -158,6 +158,18 @@ class StashAudioOutputTest {
         assertThat(out.write(floats(0f, 0f), 1, 0L)).isTrue() // only once
     }
 
+    @Test fun `after a seek, replan again waits for fresh audio`() {
+        // DefaultAudioSink zeroes its written count on flush; a replan thrown
+        // before new audio would reach it as non-recoverable (fatal).
+        val inner = FakeOutput()
+        val out = output(inner, SampleFormat.FLOAT, sharedPlan())
+        out.write(floats(0f, 0f), 1, 0L)
+        out.flush()
+        out.requestReplan()
+        assertThat(out.write(floats(0f, 0f), 1, 0L)).isTrue()
+        assertThrows(AudioOutput.WriteException::class.java) { out.write(floats(0f, 0f), 1, 0L) }
+    }
+
     @Test fun `play activates the stream with the controller`() {
         val out = output(FakeOutput(), SampleFormat.FLOAT, sharedPlan())
         out.play()
