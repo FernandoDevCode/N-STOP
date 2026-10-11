@@ -475,6 +475,9 @@ fun HomeScreen(
             // for the session; the mix pages keep the pager alive. Distinct
             // from hero == null (not connected), which shows PersonalizeCard.
             val hero = if (heroMinimized) null else uiState.hero
+            // Daily Discover still being built: its slot holds a "Building…"
+            // card (first page of the pager) instead of sitting empty.
+            val heroBuilding = uiState.heroBuilding && !heroMinimized
             val mixPages = uiState.yourMixes
             when {
                 uiState.isLoading -> DiscoverHeroCard(
@@ -491,9 +494,9 @@ fun HomeScreen(
                     onConnect = onNavigateToSettings,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
-                hero == null && mixPages.isEmpty() -> Unit // minimized, nothing to page
+                hero == null && !heroBuilding && mixPages.isEmpty() -> Unit // minimized, nothing to page
                 else -> {
-                    val heroPages = if (hero != null) 1 else 0
+                    val heroPages = if (hero != null || heroBuilding) 1 else 0
                     val pageCount = heroPages + mixPages.size
                     val pagerState = androidx.compose.foundation.pager.rememberPagerState(
                         pageCount = { pageCount },
@@ -504,7 +507,9 @@ fun HomeScreen(
                             contentPadding = PaddingValues(horizontal = 16.dp),
                             pageSpacing = 10.dp,
                         ) { page ->
-                            if (page < heroPages && hero != null) {
+                            if (page < heroPages && hero == null) {
+                                DailyDiscoverBuildingCard()
+                            } else if (page < heroPages && hero != null) {
                                 DiscoverHeroCard(
                                     label = "Updated daily",
                                     title = hero.title,
