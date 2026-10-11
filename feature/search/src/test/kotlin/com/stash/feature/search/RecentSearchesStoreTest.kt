@@ -114,8 +114,39 @@ class RecentSearchesStoreTest {
 
     @Test
     fun `remove drops one entry`() = runTest {
-        val s = store(); s.record(query("a")); s.record(query("b")); s.remove("a")
+        val s = store(); s.record(query("a")); s.record(query("b")); s.remove(query("a"))
         assertThat(s.recent.first().map { it.text }).containsExactly("b")
+    }
+
+    @Test
+    fun `a song named like an earlier query keeps the query`() = runTest {
+        // The song "Yellow" used to evict the query "yellow" (dedupe by bare text).
+        val s = store()
+        s.record(query("yellow"))
+        s.record(RecentSearch(RecentSearch.Type.TRACK, "Yellow", subtitle = "Coldplay"))
+        assertThat(s.recent.first().map { it.type })
+            .containsExactly(RecentSearch.Type.TRACK, RecentSearch.Type.QUERY).inOrder()
+    }
+
+    @Test
+    fun `remove takes only that entry, not others with the same text`() = runTest {
+        val s = store()
+        val artist = RecentSearch(RecentSearch.Type.ARTIST, "Intro", artistId = "UC1")
+        val track = RecentSearch(RecentSearch.Type.TRACK, "Intro", subtitle = "The xx")
+        s.record(track); s.record(artist)
+        s.remove(artist)
+        assertThat(s.recent.first()).containsExactly(track)
+    }
+
+    @Test
+    fun `legacy rows dedupe against new entries`() = runTest {
+        // Stored before entries had types: still recognised as the same query.
+        ctx.recentSearchesDataStore.edit { prefs ->
+            prefs[stringPreferencesKey("queries")] = "beatles\nstones"
+        }
+        val s = store()
+        s.record(query("Beatles"))
+        assertThat(s.recent.first().map { it.text }).containsExactly("Beatles", "stones").inOrder()
     }
 
     @Test

@@ -19,28 +19,6 @@ internal val Context.recentSearchesDataStore: DataStore<Preferences> by preferen
 )
 
 /**
- * One recent-search entry. Three flavours:
- *  - [Type.QUERY]  — a committed text query (keyboard Search key). No art.
- *  - [Type.ARTIST] — the user opened an artist profile from results; carries
- *    the avatar and the artist browse id so a tap navigates straight back.
- *  - [Type.TRACK]  — the user engaged a track row (tap/preview/download/
- *    queue/playlist); carries the track thumbnail; [subtitle] is the artist.
- */
-data class RecentSearch(
-    val type: Type,
-    val text: String,
-    val subtitle: String? = null,
-    val thumbnailUrl: String? = null,
-    val artistId: String? = null,
-) {
-    enum class Type { QUERY, ARTIST, TRACK }
-
-    /** The query a tap should re-run (ARTIST entries navigate instead). */
-    val searchText: String
-        get() = if (type == Type.TRACK && subtitle != null) "$subtitle $text" else text
-}
-
-/**
  * Most-recent-first list of committed searches, capped at [MAX].
  *
  * Backed by a single string value: rows separated by newline, fields by the
@@ -49,9 +27,13 @@ data class RecentSearch(
  * Legacy rows from the strings-only era have no separator and decode as
  * [RecentSearch.Type.QUERY] — old data migrates for free.
  *
- * Dedupe is by [RecentSearch.text], case-insensitive, regardless of type:
- * committing the query "lil wayne" and then opening the artist "Lil Wayne"
- * yields ONE entry — the richer, most recent one (the artist, with avatar).
+ * Dedupe is by [RecentSearch.supersedes]: an entry replaces the same entry
+ * (type, text and subtitle, case-insensitive) and a plain query it re-runs.
+ * Committing the query "lil wayne" and then opening the artist "Lil Wayne"
+ * still yields ONE entry — the richer, most recent one (the artist, with
+ * avatar) — but the song "Yellow" no longer evicts the query "yellow", nor the
+ * artist "Intro" the track "Intro". Stored rows need no migration: the format
+ * is unchanged and identity is computed from the fields already stored.
  */
 @Singleton
 class RecentSearchesStore @Inject constructor(
@@ -75,17 +57,21 @@ class RecentSearchesStore @Inject constructor(
         )
         context.recentSearchesDataStore.edit { prefs ->
             val deduped = prefs[key].toEntries()
-                .filterNot { it.text.equals(text, ignoreCase = true) }
+                .filterNot { sanitized.supersedes(it) }
             prefs[key] = (listOf(sanitized) + deduped).take(MAX)
                 .joinToString("\n") { it.encode() }
         }
     }
 
-    /** Remove a single entry by its display text (case-insensitive). */
-    suspend fun remove(text: String) {
+    /**
+     * Remove [entry] alone. By identity ([RecentSearch.sameEntryAs]), not by
+     * its text: removing the artist "Intro" used to take the track "Intro"
+     * (and any query "intro") with it.
+     */
+    suspend fun remove(entry: RecentSearch) {
         context.recentSearchesDataStore.edit { prefs ->
             prefs[key] = prefs[key].toEntries()
-                .filterNot { it.text.equals(text, ignoreCase = true) }
+                .filterNot { it.sameEntryAs(entry) }
                 .joinToString("\n") { it.encode() }
         }
     }

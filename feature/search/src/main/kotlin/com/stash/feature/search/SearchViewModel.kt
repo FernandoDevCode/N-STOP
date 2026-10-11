@@ -225,7 +225,7 @@ class SearchViewModel @Inject constructor(
     }
 
     fun removeRecentSearch(entry: RecentSearch) {
-        viewModelScope.launch { recentSearchesStore.remove(entry.text) }
+        viewModelScope.launch { recentSearchesStore.remove(entry) }
     }
 
     fun clearRecentSearches() {
