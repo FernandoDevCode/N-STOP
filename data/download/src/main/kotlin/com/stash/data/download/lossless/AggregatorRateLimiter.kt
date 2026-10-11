@@ -245,7 +245,13 @@ class AggregatorRateLimiter @Inject constructor() {
             val bucket = bucketFor(sourceId)
             val cfg = configFor(sourceId)
             val now = clock.nowMs()
-            bucket.blockedUntilMs = now + cfg.backoff429Ms
+            // Never shortens a longer block already in place: a request still in
+            // flight when the breaker tripped (search terms run in parallel) used
+            // to overwrite its 10-minute block with this 60 s backoff, and since
+            // the breaker latch was still set, the "reset" fired a minute later
+            // and LosslessRetryScheduler swept WAITING_FOR_LOSSLESS against a
+            // source that had just failed five times in a row.
+            bucket.blockedUntilMs = maxOf(bucket.blockedUntilMs, now + cfg.backoff429Ms)
             bucket.totalRateLimited++
 
             // Auto-backoff: track 429 timestamps in a rolling 60-second

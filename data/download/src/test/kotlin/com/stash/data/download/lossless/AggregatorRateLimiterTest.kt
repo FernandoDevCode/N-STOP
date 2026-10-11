@@ -275,6 +275,37 @@ class AggregatorRateLimiterTest {
     }
 
     @Test
+    fun `a 429 after the breaker trips does not shorten its block or fire an early reset`() = runTest {
+        val limiter = AggregatorRateLimiter().apply { clock = virtualClock() }
+        limiter.configure(
+            "src",
+            AggregatorRateLimiter.Config(
+                tokensPerSecond = 10.0,
+                burstCapacity = 10.0,
+                backoff429Ms = 60_000L,
+                circuitBreakAfter = 3,
+                circuitBreakDurationMs = 10 * 60_000L,
+                rateLimitTripsBreaker = false,
+            ),
+        )
+        repeat(3) { limiter.reportFailure("src") }
+        val emissions = mutableListOf<String>()
+        val job = launch { limiter.circuitResetEvents.toList(emissions) }
+        advanceUntilIdle()
+
+        // A request that was already in flight comes back 429.
+        limiter.reportRateLimited("src")
+
+        // Past the 429 backoff, well inside the breaker's block.
+        advanceTimeBy(60_001)
+        assertTrue(limiter.stateOf("src").isCircuitBroken)
+        assertFalse(limiter.acquire("src"))
+        advanceUntilIdle()
+        assertEquals(emptyList<String>(), emissions)
+        job.cancel()
+    }
+
+    @Test
     fun `breaker timeout-reset emits only once across repeated stateOf observations`() = runTest {
         val limiter = AggregatorRateLimiter().apply { clock = virtualClock() }
         limiter.configure(
