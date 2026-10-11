@@ -215,6 +215,9 @@ fun NowPlayingScreen(
     // Decouples the Flag button (which is just "there's a problem") from
     // the action (find a replacement / delete / delete + block).
     var showWrongMatchDialog by remember { mutableStateOf(false) }
+    // A delete picked in the "What's wrong" dialog, awaiting confirmation: false = delete,
+    // true = delete and block; null = none.
+    var pendingWrongMatchDelete by remember { mutableStateOf<Boolean?>(null) }
 
     // Scroll state is intentionally not keyed by track — on tall screens
     // content doesn't overflow so scroll stays at 0; on narrow screens the
@@ -551,6 +554,44 @@ fun NowPlayingScreen(
     // Separated from the icon's direct action so the same entry point
     // covers three very different outcomes: mark for replacement, delete
     // the file, delete + permanently block.
+    val pendingBlock = pendingWrongMatchDelete
+    if (pendingBlock != null && track != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { pendingWrongMatchDelete = null },
+            title = {
+                androidx.compose.material3.Text(
+                    if (pendingBlock) "Delete and block '${track.title}'?" else "Delete '${track.title}'?",
+                )
+            },
+            text = {
+                androidx.compose.material3.Text(
+                    if (pendingBlock) {
+                        "It's deleted from your device and every playlist, and future syncs never bring it back."
+                    } else {
+                        "It's deleted from your device and removed from your playlists and Liked Songs."
+                    },
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        viewModel.deleteCurrentTrack(alsoBlock = pendingBlock)
+                        pendingWrongMatchDelete = null
+                    },
+                ) {
+                    androidx.compose.material3.Text(
+                        if (pendingBlock) "Delete & Block" else "Delete",
+                        color = androidx.compose.material3.MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { pendingWrongMatchDelete = null }) {
+                    androidx.compose.material3.Text("Cancel")
+                }
+            },
+        )
+    }
     if (showWrongMatchDialog && track != null) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showWrongMatchDialog = false },
@@ -593,18 +634,24 @@ fun NowPlayingScreen(
                     ) {
                         androidx.compose.material3.Text("Find a better match")
                     }
+                    // Both deletes confirm first (pendingWrongMatchDelete below), as deletes do
+                    // elsewhere: "Delete from library" looked exactly like the harmless option
+                    // above it, and one mis-tap skipped the song and deleted file and row.
                     androidx.compose.material3.OutlinedButton(
                         onClick = {
-                            viewModel.deleteCurrentTrack(alsoBlock = false)
+                            pendingWrongMatchDelete = false
                             showWrongMatchDialog = false
                         },
                         modifier = Modifier.fillMaxWidth(),
+                        colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                            contentColor = androidx.compose.material3.MaterialTheme.colorScheme.error,
+                        ),
                     ) {
                         androidx.compose.material3.Text("Delete from library")
                     }
                     androidx.compose.material3.Button(
                         onClick = {
-                            viewModel.deleteCurrentTrack(alsoBlock = true)
+                            pendingWrongMatchDelete = true
                             showWrongMatchDialog = false
                         },
                         modifier = Modifier.fillMaxWidth(),
