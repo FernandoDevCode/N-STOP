@@ -20,11 +20,19 @@ class SelectionState(initial: Set<Long> = emptySet()) {
     fun clear() { selectedIds = emptySet() }
 }
 
-/** Survives rotation / process death by persisting the id set. */
+/**
+ * Survives rotation / process death by persisting the id set, up to [MAX_SAVED_SELECTION] ids.
+ * A bigger selection (a "Select all" of a large library) is not saved and comes back empty:
+ * written whole, 30-50K boxed ids went into the activity's saved state (hundreds of KB), past
+ * the Binder transaction budget, which crashes the app in onStop with TransactionTooLargeException.
+ */
 val SelectionStateSaver: Saver<SelectionState, List<Long>> = Saver(
-    save = { it.selectedIds.toList() },
+    save = { if (it.selectedIds.size <= MAX_SAVED_SELECTION) it.selectedIds.toList() else emptyList() },
     restore = { SelectionState(it.toSet()) },
 )
+
+/** The largest selection [SelectionStateSaver] persists (a few KB of saved state). */
+const val MAX_SAVED_SELECTION = 500
 
 @Composable
 fun rememberSelectionState(): SelectionState =

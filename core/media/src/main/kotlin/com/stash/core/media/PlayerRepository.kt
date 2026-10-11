@@ -72,7 +72,7 @@ interface PlayerRepository {
     /**
      * Hot SharedFlow of cascade-halt events. Emitted at most once per
      * outage (resets after successful playback or user transport).
-     * UI surface: in-app Snackbar in NowPlaying.
+     * UI surface: a Toast from MainActivity, on whichever screen is showing.
      */
     val streamingHaltedEvents: kotlinx.coroutines.flow.SharedFlow<StreamingHaltedEvent>
 
@@ -85,10 +85,10 @@ interface PlayerRepository {
      *  - "End of offline Mix" — auto-advance silent-skip exhausted the
      *    queue trying to find a playable item while offline (v0.9.37).
      *
-     * Collected by NowPlayingViewModel and forwarded into its own
-     * `userMessages` SharedFlow so the Snackbar/Toast surfaces while the
-     * user is on Now Playing or anywhere else the global player UI is
-     * visible.
+     * Collected once by MainActivity and toasted on whichever screen is
+     * showing. (It used to be forwarded into NowPlayingViewModel's own
+     * flow, which nothing collected off Now Playing, so a SharedFlow with
+     * no subscriber dropped these everywhere else.)
      */
     val userMessages: kotlinx.coroutines.flow.SharedFlow<String>
 

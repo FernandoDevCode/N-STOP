@@ -95,7 +95,8 @@ import kotlin.math.roundToLong
 @Composable
 internal fun LyricsPane(
     state: LyricsViewState,
-    currentPositionMs: Long,
+    /** Read inside the renderers only, so the 250ms tick doesn't recompose this pane. */
+    currentPositionMs: () -> Long,
     isPlaying: Boolean,
     playbackSpeed: Float,
     onSeek: (Long) -> Unit,
@@ -107,8 +108,11 @@ internal fun LyricsPane(
 ) {
     // Hold the screen on while lyrics are on screen. Restore the previous value rather than
     // forcing false, so we never clear a keep-screen-on set by something else.
+    // Only while playing: paused with the phone set down, the screen never timed out (battery,
+    // and static lyrics burning into an AMOLED panel).
     val view = LocalView.current
-    DisposableEffect(view) {
+    DisposableEffect(view, isPlaying) {
+        if (!isPlaying) return@DisposableEffect onDispose { }
         val wasKeepingScreenOn = view.keepScreenOn
         view.keepScreenOn = true
         onDispose { view.keepScreenOn = wasKeepingScreenOn }
@@ -140,13 +144,17 @@ internal fun LyricsPane(
                 LyricsBody.Loading -> LyricsMessage("Looking for lyrics", look, quiet = true)
                 is LyricsBody.Words -> LyricsSyllableRenderer(
                     lyrics = b.lyrics,
-                    currentPositionMs = currentPositionMs,
+                    currentPositionMs = currentPositionMs(),
                     onLineTap = onSeek,
                     look = look,
                     isPlaying = isPlaying,
                     playbackSpeed = playbackSpeed,
                 )
-                is LyricsBody.Lines -> LyricsLineRenderer(b.lines, currentPositionMs, onSeek, look)
+                is LyricsBody.Lines -> LyricsLineRenderer(
+                    b.lines, currentPositionMs(), onSeek, look,
+                    isPlaying = isPlaying,
+                    playbackSpeed = playbackSpeed,
+                )
                 is LyricsBody.Plain -> LyricsPlainRenderer(b.text, look)
                 is LyricsBody.Message -> LyricsMessage(
                     text = b.text,

@@ -288,6 +288,10 @@ class MusicRepositoryImpl @Inject constructor(
                 raced && attempt < 3
             }
             .map { rows -> rows.map { it.toDomain() } }
+            // Room queries off Main, but this conversion ran in the COLLECTOR's context: Main for
+            // every ViewModel without its own flowOn (Album detail maps all 10K rows here), again
+            // on each tracks write (a play count, a lyrics stamp, every finished download).
+            .flowOn(Dispatchers.Default)
 
     override fun getTracksByArtist(artist: String): Flow<List<Track>> =
         trackDao.getByArtist(artist)
@@ -315,6 +319,8 @@ class MusicRepositoryImpl @Inject constructor(
     override fun getTracksByPlaylist(playlistId: Long): Flow<List<Track>> =
         trackDao.getByPlaylist(playlistId, includeStreamable = true)
             .map { entities -> entities.map { it.toDomain() } }
+            // Off Main, as getAllTracks: a 5K-song Liked playlist converted per tracks write.
+            .flowOn(Dispatchers.Default)
 
     /**
      * Artists for the Library Artists tab: downloaded tracks only, like the

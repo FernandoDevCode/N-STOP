@@ -136,8 +136,10 @@ private fun TrackListItemRow(
             .background(rowBackground)
             .combinedClickable(
                 onClick = onClick,
+                onLongClickLabel = selectLongClickLabel(selectionActive, onLongPress),
                 onLongClick = onLongPress,
             )
+            .selectionRowSemantics(selectionActive, selected)
             .padding(horizontal = RowHorizontalPadding, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

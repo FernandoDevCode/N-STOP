@@ -219,6 +219,9 @@ fun NowPlayingScreen(
     // Decouples the Flag button (which is just "there's a problem") from
     // the action (find a replacement / delete / delete + block).
     var showWrongMatchDialog by remember { mutableStateOf(false) }
+    // A delete picked in the "What's wrong" dialog, awaiting confirmation: false = delete,
+    // true = delete and block; null = none.
+    var pendingWrongMatchDelete by remember { mutableStateOf<Boolean?>(null) }
 
     // Scroll state is intentionally not keyed by track — on tall screens
     // content doesn't overflow so scroll stays at 0; on narrow screens the
@@ -290,11 +293,11 @@ fun NowPlayingScreen(
         SaveToPlaylistSheet(
             playlists = uiState.userPlaylists,
             onSaveToPlaylist = { playlistId ->
-                viewModel.saveTrackToPlaylist(t.id, playlistId)
+                viewModel.saveTrackToPlaylist(t, playlistId)
                 queueSaveTrack = null
             },
             onCreatePlaylist = { name ->
-                viewModel.createPlaylistAndAddTrack(name, t.id)
+                viewModel.createPlaylistAndAddTrack(name, t)
                 queueSaveTrack = null
             },
             onDismiss = { queueSaveTrack = null },
@@ -306,11 +309,14 @@ fun NowPlayingScreen(
     val lyricsMode by viewModel.lyricsMode.collectAsStateWithLifecycle()
     // Collected unconditionally (not just while lyrics are up): the bar
     // needs the state, and this subscription is what arms the ViewModel's
-    // WhileSubscribed fetch trigger from screen-open onward. The screen
-    // already recomposes every 250ms from uiState position ticks, so the
-    // extra position collect adds no new recomposition pressure.
+    // WhileSubscribed fetch trigger from screen-open onward.
     val lyricsState by viewModel.lyricsViewState.collectAsStateWithLifecycle()
-    val lyricsPositionMs by viewModel.currentPositionMs.collectAsStateWithLifecycle()
+    // Positions tick every 250ms while playing. Both are kept as State objects and handed down
+    // as lambdas, read only inside the progress bar and the lyrics, so a tick recomposes those
+    // and not this whole screen (the position used to be a uiState field, which re-ran the root,
+    // the art and the stack four times a second).
+    val lyricsPosition = viewModel.currentPositionMs.collectAsStateWithLifecycle()
+    val playerPosition = viewModel.positionMs.collectAsStateWithLifecycle()
     val liveLyricsEnabled by viewModel.liveLyricsBarEnabled.collectAsStateWithLifecycle()
     val lyricsSyncOffsetMs by viewModel.lyricsSyncOffsetMs.collectAsStateWithLifecycle()
     val reading = lyricsMode && track != null
@@ -408,10 +414,10 @@ fun NowPlayingScreen(
         SaveToPlaylistSheet(
             playlists = uiState.userPlaylists,
             onSaveToPlaylist = { playlistId ->
-                viewModel.saveTrackToPlaylist(track.id, playlistId)
+                viewModel.saveTrackToPlaylist(track, playlistId)
             },
             onCreatePlaylist = { name ->
-                viewModel.createPlaylistAndAddTrack(name, track.id)
+                viewModel.createPlaylistAndAddTrack(name, track)
             },
             onDismiss = { showSaveSheet = false },
         )
@@ -560,6 +566,44 @@ fun NowPlayingScreen(
     // Separated from the icon's direct action so the same entry point
     // covers three very different outcomes: mark for replacement, delete
     // the file, delete + permanently block.
+    val pendingBlock = pendingWrongMatchDelete
+    if (pendingBlock != null && track != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { pendingWrongMatchDelete = null },
+            title = {
+                androidx.compose.material3.Text(
+                    if (pendingBlock) "Delete and block '${track.title}'?" else "Delete '${track.title}'?",
+                )
+            },
+            text = {
+                androidx.compose.material3.Text(
+                    if (pendingBlock) {
+                        "It's deleted from your device and every playlist, and future syncs never bring it back."
+                    } else {
+                        "It's deleted from your device and removed from your playlists and Liked Songs."
+                    },
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        viewModel.deleteCurrentTrack(alsoBlock = pendingBlock)
+                        pendingWrongMatchDelete = null
+                    },
+                ) {
+                    androidx.compose.material3.Text(
+                        if (pendingBlock) "Delete & Block" else "Delete",
+                        color = androidx.compose.material3.MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { pendingWrongMatchDelete = null }) {
+                    androidx.compose.material3.Text("Cancel")
+                }
+            },
+        )
+    }
     if (showWrongMatchDialog && track != null) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showWrongMatchDialog = false },
@@ -602,18 +646,24 @@ fun NowPlayingScreen(
                     ) {
                         androidx.compose.material3.Text("Find a better match")
                     }
+                    // Both deletes confirm first (pendingWrongMatchDelete below), as deletes do
+                    // elsewhere: "Delete from library" looked exactly like the harmless option
+                    // above it, and one mis-tap skipped the song and deleted file and row.
                     androidx.compose.material3.OutlinedButton(
                         onClick = {
-                            viewModel.deleteCurrentTrack(alsoBlock = false)
+                            pendingWrongMatchDelete = false
                             showWrongMatchDialog = false
                         },
                         modifier = Modifier.fillMaxWidth(),
+                        colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                            contentColor = androidx.compose.material3.MaterialTheme.colorScheme.error,
+                        ),
                     ) {
                         androidx.compose.material3.Text("Delete from library")
                     }
                     androidx.compose.material3.Button(
                         onClick = {
-                            viewModel.deleteCurrentTrack(alsoBlock = true)
+                            pendingWrongMatchDelete = true
                             showWrongMatchDialog = false
                         },
                         modifier = Modifier.fillMaxWidth(),
@@ -674,9 +724,9 @@ fun NowPlayingScreen(
             Column(modifier = footModifier.fillMaxWidth()) {
                 // -- Progress bar --
                 GlowingProgressBar(
-                    progress = uiState.progressFraction,
+                    progress = { progressFraction(playerPosition.value, uiState.durationMs) },
                     accentColor = npAccent(uiState.vibrantColor),
-                    elapsedMs = uiState.currentPositionMs,
+                    elapsedMs = { playerPosition.value },
                     totalMs = uiState.durationMs,
                     onSeek = viewModel::onSeekTo,
                     seekable = !isListener,
@@ -698,8 +748,10 @@ fun NowPlayingScreen(
                 // -- Playback controls -- the same row for host and listener, so a role change
                 // doesn't move anything; a listener's skip slots are simply empty.
                 PlaybackControls(
-                    isPlaying = uiState.isPlaying,
-                    isBuffering = uiState.isBuffering,
+                    // The player's intent, not isPlaying (false while buffering): the button shows
+                    // Pause, and pauses, while a stream stalls. A paused buffer shows Play, not a spinner.
+                    isPlaying = uiState.playWhenReady || uiState.isPlaying,
+                    isBuffering = uiState.isBuffering && (uiState.playWhenReady || uiState.isPlaying),
                     shuffleEnabled = uiState.shuffleEnabled,
                     repeatMode = uiState.repeatMode,
                     accentColor = npAccent(uiState.vibrantColor),
@@ -868,7 +920,7 @@ fun NowPlayingScreen(
                             // column keeps the full screen for lyric-less tracks.
                             LiveLyricsBar(
                                 state = lyricsState,
-                                currentPositionMs = lyricsPositionMs,
+                                currentPositionMs = { lyricsPosition.value },
                                 accentColor = npAccent(uiState.vibrantColor),
                                 liveEnabled = liveLyricsEnabled,
                                 onTap = viewModel::onShowLyrics,
@@ -950,7 +1002,7 @@ fun NowPlayingScreen(
                             }
                             LyricsPane(
                                 state = lyricsState,
-                                currentPositionMs = lyricsPositionMs,
+                                currentPositionMs = { lyricsPosition.value },
                                 isPlaying = uiState.isPlaying && !uiState.isBuffering,
                                 playbackSpeed = playbackSpeed,
                                 onSeek = { if (!isListener) viewModel.onLyricsLineSeek(it) }, // a listener follows the room

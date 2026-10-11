@@ -28,6 +28,15 @@ data class PlayerState(
      * resolve doesn't look frozen.
      */
     val isBuffering: Boolean = false,
+    /**
+     * `true` while the player *intends* to play: Media3's `playWhenReady`, reported false in
+     * STATE_IDLE / STATE_ENDED where nothing will play until a new `play()`. Unlike [isPlaying] it
+     * stays true through buffering (a stall, the 403 → yt-dlp re-resolve), which is what a
+     * play/pause toggle must key on: toggling on [isPlaying] sent a tap during buffering to
+     * `play()` (a no-op, playWhenReady was already true), so the user could not pause until the
+     * stream recovered.
+     */
+    val playWhenReady: Boolean = false,
     /** What this queue is playing FROM (a playlist, artist, library shuffle,
      *  radio station, etc.) — shown in Now Playing and persisted for resume. */
     val source: PlaybackSource = PlaybackSource.Unknown,

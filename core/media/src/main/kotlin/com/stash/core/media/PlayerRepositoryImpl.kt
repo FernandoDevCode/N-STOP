@@ -357,6 +357,14 @@ class PlayerRepositoryImpl @Inject constructor(
      * is deleted.
      */
     @Volatile private var ghostSession = false
+
+    /**
+     * Number of [setQueueInternal] calls that are still building their MediaItems (an IO hop that
+     * scales with the queue). During that window the controller can still hold NO timeline, and a
+     * play tap used to read that as "the service died" and call [resumeLastQueue], putting the
+     * previous persisted session back over the song the user had just tapped. Internal: test seam.
+     */
+    internal val queueBuildsInFlight = java.util.concurrent.atomic.AtomicInteger(0)
     override val playerState: StateFlow<PlayerState> = _playerState.asStateFlow()
 
     /**
@@ -533,6 +541,9 @@ class PlayerRepositoryImpl @Inject constructor(
         // from the persisted queue instead. resumeLastQueue ends in
         // prepare() + play(), so playback still starts.
         if (controller.mediaItemCount == 0 && !inListenTogether) {
+            // A tapped queue is still being built: it ends in prepare() + play() by itself, so
+            // there is nothing to resume, and resuming would race it (see [queueBuildsInFlight]).
+            if (queueBuildsInFlight.get() > 0) return
             resumeLastQueue()
             return
         }
@@ -659,6 +670,22 @@ class PlayerRepositoryImpl @Inject constructor(
         startPositionMs: Long,
         source: com.stash.core.model.PlaybackSource = com.stash.core.model.PlaybackSource.Unknown,
         play: Boolean = true,
+    ) {
+        queueBuildsInFlight.incrementAndGet()
+        try {
+            setQueueBuilding(tracks, startIndex, startPositionMs, source, play)
+        } finally {
+            queueBuildsInFlight.decrementAndGet()
+        }
+    }
+
+    /** The body of [setQueueInternal], run while [queueBuildsInFlight] counts it. */
+    private suspend fun setQueueBuilding(
+        tracks: List<Track>,
+        startIndex: Int,
+        startPositionMs: Long,
+        source: com.stash.core.model.PlaybackSource,
+        play: Boolean,
     ) {
         // Any explicit setQueue (playlist tap, single-song play, etc.) leaves
         // library-shuffle mode behind. Snapshot is cleared so a stale Track
@@ -2231,7 +2258,7 @@ class PlayerRepositoryImpl @Inject constructor(
             if (_playerState.value.currentTrack != null) {
                 ghostSession = true
                 // No spinner either: a snapshot taken mid-load would keep play disabled.
-                _playerState.value = _playerState.value.copy(isPlaying = false, isBuffering = false)
+                _playerState.value = _playerState.value.copy(isPlaying = false, isBuffering = false, playWhenReady = false)
             }
         }
     }
@@ -2304,6 +2331,15 @@ class PlayerRepositoryImpl @Inject constructor(
             newPosition: Player.PositionInfo,
             reason: Int,
         ) {
+            controllerDeferred?.let { updateState(it) }
+        }
+
+        /**
+         * A pause while BUFFERING flips playWhenReady without changing isPlaying (already false)
+         * or the playback state, so no other callback fires: without this the published
+         * [PlayerState.playWhenReady] stayed true and the play/pause button kept showing Pause.
+         */
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
             controllerDeferred?.let { updateState(it) }
         }
 
@@ -2894,6 +2930,11 @@ class PlayerRepositoryImpl @Inject constructor(
             isBuffering = computeIsBuffering(
                 controller.playbackState == Player.STATE_BUFFERING,
             ),
+            // Media3's own play-button rule (Util.shouldShowPlayButton): an IDLE or ENDED
+            // player plays nothing whatever playWhenReady says.
+            playWhenReady = controller.playWhenReady &&
+                controller.playbackState != Player.STATE_IDLE &&
+                controller.playbackState != Player.STATE_ENDED,
             source = currentSource,
             shuffleTimelineSlots = display.timelineIndices,
         )

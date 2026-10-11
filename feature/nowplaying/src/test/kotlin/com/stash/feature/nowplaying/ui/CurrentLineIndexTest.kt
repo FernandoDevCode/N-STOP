@@ -22,6 +22,13 @@ class CurrentLineIndexTest {
         assertEquals(1, currentLineIndex(lines, positionMs = 20_000L))
     }
 
+    @Test fun `a line lights on the smoothed clock between position polls`() {
+        // The poll read 19_800, just before line two; 200ms of playback later the vocal has
+        // started. On the raw poll the line waited for the next tick (up to 250ms late).
+        assertEquals(0, currentLineIndex(lines, positionMs = 19_800L))
+        assertEquals(1, currentLineIndex(lines, extrapolatedPositionMs(19_800L, elapsedMs = 200L, speed = 1f)))
+    }
+
     @Test fun `between lines selects the earlier line`() {
         assertEquals(1, currentLineIndex(lines, positionMs = 25_000L))
     }
