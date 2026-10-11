@@ -2,6 +2,7 @@ package com.stash.core.data.audio
 
 import android.util.Log
 import com.stash.core.data.db.dao.TrackDao
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -98,12 +99,18 @@ class LoudnessMeasurer @Inject constructor(
                 "-af", "ebur128=peak=true",
                 "-f", "null", "-",
             )
-            val stderr = runCatching { bridge.runWithStderrCapture(args) }
-                .getOrElse {
-                    return@withContext Result.Failed(
-                        "ffmpeg invocation failed: ${it.message}",
-                    )
-                }
+            val stderr = try {
+                bridge.runWithStderrCapture(args)
+            } catch (e: CancellationException) {
+                // A cancelled measurement (the backfill worker stopped when
+                // the charger was unplugged) is not a broken file. Reported as
+                // Failed it would be persisted as one and never retried.
+                throw e
+            } catch (e: Exception) {
+                return@withContext Result.Failed(
+                    "ffmpeg invocation failed: ${e.message}",
+                )
+            }
             parseSummary(stderr)
         }
     }
