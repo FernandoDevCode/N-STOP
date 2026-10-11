@@ -116,6 +116,7 @@ import com.stash.core.ui.components.NowPlayingJumpChip
 import com.stash.core.ui.components.SourceIndicator
 import com.stash.core.ui.components.TrackListItem
 import com.stash.core.ui.components.VerticalScrollbar
+import com.stash.core.ui.components.fastScrollSectionLetter
 import com.stash.core.ui.selection.SelectionAction
 import com.stash.core.ui.selection.SelectionScaffoldOverlay
 import com.stash.core.ui.selection.SelectionState
@@ -662,6 +663,8 @@ private fun LibraryContent(
                 val idx = chipTabs.indexOfFirst { it.second == deepLinkFocusTab }
                 if (idx >= 0) pagerState.scrollToPage(idx)
             }
+            // A–Z order: every page's scrollbar shows a letter bubble while it's dragged.
+            val alphabetical = state.sortOrder == SortOrder.ALPHABETICAL
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize(),
@@ -683,6 +686,7 @@ private fun LibraryContent(
                         onTogglePlaylistPinned = onTogglePlaylistPinned,
                         onTogglePlaylistOnHome = onTogglePlaylistOnHome,
                         header = {},
+                        alphabetical = alphabetical,
                     )
                     LibraryTab.TRACKS -> TracksTab(
                         tracks = state.tracks,
@@ -700,6 +704,7 @@ private fun LibraryContent(
                         onDownloadTrack = onDownloadTrack,
                         onRemoveDownloadTrack = onRemoveDownloadTrack,
                         header = libraryHeader,
+                        alphabetical = alphabetical,
                     )
                     LibraryTab.LIKED -> LikedTab(
                         tracks = likedTracks,
@@ -717,6 +722,7 @@ private fun LibraryContent(
                         onCreatePlaylistWithTrack = onCreatePlaylistWithTrack,
                         onDownloadTrack = onDownloadTrack,
                         onRemoveDownloadTrack = onRemoveDownloadTrack,
+                        alphabetical = alphabetical,
                     )
                     LibraryTab.ARTISTS -> ArtistsGrid(
                         artists = state.artists,
@@ -726,6 +732,7 @@ private fun LibraryContent(
                         onAddArtistToQueue = onAddArtistToQueue,
                         onDeleteArtist = onDeleteArtist,
                         header = {},
+                        alphabetical = alphabetical,
                     )
                     LibraryTab.ALBUMS -> AlbumsGrid(
                         albums = state.albums,
@@ -735,6 +742,7 @@ private fun LibraryContent(
                         onAddAlbumToQueue = onAddAlbumToQueue,
                         onOpenAlbum = onOpenAlbum,
                         header = {},
+                        alphabetical = alphabetical,
                     )
                 }
             }
@@ -794,6 +802,8 @@ private fun LikedTab(
     onCreatePlaylistWithTrack: (name: String, trackId: Long) -> Unit,
     onDownloadTrack: (Long) -> Unit,
     onRemoveDownloadTrack: (Long) -> Unit,
+    /** Sorted A–Z: the scrollbar shows a letter bubble while dragged. */
+    alphabetical: Boolean = false,
 ) {
     // Sift chips: "All" plus only the origins that actually have likes.
     val sift = buildList {
@@ -857,7 +867,15 @@ private fun LikedTab(
                 }
             }
         }
-        VerticalScrollbar(state = listState)
+        VerticalScrollbar(
+            state = listState,
+            // The sift row (when shown) is the one item above the likes.
+            sectionLabel = if (alphabetical) {
+                alphabeticalSectionLabel(tracks, leadingItems = if (sift.size > 2) 1 else 0) { it.title }
+            } else {
+                null
+            },
+        )
         // "Now playing ↑/↓" while the playing like is scrolled out of sight.
         NowPlayingJumpChip(
             listState = listState,
@@ -1133,6 +1151,8 @@ private fun PlaylistsGrid(
     onTogglePlaylistPinned: (Playlist) -> Unit,
     onTogglePlaylistOnHome: (Playlist) -> Unit,
     header: @Composable () -> Unit = {},
+    /** Sorted A–Z: the scrollbar shows a letter bubble while dragged. */
+    alphabetical: Boolean = false,
 ) {
     // Playlist selected for the context-menu bottom sheet.
     var selectedPlaylist by remember { mutableStateOf<Playlist?>(null) }
@@ -1279,7 +1299,16 @@ private fun PlaylistsGrid(
                 }
             }
         }
-        VerticalScrollbar(state = gridState)
+        VerticalScrollbar(
+            state = gridState,
+            // Pinned playlists lead (A–Z among themselves), so the letters run A–Z twice:
+            // each bubble is still the letter of the playlist under it.
+            sectionLabel = if (alphabetical) {
+                alphabeticalSectionLabel(playlists, leadingItems = 1) { it.name }
+            } else {
+                null
+            },
+        )
     }
 
     // ── Context-menu bottom sheet ───────────────────────────────────────
@@ -1530,6 +1559,8 @@ private fun TracksTab(
     onDownloadTrack: (Long) -> Unit,
     onRemoveDownloadTrack: (Long) -> Unit,
     header: @Composable () -> Unit = {},
+    /** Sorted A–Z: the scrollbar shows a letter bubble while dragged. */
+    alphabetical: Boolean = false,
 ) {
     if (tracks.isEmpty()) {
         Column {
@@ -1586,7 +1617,15 @@ private fun TracksTab(
                 }
             }
         }
-        VerticalScrollbar(state = listState)
+        VerticalScrollbar(
+            state = listState,
+            // Item 0 is the recently-downloaded header.
+            sectionLabel = if (alphabetical) {
+                alphabeticalSectionLabel(tracks, leadingItems = 1) { it.title }
+            } else {
+                null
+            },
+        )
         // "Now playing ↑/↓" while the playing song is scrolled out of sight: one tap back
         // to it from anywhere in a long library.
         NowPlayingJumpChip(
@@ -1748,6 +1787,8 @@ private fun ArtistsGrid(
     onAddArtistToQueue: (String) -> Unit,
     onDeleteArtist: (String) -> Unit,
     header: @Composable () -> Unit = {},
+    /** Sorted A–Z: the scrollbar shows a letter bubble while dragged. */
+    alphabetical: Boolean = false,
 ) {
     if (artists.isEmpty() && singleTrackArtists.isEmpty()) {
         Column {
@@ -1847,7 +1888,15 @@ private fun ArtistsGrid(
                 }
             }
         }
-        VerticalScrollbar(state = gridState)
+        VerticalScrollbar(
+            state = gridState,
+            // Item 0 is the header; the "artists with 1 track" toggle after the grid shows no letter.
+            sectionLabel = if (alphabetical) {
+                alphabeticalSectionLabel(displayList, leadingItems = 1) { it.name }
+            } else {
+                null
+            },
+        )
     }
 
     // ── Context-menu bottom sheet ───────────────────────────────────────
@@ -1948,6 +1997,8 @@ private fun AlbumsGrid(
     onAddAlbumToQueue: (String, String) -> Unit,
     onOpenAlbum: (AlbumInfo) -> Unit,
     header: @Composable () -> Unit = {},
+    /** Sorted A–Z: the scrollbar shows a letter bubble while dragged. */
+    alphabetical: Boolean = false,
 ) {
     if (albums.isEmpty() && singleTrackAlbums.isEmpty()) {
         Column {
@@ -2081,7 +2132,15 @@ private fun AlbumsGrid(
                 }
             }
         }
-        VerticalScrollbar(state = gridState)
+        VerticalScrollbar(
+            state = gridState,
+            // Item 0 is the header; the "albums with 1 track" toggle after the grid shows no letter.
+            sectionLabel = if (alphabetical) {
+                alphabeticalSectionLabel(displayList, leadingItems = 1) { it.name }
+            } else {
+                null
+            },
+        )
     }
 
     // ── Context-menu bottom sheet ───────────────────────────────────────
@@ -2269,6 +2328,24 @@ private fun ArtistInitialFallback(name: String, size: Dp) {
             color = Color.White,
         )
     }
+}
+
+// ── A–Z scrollbar bubble ─────────────────────────────────────────────────────
+
+/**
+ * The scrollbar bubble's letter for each lazy item of a Library list that shows [items] after
+ * [leadingItems] header items (the recently-downloaded rail, the Liked sift row). The letter
+ * comes from [alphabeticalSortKey] of the item's [name]: the very key the list was sorted by, so
+ * the bubble's letters always run in the list's own order. A header borrows the first item's
+ * letter; an item past the end (the "with 1 track" toggle under a grid) has none.
+ */
+private fun <T> alphabeticalSectionLabel(
+    items: List<T>,
+    leadingItems: Int,
+    name: (T) -> String,
+): (Int) -> String? = { index ->
+    items.getOrNull((index - leadingItems).coerceAtLeast(0))
+        ?.let { fastScrollSectionLetter(alphabeticalSortKey(name(it))) }
 }
 
 // ── Empty state placeholder ──────────────────────────────────────────────────

@@ -50,6 +50,14 @@ import javax.inject.Inject
  */
 private val LOSSLESS_CODECS = setOf("flac", "alac", "wav", "ape", "tta", "wv", "aiff")
 
+/**
+ * The key every Library list sorts by under [SortOrder.ALPHABETICAL] (songs and likes by title;
+ * playlists, artists and albums by name). The fast-scroll letter bubble derives its letter from
+ * this SAME key ([com.stash.core.ui.components.fastScrollSectionLetter]), so if the order ever
+ * learns to fold accents or skip a leading "The", the bubble follows it instead of disagreeing.
+ */
+internal fun alphabeticalSortKey(name: String): String = name.lowercase()
+
 /** Shared track search predicate — every Library list matches title/artist/album. */
 private fun Track.matchesQuery(query: String): Boolean =
     title.lowercase().contains(query) ||
@@ -311,7 +319,7 @@ class LibraryViewModel @Inject constructor(
         // -- Apply sort order --
         val sortedTracks = when (controls.sortOrder) {
             SortOrder.RECENT -> filteredTracks.sortedByDescending { it.dateAdded }
-            SortOrder.ALPHABETICAL -> filteredTracks.sortedBy { it.title.lowercase() }
+            SortOrder.ALPHABETICAL -> filteredTracks.sortedBy { alphabeticalSortKey(it.title) }
             SortOrder.MOST_PLAYED -> filteredTracks.sortedByDescending { it.playCount }
             SortOrder.DURATION -> filteredTracks.sortedByDescending { it.durationMs }
         }
@@ -320,7 +328,7 @@ class LibraryViewModel @Inject constructor(
             // — the latter reshuffles the list every sync run. See
             // PlaylistEntity.dateAdded + migration v12→v13 (issue #13).
             SortOrder.RECENT -> filteredPlaylists.sortedByDescending { it.dateAdded }
-            SortOrder.ALPHABETICAL -> filteredPlaylists.sortedBy { it.name.lowercase() }
+            SortOrder.ALPHABETICAL -> filteredPlaylists.sortedBy { alphabeticalSortKey(it.name) }
             // Playlists don't track a per-playlist play_count; use
             // trackCount as the most-relevant "size" signal so this
             // chip produces a visible ordering change instead of a
@@ -335,13 +343,13 @@ class LibraryViewModel @Inject constructor(
         // Sort artists/albums — default by track count descending (most tracks first)
         val sortedArtists = when (controls.sortOrder) {
             SortOrder.RECENT -> filteredArtists.sortedByDescending { it.trackCount }
-            SortOrder.ALPHABETICAL -> filteredArtists.sortedBy { it.name.lowercase() }
+            SortOrder.ALPHABETICAL -> filteredArtists.sortedBy { alphabeticalSortKey(it.name) }
             SortOrder.MOST_PLAYED -> filteredArtists.sortedByDescending { it.trackCount }
             SortOrder.DURATION -> filteredArtists.sortedByDescending { it.totalDurationMs }
         }
         val sortedAlbums = when (controls.sortOrder) {
             SortOrder.RECENT -> filteredAlbums.sortedByDescending { it.trackCount }
-            SortOrder.ALPHABETICAL -> filteredAlbums.sortedBy { it.name.lowercase() }
+            SortOrder.ALPHABETICAL -> filteredAlbums.sortedBy { alphabeticalSortKey(it.name) }
             SortOrder.MOST_PLAYED -> filteredAlbums.sortedByDescending { it.trackCount }
             // Albums carry no duration projection — fall back to track count.
             SortOrder.DURATION -> filteredAlbums.sortedByDescending { it.trackCount }
@@ -1057,7 +1065,7 @@ internal fun sortLikedTracks(tracks: List<Track>, order: SortOrder): List<Track>
         val (stamped, synced) = tracks.partition { it.likedAtOrNull() != null }
         stamped.sortedByDescending { it.likedAtOrNull() } + synced
     }
-    SortOrder.ALPHABETICAL -> tracks.sortedBy { it.title.lowercase() }
+    SortOrder.ALPHABETICAL -> tracks.sortedBy { alphabeticalSortKey(it.title) }
     SortOrder.MOST_PLAYED -> tracks.sortedByDescending { it.playCount }
     SortOrder.DURATION -> tracks.sortedByDescending { it.durationMs }
 }
