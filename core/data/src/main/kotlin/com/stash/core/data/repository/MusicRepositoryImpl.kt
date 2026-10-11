@@ -985,25 +985,72 @@ class MusicRepositoryImpl @Inject constructor(
             )
             return
         }
+        afterMembersAdded(playlistId)
+    }
+
+    /** Recount the badge and republish an owned shared mix, once per add or batch. */
+    private suspend fun afterMembersAdded(playlistId: Long) {
         // v0.9.37 — count downloaded + streamable. Stream-only tracks
         // (e.g. Liked Songs added from the Now Playing heart on a
         // streaming track) are first-class playlist members under the
         // streaming-engine model and must be reflected in the badge,
         // or the Library card lies ("1 tracks" but the detail shows 4).
-        val count = trackDao.getByPlaylist(playlistId, includeStreamable = true).first().size
-        playlistDao.updateTrackCount(playlistId, count)
+        playlistDao.updateTrackCount(playlistId, trackDao.countByPlaylist(playlistId, includeStreamable = true))
         if (sharedMixDao.forPlaylist(playlistId)?.role == com.stash.core.data.db.entity.SharedMixEntity.ROLE_OWNER) {
             com.stash.core.data.share.SharedMixPublishWorker.enqueue(context, delaySeconds = 30)
         }
     }
 
+    /**
+     * Adds a multi-select batch with one write and one recount.
+     *
+     * This used to run the single-add path per song: an autocommit (each one
+     * re-running every observing Flow — Home, the open playlist) and a full
+     * reload of the playlist just to take its size, so 1,000 songs cost ~2,000
+     * writes and ~500k row loads. Now each id is still checked on its own (a
+     * missing or failing track is skipped and logged, never fatal), but the
+     * survivors go in as one insert at consecutive positions, then the badge
+     * is recounted once.
+     */
     override suspend fun addTracksToPlaylist(trackIds: List<Long>, playlistId: Long) {
         // ponytail: no app-wide scope exists, so NonCancellable keeps the batch alive.
         withContext(NonCancellable) {
-            trackIds.forEach { id ->
-                runCatching { insertIntoPlaylist(id, playlistId) }.onFailure { e ->
-                    android.util.Log.w("MusicRepository", "addTracksToPlaylist: track $id failed", e)
+            if (playlistDao.getById(playlistId) == null) {
+                android.util.Log.w("MusicRepository", "addTracksToPlaylist: playlist $playlistId is gone")
+                return@withContext
+            }
+            val present = trackIds.filter { id ->
+                runCatching { trackDao.getById(id) != null }
+                    .onFailure { e -> android.util.Log.w("MusicRepository", "addTracksToPlaylist: track $id failed", e) }
+                    .getOrDefault(false)
+            }
+            if (present.isNotEmpty()) {
+                val start = playlistDao.getNextPosition(playlistId)
+                val refs = present.mapIndexed { i, id ->
+                    com.stash.core.data.db.entity.PlaylistTrackCrossRef(
+                        playlistId = playlistId,
+                        trackId = id,
+                        position = start + i,
+                        // Issue #42: user-added, so a REFRESH sync keeps it.
+                        locallyAdded = true,
+                    )
                 }
+                try {
+                    playlistDao.insertAllCrossRefs(refs)
+                } catch (batchFailure: android.database.sqlite.SQLiteConstraintException) {
+                    // A track or the playlist was deleted after the checks
+                    // (orphan cleanup, REFRESH sync, blocklist) and the single
+                    // insert rolled back as a whole: save the rest one by one.
+                    android.util.Log.w("MusicRepository", "addTracksToPlaylist: batch insert raced a delete", batchFailure)
+                    refs.forEach { ref ->
+                        try {
+                            playlistDao.insertCrossRef(ref)
+                        } catch (e: android.database.sqlite.SQLiteConstraintException) {
+                            android.util.Log.w("MusicRepository", "addTracksToPlaylist: track ${ref.trackId} raced a delete", e)
+                        }
+                    }
+                }
+                afterMembersAdded(playlistId)
             }
             queueIfKeptOffline(playlistId)
         }

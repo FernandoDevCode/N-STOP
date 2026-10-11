@@ -628,6 +628,38 @@ interface TrackDao {
     )
     fun getByPlaylist(playlistId: Long, includeStreamable: Boolean): Flow<List<TrackEntity>>
 
+    /**
+     * How many rows [getByPlaylist] would emit — same joins, same filters —
+     * without materialising them, for the cached `track_count` badge.
+     *
+     * Recounting via `getByPlaylist(...).first().size` loads every member's
+     * full row; done after each add of a multi-select batch, that made adding
+     * 1,000 songs ~500k row loads. Each (playlist, track) pair is one
+     * `playlist_tracks` row (primary key) and the blocklist LEFT JOIN keeps only
+     * unmatched tracks, which join to exactly one NULL row, so COUNT(*) equals
+     * the list size.
+     */
+    @Query(
+        """
+        SELECT COUNT(*) FROM tracks t
+        INNER JOIN playlist_tracks pt ON t.id = pt.track_id
+        INNER JOIN playlists p ON pt.playlist_id = p.id
+        LEFT JOIN track_blocklist bl
+            ON bl.canonical_key = (t.canonical_artist || '|' || t.canonical_title)
+            OR (bl.spotify_uri IS NOT NULL AND bl.spotify_uri = t.spotify_uri)
+            OR (bl.youtube_id  IS NOT NULL AND bl.youtube_id  = t.youtube_id)
+        WHERE pt.playlist_id = :playlistId
+          AND pt.removed_at IS NULL
+          AND bl.canonical_key IS NULL
+          AND (
+              t.is_downloaded = 1
+              OR :includeStreamable
+              OR (p.type = 'STASH_MIX' AND t.is_streamable = 1)
+          )
+        """
+    )
+    suspend fun countByPlaylist(playlistId: Long, includeStreamable: Boolean): Int
+
     /** Most-recently-added downloaded tracks, limited to [limit] results. */
     /**
      * Returns every downloaded track whose `file_path` starts with [pathPrefix].
