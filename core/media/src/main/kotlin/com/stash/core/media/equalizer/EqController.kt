@@ -14,11 +14,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /**
- * The single writer of [EqState]. UI emits events here; AudioProcessors
- * read [state] on every buffer.
+ * The single writer of [EqState]. UI emits events here; the output stage's
+ * [com.stash.core.media.equalizer.dsp.FloatDspChain] reads [state] on every buffer.
  *
  * Construction performs a synchronous (`runBlocking`) read from disk so
- * the controller is fully restored before any AudioProcessor is built —
+ * the controller is fully restored before any DSP chain is built —
  * the Hilt graph guarantees ordering by declaring controller as a
  * constructor dependency of the processors. This is what kills the
  * legacy init race.
@@ -45,7 +45,7 @@ class EqController @Inject constructor(
     // initialises on main), making the read main-thread I/O; and a corrupt
     // DataStore would throw *during construction*, crashing the DI graph with
     // no recovery. The DSP stages sample state.value reactively per audio
-    // buffer and rebuild coefficients on change (see EqProcessor), so the
+    // buffer and rebuild coefficients on change (see FloatDspChain), so the
     // brief window of default (flat) EQ before the load lands is inaudible
     // and self-correcting. [awaitInit] keeps tests deterministic.
     scope.launch {

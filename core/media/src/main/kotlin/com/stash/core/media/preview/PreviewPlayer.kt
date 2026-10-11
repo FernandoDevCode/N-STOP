@@ -15,6 +15,7 @@ import com.stash.core.common.perf.PerfLog
 import com.stash.core.media.equalizer.EqController
 import com.stash.core.media.equalizer.LoudnessController
 import com.stash.core.media.equalizer.StashRenderersFactory
+import com.stash.core.media.output.HiResOutputController
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -87,6 +88,7 @@ class PreviewPlayer @Inject constructor(
     @ApplicationContext private val context: Context,
     private val eqController: EqController,
     private val loudnessController: LoudnessController,
+    private val hiResOutputController: HiResOutputController,
 ) {
 
     // ------------------------------------------------------------------
@@ -199,7 +201,7 @@ class PreviewPlayer @Inject constructor(
     @OptIn(UnstableApi::class)
     private fun requirePlayer(): ExoPlayer {
         return exoPlayer ?: ExoPlayer.Builder(context)
-            .setRenderersFactory(StashRenderersFactory(context, eqController, loudnessController))
+            .setRenderersFactory(StashRenderersFactory(context, eqController, loudnessController, hiResOutputController))
             .setLoadControl(PreviewLoadControlFactory.create())
             .setAudioAttributes(
                 AudioAttributes.Builder()

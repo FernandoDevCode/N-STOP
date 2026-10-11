@@ -16,11 +16,11 @@ import kotlinx.coroutines.launch
 /**
  * The single writer of [LoudnessState]. UI emits user-driven changes here
  * (enable toggle); the per-track gain follows the Player.Listener path and
- * lands via [setCurrentTrackGain]. AudioProcessors read [state] on every
+ * lands via [setCurrentTrackGain]. The output stage's DSP chain reads [state] on every
  * buffer.
  *
  * Construction performs a synchronous (`runBlocking`) read from disk so the
- * controller is fully restored before any AudioProcessor is built — the Hilt
+ * controller is fully restored before any DSP chain is built — the Hilt
  * graph guarantees ordering by declaring controller as a constructor
  * dependency of the processors. Mirrors [EqController]'s init pattern to
  * avoid the same boot-time race.
@@ -43,7 +43,7 @@ class LoudnessController @Inject constructor(
   init {
     // Load persisted state OFF the constructor — see EqController.init for
     // the full rationale (main-thread I/O risk + corrupt-DataStore crashes
-    // construction). LoudnessGainProcessor samples state.value per buffer,
+    // construction). FloatDspChain samples state.value per buffer,
     // so the brief default-gain window before the load lands is harmless.
     scope.launch {
       _state.value = store.read()
@@ -62,7 +62,7 @@ class LoudnessController @Inject constructor(
    * Push the per-track gain calculated for the now-playing item. Updates both
    * `currentTrackGainDb` and `currentTargetGainDb` so the DSP layer can read a
    * single source of truth; the smoothing ramp inside
-   * `LoudnessGainProcessor` follows the target.
+   * `FloatDspChain` follows the target.
    */
   fun setCurrentTrackGain(gainDb: Float) = update {
     it.copy(currentTrackGainDb = gainDb, currentTargetGainDb = gainDb)

@@ -4,13 +4,16 @@ import android.content.Intent
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.session.CommandButton
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
@@ -34,11 +37,11 @@ import com.stash.core.media.wallToMediaMs
 import com.stash.core.media.equalizer.LoudnessController
 import com.stash.core.media.equalizer.StashRenderersFactory
 import com.stash.core.media.equalizer.computeGain
-import com.stash.core.media.equalizer.watchDspActivation
 import com.stash.core.media.PlaybackResumer
 import com.stash.core.media.ResumePlayGate
 import com.stash.core.media.ResumeStreamResolver
 import com.stash.core.media.SleepTimerController
+import com.stash.core.media.output.toSourceFormat
 import com.stash.core.media.streaming.PrefetchOrchestrator
 import com.stash.core.media.streaming.StashMediaSourceFactory
 import com.stash.core.media.streaming.StreamingMediaSourceFactory
@@ -83,6 +86,7 @@ class StashPlaybackService : MediaLibraryService() {
 
     @Inject lateinit var eqController: EqController
     @Inject lateinit var loudnessController: LoudnessController
+    @Inject lateinit var hiResOutputController: com.stash.core.media.output.HiResOutputController
     @Inject lateinit var trackDao: TrackDao
     @Inject lateinit var playlistDao: PlaylistDao
     @Inject lateinit var likeCoordinator: LikeCoordinator
@@ -310,6 +314,13 @@ class StashPlaybackService : MediaLibraryService() {
 
     /** Listen Together's session-scoped crossfade override. In memory only, so a crash can't leave crossfade off (spec §4). */
     private var crossfadeSuspended = false
+
+    /**
+     * Bit-perfect output holds crossfade off: a fade is two songs mixed, and a
+     * bit-perfect DAC takes one unaltered stream. Follows
+     * [com.stash.core.media.output.HiResOutputController.bitPerfectEngaged].
+     */
+    private var crossfadeHeldForBitPerfect = false
 
     private var listenTogetherSession: com.stash.core.media.listen.ListenTogetherSession? = null
     private var togetherPlayer: com.stash.core.media.listen.ListenTogetherPlayer? = null
@@ -629,6 +640,9 @@ class StashPlaybackService : MediaLibraryService() {
         // Cache crossfade prefs for the poll's prepare/fire decisions.
         serviceScope.launch { crossfadePreference.enabled.collect { onCrossfadePreference(it) } }
         serviceScope.launch { crossfadePreference.durationMs.collect { crossfadeDurationMs = it } }
+        serviceScope.launch {
+            hiResOutputController.bitPerfectEngaged.collect { setCrossfadeHeldForBitPerfect(it) }
+        }
 
         // The service is up — tell the repository so it (re)connects its
         // controller. This is the half the reverted design was missing: it
@@ -1003,7 +1017,7 @@ class StashPlaybackService : MediaLibraryService() {
                 /* bufferForPlaybackAfterRebufferMs = */ 2_000,
             )
             .build()
-        val renderersFactory = StashRenderersFactory(this, eqController, loudnessController)
+        val renderersFactory = StashRenderersFactory(this, eqController, loudnessController, hiResOutputController)
         val player = ExoPlayer.Builder(this)
             .setRenderersFactory(renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
@@ -1012,13 +1026,19 @@ class StashPlaybackService : MediaLibraryService() {
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
-        // Disabled DSP stages are dropped from the audio pipeline entirely
-        // (StashRenderersFactory kdoc); this watcher re-applies the pipeline
-        // when a toggle crosses an active/inactive boundary so EQ/loudness
-        // changes still land mid-track.
-        renderersFactory.builtSink?.let { sink ->
-            watchDspActivation(serviceScope, eqController, loudnessController, player, sink)
-        }
+        // The signal path shows what this player's decoder is fed (codec, bit
+        // depth, rate). Per player: the crossfade spare reports its next song
+        // early, and only becomes "the source" once its output is audible.
+        val session = renderersFactory.outputSession
+        player.addAnalyticsListener(object : AnalyticsListener {
+            override fun onAudioInputFormatChanged(
+                eventTime: AnalyticsListener.EventTime,
+                format: Format,
+                decoderReuseEvaluation: DecoderReuseEvaluation?,
+            ) {
+                hiResOutputController.onSourceFormat(session, format.toSourceFormat())
+            }
+        })
         return player
     }
 
@@ -1074,7 +1094,7 @@ class StashPlaybackService : MediaLibraryService() {
     /** Collector body for the crossfade preference; Listen Together can hold crossfade off without writing it. */
     internal fun onCrossfadePreference(enabled: Boolean) {
         crossfadePrefEnabled = enabled
-        onCrossfadeEnabledChanged(enabled && !crossfadeSuspended)
+        onCrossfadeEnabledChanged(enabled && !crossfadeSuspended && !crossfadeHeldForBitPerfect)
     }
 
     /** Suspends or restores crossfade for a Listen Together session. */
@@ -1084,7 +1104,18 @@ class StashPlaybackService : MediaLibraryService() {
             crossfadeEngine?.cancelTransition()
             crossfadePreparedId = null
         }
-        onCrossfadeEnabledChanged(crossfadePrefEnabled && !suspended)
+        onCrossfadeEnabledChanged(crossfadePrefEnabled && !suspended && !crossfadeHeldForBitPerfect)
+    }
+
+    /** Holds crossfade off while the output is bit-perfect, and restores it after. */
+    internal fun setCrossfadeHeldForBitPerfect(held: Boolean) {
+        if (held == crossfadeHeldForBitPerfect) return
+        crossfadeHeldForBitPerfect = held
+        if (held) {
+            crossfadeEngine?.cancelTransition()
+            crossfadePreparedId = null
+        }
+        onCrossfadeEnabledChanged(crossfadePrefEnabled && !crossfadeSuspended && !held)
     }
 
     /** The effective crossfade switch (test view). */
@@ -1543,6 +1574,8 @@ class StashPlaybackService : MediaLibraryService() {
         crossfadePollJob?.cancel()
         sleepTimerNotificationJob?.cancel()
         cancelSleepTimerNotification()
+        // Hand the USB DAC back to Android's defaults when Stash stops playing.
+        if (::hiResOutputController.isInitialized) hiResOutputController.releaseAll()
         listenedPlayer?.removeListener(playerListener)
         listenedPlayer = null
         // The speaker would play out its one song and stop; end the cast cleanly instead.

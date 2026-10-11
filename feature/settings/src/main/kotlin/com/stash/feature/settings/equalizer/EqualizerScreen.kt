@@ -132,6 +132,20 @@ fun EqualizerScreen(
                 .padding(horizontal = 16.dp),
         ) {
         Spacer(Modifier.height(16.dp))
+        // Bit-perfect output sends the samples to the DAC untouched, so none of
+        // this applies while it is active. Say so instead of letting the
+        // sliders look broken.
+        val hiRes: com.stash.feature.settings.HiResOutputViewModel = androidx.hilt.navigation.compose.hiltViewModel()
+        val bitPerfect by hiRes.bitPerfectEngaged.collectAsStateWithLifecycle()
+        if (bitPerfect) {
+            Text(
+                text = "Bypassed: bit-perfect output is on, so your DAC gets the music untouched. " +
+                    "Switch Hi-Res output to \"Match USB DAC\" in Audio & Quality to use the EQ.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(bottom = 12.dp),
+            )
+        }
 
         EqHeader(
             enabled = state.enabled,

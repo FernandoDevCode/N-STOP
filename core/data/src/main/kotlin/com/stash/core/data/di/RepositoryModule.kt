@@ -6,6 +6,8 @@ import com.stash.core.data.prefs.AutoplayRadioPreference
 import com.stash.core.data.prefs.AutoplayRadioPreferencesManager
 import com.stash.core.data.prefs.CrossfadePreference
 import com.stash.core.data.prefs.CrossfadePreferencesManager
+import com.stash.core.data.prefs.HiResOutputPreference
+import com.stash.core.data.prefs.HiResOutputPreferencesManager
 import com.stash.core.data.prefs.StoragePreference
 import com.stash.core.data.prefs.StoragePreferencesManager
 import com.stash.core.data.prefs.ThemePreference
@@ -43,6 +45,10 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindCrossfadePreference(impl: CrossfadePreferencesManager): CrossfadePreference
+
+    @Binds
+    @Singleton
+    abstract fun bindHiResOutputPreference(impl: HiResOutputPreferencesManager): HiResOutputPreference
 
     @Binds
     @Singleton

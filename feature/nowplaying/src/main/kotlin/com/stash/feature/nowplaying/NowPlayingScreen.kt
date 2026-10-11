@@ -169,6 +169,10 @@ fun NowPlayingScreen(
     var showSaveSheet by remember { mutableStateOf(false) }
     var showOptionsSheet by remember { mutableStateOf(false) }
     var showSleepTimerSheet by remember { mutableStateOf(false) }
+    // Signal path (hi-res output): opened by tapping the quality line.
+    var showSignalPath by remember { mutableStateOf(false) }
+    val signalPathViewModel: com.stash.feature.nowplaying.ui.SignalPathViewModel = hiltViewModel()
+    val signalVerdict by signalPathViewModel.verdict.collectAsStateWithLifecycle()
     var showCustomTimerDialog by remember { mutableStateOf(false) }
     val sleepTimerState by viewModel.sleepTimerState.collectAsStateWithLifecycle()
     val sleepTimerSheetState = rememberModalBottomSheetState()
@@ -508,6 +512,14 @@ fun NowPlayingScreen(
         )
     }
 
+    if (showSignalPath) {
+        com.stash.feature.nowplaying.ui.SignalPathSheet(
+            onDismiss = { showSignalPath = false },
+            onOpenSettings = null,
+            viewModel = signalPathViewModel,
+        )
+    }
+
     // Sleep timer bottom sheet — opened by the icon next to the track title.
     if (showSleepTimerSheet) {
         SleepTimerSheet(
@@ -831,9 +843,13 @@ fun NowPlayingScreen(
                                     val qualityText = trackQualityText(track)
                                     if (qualityText != null) {
                                         Spacer(modifier = Modifier.height(StackRhythm.ArtistToQuality))
+                                        // The live verdict ("Bit-perfect", "Hi-Res", "Resampled")
+                                        // rides on the end; tapping opens the full signal path.
+                                        val badge = signalVerdict?.let { with(com.stash.feature.nowplaying.ui.SignalPathBadge) { it.badge() } }
                                         QualityLine(
-                                            qualityText = qualityText,
+                                            qualityText = if (badge != null) "$qualityText \u00B7 $badge" else qualityText,
                                             isStreaming = uiState.isStreaming,
+                                            onClick = { showSignalPath = true },
                                         )
                                     }
                                 }
@@ -1495,10 +1511,16 @@ private fun trackQualityText(track: com.stash.core.model.Track): String? {
 private fun QualityLine(
     qualityText: String,
     isStreaming: Boolean,
+    onClick: (() -> Unit)? = null,
 ) {
+    val tap = if (onClick != null) {
+        Modifier.clickable(onClickLabel = "Show signal path", onClick = onClick)
+    } else {
+        Modifier
+    }
     if (isStreaming) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().then(tap),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -1525,7 +1547,7 @@ private fun QualityLine(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().then(tap),
         )
     }
 }

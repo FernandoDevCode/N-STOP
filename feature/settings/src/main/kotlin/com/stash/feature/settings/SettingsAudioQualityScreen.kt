@@ -649,7 +649,11 @@ fun SettingsAudioQualityScreen(
             }
         }
 
-        // (c) Effects.
+        // (c) Hi-Res output: how the audio leaves the phone (USB DAC sample-rate
+        // matching / bit-perfect on Android 14+), with a live signal-path line.
+        HiResOutputSection()
+
+        // (d) Effects.
         SettingsSectionLabel("Effects")
         SettingsNavRow(
             title = "Equalizer",
