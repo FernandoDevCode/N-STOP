@@ -125,8 +125,9 @@ class MixGenerator @Inject constructor(
         val rawPool = trackDao.getAllDownloaded()
         val pool0 = if (excludeIds.isEmpty()) rawPool else rawPool.filter { it.id !in excludeIds }
 
-        // Step 2: era filter (cheap, done in-memory).
-        var pool = filterByEra(pool0, recipe)
+        // Step 2: the era filter runs last (Step 5b), because it may be relaxed
+        // when nothing in what the other filters left matches it.
+        var pool = pool0
 
         // Step 3: include-tag filter (one DAO hit if recipe has tags).
         val includeTags = recipe.includeTagsCsv.splitTrim()
@@ -151,6 +152,9 @@ class MixGenerator @Inject constructor(
                 .toSet()
             pool = pool.filter { it.id !in recentlyPlayedIds }
         }
+
+        // Step 5b: era filter.
+        pool = filterByEra(pool, recipe)
 
         if (pool.isEmpty()) return emptyList()
 
@@ -425,25 +429,32 @@ class MixGenerator @Inject constructor(
         return result
     }
 
-    private fun filterByEra(
+    /**
+     * Keeps the tracks Last.fm tags with the recipe's decade(s) ("80s", via
+     * [RecipeTagResolver.decadeTag], the same tags the discovery side seeds
+     * from). A Mix Builder era chip means *released* in that decade.
+     *
+     * This used to compare the era with the year of `date_added`, the day the
+     * track entered Stash, so an "80s" mix kept no library tracks at all for a
+     * library built in recent years: the mix was empty at the "Familiar" end
+     * of the slider, and the library share was always empty otherwise.
+     * TrackEntity has no release year, so the decade tag is the best signal
+     * there is. When no remaining candidate carries one (tag enrichment has
+     * not reached them, or the library has no music from that era), the era
+     * is dropped for the library slice rather than leaving it empty, the
+     * same relaxation the refresh worker applies to the discovery pool.
+     */
+    private suspend fun filterByEra(
         pool: List<TrackEntity>,
         recipe: StashMixRecipeEntity,
     ): List<TrackEntity> {
-        if (recipe.eraStartYear == null && recipe.eraEndYear == null) return pool
-        // TrackEntity has no direct `year`. Best available proxy is the
-        // `date_added` Instant for now; a real year column would require
-        // another migration and tag-scanner work. For v0.4.0 we treat
-        // era_{start,end} as date_added year, which is approximate but
-        // matches "Throwback" (library tracks older than N years) well
-        // enough. Tag-based recipes (90s Alternative) should rely on tags
-        // rather than era for accurate results.
-        val startYear = recipe.eraStartYear
-        val endYear = recipe.eraEndYear
-        return pool.filter { track ->
-            val year = track.dateAdded.atZone(java.time.ZoneId.systemDefault()).year
-            (startYear == null || year >= startYear) &&
-                (endYear == null || year <= endYear)
-        }
+        val startYear = recipe.eraStartYear ?: recipe.eraEndYear ?: return pool
+        val endYear = recipe.eraEndYear ?: startYear
+        if (pool.isEmpty()) return pool
+        val decadeTags = (startYear / 10 * 10..endYear step 10).map { RecipeTagResolver.decadeTag(it) }
+        if (decadeTags.isEmpty()) return pool
+        val inEraIds = trackTagDao.getTrackIdsByTags(decadeTags).toSet()
+        return pool.filter { it.id in inEraIds }.ifEmpty { pool }
     }
 
     /**
