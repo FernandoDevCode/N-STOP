@@ -411,7 +411,14 @@ class MirrorEngine internal constructor(
         val sent = clock()
         val info = api.space(DeviceAuth(id.deviceId, id.token), sp.spaceId).get()
         val received = clock()
-        if (info.serverTime > 0) r.samples = (r.samples + ClockSample(sent, received, info.serverTime)).takeLast(ClockOffset.SAMPLES)
+        if (info.serverTime > 0) {
+            // A clock set since the last samples starts them again (A5): else `wall` stays off by the jump for three more runs.
+            val kept = r.samples.map { ClockOffset.Sample(it.sent, it.received, it.serverTime) }
+            r.samples = ClockOffset.keep(kept, ClockOffset.Sample(sent, received, info.serverTime)).map { ClockSample(it.sent, it.received, it.serverTime) }
+            // Stamps taken while this phone's clock ran ahead left the HLC in the future, and `tick` never goes below it: every
+            // op it sends would be skipped by every reader as from the future, while its base moves past them. Back to now.
+            r.last?.let { if (it.wall > info.serverTime + Hlc.MAX_FUTURE_MS) r.last = Hlc(info.serverTime, 0, id.deviceId) }
+        }
         if (info.rotationDue || info.epoch > sp.epoch) throw Settle()
         val names = store.roster().filter { it.type == TYPE_WEB }.map { it.displayName }
         _status.update { it.copy(linked = true, otherName = names.singleOrNull() ?: MirrorStatus.OTHERS) }

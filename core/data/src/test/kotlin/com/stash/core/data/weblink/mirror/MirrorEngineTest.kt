@@ -776,6 +776,29 @@ class MirrorEngineTest {
         assertThat(space.compactDue).isFalse()
     }
 
+    @Test fun `a clock set forward, or an HLC left in the future, never stamps the phone's ops from the future`() = runTest {
+        link()
+        likesMirroring()
+        // The phone's clock runs 2 h slow for five runs, then automatic time sets it right.
+        server.serverNow = 100_000_000_000L
+        clock = server.serverNow - 2 * 3_600_000L
+        repeat(5) { run() }
+        clock += 2 * 3_600_000L
+        lib.like(song("Z"))
+        run()
+        val z = likeOps(me).last { it.s.title == "Z" }
+        assertThat(Hlc.fromTheFuture(z.at, server.serverNow)).isFalse()
+        assertThat(lib.likedTitles()).contains("Z")
+
+        // An HLC already stamped in the future (before this fix, or a clock that ran ahead): back to the server's time.
+        records.record!!.last = Hlc(server.serverNow + 2 * 3_600_000L, 3, me)
+        lib.like(song("Y"))
+        run()
+        val y = likeOps(me).last { it.s.title == "Y" }
+        assertThat(Hlc.fromTheFuture(y.at, server.serverNow)).isFalse()
+        assertThat(records.record!!.last!!.wall).isAtMost(server.serverNow + Hlc.MAX_FUTURE_MS)
+    }
+
     @Test fun `a log entry under a key the phone never had is a gap, it never compacts over it`() = runTest {
         link()
         likesMirroring()
