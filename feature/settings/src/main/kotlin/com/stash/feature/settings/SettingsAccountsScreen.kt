@@ -162,6 +162,36 @@ fun SettingsAccountsScreen(
 
         SettingsSectionLabel("Connections")
 
+        // Disconnecting a source also drops its queued downloads, so each asks
+        // first (as Discord's connect does). Saveable, like showDiscordRisk, so
+        // a rotation keeps the question up.
+        var confirmSpotifyDisconnect by rememberSaveable { mutableStateOf(false) }
+        var confirmYouTubeDisconnect by rememberSaveable { mutableStateOf(false) }
+        if (confirmSpotifyDisconnect) {
+            com.stash.feature.settings.components.DisconnectAccountDialog(
+                serviceName = "Spotify",
+                onConfirm = {
+                    confirmSpotifyDisconnect = false
+                    // Also sign the WebView out, or the next Connect re-submits the old sp_dc.
+                    com.stash.feature.settings.components.clearSpotifyWebSession()
+                    viewModel.onDisconnectSpotify()
+                },
+                onDismiss = { confirmSpotifyDisconnect = false },
+            )
+        }
+        if (confirmYouTubeDisconnect) {
+            com.stash.feature.settings.components.DisconnectAccountDialog(
+                serviceName = "YouTube Music",
+                onConfirm = {
+                    confirmYouTubeDisconnect = false
+                    // Also sign the WebView out of Google, so the account isn't left behind in it.
+                    com.stash.feature.settings.components.clearYouTubeWebSession()
+                    viewModel.onDisconnectYouTube()
+                },
+                onDismiss = { confirmYouTubeDisconnect = false },
+            )
+        }
+
         AccountConnectionCard(
             serviceName = "Spotify",
             icon = Icons.Rounded.MusicNote,
@@ -169,11 +199,7 @@ fun SettingsAccountsScreen(
             authState = uiState.spotifyAuthState,
             expired = authExpiry.spotifyExpired,
             onConnect = viewModel::onConnectSpotify,
-            onDisconnect = {
-                // Also sign the WebView out, or the next Connect re-submits the old sp_dc.
-                com.stash.feature.settings.components.clearSpotifyWebSession()
-                viewModel.onDisconnectSpotify()
-            },
+            onDisconnect = { confirmSpotifyDisconnect = true },
             extraContent = {
                 com.stash.feature.settings.components.SpotifyAutoSaveSection(
                     enabled = uiState.autoSaveEnabled,
@@ -194,11 +220,7 @@ fun SettingsAccountsScreen(
             authState = uiState.youTubeAuthState,
             expired = authExpiry.youtubeExpired,
             onConnect = viewModel::onConnectYouTube,
-            onDisconnect = {
-                // Also sign the WebView out of Google, so the account isn't left behind in it.
-                com.stash.feature.settings.components.clearYouTubeWebSession()
-                viewModel.onDisconnectYouTube()
-            },
+            onDisconnect = { confirmYouTubeDisconnect = true },
             extraContent = {
                 com.stash.feature.settings.components.YouTubeHistorySyncSection(
                     enabled = uiState.ytHistoryEnabled,
