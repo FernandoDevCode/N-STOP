@@ -115,6 +115,9 @@ import com.stash.feature.nowplaying.ui.LiveLyricsBar
 import com.stash.feature.nowplaying.ui.npAccent
 import com.stash.feature.nowplaying.ui.npInk
 import com.stash.feature.nowplaying.ui.QueueBottomSheet
+import com.stash.feature.nowplaying.ui.SwipeableArt
+import com.stash.feature.nowplaying.ui.hasNextInQueue
+import com.stash.feature.nowplaying.ui.hasPreviousInQueue
 
 /**
  * Full-screen Now Playing screen with premium visual design.
@@ -196,6 +199,12 @@ fun NowPlayingScreen(
     var showCastSheet by remember { mutableStateOf(false) }
     // A listener follows the room: no skip or seek; their play/pause is their own (spec §5).
     val isListener = room != null && !room.isHost
+    // Where Next / Previous can go, for the art's swipe and its TalkBack actions: the queue's ends,
+    // wrapped by repeat-all. In a room the host's skips go to the room, which decides (its Up next,
+    // its radio, a restart), so both stay on there; a listener has no art gestures at all.
+    val repeatAll = uiState.repeatMode == RepeatMode.ALL
+    val canSwipeNext = room != null || hasNextInQueue(uiState.queue.size, uiState.currentIndex, repeatAll)
+    val canSwipePrevious = room != null || hasPreviousInQueue(uiState.queue.size, uiState.currentIndex, repeatAll)
     // The Session sheet: people, Up next, suggestions, invite, leave (design 2026-09-25).
     var showSession by remember { mutableStateOf(false) }
     var confirmEndTogether by remember { mutableStateOf(false) }
@@ -851,16 +860,33 @@ fun NowPlayingScreen(
                                 art = {
                                 // -- Album art: NowPlayingBody sizes this slot (a square) --
                                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    AlbumArtSection(
-                                        albumArtUrl = track?.albumArtUrl,
-                                        albumArtPath = track?.albumArtPath,
-                                        accentColor = npAccent(uiState.vibrantColor),
-                                        onBitmapLoaded = { bitmap ->
-                                            paletteArtModel = artModel
-                                            viewModel.onAlbumArtLoaded(bitmap)
-                                        },
+                                    // Swipe for the next / previous song, double-tap a side to seek
+                                    // 10 s: through the same ViewModel calls as the transport and the
+                                    // progress bar, and off for a listener, as those are.
+                                    SwipeableArt(
+                                        trackKey = track?.let { it.id to uiState.currentIndex },
+                                        gesturesEnabled = track != null && !isListener,
+                                        canNext = canSwipeNext,
+                                        canPrevious = canSwipePrevious,
+                                        canSeek = uiState.durationMs > 0L,
+                                        positionMs = { playerPosition.value },
+                                        durationMs = uiState.durationMs,
+                                        onNext = viewModel::onSkipNext,
+                                        onPrevious = viewModel::onSkipPrevious,
+                                        onSeekTo = viewModel::onSeekTo,
                                         modifier = artShared,
-                                    )
+                                    ) { swipeModifier ->
+                                        AlbumArtSection(
+                                            albumArtUrl = track?.albumArtUrl,
+                                            albumArtPath = track?.albumArtPath,
+                                            accentColor = npAccent(uiState.vibrantColor),
+                                            onBitmapLoaded = { bitmap ->
+                                                paletteArtModel = artModel
+                                                viewModel.onAlbumArtLoaded(bitmap)
+                                            },
+                                            modifier = swipeModifier,
+                                        )
+                                    }
                                     if (room != null) {
                                         // "Maya joined", "Rawn skipped": over the art, so the layout never shifts.
                                         com.stash.feature.nowplaying.listen.SessionEventChip(together.events, room.myId, Modifier.align(Alignment.TopCenter))
