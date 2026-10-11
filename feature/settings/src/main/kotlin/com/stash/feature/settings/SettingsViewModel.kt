@@ -72,6 +72,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
+/** Shown when a connect call failed with an error (e.g. the sign-in could not be stored) rather than a rejection. */
+private const val CONNECT_SAVE_FAILED =
+    "Couldn't finish connecting on this device. Please try again."
+
 /**
  * ViewModel for the Settings screen.
  *
@@ -901,6 +905,9 @@ class SettingsViewModel @Inject constructor(
                     } else {
                         // We need the user to re-grant permission for the restored folder
                         // BEFORE we restart, so that the startup migrations can see the files.
+                        // The screen MUST answer with [onRestoreFolderRegrantResult] whatever
+                        // the picker's outcome — the files are already swapped.
+                        restoreAwaitingFolderGrant = restoredTreeUri
                         _localState.update { it.copy(databaseBackupState = DatabaseBackupState.Idle) }
                         onExternalPermissionNeeded(restoredTreeUri)
                     }
@@ -934,20 +941,75 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    private suspend fun finishImportAndRestart() {
-        _localState.update {
-            it.copy(databaseBackupState = DatabaseBackupState.Success("Database imported. Restarting..."))
-        }
-        kotlinx.coroutines.delay(1500)
+    /**
+     * The restored library folder the screen is asking the user to re-grant,
+     * between [onConfirmImportDatabase] handing it off and
+     * [onRestoreFolderRegrantResult] answering. Null when no re-grant is pending.
+     */
+    private var restoreAwaitingFolderGrant: Uri? = null
 
-        // Re-launch the activity and kill the current process to ensure all
-        // components (Room, DataStore, Tink) re-initialize with the restored data.
+    /**
+     * Answers the folder re-grant that [onConfirmImportDatabase] asked for, for
+     * EVERY outcome of the picker: [pickedUri] is null when the user cancelled
+     * (or no picker could be shown).
+     *
+     * Always restarts. By the time the picker is up the import has already
+     * closed Room and swapped the `datastore/` files under the live DataStore
+     * singletons, so this process must not keep running: a cancel used to just
+     * return to Settings, where live lists stopped updating and the next
+     * settings toggle wrote the stale in-memory prefs back over the restored
+     * files. Without a grant, the restarted app simply lacks access to the
+     * folder until the user picks it again in Library & Storage.
+     *
+     * A folder other than the restored one is handed over through
+     * [RestoredFolderHandoff] and applied after the restart, never written
+     * through [StoragePreference] here: that DataStore still holds its
+     * pre-restore copy, and an edit would overwrite the restored
+     * `storage_preferences` file with it (racing the process kill besides).
+     */
+    fun onRestoreFolderRegrantResult(pickedUri: Uri?) {
+        val restored = restoreAwaitingFolderGrant
+        restoreAwaitingFolderGrant = null
+        if (pickedUri != null && pickedUri != restored) {
+            RestoredFolderHandoff.record(appContext, pickedUri)
+        }
+        finishImportAndRestart(
+            if (pickedUri == null) {
+                "Database imported. Restarting… Choose your library folder again in Library & Storage."
+            } else {
+                "Database imported. Restarting..."
+            },
+        )
+    }
+
+    /**
+     * Relaunches the app and kills this process so every component (Room,
+     * DataStore, Tink) re-initializes with the restored data. A `var` only so
+     * tests can observe the restart without killing the test JVM.
+     */
+    internal var restartProcess: () -> Unit = {
         val intent = appContext.packageManager.getLaunchIntentForPackage(appContext.packageName)
         if (intent != null) {
             intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
             appContext.startActivity(intent)
         }
         android.os.Process.killProcess(android.os.Process.myPid())
+    }
+
+    private fun finishImportAndRestart(message: String = "Database imported. Restarting...") {
+        _localState.update {
+            it.copy(databaseBackupState = DatabaseBackupState.Success(message))
+        }
+        // Deliberately NOT viewModelScope: the files are already swapped, so the
+        // restart must happen even if this ViewModel is cleared first. Backing
+        // out of Settings during the 1.5 s message used to cancel the restart and
+        // leave the app running on the swapped files.
+        kotlinx.coroutines.CoroutineScope(
+            kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main,
+        ).launch {
+            kotlinx.coroutines.delay(1500)
+            restartProcess()
+        }
     }
 
     /**
@@ -1103,6 +1165,17 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Closes every sign-in WebView. Called when the Accounts screen leaves for
+     * good: these flags outlive it (this ViewModel is scoped to the Settings
+     * graph), so a sign-in left open would otherwise greet the next visit.
+     */
+    fun onWebLoginsClosed() {
+        _localState.update {
+            it.copy(showSpotifyWebLogin = false, showYouTubeWebLogin = false, showDiscordWebLogin = false)
+        }
+    }
+
     /** Dismisses the WebView login screen. */
     fun onDismissSpotifyWebLogin() {
         _localState.update { it.copy(showSpotifyWebLogin = false) }
@@ -1114,7 +1187,12 @@ class SettingsViewModel @Inject constructor(
      * manual paste flow does.
      */
     fun onSpotifyWebLoginCookieExtracted(spDcCookie: String) {
-        _localState.update { it.copy(showSpotifyWebLogin = false) }
+        // Validation reports through the paste dialog's state, so show that
+        // dialog: its spinner covers the multi-second check, and a rejected
+        // cookie (stale TOTP, anonymous session, no network) shows its error.
+        // With the dialog hidden, a failed web sign-in just dropped the user
+        // back on "Not connected" with no message. Success closes it again.
+        _localState.update { it.copy(showSpotifyWebLogin = false, showSpotifyCookieDialog = true) }
         onConnectSpotifyWithCookie(spDcCookie)
     }
 
@@ -1138,9 +1216,9 @@ class SettingsViewModel @Inject constructor(
                 it.copy(isSpotifyCookieValidating = true, spotifyCookieError = null)
             }
 
-            val success = tokenManager.connectSpotifyWithCookie(cookie, username)
+            val success = connectGuarded { tokenManager.connectSpotifyWithCookie(cookie, username) }
 
-            if (success) {
+            if (success == true) {
                 _localState.update {
                     it.copy(
                         showSpotifyCookieDialog = false,
@@ -1151,7 +1229,11 @@ class SettingsViewModel @Inject constructor(
             } else {
                 _localState.update {
                     it.copy(
-                        spotifyCookieError = "Invalid or expired sp_dc cookie. Please try again.",
+                        spotifyCookieError = if (success == null) {
+                            CONNECT_SAVE_FAILED
+                        } else {
+                            "Invalid or expired sp_dc cookie. Please try again."
+                        },
                         isSpotifyCookieValidating = false,
                     )
                 }
@@ -1180,6 +1262,22 @@ class SettingsViewModel @Inject constructor(
             musicRepository.cancelPendingDownloadsForSource("SPOTIFY")
             tokenManager.clearAuth(AuthService.SPOTIFY)
         }
+    }
+
+    /**
+     * Runs one of the connect calls, returning null when it THREW rather than
+     * answering. The connect calls end by encrypting and saving the credential;
+     * when the credential store fails (e.g. the device's Keystore is
+     * unavailable), the exception used to escape this bare viewModelScope
+     * launch and crash the app mid sign-in. Cancellation still propagates.
+     */
+    private suspend fun connectGuarded(connect: suspend () -> Boolean): Boolean? = try {
+        connect()
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        android.util.Log.w("SettingsViewModel", "connecting an account failed", e)
+        null
     }
 
     // -- YouTube actions ------------------------------------------------------
@@ -1226,7 +1324,10 @@ class SettingsViewModel @Inject constructor(
      * the manual paste path uses.
      */
     fun onYouTubeWebLoginCookieExtracted(cookies: String) {
-        _localState.update { it.copy(showYouTubeWebLogin = false) }
+        // Shown for the same reason as Spotify's (see
+        // onSpotifyWebLoginCookieExtracted): the pre-checks and the save report
+        // only through the dialog, which the web path used to leave hidden.
+        _localState.update { it.copy(showYouTubeWebLogin = false, showYouTubeCookieDialog = true) }
         onConnectYouTubeWithCookie(cookies)
     }
 
@@ -1273,9 +1374,9 @@ class SettingsViewModel @Inject constructor(
                 it.copy(isYouTubeCookieValidating = true, youTubeCookieError = null)
             }
 
-            val success = tokenManager.connectYouTubeWithCookie(cookie)
+            val success = connectGuarded { tokenManager.connectYouTubeWithCookie(cookie) }
 
-            if (success) {
+            if (success == true) {
                 _localState.update {
                     it.copy(
                         showYouTubeCookieDialog = false,
@@ -1286,7 +1387,11 @@ class SettingsViewModel @Inject constructor(
             } else {
                 _localState.update {
                     it.copy(
-                        youTubeCookieError = "Failed to save cookie. Please try again.",
+                        youTubeCookieError = if (success == null) {
+                            CONNECT_SAVE_FAILED
+                        } else {
+                            "Failed to save cookie. Please try again."
+                        },
                         isYouTubeCookieValidating = false,
                     )
                 }
@@ -1349,7 +1454,8 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun onDiscordWebLoginTokenExtracted(token: String) {
-        _localState.update { it.copy(showDiscordWebLogin = false) }
+        // Shown so a rejected token is reported (see onSpotifyWebLoginCookieExtracted).
+        _localState.update { it.copy(showDiscordWebLogin = false, showDiscordTokenDialog = true) }
         onConnectDiscordWithToken(token)
     }
 
@@ -1360,8 +1466,8 @@ class SettingsViewModel @Inject constructor(
         }
         viewModelScope.launch {
             _localState.update { it.copy(isDiscordTokenValidating = true, discordTokenError = null) }
-            val success = tokenManager.connectDiscordWithToken(token)
-            if (success) {
+            val success = connectGuarded { tokenManager.connectDiscordWithToken(token) }
+            if (success == true) {
                 _localState.update {
                     it.copy(
                         showDiscordTokenDialog = false,
@@ -1372,7 +1478,11 @@ class SettingsViewModel @Inject constructor(
             } else {
                 _localState.update {
                     it.copy(
-                        discordTokenError = "Invalid or expired token. Please try again.",
+                        discordTokenError = if (success == null) {
+                            CONNECT_SAVE_FAILED
+                        } else {
+                            "Invalid or expired token. Please try again."
+                        },
                         isDiscordTokenValidating = false,
                     )
                 }

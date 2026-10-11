@@ -13,8 +13,10 @@ import com.stash.core.data.sync.workers.QualityInfoBackfillWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -44,6 +46,8 @@ class LibraryHealthViewModel @Inject constructor(
     private val reconciliationUseCase: com.stash.core.data.library.LibraryReconciliationUseCase,
     private val adoptExistingFilesUseCase: com.stash.data.download.files.AdoptExistingFilesUseCase,
     private val musicRepository: com.stash.core.data.repository.MusicRepository,
+    /** Reads file sizes for pass 2 of [runBackfill], SAF `content://` paths included. */
+    private val localFileOps: com.stash.core.data.files.LocalFileOps,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(LibraryHealthState())
@@ -150,6 +154,11 @@ class LibraryHealthViewModel @Inject constructor(
 
                 // ── Pass 1: format + bitrate via MMR ────────────────────
                 for (row in formatRows) {
+                    // Leaving the screen cancels the run. The blocking MMR read
+                    // below never checks, and the runCatching that used to wrap
+                    // the writes swallowed the CancellationException, so a closed
+                    // screen kept opening every file of a large library.
+                    ensureActive()
                     val meta = metadataExtractor.extract(row.filePath)
                     // Mirror the v0.9.1 download-path fix: write the format
                     // whenever it's known, even when MMR couldn't compute a
@@ -159,14 +168,16 @@ class LibraryHealthViewModel @Inject constructor(
                     // scenario this backfill exists to fix. Library Health's
                     // bucket UI already renders qualityKbps=0 as `—`.
                     if (meta != null && meta.format != "unknown") {
-                        runCatching {
+                        try {
                             trackDao.setFormatAndQuality(
                                 trackId = row.id,
                                 fileFormat = meta.format,
                                 qualityKbps = meta.bitrateKbps,
                             )
                             written++
-                        }.onFailure { e ->
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
                             Log.w(TAG, "setFormatAndQuality failed for trackId=${row.id}", e)
                         }
                     }
@@ -183,15 +194,19 @@ class LibraryHealthViewModel @Inject constructor(
                 // Without a real size SUM(file_size_bytes) understates the
                 // Home "Storage" stat — typically by ~70-80% when most of
                 // the library is legacy rows. Reading directly from disk
-                // is cheap (~ microseconds per file) and exact.
+                // is cheap (~ microseconds per file) and exact. Through
+                // LocalFileOps: File.length() is 0 for a SAF `content://` path,
+                // so a SAF library never got sizes and was re-scanned every run.
                 for (row in sizeRows) {
-                    val sizeBytes = runCatching { java.io.File(row.filePath).length() }
-                        .getOrDefault(0L)
+                    ensureActive()
+                    val sizeBytes = localFileOps.sizeBytes(row.filePath)
                     if (sizeBytes > 0) {
-                        runCatching {
+                        try {
                             trackDao.setFileSize(trackId = row.id, sizeBytes = sizeBytes)
                             written++
-                        }.onFailure { e ->
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
                             Log.w(TAG, "setFileSize failed for trackId=${row.id}", e)
                         }
                     }

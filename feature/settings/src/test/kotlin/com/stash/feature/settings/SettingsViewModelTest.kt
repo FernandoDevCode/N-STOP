@@ -14,7 +14,9 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -48,6 +50,7 @@ class SettingsViewModelTest {
 
     private val autoplayRadioPreference = mockk<com.stash.core.data.prefs.AutoplayRadioPreference>(relaxed = true)
     private val homeSectionsPreference = mockk<HomeSectionsPreference>(relaxed = true)
+    private val storagePreference = mockk<com.stash.core.data.prefs.StoragePreference>(relaxed = true)
 
     private fun newVm(losslessConfigured: Boolean = true) = SettingsViewModel(
         appContext = mockk(relaxed = true),
@@ -56,7 +59,7 @@ class SettingsViewModelTest {
         librarySizeHolder = librarySizeHolder,
         qualityPreference = mockk(relaxed = true),
         themePreference = mockk(relaxed = true),
-        storagePreference = mockk(relaxed = true),
+        storagePreference = storagePreference,
         downloadNetworkPreference = mockk(relaxed = true),
         moveLibraryCoordinator = mockk(relaxed = true),
         reorganizeLibraryCoordinator = mockk(relaxed = true),
@@ -265,5 +268,43 @@ class SettingsViewModelTest {
         coVerify(exactly = 1) { homeSectionsPreference.setStartTab(StartTab.LIBRARY) }
         assertThat(vm.startTab.value).isEqualTo(StartTab.LIBRARY)
         job.cancel()
+    }
+
+    // -- Restore: folder re-grant (A9) ---------------------------------------------------
+
+    /**
+     * After a full restore the files are already swapped under the live Room and
+     * DataStore singletons. Cancelling the folder picker used to return to
+     * Settings with no restart, and backing out of Settings during the
+     * "Restarting..." message cancelled the restart with the ViewModel.
+     */
+    @Test
+    fun `cancelling the restore folder re-grant still restarts, even once the screen is gone`() = runTest {
+        val vm = newVm()
+        var restarts = 0
+        vm.restartProcess = { restarts++ }
+
+        vm.onRestoreFolderRegrantResult(null)
+        vm.viewModelScope.cancel() // the user leaves Settings during the message
+        advanceUntilIdle()
+
+        assertThat(restarts).isEqualTo(1)
+    }
+
+    /**
+     * The picked folder must never go through the stale in-memory DataStore: its
+     * edit would write pre-restore values back over the restored prefs file.
+     */
+    @Test
+    fun `a re-granted folder restarts without writing through the stale storage prefs`() = runTest {
+        val vm = newVm()
+        var restarts = 0
+        vm.restartProcess = { restarts++ }
+
+        vm.onRestoreFolderRegrantResult(mockk<android.net.Uri>(relaxed = true))
+        advanceUntilIdle()
+
+        assertThat(restarts).isEqualTo(1)
+        coVerify(exactly = 0) { storagePreference.setExternalTreeUri(any()) }
     }
 }

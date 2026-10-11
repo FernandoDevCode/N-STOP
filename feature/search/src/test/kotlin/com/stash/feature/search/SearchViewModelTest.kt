@@ -137,6 +137,32 @@ class SearchViewModelTest {
         }
     }
 
+    /**
+     * A failed search was a dead end: no Retry, and the same text typed again
+     * was dropped by distinctUntilChanged. Retry and the keyboard Search key
+     * now run it again.
+     */
+    @Test
+    fun `retry and the Search key re-run a failed query`() = runTest {
+        val api = mock<YTMusicApiClient>()
+        whenever(api.searchAll(any())).doSuspendableAnswer {
+            throw java.net.UnknownHostException("Unable to resolve host music.youtube.com")
+        }
+        val vm = newVm(api = api)
+        vm.onQueryChanged("abc")
+        advanceUntilIdle()
+        val error = vm.uiState.value.status as SearchStatus.Error
+        assertEquals("You're offline, or YouTube Music can't be reached.", error.message)
+
+        vm.retry()
+        advanceUntilIdle()
+        verify(api, org.mockito.kotlin.times(2)).searchAll(eq("abc"))
+
+        vm.onSearchCommitted()
+        advanceUntilIdle()
+        verify(api, org.mockito.kotlin.times(3)).searchAll(eq("abc"))
+    }
+
     // ------------------------------------------------------------------
     // Task 20: onResultTap — streaming on vs off
     // ------------------------------------------------------------------

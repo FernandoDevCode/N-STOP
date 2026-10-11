@@ -44,7 +44,9 @@ import com.stash.core.media.streaming.SquidCookieAutoRefresher
 import com.stash.data.download.lossless.LosslessRetryScheduler
 import com.stash.data.download.lossless.relay.LosslessConfigFetcher
 import com.stash.data.download.ytdlp.YtDlpUpdateWorker
+import com.stash.feature.settings.RestoredFolderHandoff
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -251,8 +253,27 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var syncPreferencesManager: com.stash.core.data.sync.SyncPreferencesManager
 
-    /** Application-scoped coroutine scope for one-shot startup tasks. */
-    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    /** Only to apply a library folder re-granted during a restore, see [RestoredFolderHandoff]. */
+    @Inject
+    lateinit var storagePreference: com.stash.core.data.prefs.StoragePreference
+
+    /**
+     * Application-scoped coroutine scope for one-shot startup tasks.
+     *
+     * The [CoroutineExceptionHandler] is the fault isolation for every task
+     * launched here, guarded or not. Without it, an exception in any launch —
+     * yt-dlp failing to unpack its Python runtime on a nearly-full disk,
+     * `SQLiteFullException` from a seed or one-shot migration write, a corrupt
+     * DataStore — went to the thread's uncaught handler, which [CrashReporter]
+     * chains to the platform default: the process died a few seconds into
+     * EVERY cold start. Housekeeping must degrade, not crash-loop. Cancellation
+     * never reaches a handler, so it still propagates as usual.
+     */
+    private val applicationScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, t ->
+            Log.e("StashStartup", "startup task failed; continuing without it", t)
+        },
+    )
 
     /**
      * Supply the custom [Configuration] that tells WorkManager to use the
@@ -325,6 +346,20 @@ class StashApplication : Application(), Configuration.Provider {
             },
         )
         losslessConfigFetcher.start(applicationScope)
+        // A restore whose user picked a different library folder than the
+        // backup's: it could not be written before the restart (the live
+        // DataStore still held pre-restore values), so apply it now, through
+        // the DataStore that just loaded the restored file.
+        applicationScope.launch {
+            val folder = RestoredFolderHandoff.consume(this@StashApplication) ?: return@launch
+            try {
+                storagePreference.setExternalTreeUri(folder)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("StashStartup", "applying the restored library folder failed", e)
+            }
+        }
         // YouTube PO tokens: learn a visitor id and boot BotGuard now, so the
         // first play's InnerTube URL passes the GVS wall instead of falling to
         // yt-dlp (13.8 s measured 2026-09-06). Best-effort; failures log only.
@@ -461,12 +496,21 @@ class StashApplication : Application(), Configuration.Provider {
                 MusicRepositoryImpl.STASH_MIX_WORK_NAMES.forEach { wm.cancelUniqueWork(it) }
                 return@launch
             }
-            maybeReseedStashMixes()
-            StashMixDefaults.seedIfNeeded(stashMixRecipeDao)
-            maybeRetuneStashDiscover()
-            maybeRetuneStashMixes()
-            maybeRemoveRetiredBuiltinMixes()
-            maybeCleanupDiscoveryLibraryHits()
+            // Guarded on its own (the scope's handler would only stop the
+            // crash): a seed or retune write that fails must not also skip the
+            // worker scheduling below on every launch.
+            try {
+                maybeReseedStashMixes()
+                StashMixDefaults.seedIfNeeded(stashMixRecipeDao)
+                maybeRetuneStashDiscover()
+                maybeRetuneStashMixes()
+                maybeRemoveRetiredBuiltinMixes()
+                maybeCleanupDiscoveryLibraryHits()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("StashStartup", "Stash Mix seed/retune failed", e)
+            }
             // Issue #255: activate/deactivate the "Recommended by Last.fm"
             // recipe BEFORE the one-shot refresh below, so a freshly
             // reconciled recipe is picked up by that same run instead of

@@ -51,7 +51,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -194,7 +197,7 @@ fun SearchScreen(
                     onVisibleSongIdsChanged = viewModel::prefetchVisible,
                 )
                 SearchStatus.Empty -> NoResultsMessage()
-                is SearchStatus.Error -> ErrorMessage(status.message)
+                is SearchStatus.Error -> ErrorMessage(status.message, onRetry = viewModel::retry)
             }
         }
 
@@ -280,9 +283,14 @@ private fun SearchBar(
         ),
     )
 
-    // Auto-focus the search field when the screen opens
+    // Auto-focus the search field the first time the screen opens, with nothing
+    // typed yet. Saveable so it survives the back stack: focusing on every
+    // return (Back from an artist, switching back to the tab) popped the
+    // keyboard over the very results the user came back to.
+    var autoFocused by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
+        if (!autoFocused && query.isEmpty()) focusRequester.requestFocus()
+        autoFocused = true
     }
 }
 
@@ -793,7 +801,7 @@ private fun LoadingSkeletons() {
 }
 
 @Composable
-private fun ErrorMessage(message: String) {
+private fun ErrorMessage(message: String, onRetry: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -819,6 +827,10 @@ private fun ErrorMessage(message: String) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Spacer(modifier = Modifier.height(8.dp))
+            TextButton(onClick = onRetry) {
+                Text("Retry")
+            }
         }
     }
 }
