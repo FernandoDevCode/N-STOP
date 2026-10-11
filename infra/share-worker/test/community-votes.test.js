@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { env } from "./fake-kv.js";
 import { sha256Hex } from "../src/store.js";
 import { call, seed, laggy, KEY_A, KEY_B, KEY_C } from "./community-helpers.js";
+import { RECOUNT_SQL, VOTE_ROWS_PER_NETWORK } from "../src/community.js";
 
 const vote = (e, id, value, key, from) => call(e, "PUT", `/v1/community/posts/${id}/vote`, { key, body: { value }, from });
 const keyN = (n) => `${n}`.padStart(43, "k");
@@ -106,4 +107,28 @@ test("votes are rate-limited per network", async () => {
     const r = await vote(e, "POST0001", 1, KEY_B);
     assert.equal(r.status, 429);
     assert.deepEqual(await r.json(), { error: "rate_limited" });
+});
+
+test("one network stores at most VOTE_ROWS_PER_NETWORK vote rows on a post; its stored voters can still change theirs", async () => {
+    const e = env();
+    await seed(e, { id: "POST0001", key: KEY_A });
+    const rows = () => e.COMMUNITY_DB.prepare("SELECT COUNT(*) AS n FROM votes WHERE post_id = 'POST0001'").first("n");
+    for (let i = 0; i < VOTE_ROWS_PER_NETWORK + 15; i++) {
+        const r = await vote(e, "POST0001", 1, keyN(i), "203.0.113.50");
+        assert.equal(r.status, 200);
+    }
+    assert.equal(await rows(), VOTE_ROWS_PER_NETWORK);
+    // A stored voter flips: still written although the network is at its cap.
+    assert.deepEqual(await (await vote(e, "POST0001", -1, keyN(0), "203.0.113.50")).json(), { up: 2, down: 1, myVote: -1 });
+    // Another network is unaffected.
+    assert.equal((await (await vote(e, "POST0001", 1, KEY_C, "198.51.100.7")).json()).up, 3);
+    assert.equal(await rows(), VOTE_ROWS_PER_NETWORK + 1);
+});
+
+test("the vote's network count and the recount use the votes_net index", async () => {
+    const e = env();
+    const db = e.COMMUNITY_DB.db;
+    const plan = (sql, ...args) => db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...args).map((r) => r.detail).join(" | ");
+    assert.match(plan("SELECT COUNT(*) FROM votes WHERE post_id = ?1 AND ip_hash = ?2", "P", "n"), /votes_net/);
+    assert.match(plan(RECOUNT_SQL, "P"), /votes_net/);
 });

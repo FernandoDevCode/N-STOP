@@ -16,6 +16,12 @@ export const LIVE_POSTS = 5;
 export const NETWORK_DAILY_POSTS = 10;
 export const HIDE_AT = -3; // up - down at or below this hides a post, unless the owner vouched for it
 export const VOTES_PER_NETWORK = 2; // counted votes per network per post, in each direction
+/**
+ * Stored vote rows per network per post. A voter is sha256(any key), so without this a script behind one network
+ * stored a fresh row on every vote (60/min), and since every vote recounts all of the post's rows, D1 reads grew
+ * with the square of that. Well above VOTES_PER_NETWORK, so a counted vote taken back still leaves real ones to count.
+ */
+export const VOTE_ROWS_PER_NETWORK = 20;
 export const MAX_REQUEST_BYTES = 256 * 1024;
 /**
  * 3.6 h per net vote: 10 more votes keep a post above a newer one for 36 h (spec §2 Ordering).
@@ -202,11 +208,15 @@ async function vote(request, env, id, now) {
     if (post.blocked) return json({ error: "blocked" }, 403);
     const net = await networkHash(request, env);
     // SELECT … FROM posts, not VALUES: if the daily cleanup deleted the post since the check above, no vote row
-    // is left behind, and the recount returns no row.
+    // is left behind, and the recount returns no row. A new voter is stored only while its network holds fewer than
+    // VOTE_ROWS_PER_NETWORK rows on the post (a voter already stored can always change its vote); past that the vote
+    // couldn't count anyway, so it is answered as usual but not kept.
     const write = value === 0
         ? env.COMMUNITY_DB.prepare("DELETE FROM votes WHERE post_id = ?1 AND voter = ?2").bind(id, who.id)
         : env.COMMUNITY_DB.prepare(
             `INSERT INTO votes (post_id, voter, ip_hash, value, at) SELECT ?1, ?2, ?3, ?4, ?5 FROM posts WHERE id = ?1
+             AND ((SELECT COUNT(*) FROM votes WHERE post_id = ?1 AND ip_hash = ?3) < ${VOTE_ROWS_PER_NETWORK}
+               OR EXISTS (SELECT 1 FROM votes WHERE post_id = ?1 AND voter = ?2))
              ON CONFLICT (post_id, voter) DO UPDATE SET value = excluded.value, ip_hash = excluded.ip_hash, at = excluded.at`,
         ).bind(id, who.id, net, value, now);
     const [, counted] = await env.COMMUNITY_DB.batch([write, env.COMMUNITY_DB.prepare(RECOUNT_SQL).bind(id)]);
