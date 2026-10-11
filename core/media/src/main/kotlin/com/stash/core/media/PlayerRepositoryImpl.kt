@@ -521,7 +521,9 @@ class PlayerRepositoryImpl @Inject constructor(
     }
 
     override suspend fun pause() {
-        ensureController()?.pause()
+        // MediaController is main-thread-only (Media3 checks and throws); a
+        // background caller — the sleep timer used to be one — must hop.
+        withContext(Dispatchers.Main.immediate) { ensureController()?.pause() }
     }
 
     override fun setVolume(volume: Float) {

@@ -37,7 +37,12 @@ class SleepTimerController @VisibleForTesting internal constructor(
     @Inject
     constructor(playerRepository: PlayerRepository) : this(
         playerRepository = playerRepository,
-        scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+        // Main, not Default: the fade ends in playerRepository.pause(), and a
+        // MediaController may only be touched on its application (main)
+        // thread — from a Default worker Media3 throws and the process dies
+        // the moment the timer fires. The loops here are a delay and a
+        // position collect: nothing that blocks the main thread.
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
     )
 
     sealed interface State {
