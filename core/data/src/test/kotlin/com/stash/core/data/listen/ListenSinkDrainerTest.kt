@@ -153,6 +153,27 @@ class ListenSinkDrainerTest {
         assertThat(dao.rowFor(eventIds[2], "fake")?.state).isEqualTo(ListenSubmissionEntity.SENT)
     }
 
+    /**
+     * A split that runs into an outage or throttling stops there: the rest of the
+     * burst would only fail the same way, and the listens it did not reach stay
+     * pending with their retries untouched.
+     */
+    @Test fun `a split stops at the first transient failure`() = runTest {
+        val sink = FakeSink(
+            since = cutoff,
+            answer = { batch ->
+                if (batch.size > 1) SinkResult.Rejected("bad payload") else SinkResult.Transient("HTTP 429")
+            },
+        )
+
+        val report = drainer.drain(sink)
+
+        assertThat(report.failed).isEqualTo(0)
+        // The whole batch, then one single listen, not one per listen.
+        assertThat(sink.batches).hasSize(2)
+        eventIds.forEach { assertThat(db.listenSubmissionDao().rowFor(it, "fake")).isNull() }
+    }
+
     /** A sink that throws is transient, not a rejection — a crash is no evidence
      *  the listens are bad, and treating it as one would burn their retries. */
     @Test fun `a throwing sink is treated as transient`() = runTest {
