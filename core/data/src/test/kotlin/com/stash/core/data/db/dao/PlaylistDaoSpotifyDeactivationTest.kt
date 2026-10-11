@@ -66,6 +66,27 @@ class PlaylistDaoSpotifyDeactivationTest {
         assertTrue(dao.getById(liked)!!.isActive)
     }
 
+    /**
+     * `source_id NOT IN (:ids)` bound the whole remote inventory at once and
+     * threw "too many SQL variables" past 999 on Android <= 11. The ids to
+     * hide are now computed in Kotlin and flipped in bind-sized chunks; this
+     * checks the result is exact across more ids and rows than one chunk holds.
+     */
+    @Test fun `an inventory larger than the bind cap hides exactly the missing playlists`() = runTest {
+        val ids = (0 until 900).map { "pl-$it" }
+        ids.forEach { insert(it, MusicSource.SPOTIFY, PlaylistType.CUSTOM) }
+        // 1,500 current ids: the first 850 local ones plus 650 the library doesn't hold.
+        val current = ids.take(850) + (0 until 650).map { "remote-only-$it" }
+
+        assertEquals(50, dao.deactivateMissingSpotifyCustomPlaylists(current, true))
+        assertEquals(850, dao.getActivePlaylistsBySource(MusicSource.SPOTIFY).size)
+
+        val yt = (0 until 900).map { "yt-$it" }
+        yt.forEach { insert(it, MusicSource.YOUTUBE, PlaylistType.CUSTOM) }
+        assertEquals(100, dao.deactivateMissingForSource(MusicSource.YOUTUBE, yt.drop(100) + current))
+        assertEquals(800, dao.getActivePlaylistsBySource(MusicSource.YOUTUBE).size)
+    }
+
     private suspend fun insert(
         sourceId: String,
         source: MusicSource,

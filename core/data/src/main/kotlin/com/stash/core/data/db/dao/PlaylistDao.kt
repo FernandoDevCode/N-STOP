@@ -7,6 +7,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
+import com.stash.core.data.db.chunkedForBindWrite
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.TrackEntity
@@ -738,29 +739,54 @@ interface PlaylistDao {
      * surfaced today). The rows stay in the DB with their track links
      * intact, so the playlist can be cheaply revived if it reappears
      * later — see [reactivateById]. Returns the number of rows flipped.
+     *
+     * The difference is computed here rather than as `source_id NOT IN
+     * (:currentSourceIds)`: that bound the whole remote inventory in one
+     * statement, and an account with 800+ playlists blew Android <= 11's
+     * 999-variable cap ("too many SQL variables", the #337 class). `NOT IN`
+     * cannot be split into chunks, so the ids to hide are found in Kotlin and
+     * flipped with a chunked `id IN`, all in one transaction.
      */
-    @Query(
-        "UPDATE playlists SET is_active = 0 " +
-            "WHERE source = :source AND is_active = 1 " +
-            "AND source_id NOT IN (:currentSourceIds)"
-    )
+    @Transaction
     suspend fun deactivateMissingForSource(
         source: MusicSource,
         currentSourceIds: List<String>,
-    ): Int
+    ): Int {
+        val current = currentSourceIds.toHashSet()
+        val missing = getActivePlaylistsBySource(source)
+            .filter { it.sourceId !in current }
+            .map { it.id }
+        return deactivateByIds(missing)
+    }
 
-    /** Soft-deactivate only Spotify CUSTOM playlists absent from a complete inventory. */
-    @Query(
-        """
-        UPDATE playlists SET is_active = 0
-        WHERE source = 'SPOTIFY' AND type = 'CUSTOM' AND is_active = 1
-          AND (:hasCurrentIds = 0 OR source_id NOT IN (:currentSourceIds))
-        """
-    )
+    /**
+     * Soft-deactivate only Spotify CUSTOM playlists absent from a complete
+     * inventory. Bind-safe the same way as [deactivateMissingForSource].
+     * [hasCurrentIds] is kept for callers: false means the inventory is empty,
+     * so every eligible playlist is missing — which the set difference already
+     * yields for an empty [currentSourceIds].
+     */
+    @Transaction
     suspend fun deactivateMissingSpotifyCustomPlaylists(
         currentSourceIds: List<String>,
         hasCurrentIds: Boolean,
-    ): Int
+    ): Int {
+        val current = if (hasCurrentIds) currentSourceIds.toHashSet() else emptySet()
+        val missing = getActivePlaylistsBySource(MusicSource.SPOTIFY)
+            .filter { it.type == PlaylistType.CUSTOM && it.sourceId !in current }
+            .map { it.id }
+        return deactivateByIds(missing)
+    }
+
+    /** Chunked (bind-safe) `is_active = 0` over [ids]; returns rows flipped. */
+    suspend fun deactivateByIds(ids: List<Long>): Int {
+        var flipped = 0
+        ids.chunkedForBindWrite { flipped += deactivateByIdsRaw(it) }
+        return flipped
+    }
+
+    @Query("UPDATE playlists SET is_active = 0 WHERE is_active = 1 AND id IN (:ids)")
+    suspend fun deactivateByIdsRaw(ids: List<Long>): Int
 
     /** Flip [is_active] back to 1 for a specific playlist id. Paired with
      *  [deactivateMissingForSource] so a rotating home-feed mix that
