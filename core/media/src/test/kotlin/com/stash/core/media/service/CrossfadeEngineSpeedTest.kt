@@ -29,10 +29,16 @@ class CrossfadeEngineSpeedTest {
     private val context = mockk<Context> {
         every { getSystemService(Context.AUDIO_SERVICE) } returns mockk<AudioManager>(relaxed = true)
     }
-    private val master = mockk<ExoPlayer>(relaxed = true)
+    // The spare holds the master's next song, so the fade's queue check lets it run.
+    private val nextItem = MediaItem.Builder().setMediaId("next").build()
+    private val master = mockk<ExoPlayer>(relaxed = true) {
+        every { nextMediaItemIndex } returns 1
+        every { getMediaItemAt(1) } returns nextItem
+    }
     private val spare = mockk<ExoPlayer>(relaxed = true) {
         every { mediaItemCount } returns 1
         every { isPlaying } returns true
+        every { currentMediaItem } returns nextItem
     }
 
     private fun engine(scope: CoroutineScope): CrossfadeEngine {

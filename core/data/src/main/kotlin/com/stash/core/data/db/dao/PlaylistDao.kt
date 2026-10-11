@@ -449,6 +449,39 @@ interface PlaylistDao {
     suspend fun getTracksForPlaylist(playlistId: Long): List<TrackEntity>
 
     /**
+     * Whether [playlistId] holds at least one downloaded (non-removed) track.
+     * Android Auto's Playlists row asks this of every custom playlist on each
+     * open; loading each one's whole track list for it was tens of thousands
+     * of rows per browse.
+     */
+    @Query(
+        """
+        SELECT EXISTS(
+            SELECT 1 FROM playlist_tracks pt
+            INNER JOIN tracks t ON t.id = pt.track_id
+            WHERE pt.playlist_id = :playlistId AND pt.removed_at IS NULL AND t.is_downloaded = 1
+        )
+        """
+    )
+    suspend fun hasDownloadedTrack(playlistId: Long): Boolean
+
+    /**
+     * Distinct non-removed tracks across [playlistIds] that the car can play
+     * (downloaded, streamable, or never checked: AutoBrowse's
+     * `isPlayableInAuto`). The count on Android Auto's one merged "Liked Songs"
+     * row, without loading, merging and sorting every likes playlist for it.
+     */
+    @Query(
+        """
+        SELECT COUNT(DISTINCT t.id) FROM tracks t
+        INNER JOIN playlist_tracks pt ON t.id = pt.track_id
+        WHERE pt.playlist_id IN (:playlistIds) AND pt.removed_at IS NULL
+          AND (t.is_downloaded = 1 OR t.is_streamable = 1 OR t.is_streamable_checked_at IS NULL)
+        """
+    )
+    suspend fun countPlayableInAutoAcross(playlistIds: List<Long>): Int
+
+    /**
      * True when [trackId] appears in any active Stash Mix playlist —
      * i.e. a playlist with `type = STASH_MIX`. Stash Mixes are the
      * locally-curated rotating playlists; downloads from those should

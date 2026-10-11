@@ -154,4 +154,23 @@ class AutoBrowseTest {
         // Same rule as the Library's Liked tab: 4 (added 6000) > 1 (5000) > 3 (4500) > 2 (3000, once)
         assertThat(merged.map { it.id }).containsExactly(4L, 1L, 3L, 2L).inOrder()
     }
+
+    // ---- autoSearchMatchQuery: car search text never reaches MATCH raw ----
+
+    @Test
+    fun `each word becomes a quoted prefix match`() {
+        assertThat(autoSearchMatchQuery("  my bloody ")).isEqualTo("\"my*\" \"bloody*\"")
+    }
+
+    @Test
+    fun `quotes, parentheses and operator words cannot break or steer the MATCH`() {
+        // Was `foo"*`, `(live*`, `NOT*`: a malformed MATCH expression, or an operator.
+        assertThat(autoSearchMatchQuery("foo\" (live NOT")).isEqualTo("\"foo*\" \"live*\" \"NOT*\"")
+        assertThat(autoSearchMatchQuery("AC/DC")).isEqualTo("\"AC*\" \"DC*\"")
+    }
+
+    @Test
+    fun `nothing searchable left is no query`() {
+        assertThat(autoSearchMatchQuery(" \"() ")).isNull()
+    }
 }

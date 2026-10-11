@@ -98,6 +98,26 @@ class StreamErrorCascadeGuardTest {
     }
 
     @Test
+    fun localSkips_stopOnceEveryQueuedItemFailedInARow() {
+        // Offline, repeat-all, three downloads whose files are gone: skip, skip, then stop
+        // instead of cycling error -> skip -> prepare forever.
+        val guard = StreamErrorCascadeGuard(threshold = 3)
+        assertThat(guard.onLocalSkip(queueSize = 3)).isFalse()
+        assertThat(guard.onLocalSkip(queueSize = 3)).isFalse()
+        assertThat(guard.onLocalSkip(queueSize = 3)).isTrue()
+    }
+
+    @Test
+    fun localSkips_resetWhenSomethingPlaysOrTheUserActs() {
+        val guard = StreamErrorCascadeGuard(threshold = 3)
+        guard.onLocalSkip(queueSize = 2)
+        guard.onPlaybackStarted()
+        assertThat(guard.onLocalSkip(queueSize = 2)).isFalse()
+        guard.onUserTransport()
+        assertThat(guard.onLocalSkip(queueSize = 2)).isFalse()
+    }
+
+    @Test
     fun thresholdZero_rejected() {
         org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
             StreamErrorCascadeGuard(threshold = 0)

@@ -53,7 +53,13 @@ internal object QueueDisplay {
       return DisplayQueue(queue, current, isLogical = false, timelineIndices = shuffledTimelineIndices)
     }
     if (currentTrackId != null && currentTrackId > 0L) {
-      val idx = logicalQueue.indexOfFirst { it.id == currentTrackId }
+      // The PLAYING copy, not the first one: with a song queued twice ([A, B, C, A], the
+      // second A playing) the first match highlighted row 0 and listed B and C, already
+      // played, as "Up next". The timeline holds a subsequence of the logical queue in the
+      // same order, so the k-th copy in one is the k-th copy in the other.
+      val copy = copyOrdinal(timelineQueue, timelineIndex)
+      val idx = indexOfCopy(logicalQueue, currentTrackId, copy)
+        .takeIf { it >= 0 } ?: logicalQueue.indexOfFirst { it.id == currentTrackId }
       if (idx >= 0) {
         val timelineById = timelineQueue.associateBy { it.id }
         val overlaid = logicalQueue.map { timelineById[it.id] ?: it }
@@ -61,6 +67,28 @@ internal object QueueDisplay {
       }
     }
     return DisplayQueue(timelineQueue, timelineIndex, isLogical = false)
+  }
+
+  /**
+   * How many earlier rows of [queue] hold the same song as row [index] (0 for its first
+   * copy). With the same song queued twice, a row is found again by (id, copy), never by id.
+   */
+  fun copyOrdinal(queue: List<Track>, index: Int): Int {
+    val id = queue.getOrNull(index)?.id ?: return 0
+    var copies = 0
+    for (i in 0 until index) if (queue[i].id == id) copies++
+    return copies
+  }
+
+  /** Index of the [copy]-th (0-based) row of [queue] holding song [id], or -1 when there are fewer copies. */
+  fun indexOfCopy(queue: List<Track>, id: Long, copy: Int): Int {
+    var seen = 0
+    for (i in queue.indices) {
+      if (queue[i].id != id) continue
+      if (seen == copy) return i
+      seen++
+    }
+    return -1
   }
 
   /**
@@ -73,7 +101,9 @@ internal object QueueDisplay {
    *
    * The timeline holds a subsequence of the logical queue in the same
    * relative order, so the right slot is simply "after every timeline item
-   * that is logically before the new position".
+   * that is logically before the new position". Counted per copy: with a
+   * song queued twice, only as many of its timeline copies as sit before the
+   * new position in the logical queue count (an id set counted them all).
    */
   /**
    * Timeline window indices in shuffle play order: from [first], following [next]
@@ -93,14 +123,36 @@ internal object QueueDisplay {
     return out
   }
 
+  /**
+   * The shuffle walk (timeline indexes in play order) after [count] items were inserted at
+   * timeline index [at]: the old [walk]'s indexes shifted past the insert, with the new ones, in
+   * order, right after [currentIndex] (pre-insert) when [afterCurrent] ("Play next"), else at
+   * the end ("Add to queue"). Null when [walk] is the identity order: right after any queue
+   * change the MediaController's masking timeline answers an UNSHUFFLED order until the
+   * session's real one arrives, and building on that would unshuffle the queue.
+   */
+  fun walkWithInserted(walk: List<Int>, at: Int, count: Int, currentIndex: Int, afterCurrent: Boolean): List<Int>? {
+    if (walk.withIndex().all { (i, v) -> i == v }) return null
+    val shifted = walk.map { if (it >= at) it + count else it }
+    val inserted = (at until at + count).toList()
+    val pos = if (afterCurrent) walk.indexOf(currentIndex) else -1
+    if (pos < 0) return shifted + inserted
+    return shifted.subList(0, pos + 1) + inserted + shifted.subList(pos + 1, shifted.size)
+  }
+
   fun moveTimelineTarget(
     newLogical: List<Track>,
     toIndex: Int,
     timelineIdsWithoutMoved: List<Long>,
   ): Int {
-    val idsBefore = HashSet<Long>(toIndex.coerceAtLeast(0)).apply {
-      for (i in 0 until toIndex.coerceAtMost(newLogical.size)) add(newLogical[i].id)
+    val copiesBefore = HashMap<Long, Int>()
+    for (i in 0 until toIndex.coerceAtMost(newLogical.size)) {
+      copiesBefore[newLogical[i].id] = (copiesBefore[newLogical[i].id] ?: 0) + 1
     }
-    return timelineIdsWithoutMoved.count { it in idsBefore }
+    return timelineIdsWithoutMoved.count { id ->
+      val left = copiesBefore[id] ?: 0
+      if (left > 0) copiesBefore[id] = left - 1
+      left > 0
+    }
   }
 }

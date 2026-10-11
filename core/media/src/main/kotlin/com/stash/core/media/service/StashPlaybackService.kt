@@ -39,7 +39,6 @@ import com.stash.core.media.equalizer.StashRenderersFactory
 import com.stash.core.media.equalizer.computeGain
 import com.stash.core.media.PlaybackResumer
 import com.stash.core.media.ResumePlayGate
-import com.stash.core.media.ResumeStreamResolver
 import com.stash.core.media.SleepTimerController
 import com.stash.core.media.output.toSourceFormat
 import com.stash.core.media.streaming.PrefetchOrchestrator
@@ -94,7 +93,6 @@ class StashPlaybackService : MediaLibraryService() {
     @Inject lateinit var sleepTimerController: SleepTimerController
     @Inject lateinit var streamingMediaSourceFactory: StreamingMediaSourceFactory
     @Inject lateinit var playbackResumer: PlaybackResumer
-    @Inject lateinit var resumeStreamResolver: ResumeStreamResolver
     @Inject lateinit var crossfadePreference: CrossfadePreference
     @Inject lateinit var playbackSessionBus: com.stash.core.media.PlaybackSessionBus
 
@@ -1276,7 +1274,7 @@ class StashPlaybackService : MediaLibraryService() {
      * Posts a lightweight "Resuming…" foreground notification so a
      * media-button-triggered resumption (started via startForegroundService
      * on a dead process) satisfies the OS ~5s "must call startForeground"
-     * deadline even when the current track needs a slow stream-URL resolve.
+     * deadline even when the current track's stream resolves slowly at play.
      *
      * Reuses Media3's default notification id so the real media notification
      * replaces this placeholder seamlessly once playback starts — no
@@ -1810,9 +1808,18 @@ class StashPlaybackService : MediaLibraryService() {
 
     private inner class StashSessionCallback : MediaLibrarySession.Callback {
 
-        private suspend fun resolveMediaItem(item: MediaItem): MediaItem {
+        @OptIn(UnstableApi::class)
+        private suspend fun resolveMediaItem(item: MediaItem, controller: MediaSession.ControllerInfo): MediaItem {
+            // A local URI (file, content, android.resource) is opened with Stash's
+            // own file access and SAF grants. The library service is exported, so
+            // any installed app can bind it and hand one over: only a trusted
+            // controller (this app, the system, apps the user granted media
+            // control or notification access) may have Stash open one.
+            val trusted = controller.isTrusted
+            val uri = item.localConfiguration?.uri
+
             // 1. If it's already a fully resolved item (has URI), use it
-            if (item.localConfiguration?.uri != null) {
+            if (uri != null && (trusted || uri.scheme?.lowercase() !in LOCAL_URI_SCHEMES)) {
                 return item
             }
 
@@ -1830,16 +1837,18 @@ class StashPlaybackService : MediaLibraryService() {
                 }
             }
 
-            // 3. Fallback to request metadata URI (with security check)
-            val uri = item.requestMetadata.mediaUri
-            if (uri != null) {
-                val scheme = uri.scheme
+            // 3. Fallback to request metadata URI (with security check; trusted
+            // controllers only, see above)
+            val requestUri = item.requestMetadata.mediaUri
+            if (requestUri != null && trusted) {
+                val scheme = requestUri.scheme
                 if (scheme == "file" || scheme == "android.resource" || scheme == "content") {
-                    return item.buildUpon().setUri(uri).build()
+                    return item.buildUpon().setUri(requestUri).build()
                 }
             }
 
-            return item
+            // An untrusted controller's local URI is dropped, never opened.
+            return if (uri != null) item.buildUpon().setUri(null as android.net.Uri?).build() else item
         }
 
         @OptIn(UnstableApi::class)
@@ -1895,7 +1904,7 @@ class StashPlaybackService : MediaLibraryService() {
                         }
                     }
                 }
-                val resolvedItems = mediaItems.map { resolveMediaItem(it) }
+                val resolvedItems = mediaItems.map { resolveMediaItem(it, controller) }
                 MediaSession.MediaItemsWithStartPosition(resolvedItems, startIndex, startPositionMs)
             }
         }
@@ -1976,7 +1985,7 @@ class StashPlaybackService : MediaLibraryService() {
                     } else {
                         item
                     }
-                    resolveMediaItem(normalized)
+                    resolveMediaItem(normalized, controller)
                 }
             }
         }
@@ -2145,15 +2154,22 @@ class StashPlaybackService : MediaLibraryService() {
                         // Streaming-only tracks would fail on flaky cellular while
                         // driving — worse UX than not seeing them at all. Revisit
                         // when streaming-aware Auto support lands.
-                        val visible = playlistDao.getAllVisible(includeStreamable = false).first()
+                        val all = playlistDao.getAllVisible(includeStreamable = false).first()
+                        val visible = all
                             // getAllVisible always shows the user's own playlists (Library); here one
-                            // with downloads off still needs a downloaded track, as before.
+                            // with downloads off still needs a downloaded track, as before. An
+                            // EXISTS per playlist, not its whole track list (N+1 on every open).
                             .filter { p ->
                                 !p.sourceId.startsWith("custom_") || p.syncEnabled ||
-                                    playlistDao.getTracksForPlaylist(p.id).any { it.isDownloaded }
+                                    playlistDao.hasDownloadedTrack(p.id)
                             }
-                        // ONE "Liked Songs" row for every like source (likedTracksForAuto).
-                        val likedCount = if (visible.any { it.isLikedPlaylist() }) likedTracksForAuto().size else 0
+                        // ONE "Liked Songs" row for every like source (likedTracksForAuto), counted
+                        // in SQL over the same playlists rather than loading, merging and sorting them.
+                        val likedCount = if (visible.any { it.isLikedPlaylist() }) {
+                            playlistDao.countPlayableInAutoAcross(all.filter { it.isLikedPlaylist() }.map { it.id })
+                        } else {
+                            0
+                        }
                         val likedItem = if (likedCount == 0) null else MediaItem.Builder()
                             .setMediaId(LIKED_ID)
                             .setMediaMetadata(
@@ -2246,10 +2262,9 @@ class StashPlaybackService : MediaLibraryService() {
             params: LibraryParams?,
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
             return serviceScope.future {
-                // Sanitize for FTS (append * to each term for prefix matching)
-                val sanitized = query.split(" ")
-                    .filter { it.isNotBlank() }
-                    .joinToString(" ") { "$it*" }
+                // Sanitize for FTS (each term a quoted prefix match, see autoSearchMatchQuery)
+                val sanitized = autoSearchMatchQuery(query)
+                    ?: return@future LibraryResult.ofItemList(ImmutableList.of(), params)
 
                 val tracks = trackDao.searchDownloaded(sanitized).first()
                 val items = tracks.map { it.toAutoMediaItem(tileArt = true) }
@@ -2262,14 +2277,19 @@ class StashPlaybackService : MediaLibraryService() {
             session: MediaSession,
             controller: MediaSession.ControllerInfo,
         ): MediaSession.ConnectionResult {
-            val customCommands = listOf(
-                SessionCommand(COMMAND_TOGGLE_SHUFFLE, /* extras = */ android.os.Bundle.EMPTY),
-                SessionCommand(COMMAND_CYCLE_REPEAT, /* extras = */ android.os.Bundle.EMPTY),
-                SessionCommand(COMMAND_TOGGLE_LIKE, /* extras = */ android.os.Bundle.EMPTY),
-                SessionCommand(COMMAND_STOP_SLEEP_TIMER, /* extras = */ android.os.Bundle.EMPTY),
-                SessionCommand(COMMAND_LEAVE_SESSION, /* extras = */ android.os.Bundle.EMPTY),
-                SessionCommand(COMMAND_SET_SHUFFLE_ORDER, /* extras = */ android.os.Bundle.EMPTY),
-            )
+            // The library service is exported, so any installed app can bind it. Writing Stash's
+            // own state (a like, which LikeCoordinator can mirror to the user's Spotify or YouTube
+            // account; the shuffle order; leaving a Listen Together room) is kept to the
+            // controllers that legitimately drive it: this app and its notification, the system
+            // and apps the user trusted with media control or notification access (SystemUI, the
+            // Wear companion), and Android Auto / Automotive. See [grantedCustomActions].
+            val privileged = controller.isTrusted ||
+                session.isMediaNotificationController(controller) ||
+                session.isAutoCompanionController(controller) ||
+                session.isAutomotiveController(controller)
+            val customCommands = grantedCustomActions(privileged).map {
+                SessionCommand(it, /* extras = */ android.os.Bundle.EMPTY)
+            }
             // FULL library command set — not DEFAULT_SESSION_COMMANDS plus a
             // hand-picked subset. The old hand-picked list omitted
             // COMMAND_CODE_LIBRARY_GET_SEARCH_RESULT (Android Auto could
@@ -2352,7 +2372,7 @@ class StashPlaybackService : MediaLibraryService() {
                         pushLayout(session, session.player, newLikeState)
 
                         serviceScope.launch {
-                            runCatching {
+                            try {
                                 // Resolve the real Room PK. The mediaId may be a
                                 // v0.9.30 streaming-engine synthetic id
                                 // (`videoId.hashCode().toLong()`); without this
@@ -2369,7 +2389,10 @@ class StashPlaybackService : MediaLibraryService() {
                                 // Stash like stays synchronous; optional Spotify/YT
                                 // mirroring (off by default) layers on top.
                                 likeCoordinator.setLiked(realId, liked = newLikeState)
-                            }.onFailure { e ->
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                // onDestroy cancelled serviceScope: no rollback onto a session being released.
+                                throw e
+                            } catch (e: Exception) {
                                 android.util.Log.w(
                                     "StashPlayback",
                                     "notification like toggle failed for candidateId=$candidateId yt=$youtubeId",
@@ -2387,22 +2410,23 @@ class StashPlaybackService : MediaLibraryService() {
         }
 
         /**
-         * Builds a resumable [MediaItem] from a DB row. When [streamUrl] is
-         * non-null (the current track was resolved via [ResumeStreamResolver]
-         * for online-mode resume), it is used as the playback URI directly.
-         * Everything else goes through [toAutoMediaItem]: downloaded rows get
-         * their `file://` URI, and stream rows get a `stash-resolve://`
-         * placeholder resolved just-in-time at play — instead of the old
-         * URI-less item that surfaced as an onPlayerError skip.
+         * Builds a resumable [MediaItem] from a DB row through [toAutoMediaItem]:
+         * downloaded rows get their `file://` URI, and stream rows get a
+         * `stash-resolve://` placeholder that LazyResolvingDataSource resolves
+         * just-in-time at open().
+         *
+         * Never a pre-resolved URL. The current track's stream used to be
+         * resolved here (the full chain, yt-dlp included) before the
+         * resumption future returned: a headset press on a dead process heard
+         * up to 45 s of silence; the registry's timeout cancelled the future,
+         * so nothing was restored at all; a success swapped in a raw URL
+         * without EXTRA_STREAM_ORIGIN, which routed a YouTube URL past the 403
+         * refresh chain and a JioSaavn URL past its no-redirect client; and a
+         * boot-time call, only populating SystemUI's resume card, spent a
+         * resolve (and lossless quota) for nothing. The placeholder resolves
+         * once, at play, through the same routing as every other queue item.
          */
-        private fun buildResumeItem(track: TrackEntity, streamUrl: String? = null): MediaItem {
-            val item = track.toAutoMediaItem()
-            return if (streamUrl != null && !(track.isDownloaded && !track.filePath.isNullOrBlank())) {
-                item.buildUpon().setUri(streamUrl.toUri()).build()
-            } else {
-                item
-            }
-        }
+        private fun buildResumeItem(track: TrackEntity): MediaItem = track.toAutoMediaItem()
 
         @OptIn(UnstableApi::class)
         override fun onPlaybackResumption(
@@ -2413,8 +2437,8 @@ class StashPlaybackService : MediaLibraryService() {
             return serviceScope.future {
                 // This callback can run for a genuine play request started via
                 // startForegroundService (media button on a dead process). The
-                // current track may need a (possibly slow) stream-URL resolve
-                // for online mode, which can blow the OS 5s "must call
+                // current track's stream may resolve slowly once it plays,
+                // which can blow the OS 5s "must call
                 // startForeground" window. Post a lightweight "Resuming…"
                 // foreground notification first to satisfy it; Media3 replaces
                 // it with the real media notification once playback starts.
@@ -2427,18 +2451,7 @@ class StashPlaybackService : MediaLibraryService() {
                 // continues where it stopped.
                 val plan = playbackResumer.buildResumePlan()
                 if (plan != null) {
-                    // Resolve ONLY the current track's stream URL in the
-                    // foreground so it plays in online mode; other streamed
-                    // tracks resolve later via the prefetch/skip path.
-                    // Downloaded tracks return null here and use their file.
-                    val currentStreamUrl = resumeStreamResolver
-                        .resolveStreamUrl(plan.tracks[plan.startIndex])
-                    val items = plan.tracks.mapIndexed { index, track ->
-                        buildResumeItem(
-                            track,
-                            streamUrl = if (index == plan.startIndex) currentStreamUrl else null,
-                        )
-                    }
+                    val items = plan.tracks.map { buildResumeItem(it) }
                     kotlinx.coroutines.withContext(Dispatchers.Main) {
                         session.player.shuffleModeEnabled = plan.isShuffled
                         // Repeat mode is persisted with the queue and must be
@@ -2464,9 +2477,7 @@ class StashPlaybackService : MediaLibraryService() {
                 // track, or the most recently added track if none.
                 val track = trackDao.getLastPlayedTrack()
                     ?: trackDao.getRecentlyAdded(1).first().firstOrNull()
-                val item = track?.let {
-                    buildResumeItem(it, streamUrl = resumeStreamResolver.resolveStreamUrl(it))
-                }
+                val item = track?.let { buildResumeItem(it) }
 
                 if (item != null) {
                     resumePlayGate.arm(isForPlayback)
@@ -2489,6 +2500,28 @@ class StashPlaybackService : MediaLibraryService() {
                 }
             }
         }
+    }
+}
+
+/** URI schemes [StashPlaybackService] opens with its own file access (see resolveMediaItem). */
+private val LOCAL_URI_SCHEMES = setOf("file", "content", "android.resource")
+
+/**
+ * The custom session commands a connecting controller gets. Shuffle, repeat
+ * and stopping the sleep timer are transport, like the player commands every
+ * controller has. A like (a Room write that can mirror to the user's Spotify
+ * or YouTube account), the shuffle order and leaving a Listen Together room
+ * change Stash's own state, so only a [privileged] controller (see onConnect)
+ * gets them.
+ */
+internal fun grantedCustomActions(privileged: Boolean): List<String> = buildList {
+    add(StashPlaybackService.COMMAND_TOGGLE_SHUFFLE)
+    add(StashPlaybackService.COMMAND_CYCLE_REPEAT)
+    add(StashPlaybackService.COMMAND_STOP_SLEEP_TIMER)
+    if (privileged) {
+        add(StashPlaybackService.COMMAND_TOGGLE_LIKE)
+        add(StashPlaybackService.COMMAND_LEAVE_SESSION)
+        add(StashPlaybackService.COMMAND_SET_SHUFFLE_ORDER)
     }
 }
 
