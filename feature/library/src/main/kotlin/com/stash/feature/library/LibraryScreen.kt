@@ -40,6 +40,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material3.IconButton
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
@@ -541,7 +542,9 @@ private fun LibraryContent(
         ) { uris: List<Uri>? ->
             if (!uris.isNullOrEmpty()) onStartImport(uris)
         }
-        var searchOpen by remember { mutableStateOf(false) }
+        // Opens already showing a query the ViewModel kept (back on this tab, or after a
+        // rotation): a hidden field over a still-filtered list was a dead end.
+        var searchOpen by remember { mutableStateOf(searchQuery.isNotEmpty()) }
         var sortFilterOpen by remember { mutableStateOf(false) }
 
         // Recent-downloads rail — the scrolling leading content of the Songs
@@ -592,7 +595,12 @@ private fun LibraryContent(
             IconButton(onClick = { importPicker.launch(arrayOf("audio/*")) }) {
                 Icon(Icons.Filled.Add, contentDescription = "Import tracks")
             }
-            IconButton(onClick = { searchOpen = !searchOpen }) {
+            // Closing the search clears it: it used to only hide the field, leaving every tab
+            // silently filtered by a query the user could no longer see.
+            IconButton(onClick = {
+                if (searchOpen) onSearchQueryChanged("")
+                searchOpen = !searchOpen
+            }) {
                 Icon(Icons.Filled.Search, contentDescription = "Search library")
             }
             IconButton(onClick = { sortFilterOpen = true }) {
@@ -1009,6 +1017,17 @@ private fun GlassSearchBar(
                     contentDescription = "Search",
                     tint = extendedColors.textTertiary,
                 )
+            },
+            trailingIcon = {
+                if (query.isNotEmpty()) {
+                    IconButton(onClick = { onQueryChange("") }) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Clear search",
+                            tint = extendedColors.textTertiary,
+                        )
+                    }
+                }
             },
             singleLine = true,
             colors = TextFieldDefaults.colors(
