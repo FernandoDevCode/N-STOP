@@ -2097,15 +2097,22 @@ class StashPlaybackService : MediaLibraryService() {
                         // Streaming-only tracks would fail on flaky cellular while
                         // driving — worse UX than not seeing them at all. Revisit
                         // when streaming-aware Auto support lands.
-                        val visible = playlistDao.getAllVisible(includeStreamable = false).first()
+                        val all = playlistDao.getAllVisible(includeStreamable = false).first()
+                        val visible = all
                             // getAllVisible always shows the user's own playlists (Library); here one
-                            // with downloads off still needs a downloaded track, as before.
+                            // with downloads off still needs a downloaded track, as before. An
+                            // EXISTS per playlist, not its whole track list (N+1 on every open).
                             .filter { p ->
                                 !p.sourceId.startsWith("custom_") || p.syncEnabled ||
-                                    playlistDao.getTracksForPlaylist(p.id).any { it.isDownloaded }
+                                    playlistDao.hasDownloadedTrack(p.id)
                             }
-                        // ONE "Liked Songs" row for every like source (likedTracksForAuto).
-                        val likedCount = if (visible.any { it.isLikedPlaylist() }) likedTracksForAuto().size else 0
+                        // ONE "Liked Songs" row for every like source (likedTracksForAuto), counted
+                        // in SQL over the same playlists rather than loading, merging and sorting them.
+                        val likedCount = if (visible.any { it.isLikedPlaylist() }) {
+                            playlistDao.countPlayableInAutoAcross(all.filter { it.isLikedPlaylist() }.map { it.id })
+                        } else {
+                            0
+                        }
                         val likedItem = if (likedCount == 0) null else MediaItem.Builder()
                             .setMediaId(LIKED_ID)
                             .setMediaMetadata(
