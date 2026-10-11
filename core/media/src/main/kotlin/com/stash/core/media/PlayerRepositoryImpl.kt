@@ -2380,7 +2380,15 @@ class PlayerRepositoryImpl @Inject constructor(
                                 controller.currentMediaItemIndex == failedIndex &&
                                 (failedId == null || activeId == failedId)
                             ) {
-                                controller.recoverOrStop()
+                                if (cascadeGuard.onLocalSkip(controller.mediaItemCount)) {
+                                    // Every song in the queue failed in a row: stop
+                                    // instead of cycling (see onLocalSkip).
+                                    note("LOCAL: every queued file failed, paused")
+                                    controller.pause()
+                                    _userMessages.tryEmit("None of the songs in this queue can play right now.")
+                                } else {
+                                    controller.recoverOrStop()
+                                }
                             }
                         }
                     }
