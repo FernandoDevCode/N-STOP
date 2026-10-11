@@ -4,6 +4,7 @@ import android.util.Log
 import com.stash.core.data.sync.TrackMatcher
 import com.stash.data.download.ytdlp.YtDlpSearchResult
 import com.stash.data.ytmusic.InnerTubeClient
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
@@ -150,6 +151,9 @@ class AlbumMatchExecutor @Inject constructor(
                 description = "",
                 album = targetAlbum,
             )
+        } catch (e: CancellationException) {
+            // A skipped or stopped download must stop here, not read as "no album".
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "findTrackInAlbum failed for '$targetTitle' on '$targetAlbum'", e)
             null
@@ -184,10 +188,17 @@ class AlbumMatchExecutor @Inject constructor(
         // Build query variations to try
         val queries = buildSearchQueries(targetArtist, targetAlbum)
         var browseId: String? = null
+        // InnerTubeClient answers null for a failed request (timeout, 429, 5xx).
+        // [albumCache] lives for the whole process, so NotFound is cached only
+        // when YouTube actually answered: caching it after a transient failure
+        // sent every other track of the album to the less reliable fuzzy search
+        // until the app restarted.
+        var anySearchAnswered = false
 
         for (query in queries) {
             Log.d(TAG, "Searching InnerTube for album: '$query'")
             val response = innerTubeClient.search(query) ?: continue
+            anySearchAnswered = true
             browseId = extractAlbumBrowseId(response, targetAlbum, targetArtist)
             if (browseId != null) {
                 Log.d(TAG, "Found album browseId=$browseId from query '$query'")
@@ -197,15 +208,17 @@ class AlbumMatchExecutor @Inject constructor(
 
         if (browseId == null) {
             Log.d(TAG, "No album browseId found for '$targetAlbum' by '$targetArtist'")
-            synchronized(cacheLock) { albumCache[cacheKey] = CacheEntry.NotFound }
+            if (anySearchAnswered) {
+                synchronized(cacheLock) { albumCache[cacheKey] = CacheEntry.NotFound }
+            }
             return null
         }
 
         // Browse the album to get the tracklist
         val browseResponse = innerTubeClient.browse(browseId)
         if (browseResponse == null) {
+            // A failed request, not an answer: left uncached so the next track retries.
             Log.w(TAG, "Album browse failed for browseId=$browseId")
-            synchronized(cacheLock) { albumCache[cacheKey] = CacheEntry.NotFound }
             return null
         }
 
