@@ -602,6 +602,12 @@ interface TrackDao {
      * `@Transaction`: a large playlist's detail feed spans CursorWindows the
      * same way the Library feed does (#380) — one snapshot per emission so a
      * concurrent delete can't race the window refills.
+     *
+     * The trailing `pt.added_at, t.id` make the order total. Positions can
+     * tie — in REFRESH a kept `locally_added` row keeps its old position while
+     * the sync renumbers its own rows from 0 — and tied rows otherwise came
+     * back in whatever order SQLite chose, so they could swap between
+     * emissions.
      */
     @Transaction
     @Query(
@@ -623,7 +629,9 @@ interface TrackDao {
           )
         ORDER BY
             CASE WHEN p.type = 'DAILY_MIX' THEN pt.added_at END DESC,
-            pt.position ASC
+            pt.position ASC,
+            pt.added_at ASC,
+            t.id ASC
         """
     )
     fun getByPlaylist(playlistId: Long, includeStreamable: Boolean): Flow<List<TrackEntity>>
@@ -1870,6 +1878,11 @@ interface TrackDao {
      * snapshot per emission so a mass delete can't race the refills (#380 —
      * the device repro's fatal collector was actually [getAllAlbums], the
      * same class of unbounded reactive read as this one).
+     *
+     * `MAX(album_art_url)`, as [getAllAlbums] does: a bare column beside an
+     * aggregate takes whichever row SQLite visits last, so the artist card's
+     * art changed as songs were added and went blank whenever that row had
+     * none. MAX skips NULLs and is stable.
      */
     @Transaction
     @Query(
@@ -1877,7 +1890,7 @@ interface TrackDao {
         SELECT artist,
                COUNT(*) AS trackCount,
                SUM(duration_ms) AS totalDurationMs,
-               album_art_url AS artUrl
+               MAX(album_art_url) AS artUrl
         FROM tracks
         WHERE is_downloaded = 1 OR (:includeStreamable AND is_streamable = 1)
         GROUP BY artist
