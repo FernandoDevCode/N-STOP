@@ -198,6 +198,10 @@ fun LibraryScreen(
     
 
     val followedPlaylistIds by viewModel.followedPlaylistIds.collectAsStateWithLifecycle()
+    // Derived lists are remembered: this screen recomposes on every keystroke of the search.
+    val playlistInfos = remember(userPlaylists) {
+        userPlaylists.map { com.stash.core.ui.components.PlaylistInfo(it.id, it.name, it.trackCount) }
+    }
     Box(modifier = modifier.fillMaxSize()) {
         LibraryContent(
             state = state,
@@ -240,7 +244,7 @@ fun LibraryScreen(
             selection = selection,
             // Single-track sheet actions reuse the batch VM methods with
             // one-element lists — no separate single-track VM surface.
-            userPlaylists = userPlaylists.map { com.stash.core.ui.components.PlaylistInfo(it.id, it.name, it.trackCount) },
+            userPlaylists = playlistInfos,
             onSaveToPlaylist = { trackId, playlistId -> viewModel.saveSelectedToPlaylist(listOf(trackId), playlistId) },
             onCreatePlaylistWithTrack = { name, trackId -> viewModel.createPlaylistAndAddTracks(name, listOf(trackId)) },
             onDownloadTrack = { viewModel.downloadSelected(listOf(it)) },
@@ -314,7 +318,7 @@ fun LibraryScreen(
         if (state.activeTab == LibraryTab.TRACKS || state.activeTab == LibraryTab.LIKED) {
             SelectionScaffoldOverlay(
                 selection = selection,
-                allIds = activeSelectableTracks.map { it.id },
+                allIds = remember(activeSelectableTracks) { activeSelectableTracks.map { it.id } },
                 actions = selectionActions,
             )
         }

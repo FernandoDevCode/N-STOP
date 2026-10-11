@@ -34,6 +34,10 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -229,10 +233,25 @@ class LibraryViewModel @Inject constructor(
     }
 
     /**
+     * [_controls] as the list pipeline sees them: a typed query waits [SEARCH_SETTLE_MS] for the
+     * next keystroke (clearing it applies at once), while tab, sort and filter changes pass straight
+     * through. Unsettled, "beatles" re-ran the whole regroup/filter/sort over the library seven
+     * times, and combine can't cancel a run already started, so the work queued up behind the
+     * typing. The field itself never waits: it binds [searchQuery].
+     */
+    @OptIn(FlowPreview::class)
+    private val pipelineControls: Flow<ControlState> = combine(
+        _controls.map { it.copy(searchQuery = "") }.distinctUntilChanged(),
+        _controls.map { it.searchQuery }
+            .distinctUntilChanged()
+            .debounce { query -> if (query.isEmpty()) 0L else SEARCH_SETTLE_MS },
+    ) { controls, query -> controls.copy(searchQuery = query) }
+
+    /**
      * Combined UI state that reacts to both data changes and user interactions.
      */
     val uiState: StateFlow<LibraryUiState> = combine(
-        _controls,
+        pipelineControls,
         musicRepository.getAllTracks(),
         libraryDataFlow,
         musicRepository.getAllArtists(),
@@ -311,7 +330,7 @@ class LibraryViewModel @Inject constructor(
         // -- Apply sort order --
         val sortedTracks = when (controls.sortOrder) {
             SortOrder.RECENT -> filteredTracks.sortedByDescending { it.dateAdded }
-            SortOrder.ALPHABETICAL -> filteredTracks.sortedBy { it.title.lowercase() }
+            SortOrder.ALPHABETICAL -> filteredTracks.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
             SortOrder.MOST_PLAYED -> filteredTracks.sortedByDescending { it.playCount }
             SortOrder.DURATION -> filteredTracks.sortedByDescending { it.durationMs }
         }
@@ -320,7 +339,7 @@ class LibraryViewModel @Inject constructor(
             // — the latter reshuffles the list every sync run. See
             // PlaylistEntity.dateAdded + migration v12→v13 (issue #13).
             SortOrder.RECENT -> filteredPlaylists.sortedByDescending { it.dateAdded }
-            SortOrder.ALPHABETICAL -> filteredPlaylists.sortedBy { it.name.lowercase() }
+            SortOrder.ALPHABETICAL -> filteredPlaylists.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
             // Playlists don't track a per-playlist play_count; use
             // trackCount as the most-relevant "size" signal so this
             // chip produces a visible ordering change instead of a
@@ -335,13 +354,13 @@ class LibraryViewModel @Inject constructor(
         // Sort artists/albums — default by track count descending (most tracks first)
         val sortedArtists = when (controls.sortOrder) {
             SortOrder.RECENT -> filteredArtists.sortedByDescending { it.trackCount }
-            SortOrder.ALPHABETICAL -> filteredArtists.sortedBy { it.name.lowercase() }
+            SortOrder.ALPHABETICAL -> filteredArtists.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
             SortOrder.MOST_PLAYED -> filteredArtists.sortedByDescending { it.trackCount }
             SortOrder.DURATION -> filteredArtists.sortedByDescending { it.totalDurationMs }
         }
         val sortedAlbums = when (controls.sortOrder) {
             SortOrder.RECENT -> filteredAlbums.sortedByDescending { it.trackCount }
-            SortOrder.ALPHABETICAL -> filteredAlbums.sortedBy { it.name.lowercase() }
+            SortOrder.ALPHABETICAL -> filteredAlbums.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
             SortOrder.MOST_PLAYED -> filteredAlbums.sortedByDescending { it.trackCount }
             // Albums carry no duration projection — fall back to track count.
             SortOrder.DURATION -> filteredAlbums.sortedByDescending { it.trackCount }
@@ -1081,6 +1100,9 @@ internal fun sortLikedTracks(tracks: List<Track>, order: SortOrder): List<Track>
 
 private fun Track.likedAtOrNull(): Long? =
     listOfNotNull(stashLikedAt, spotifySavedAt, ytMusicSavedAt, lastFmLovedAt).maxOrNull()
+
+/** How long a typed Library query must sit still before the list pipeline re-runs on it. */
+private const val SEARCH_SETTLE_MS = 150L
 
 private data class ControlState(
     val activeTab: LibraryTab = LibraryTab.TRACKS,
