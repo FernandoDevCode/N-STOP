@@ -358,6 +358,10 @@ class SpotifyAuthManager @Inject constructor(
                 val response = okHttpClient.newCall(request).execute()
                 if (!response.isSuccessful) {
                     Log.w(TAG, "Token endpoint returned HTTP ${response.code}")
+                    // Closed, or every rejected refresh (a stale TOTP version is
+                    // rejected on EVERY call while the token is expired) leaked a
+                    // pooled connection until GC.
+                    response.close()
                     return@withContext null
                 }
 
@@ -560,9 +564,8 @@ class SpotifyAuthManager @Inject constructor(
                 .head()
                 .header("User-Agent", "Mozilla/5.0")
                 .build()
-            val response = okHttpClient.newCall(request).execute()
-            val dateHeader = response.header("Date") ?: return null
-            response.close()
+            // `use`: a response without a Date header used to return unclosed.
+            val dateHeader = okHttpClient.newCall(request).execute().use { it.header("Date") } ?: return null
 
             val sdf = SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z", Locale.US)
             sdf.timeZone = TimeZone.getTimeZone("GMT")
