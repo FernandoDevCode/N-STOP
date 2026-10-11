@@ -2,13 +2,20 @@ package com.stash.feature.nowplaying.ui
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -31,11 +38,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -92,6 +103,10 @@ internal data class LyricsLook(
  * and lines two or more away from the live one blur ([lyricBlurDp], API 31+ only: a no-op
  * below). Tap a line to seek to it.
  *
+ * A blank line is an instrumental break ([lines] come through [linesWithBreaks], so only breaks
+ * of 3 s or more are left): it draws as the ♪ row ([InstrumentalBreakNotes]), live like any line
+ * while the break runs, so the sung line before it dims to "sung" as the music takes over.
+ *
  * The "current line" is the latest line whose timestamp is `<= positionMs`; it is recomputed
  * per position tick (~250ms), a single O(n) scan.
  */
@@ -139,19 +154,81 @@ internal fun LyricsLineRenderer(
                 tween(BLUR_FADE_MS),
                 label = "line-blur",
             )
-            val style = remember(line.text, look) { look.lineStyle(lyricLineFit(line.text)) }
+            val rowModifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer { this.alpha = alpha }
+                .then(if (blur > 0.25f) Modifier.blur(blur.dp, BlurredEdgeTreatment.Unbounded) else Modifier)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClickLabel = LYRIC_LINE_CLICK_LABEL,
+                ) {
+                    onLineTap(line.timestampMs)
+                }
+                .padding(horizontal = look.sidePadding, vertical = look.lineGap)
+            if (line.text.isBlank()) {
+                val gap = remember(lines, index) { instrumentalBreakAt(lines, index) }
+                val noteStyle = remember(look) { look.lineStyle(BREAK_NOTE_FIT) }
+                InstrumentalBreakNotes(
+                    style = noteStyle,
+                    color = color,
+                    live = index == currentIndex,
+                    // Read in draw: the notes come up as the break runs without recomposing.
+                    progress = { gap?.progress(clock.value) },
+                    spacing = with(LocalDensity.current) { (look.fontSize * BREAK_NOTE_SPACING).toDp() },
+                    modifier = rowModifier,
+                )
+            } else {
+                val style = remember(line.text, look) { look.lineStyle(lyricLineFit(line.text)) }
+                Text(text = line.text, style = style, color = color, modifier = rowModifier)
+            }
+        }
+    }
+}
+
+/**
+ * The ♪ row for an instrumental break: three notes that come up one by one as the break runs
+ * and breathe gently while it is [live] (Apple Music's dots, Spotify's ♪). Under Remove
+ * animations they hold still and only come up. Not live, the notes simply sit in [color], and
+ * whatever row holds them dims them like a line. TalkBack reads "Instrumental break".
+ *
+ * Shared by the line-synced view and both live bars; [breakNoteAlpha] holds the rules.
+ */
+@Composable
+internal fun InstrumentalBreakNotes(
+    style: TextStyle,
+    color: Color,
+    live: Boolean,
+    /** How far through the break the song is (0..1), or null for an outro. Read in draw only. */
+    progress: () -> Float?,
+    spacing: Dp,
+    modifier: Modifier = Modifier,
+    alignment: Alignment.Horizontal = Alignment.Start,
+) {
+    val still = rememberNpReducedMotion()
+    // Only a live, moving row runs a transition: a song's other breaks cost nothing per frame.
+    val breath: State<Float>? = if (live && !still) {
+        rememberInfiniteTransition(label = "break-breath").animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(BREAK_BREATH_MS, easing = LinearEasing), RepeatMode.Restart),
+            label = "break-breath-phase",
+        )
+    } else {
+        null
+    }
+    Row(
+        modifier = modifier.clearAndSetSemantics { contentDescription = INSTRUMENTAL_BREAK_DESCRIPTION },
+        horizontalArrangement = Arrangement.spacedBy(spacing, alignment),
+    ) {
+        for (note in 0 until BREAK_NOTES) {
             Text(
-                text = line.text,
+                text = "♪",
                 style = style,
                 color = color,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .graphicsLayer { this.alpha = alpha }
-                    .then(if (blur > 0.25f) Modifier.blur(blur.dp, BlurredEdgeTreatment.Unbounded) else Modifier)
-                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                        onLineTap(line.timestampMs)
-                    }
-                    .padding(horizontal = look.sidePadding, vertical = look.lineGap),
+                modifier = Modifier.graphicsLayer {
+                    this.alpha = if (live) breakNoteAlpha(note, progress(), breath?.value) else 1f
+                },
             )
         }
     }
@@ -269,6 +346,18 @@ internal const val UPCOMING_ALPHA = 0.51f
 internal const val SUNG_ALPHA = 0.497f
 
 private val PLAIN_FONT = 18.sp
+
+/** The ♪ row's notes against a lyric line: a touch smaller, so the row reads as a pause. */
+private const val BREAK_NOTE_FIT = 0.8f
+
+/** Space between the ♪ row's notes, as a share of the lyric size. */
+private const val BREAK_NOTE_SPACING = 0.45f
+
+/** One slow breath of the ♪ row (a resting pulse, not a beat). */
+private const val BREAK_BREATH_MS = 2_400
+
+/** TalkBack's action on a lyric line ("Double-tap to play from this line"): tap-to-seek. */
+internal const val LYRIC_LINE_CLICK_LABEL = "Play from this line"
 
 /** The edge fades over the lyrics area: the web's 24px top, 120px bottom. */
 internal val LYRICS_FADE_TOP = 24.dp

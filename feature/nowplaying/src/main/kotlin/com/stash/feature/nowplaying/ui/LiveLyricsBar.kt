@@ -54,9 +54,11 @@ internal sealed interface LiveBarMode {
 internal fun liveBarModeFor(state: LyricsViewState, liveEnabled: Boolean): LiveBarMode = when (state) {
     // Live line only when the user opted in; otherwise synced tracks get the
     // same quiet "View lyrics ♪" bar as plain ones — lyrics stay one tap away
-    // without the ticking line pulling focus from the music.
+    // without the ticking line pulling focus from the music. The lines are the
+    // lyrics view's own (breaks folded by [linesWithBreaks]), so the two always
+    // agree on the live line, ♪ row included.
     is LyricsViewState.Synced ->
-        if (liveEnabled) LiveBarMode.Live(state.lines, state.syllables) else LiveBarMode.Static
+        if (liveEnabled) LiveBarMode.Live(linesWithBreaks(state.lines), state.syllables) else LiveBarMode.Static
     is LyricsViewState.Plain -> LiveBarMode.Static
     else -> LiveBarMode.Hidden
 }
@@ -69,6 +71,9 @@ private val BarBaseLight = Color(0xFFF4F1FA)
 
 /** Light-theme ink for the Static "View lyrics ♪" line. */
 private val BarInkLight = Color(0xFF241C36)
+
+/** Space between the bar's ♪ notes during an instrumental break. */
+internal val BarNoteSpacing = 10.dp
 
 /**
  * Live synced-lyrics bar pinned at the bottom of Now Playing, where the
@@ -148,6 +153,14 @@ fun LiveLyricsBar(
                     }
                     val index = indexState.value
                     val line = mode.lines.getOrNull(index)?.text.orEmpty()
+                    val gap = remember(mode.lines, index) { instrumentalBreakAt(mode.lines, index) }
+                    val style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        shadow = Shadow(
+                            color = animAccent.copy(alpha = 0.55f),
+                            blurRadius = 18f,
+                        ),
+                    )
                     AnimatedContent(
                         targetState = line,
                         transitionSpec = {
@@ -158,24 +171,29 @@ fun LiveLyricsBar(
                         },
                         label = "liveBarLine",
                     ) { text ->
-                        Text(
-                            // LRC bodies often carry empty-text lines for
-                            // instrumental breaks — show a quiet note glyph
-                            // rather than a blank bar.
-                            text = text.ifBlank { "♪" },
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.SemiBold,
-                                shadow = Shadow(
-                                    color = animAccent.copy(alpha = 0.55f),
-                                    blurRadius = 18f,
-                                ),
-                            ),
-                            color = animAccent,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                        if (text.isBlank()) {
+                            // An instrumental break (3 s or longer: shorter blanks never reach
+                            // the bar) — the ♪ row, breathing until the singing is back.
+                            InstrumentalBreakNotes(
+                                style = style,
+                                color = animAccent,
+                                live = true,
+                                progress = { gap?.progress(clock.value) },
+                                spacing = BarNoteSpacing,
+                                alignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        } else {
+                            Text(
+                                text = text,
+                                style = style,
+                                color = animAccent,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                     }
                 }
                 LiveBarMode.Static -> Text(

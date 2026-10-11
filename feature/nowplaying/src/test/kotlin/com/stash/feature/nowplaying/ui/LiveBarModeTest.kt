@@ -13,6 +13,14 @@ class LiveBarModeTest {
         assertEquals(LiveBarMode.Live(lines), mode)
     }
 
+    @Test fun `the live bar follows the same lines as the lyrics view, breaks included`() {
+        val withBreaks = listOf(LrcLine(0L, "one"), LrcLine(2_000L, ""), LrcLine(3_000L, "two"), LrcLine(5_000L, ""))
+        val mode = liveBarModeFor(LyricsViewState.Synced(withBreaks, plainFallback = ""), liveEnabled = true)
+        val body = lyricsBodyFor(LyricsViewState.Synced(withBreaks, plainFallback = ""))
+        assertEquals(LiveBarMode.Live(listOf(LrcLine(0L, "one"), LrcLine(3_000L, "two"), LrcLine(5_000L, ""))), mode)
+        assertEquals((body as LyricsBody.Lines).lines, (mode as LiveBarMode.Live).lines)
+    }
+
     @Test fun `synced maps to Static when the live bar is off (the default)`() {
         val mode = liveBarModeFor(LyricsViewState.Synced(lines, plainFallback = "hi"), liveEnabled = false)
         assertEquals(LiveBarMode.Static, mode)

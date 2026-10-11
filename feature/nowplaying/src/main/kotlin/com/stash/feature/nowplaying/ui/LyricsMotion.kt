@@ -107,7 +107,7 @@ internal object LyricsMotion {
     const val LETTER_TAIL_MS = 250L          // letters share [start, end - 250ms]
     const val SUNG_LETTER_GLOW = 0.2f
 
-    const val INTERLUDE_MIN_GAP_MS = 3000L
+    const val INTERLUDE_MIN_GAP_MS = INSTRUMENTAL_MIN_GAP_MS   // one threshold with the line view's ♪ row
     const val INTERLUDE_PADDING_MS = -550.0  // dots finish 550ms before the next line
     const val INTERLUDE_PRE_HIDDEN_MS = 500L
 

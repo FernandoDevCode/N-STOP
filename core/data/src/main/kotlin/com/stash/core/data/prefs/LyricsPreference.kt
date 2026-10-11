@@ -12,6 +12,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -42,6 +43,9 @@ enum class LyricsSourcePreference {
  * Changing this doesn't itself trigger any fetch/cleanup — see
  * [com.stash.data.lyrics.LyricsRepository.setSourcePreference] for what switching to LRC_ONLY does
  * to already-stored lyrics.
+ *
+ * [outputOffsetMs] — a lyrics sync offset per audio output (Bluetooth headphones add latency that
+ * wired ones don't), applied to every song played through it on top of the song's own offset.
  */
 @Singleton
 class LyricsPreference @Inject constructor(
@@ -69,6 +73,30 @@ class LyricsPreference @Inject constructor(
     suspend fun setSourcePreference(value: LyricsSourcePreference) {
         context.lyricsDataStore.edit { it[sourceKey] = value.name }
     }
+
+    /**
+     * The lyrics offset (signed ms; positive delays lyrics, as the per-song one) the listener set
+     * for one audio output, by its stable key (the caller's: output kind + device name). 0 when
+     * unset. One key per output, so outputs never overwrite each other's calibration.
+     */
+    fun outputOffsetMs(outputKey: String): Flow<Long> {
+        val key = outputOffsetKey(outputKey)
+        return context.lyricsDataStore.data.map { it[key] ?: 0L }.distinctUntilChanged()
+    }
+
+    /** Stores [outputKey]'s offset; 0 removes it, so an output reset to 0 leaves nothing behind. */
+    suspend fun setOutputOffsetMs(outputKey: String, offsetMs: Long) {
+        val key = outputOffsetKey(outputKey)
+        context.lyricsDataStore.edit { prefs ->
+            if (offsetMs == 0L) {
+                prefs.remove(key)
+            } else {
+                prefs[key] = offsetMs
+            }
+        }
+    }
+
+    private fun outputOffsetKey(outputKey: String) = longPreferencesKey("output_offset_ms:$outputKey")
 
     /** Last track id the manual "Fetch lyrics" run reached; the next run starts just after it. */
     val bulkFetchCursor: Flow<Long> = context.lyricsDataStore.data.map { it[bulkFetchCursorKey] ?: 0L }
