@@ -12,7 +12,8 @@ import io.mockk.verify
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceTimeBy
-import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -25,6 +26,15 @@ import org.robolectric.RobolectricTestRunner
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class) // ExoPlayer's static init reads Build fields
 class CrossfadeEngineQueueTransferTest {
+    /**
+     * Runs the fade to its end. It runs in backgroundScope, and advanceUntilIdle() stops as soon as
+     * only background work is left, so it never advanced the fade's ramp.
+     */
+    private fun TestScope.finishFade() {
+        advanceTimeBy(10_000)
+        runCurrent()
+    }
+
     private val context = mockk<Context> {
         every { getSystemService(Context.AUDIO_SERVICE) } returns mockk<AudioManager>(relaxed = true)
     }
@@ -63,7 +73,7 @@ class CrossfadeEngineQueueTransferTest {
         val inc = spare(queue[1])
         var swapped: ExoPlayer? = null
         engine(backgroundScope, out, inc).performTransition(fadeMs = 1_000L) { swapped = it }
-        advanceUntilIdle()
+        finishFade()
 
         assertThat(swapped).isSameInstanceAs(inc)
         verify { inc.shuffleOrder = order }
@@ -76,7 +86,7 @@ class CrossfadeEngineQueueTransferTest {
         val out = master(queue, current = 2)
         val inc = spare(a)
         engine(backgroundScope, out, inc).performTransition(fadeMs = 1_000L) {}
-        advanceUntilIdle()
+        finishFade()
 
         verify { inc.addMediaItems(0, queue.subList(0, 3)) }
         verify { inc.addMediaItems(listOf(queue[4])) }
@@ -94,7 +104,7 @@ class CrossfadeEngineQueueTransferTest {
 
         queue.removeAt(1) // swiped away from the queue sheet: C is next now
         every { out.mediaItemCount } returns queue.size
-        advanceUntilIdle()
+        finishFade()
 
         assertThat(swapped).isNull()
         assertThat(engine.isTransitioning()).isFalse()
@@ -114,7 +124,7 @@ class CrossfadeEngineQueueTransferTest {
 
         queue.add(1, item("x"))
         every { out.mediaItemCount } returns queue.size
-        advanceUntilIdle()
+        finishFade()
 
         assertThat(swapped).isNull()
         verify { out.play() } // on into X, not stuck paused at A's end

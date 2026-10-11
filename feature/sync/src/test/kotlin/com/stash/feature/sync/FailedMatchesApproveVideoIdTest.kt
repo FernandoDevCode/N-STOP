@@ -32,7 +32,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -49,6 +51,16 @@ import org.junit.Test
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class FailedMatchesApproveVideoIdTest {
+    /**
+     * Runs the ViewModel's work, then the approved downloads. Those run in backgroundScope, and
+     * advanceUntilIdle() stops once only background work is left: with the ViewModel's own work
+     * cancelled (the screen closed) they never ran at all.
+     */
+    private fun TestScope.settle() {
+        advanceUntilIdle()
+        runCurrent()
+    }
+
 
     private val musicRepository: MusicRepository = mockk(relaxed = true)
     private val previewPlayer: PreviewPlayer = mockk(relaxed = true)
@@ -115,7 +127,7 @@ class FailedMatchesApproveVideoIdTest {
         malformed.forEach { id ->
             vm.approveMatch(trackId = 1L, queueEntryId = 1L, candidate = candidate(id))
         }
-        advanceUntilIdle()
+        settle()
 
         coVerify(exactly = 0) { downloadExecutor.download(any(), any(), any(), any(), any()) }
         coVerify(exactly = 0) { trackDao.updateYoutubeId(any(), any()) }
@@ -128,7 +140,7 @@ class FailedMatchesApproveVideoIdTest {
         vm.approvedDownloadScope = backgroundScope
 
         vm.approveMatch(trackId = 1L, queueEntryId = 1L, candidate = candidate("dQw4w9WgXcQ"))
-        advanceUntilIdle()
+        settle()
 
         coVerify(exactly = 1) { trackDao.updateYoutubeId(1L, "dQw4w9WgXcQ") }
         coVerify(exactly = 1) {
@@ -157,7 +169,7 @@ class FailedMatchesApproveVideoIdTest {
 
         vm.approveMatch(trackId = 1L, queueEntryId = 1L, candidate = candidate("dQw4w9WgXcQ"))
         vm.viewModelScope.cancel() // the user leaves Failed Matches
-        advanceUntilIdle()
+        settle()
 
         coVerify(exactly = 1) { trackDao.markAsDownloaded(1L, any(), any(), any(), any(), any()) }
         coVerify(exactly = 0) {
@@ -170,7 +182,7 @@ class FailedMatchesApproveVideoIdTest {
         vm.approvedDownloadScope = backgroundScope
 
         vm.approveMatch(trackId = 1L, queueEntryId = 1L, candidate = candidate("dQw4w9WgXcQ"))
-        advanceUntilIdle()
+        settle()
 
         coVerify(exactly = 0) { trackDao.markAsDownloaded(any(), any(), any(), any(), any(), any()) }
         coVerify(exactly = 1) {
@@ -196,11 +208,11 @@ class FailedMatchesApproveVideoIdTest {
         listOf("dQw4w9WgXcQ", "aaaaaaaaaaa", "bbbbbbbbbbb", "ccccccccccc").forEachIndexed { i, id ->
             vm.approveMatch(trackId = i + 1L, queueEntryId = i + 1L, candidate = candidate(id))
         }
-        advanceUntilIdle()
+        settle()
         assertEquals(2, mostAtOnce)
 
         gate.complete(Unit) // release the shared slots for the other tests
-        advanceUntilIdle()
+        settle()
         coVerify(exactly = 4) { downloadExecutor.download(any(), any(), any(), any(), any()) }
     }
 }

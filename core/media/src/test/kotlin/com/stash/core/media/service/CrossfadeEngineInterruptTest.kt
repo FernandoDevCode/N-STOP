@@ -15,8 +15,8 @@ import io.mockk.verify
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceTimeBy
-import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -30,6 +30,15 @@ import org.robolectric.RobolectricTestRunner
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class) // ExoPlayer's static init reads Build fields
 class CrossfadeEngineInterruptTest {
+    /**
+     * Runs the fade to its end. It runs in backgroundScope, and advanceUntilIdle() stops as soon as
+     * only background work is left, so it never advanced the fade's ramp.
+     */
+    private fun TestScope.finishFade() {
+        advanceTimeBy(10_000)
+        runCurrent()
+    }
+
     private val audioManager = mockk<AudioManager>(relaxed = true)
     private val context = mockk<Context> {
         every { getSystemService(Context.AUDIO_SERVICE) } returns audioManager
@@ -69,7 +78,7 @@ class CrossfadeEngineInterruptTest {
         masterListeners.forEach {
             it.onPlayWhenReadyChanged(false, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
         }
-        advanceUntilIdle()
+        finishFade()
 
         assertThat(swapped).isNull()
         assertThat(engine.isTransitioning()).isFalse()
@@ -86,7 +95,7 @@ class CrossfadeEngineInterruptTest {
         masterListeners.forEach {
             it.onPlayWhenReadyChanged(false, Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM)
         }
-        advanceUntilIdle()
+        finishFade()
 
         assertThat(swapped).isSameInstanceAs(spare)
     }
@@ -102,7 +111,7 @@ class CrossfadeEngineInterruptTest {
         masterListeners.forEach {
             it.onPositionDiscontinuity(positionInfo(), positionInfo(), Player.DISCONTINUITY_REASON_SEEK)
         }
-        advanceUntilIdle()
+        finishFade()
 
         assertThat(swapped).isNull()
         assertThat(engine.isTransitioning()).isFalse()
@@ -121,7 +130,7 @@ class CrossfadeEngineInterruptTest {
 
         // Another app starts playing.
         engine.focusListener.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS)
-        advanceUntilIdle()
+        finishFade()
 
         assertThat(swapped).isNull()
         assertThat(engine.isTransitioning()).isFalse()
