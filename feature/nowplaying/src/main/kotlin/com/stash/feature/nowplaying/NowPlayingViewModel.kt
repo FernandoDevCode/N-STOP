@@ -936,6 +936,29 @@ class NowPlayingViewModel @Inject constructor(
     }
 
     /**
+     * The queue sheet's Undo: put [track], swiped away from row [index], back on that row. Never
+     * at or before the playing song (the song may have moved on during the snackbar): there it
+     * goes back to the top of Up next instead.
+     *
+     * The sheet's rows are the player's slim copies of the songs (no file path), which would come
+     * back as streams; the library row brings back the downloaded file. A transient stream id can
+     * equal an unrelated row's id, so a row with another YouTube id isn't taken for it. Runs past
+     * this screen (see [launchUserAction]): an Undo tapped as the screen closes still lands.
+     */
+    fun onRestoreToQueue(index: Int, track: Track) {
+        launchUserAction {
+            val row = musicRepository.observeTrackById(track.id).firstOrNull()?.takeIf { row ->
+                track.youtubeId.isNullOrBlank() || row.youtubeId.isNullOrBlank() || row.youtubeId == track.youtubeId
+            }
+            val state = _uiState.value
+            val at = index.coerceAtLeast(state.currentIndex + 1).coerceAtMost(state.queue.size)
+            if (!playerRepository.insertInQueue(at, row ?: track)) {
+                _userMessages.tryEmit("Couldn't put that song back in the queue.")
+            }
+        }
+    }
+
+    /**
      * Move a track within the queue from position [from] to position [to].
      */
     fun onMoveInQueue(from: Int, to: Int) {

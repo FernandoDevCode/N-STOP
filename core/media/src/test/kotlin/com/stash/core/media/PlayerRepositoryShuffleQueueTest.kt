@@ -203,6 +203,29 @@ class PlayerRepositoryShuffleQueueTest {
         }
     }
 
+    /**
+     * The queue sheet's Undo after a swipe under shuffle. The swipe left the unshuffled queue
+     * alone, so the song goes back into the timeline where it sits there, and onto the row of the
+     * walk it was swiped from (else ExoPlayer would drop it at a random point of the play order).
+     */
+    @Test
+    fun `Undo under shuffle puts the song back in its unshuffled place and on its row of the walk`() = runTest {
+        // Track 5 was swiped away: still in the unshuffled queue, between tracks 2 and 3.
+        repo.currentQueueTracks = listOf(track(1), track(2), track(5), track(3), track(4))
+        repo.updateState(controller)
+
+        assertThat(repo.insertInQueue(1, track(5))).isTrue()
+
+        // Timeline slot 2 (after tracks 1 and 2), so old slots 2+ move up; second row of the walk.
+        verify(exactly = 1) { controller.addMediaItem(2, any()) }
+        verify(exactly = 1) {
+            controller.sendCustomCommand(
+                match { it.customAction == StashPlaybackService.COMMAND_SET_SHUFFLE_ORDER },
+                match { it.getIntArray(StashPlaybackService.EXTRA_SHUFFLE_ORDER)?.toList() == listOf(3, 2, 0, 4, 1) },
+            )
+        }
+    }
+
     @Test
     fun `with shuffle off the display is the logical queue as before`() {
         every { controller.shuffleModeEnabled } returns false

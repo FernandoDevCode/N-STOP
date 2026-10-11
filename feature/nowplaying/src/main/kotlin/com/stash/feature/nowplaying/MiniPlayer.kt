@@ -39,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.dropShadow
 import androidx.compose.ui.geometry.Size
@@ -46,7 +47,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -61,6 +64,7 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import com.stash.core.common.primaryArtist
 import com.stash.core.media.listen.ListenTogetherState
+import com.stash.core.model.RepeatMode
 import com.stash.core.ui.ambient.LocalAlbumChrome
 import com.stash.core.ui.components.ListenTogetherRole
 import com.stash.core.ui.components.LocalListenTogetherRole
@@ -68,6 +72,9 @@ import com.stash.core.ui.components.chromeGlass
 import com.stash.core.ui.components.motion.pressScale
 import com.stash.feature.nowplaying.listen.ListenTogetherViewModel
 import com.stash.feature.nowplaying.listen.MiniSessionFaces
+import com.stash.feature.nowplaying.ui.hasNextInQueue
+import com.stash.feature.nowplaying.ui.hasPreviousInQueue
+import com.stash.feature.nowplaying.ui.rememberSwipeToSkip
 
 /*
  * The glass mini player, a port of the web player's phone mini player (stash-web
@@ -97,7 +104,9 @@ private val MiniShadow = Shadow(
  * Shows the cover, title and artist, the queue (hidden in a Listen Together room, as the queue is
  * on Now Playing), play/pause (a spinner while the song resolves or buffers) and skip next (an
  * empty slot for a Listen Together listener). Slides in and out with the current track. Tapping
- * anywhere else opens Now Playing; pressing scales the card to 0.97.
+ * anywhere else opens Now Playing; pressing scales the card to 0.97. Swiping the song (cover, title
+ * and artist) sideways skips to the next or previous song, as on Now Playing's art; TalkBack gets
+ * Previous as an action on the card (Next is the button).
  *
  * @param onExpand Opens Now Playing.
  * @param onOpenQueue Opens the queue sheet over the current screen.
@@ -126,6 +135,21 @@ fun MiniPlayer(
         exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
     ) {
         val press = remember { MutableInteractionSource() }
+        val track = uiState.currentTrack
+        // Swipe the song sideways to skip, with Now Playing's art threshold (rememberSwipeToSkip).
+        // A listener can't skip the room's song; a host's skips go to the room, which decides.
+        val isListener = LocalListenTogetherRole.current == ListenTogetherRole.LISTENER
+        val repeatAll = uiState.repeatMode == RepeatMode.ALL
+        val canNext = room != null || hasNextInQueue(uiState.queue.size, uiState.currentIndex, repeatAll)
+        val canPrevious = room != null || hasPreviousInQueue(uiState.queue.size, uiState.currentIndex, repeatAll)
+        val swipe = rememberSwipeToSkip(
+            trackKey = track?.let { it.id to uiState.currentIndex },
+            enabled = track != null && !isListener,
+            canNext = canNext,
+            canPrevious = canPrevious,
+            onNext = viewModel::onSkipNext,
+            onPrevious = viewModel::onSkipPrevious,
+        )
         Box(
             modifier = modifier
                 .fillMaxWidth()
@@ -134,6 +158,14 @@ fun MiniPlayer(
                 .dropShadow(MiniShape, MiniShadow)
                 .chromeGlass(MiniShape)
                 .clickable(interactionSource = press, indication = ripple(), onClick = onExpand)
+                // The swipe's TalkBack equivalent. Next already has its button; Previous has none.
+                .semantics {
+                    if (!isListener && canPrevious) {
+                        customActions = listOf(
+                            CustomAccessibilityAction("Previous song") { viewModel.onSkipPrevious(); true },
+                        )
+                    }
+                }
                 .height(MiniHeight),
         ) {
             // The 2dp progress line along the top edge (clipped to the card's corners by the glass),
@@ -156,68 +188,87 @@ fun MiniPlayer(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                val track = uiState.currentTrack
-                val artModel = track?.albumArtPath ?: track?.albumArtUrl
-                val coverShape = RoundedCornerShape(6.dp)
-                if (artModel != null) {
-                    // Remembered per cover: a fresh request each recomposition makes Coil treat
-                    // it as a new load.
-                    val context = LocalContext.current
-                    val artRequest = remember(artModel) {
-                        ImageRequest.Builder(context).data(artModel).build()
-                    }
-                    AsyncImage(
-                        model = artRequest,
-                        contentDescription = "Album art",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(coverShape),
-                    )
-                } else {
-                    Box(
-                        Modifier
-                            .size(44.dp)
-                            .clip(coverShape)
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MusicNote,
-                            contentDescription = null,
-                            modifier = Modifier.size(22.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-
-                // Title (600 14) and artist (400 12, --wp-text-2).
-                Column(
+                // The song: cover, title and artist. It takes the swipe and moves with it, clipped
+                // to its own slot; the controls stay put, so a swipe can't start on play/pause, and
+                // a tap here still opens Now Playing (the drag claims only a sideways move past
+                // touch slop).
+                Box(
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxHeight(),
-                    verticalArrangement = Arrangement.Center,
+                        .fillMaxHeight()
+                        .then(swipe.gesture)
+                        .clipToBounds(),
                 ) {
-                    // primaryArtist() collapses collaboration credits
-                    // ("Metro Boomin, Travis Scott" → "Metro Boomin").
-                    // remember keeps the split off the hot path: this
-                    // composable recomposes on every progress tick.
-                    val artist = remember(track?.artist) { track?.artist?.primaryArtist() }
-                    Text(
-                        text = track?.title ?: "",
-                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 18.sp),
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = artist ?: "",
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .then(swipe.content),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        val artModel = track?.albumArtPath ?: track?.albumArtUrl
+                        val coverShape = RoundedCornerShape(6.dp)
+                        if (artModel != null) {
+                            // Remembered per cover: a fresh request each recomposition makes Coil treat
+                            // it as a new load.
+                            val context = LocalContext.current
+                            val artRequest = remember(artModel) {
+                                ImageRequest.Builder(context).data(artModel).build()
+                            }
+                            AsyncImage(
+                                model = artRequest,
+                                contentDescription = "Album art",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(coverShape),
+                            )
+                        } else {
+                            Box(
+                                Modifier
+                                    .size(44.dp)
+                                    .clip(coverShape)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MusicNote,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(22.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+
+                        // Title (600 14) and artist (400 12, --wp-text-2).
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight(),
+                            verticalArrangement = Arrangement.Center,
+                        ) {
+                            // primaryArtist() collapses collaboration credits
+                            // ("Metro Boomin, Travis Scott" → "Metro Boomin").
+                            // remember keeps the split off the hot path: this
+                            // composable recomposes on every progress tick.
+                            val artist = remember(track?.artist) { track?.artist?.primaryArtist() }
+                            Text(
+                                text = track?.title ?: "",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 18.sp),
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = artist ?: "",
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
                 }
 
                 room?.let { MiniSessionFaces(it) }

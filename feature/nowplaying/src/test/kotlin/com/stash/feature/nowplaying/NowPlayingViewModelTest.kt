@@ -924,3 +924,90 @@ class NowPlayingViewModelPositionTest {
         assertEquals(0f, progressFraction(500L, 0L), 0f)
     }
 }
+
+/**
+ * The queue sheet's Undo after a swipe-remove: the song goes back on the row it left, as its
+ * library row (the sheet's rows are the player's slim copies, with no file path, which would come
+ * back as streams), and never at or before the song that is playing.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+class NowPlayingViewModelQueueUndoTest {
+
+    private val dispatcher = UnconfinedTestDispatcher()
+
+    @Before fun setUp() { Dispatchers.setMain(dispatcher) }
+    @After fun tearDown() { Dispatchers.resetMain() }
+
+    private fun track(id: Long) = Track(id = id, title = "T$id", artist = "A")
+    private val queue = (1L..5L).map(::track)
+    private val downloaded = Track(id = 4L, title = "T4", artist = "A", isDownloaded = true, filePath = "/music/4.flac")
+    private val playerStateFlow = MutableStateFlow(PlayerState(currentTrack = queue[1], queue = queue, currentIndex = 1))
+
+    private val playerRepository: PlayerRepository = mockk(relaxed = true) {
+        every { playerState } returns playerStateFlow
+        every { currentPosition } returns MutableStateFlow(0L)
+        coEvery { insertInQueue(any(), any()) } returns true
+    }
+    private val musicRepository: MusicRepository = mockk(relaxed = true) {
+        every { observeTrackById(any()) } returns flowOf(null)
+        every { observeTrackById(4L) } returns flowOf(downloaded)
+        every { observeTrackByYoutubeId(any()) } returns flowOf(null)
+    }
+
+    private fun newViewModel(): NowPlayingViewModel = NowPlayingViewModel(
+        playerRepository = playerRepository,
+        musicRepository = musicRepository,
+        likeCoordinator = mockk(relaxed = true) { every { mirrorFailures } returns MutableSharedFlow() },
+        losslessUpgrader = mockk(relaxed = true),
+        lyricsRepository = mockk(relaxed = true),
+        lyricsPreference = mockk(relaxed = true),
+        nowPlayingPreference = mockk(relaxed = true),
+        lyricsSidecarWriter = mockk(relaxed = true),
+        appContext = mockk(relaxed = true),
+        sleepTimerController = mockk(relaxed = true),
+        ytMusicApiClient = mockk(relaxed = true),
+    )
+
+    @Test fun `undo puts the library row back on the row it left`() = runTest(dispatcher) {
+        val vm = newViewModel()
+        advanceUntilIdle()
+
+        vm.onRestoreToQueue(3, track(4))
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { playerRepository.insertInQueue(3, downloaded) }
+    }
+
+    @Test fun `a song not in the library goes back as it was`() = runTest(dispatcher) {
+        val vm = newViewModel()
+        advanceUntilIdle()
+
+        vm.onRestoreToQueue(2, track(7))
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { playerRepository.insertInQueue(2, track(7)) }
+    }
+
+    @Test fun `undo after playback moved past the row puts the song next`() = runTest(dispatcher) {
+        val vm = newViewModel()
+        advanceUntilIdle()
+        playerStateFlow.value = playerStateFlow.value.copy(currentTrack = queue[3], currentIndex = 3)
+        advanceUntilIdle()
+
+        vm.onRestoreToQueue(2, track(7))
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { playerRepository.insertInQueue(4, track(7)) }
+    }
+
+    @Test fun `a refused undo says so`() = runTest(dispatcher) {
+        coEvery { playerRepository.insertInQueue(any(), any()) } returns false
+        val vm = newViewModel()
+        advanceUntilIdle()
+
+        vm.userMessages.test {
+            vm.onRestoreToQueue(3, track(7))
+            assertEquals("Couldn't put that song back in the queue.", awaitItem())
+        }
+    }
+}

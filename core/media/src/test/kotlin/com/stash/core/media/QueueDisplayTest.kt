@@ -229,4 +229,26 @@ class QueueDisplayTest {
     assertThat(QueueDisplay.walkWithInserted(listOf(0, 1, 2, 3), at = 2, count = 1, currentIndex = 1, afterCurrent = true))
       .isNull()
   }
+
+  // ---- walkWithInsertedAt (the queue sheet's Undo) ----
+
+  @Test
+  fun `Undo puts the song back on the row of the walk it left`() {
+    // Walk 2 -> 0 -> 3 -> 1; the song goes back in at slot 1 (shifting slots 1+ up) as row 2.
+    assertThat(QueueDisplay.walkWithInsertedAt(listOf(2, 0, 3, 1), at = 1, count = 1, position = 2))
+      .containsExactly(3, 0, 1, 4, 2).inOrder()
+  }
+
+  @Test
+  fun `Undo past the end of the walk appends, and a negative row goes first`() {
+    assertThat(QueueDisplay.walkWithInsertedAt(listOf(2, 0, 3, 1), at = 4, count = 1, position = 9))
+      .containsExactly(2, 0, 3, 1, 4).inOrder()
+    assertThat(QueueDisplay.walkWithInsertedAt(listOf(2, 0, 3, 1), at = 4, count = 1, position = -1))
+      .containsExactly(4, 2, 0, 3, 1).inOrder()
+  }
+
+  @Test
+  fun `Undo on an unshuffled walk sends nothing either`() {
+    assertThat(QueueDisplay.walkWithInsertedAt(listOf(0, 1, 2), at = 1, count = 1, position = 1)).isNull()
+  }
 }

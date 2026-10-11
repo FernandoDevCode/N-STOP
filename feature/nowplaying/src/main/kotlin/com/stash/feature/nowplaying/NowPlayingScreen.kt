@@ -94,6 +94,8 @@ import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -115,6 +117,9 @@ import com.stash.feature.nowplaying.ui.LiveLyricsBar
 import com.stash.feature.nowplaying.ui.npAccent
 import com.stash.feature.nowplaying.ui.npInk
 import com.stash.feature.nowplaying.ui.QueueBottomSheet
+import com.stash.feature.nowplaying.ui.SwipeableArt
+import com.stash.feature.nowplaying.ui.hasNextInQueue
+import com.stash.feature.nowplaying.ui.hasPreviousInQueue
 
 /**
  * Full-screen Now Playing screen with premium visual design.
@@ -196,6 +201,12 @@ fun NowPlayingScreen(
     var showCastSheet by remember { mutableStateOf(false) }
     // A listener follows the room: no skip or seek; their play/pause is their own (spec §5).
     val isListener = room != null && !room.isHost
+    // Where Next / Previous can go, for the art's swipe and its TalkBack actions: the queue's ends,
+    // wrapped by repeat-all. In a room the host's skips go to the room, which decides (its Up next,
+    // its radio, a restart), so both stay on there; a listener has no art gestures at all.
+    val repeatAll = uiState.repeatMode == RepeatMode.ALL
+    val canSwipeNext = room != null || hasNextInQueue(uiState.queue.size, uiState.currentIndex, repeatAll)
+    val canSwipePrevious = room != null || hasPreviousInQueue(uiState.queue.size, uiState.currentIndex, repeatAll)
     // The Session sheet: people, Up next, suggestions, invite, leave (design 2026-09-25).
     var showSession by remember { mutableStateOf(false) }
     var confirmEndTogether by remember { mutableStateOf(false) }
@@ -284,6 +295,7 @@ fun NowPlayingScreen(
             onSaveToPlaylist = { queueSaveTrack = it },
             onShare = viewModel::onShareTrack,
             onToggleDownload = viewModel::toggleDownload,
+            onRestoreTrack = viewModel::onRestoreToQueue,
         )
     }
 
@@ -852,16 +864,33 @@ fun NowPlayingScreen(
                                 art = {
                                 // -- Album art: NowPlayingBody sizes this slot (a square) --
                                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    AlbumArtSection(
-                                        albumArtUrl = track?.albumArtUrl,
-                                        albumArtPath = track?.albumArtPath,
-                                        accentColor = npAccent(uiState.vibrantColor),
-                                        onBitmapLoaded = { bitmap ->
-                                            paletteArtModel = artModel
-                                            viewModel.onAlbumArtLoaded(bitmap)
-                                        },
+                                    // Swipe for the next / previous song, double-tap a side to seek
+                                    // 10 s: through the same ViewModel calls as the transport and the
+                                    // progress bar, and off for a listener, as those are.
+                                    SwipeableArt(
+                                        trackKey = track?.let { it.id to uiState.currentIndex },
+                                        gesturesEnabled = track != null && !isListener,
+                                        canNext = canSwipeNext,
+                                        canPrevious = canSwipePrevious,
+                                        canSeek = uiState.durationMs > 0L,
+                                        positionMs = { playerPosition.value },
+                                        durationMs = uiState.durationMs,
+                                        onNext = viewModel::onSkipNext,
+                                        onPrevious = viewModel::onSkipPrevious,
+                                        onSeekTo = viewModel::onSeekTo,
                                         modifier = artShared,
-                                    )
+                                    ) { swipeModifier ->
+                                        AlbumArtSection(
+                                            albumArtUrl = track?.albumArtUrl,
+                                            albumArtPath = track?.albumArtPath,
+                                            accentColor = npAccent(uiState.vibrantColor),
+                                            onBitmapLoaded = { bitmap ->
+                                                paletteArtModel = artModel
+                                                viewModel.onAlbumArtLoaded(bitmap)
+                                            },
+                                            modifier = swipeModifier,
+                                        )
+                                    }
                                     if (room != null) {
                                         // "Maya joined", "Rawn skipped": over the art, so the layout never shifts.
                                         com.stash.feature.nowplaying.listen.SessionEventChip(together.events, room.myId, Modifier.align(Alignment.TopCenter))
@@ -879,7 +908,7 @@ fun NowPlayingScreen(
                                     track = track,
                                     resolvingArtist = resolvingArtist,
                                     onTrackInfoTapped = viewModel::onTrackInfoTapped,
-                                    sleepTimerActive = sleepTimerState != SleepTimerController.State.Off,
+                                    sleepTimerState = sleepTimerState,
                                     onSleepTimerClick = { showSleepTimerSheet = true },
                                     accent = npAccent(uiState.vibrantColor),
                                     isLiked = uiState.currentTrack?.stashLikedAt != null,
@@ -912,6 +941,20 @@ fun NowPlayingScreen(
                                 Spacer(modifier = Modifier.height(StackRhythm.InfoToProgress))
 
                                 foot(footShared)
+
+                                // "Up next · Title — Artist": a tap opens the queue, or the session
+                                // in a room (whose Up next is the room's). Art view only: lyrics
+                                // mode keeps the bottom for the lyrics.
+                                Spacer(modifier = Modifier.height(StackRhythm.ControlsToUpNext))
+                                UpNextLine(
+                                    peek = if (room != null) {
+                                        roomUpNextPeek(room.queue)
+                                    } else {
+                                        upNextPeek(uiState.queue, uiState.currentIndex, uiState.repeatMode)
+                                    },
+                                    inRoom = room != null,
+                                    onOpen = { if (room != null) showSession = true else showQueue = true },
+                                )
                                 },
                             )
 
@@ -940,7 +983,6 @@ fun NowPlayingScreen(
                             val headerInk = npInk()
                             val headerAccent = npAccent(uiState.vibrantColor)
                             val headerLiked = uiState.currentTrack?.stashLikedAt != null
-                            val sleepTimerActive = sleepTimerState != SleepTimerController.State.Off
                             val lyricsMenuItems = lyricsMenuItemsFor(lyricsState, lyricsSyncOffsetMs, canSaveToFile = track?.isDownloaded == true, outputKnown = lyricsOutputOffset != null)
                             val savingLyrics = exportingLyricsTrackId != null
                             val rise = with(LocalDensity.current) { RiseDistance.roundToPx() }
@@ -975,15 +1017,15 @@ fun NowPlayingScreen(
                                 actionsModifier = headerActionsEnter,
                             ) {
                                 // The sleep timer, as on the art view (and in the web's header);
-                                // accented while a timer is armed.
-                                IconButton(onClick = { showSleepTimerSheet = true }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Bedtime,
-                                        contentDescription = if (sleepTimerActive) "Sleep timer active" else "Set sleep timer",
-                                        tint = if (sleepTimerActive) headerAccent else headerInk.copy(alpha = 0.7f),
-                                        modifier = Modifier.size(22.dp),
-                                    )
-                                }
+                                // accented, with its live countdown under the moon, while armed.
+                                SleepTimerButton(
+                                    state = sleepTimerState,
+                                    onClick = { showSleepTimerSheet = true },
+                                    activeTint = headerAccent,
+                                    idleTint = headerInk.copy(alpha = 0.7f),
+                                    buttonSize = 48.dp,
+                                    iconSize = 22.dp,
+                                )
                                 com.stash.core.ui.components.LikeButton(
                                     isLiked = headerLiked,
                                     onTap = { viewModel.onLikeTap() },
@@ -1059,6 +1101,7 @@ private object StackRhythm {
     val ArtistToQuality = 6.dp
     val InfoToProgress = 16.dp
     val ProgressToControls = 12.dp
+    val ControlsToUpNext = 2.dp
 }
 
 /** The art's design ceiling. */
@@ -1205,7 +1248,7 @@ private fun TrackInfoBlock(
     track: com.stash.core.model.Track?,
     resolvingArtist: Boolean,
     onTrackInfoTapped: () -> Unit,
-    sleepTimerActive: Boolean,
+    sleepTimerState: SleepTimerController.State,
     onSleepTimerClick: () -> Unit,
     accent: Color,
     isLiked: Boolean,
@@ -1294,22 +1337,19 @@ private fun TrackInfoBlock(
         }
         // Sleep timer — floated to the leading edge, mirroring the
         // Like heart's placement on the trailing edge. Accented
-        // while a timer is armed so the state is visible at a
+        // while a timer is armed, with the time left under the moon
+        // ("23m", "0:45", "End"), so the state is visible at a
         // glance without opening the sheet.
         if (track != null) {
-            IconButton(
+            SleepTimerButton(
+                state = sleepTimerState,
                 onClick = onSleepTimerClick,
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .size(26.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Bedtime,
-                    contentDescription = if (sleepTimerActive) "Sleep timer active" else "Set sleep timer",
-                    tint = if (sleepTimerActive) accent else npInk().copy(alpha = 0.7f),
-                    modifier = Modifier.size(20.dp),
-                )
-            }
+                activeTint = accent,
+                idleTint = npInk().copy(alpha = 0.7f),
+                buttonSize = 26.dp,
+                iconSize = 20.dp,
+                modifier = Modifier.align(Alignment.CenterStart),
+            )
         }
 
         // Like heart — floated to the trailing edge and vertically centred
@@ -1609,7 +1649,7 @@ private fun QualityLine(
 
 /**
  * Sleep-timer picker, opened from the icon beside the track title. Shows
- * the current countdown/end-of-track status (if armed), then the preset
+ * the live countdown (to the second) or the end-of-track status (if armed), then the preset
  * durations, a Custom entry, End of Track, and — only while a timer is
  * running — a Cancel row.
  */
@@ -1646,17 +1686,22 @@ private fun SleepTimerSheet(
 
             when (currentState) {
                 is SleepTimerController.State.Countdown -> {
-                    val minutesLeft = ((currentState.endsAtMs - System.currentTimeMillis()) / 60_000L)
-                        .coerceAtLeast(0) + 1
+                    // Live, to the second, while the sheet is open (it used to be worked out once,
+                    // when the sheet opened, and sat still).
+                    val remainingMs = rememberSleepTimerRemainingMs(currentState, everySecond = true) ?: 0L
+                    val spoken = "Music pauses in ${sleepTimerSpoken(remainingMs, withSeconds = true)}"
                     Text(
-                        text = "Music pauses in about $minutesLeft min",
+                        text = "Music pauses in ${sleepTimerClock(remainingMs)}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(bottom = 12.dp),
+                        modifier = Modifier
+                            .padding(bottom = 12.dp)
+                            // "22 minutes 41 seconds", not a "22:41" read as a time of day.
+                            .semantics { contentDescription = spoken },
                     )
                 }
                 SleepTimerController.State.EndOfTrack -> Text(
-                    text = "Music pauses when the current track ends",
+                    text = "End of track: music pauses when this song ends",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(bottom = 12.dp),

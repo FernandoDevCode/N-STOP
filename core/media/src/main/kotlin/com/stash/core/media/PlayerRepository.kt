@@ -237,6 +237,17 @@ interface PlayerRepository {
     suspend fun removeFromQueue(index: Int)
 
     /**
+     * Put [track] into the queue so it shows at row [index] of the queue the UI displays (the
+     * same index space as [removeFromQueue], [moveInQueue] and [skipToQueueIndex]): the queue
+     * sheet's Undo after a swipe-remove. Playback continues uninterrupted. [index] is clamped to
+     * the queue. Returns false when nothing was inserted (no player, an empty queue, a Listen
+     * Together session, which owns the queue).
+     *
+     * Defaults to false so a stand-in repository needs nothing for a sheet it never shows.
+     */
+    suspend fun insertInQueue(index: Int, track: Track): Boolean = false
+
+    /**
      * Move the track at position [from] to position [to] within the playback queue.
      * Both indices refer to the current MediaController item list.
      */

@@ -21,7 +21,7 @@ import com.stash.feature.nowplaying.ui.QueueBottomSheet
 /**
  * The queue sheet opened from the mini player, over whatever screen is showing: the same
  * [QueueBottomSheet] Now Playing's queue button opens, wired to the same actions (tap to play,
- * drag to reorder, swipe to remove, and each row's menu: Play next, Start radio, Save to
+ * drag to reorder, swipe to remove (with Undo), and each row's menu: Play next, Start radio, Save to
  * playlist, Share, Download), so it behaves identically without the detour through Now Playing.
  *
  * Hosted by the app scaffold with the activity-scoped [NowPlayingViewModel] (the mini player's).
@@ -87,6 +87,7 @@ fun PlayerQueueSheet(
                 viewModel.onShareTrack(track)
             },
             onToggleDownload = viewModel::toggleDownload,
+            onRestoreTrack = viewModel::onRestoreToQueue,
         )
     }
 

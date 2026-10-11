@@ -3,6 +3,7 @@ package com.stash.feature.nowplaying.ui
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -24,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -33,18 +36,22 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /** Height of the track bar in dp. */
 private val TrackHeight = 4.dp
@@ -66,7 +73,8 @@ private const val GLOW_RADIUS = 14f
  *
  * Renders a gradient-filled track with round caps, a semi-transparent glow
  * at the playhead position, and an optional thumb that appears while the
- * user is dragging. Elapsed and remaining time labels sit below the bar.
+ * user is dragging, with the target time in a bubble above it. Elapsed and
+ * remaining time labels sit below the bar.
  *
  * @param progress    Current playback progress as a fraction in `[0f, 1f]` (a lambda, read
  *                    inside this composable so the position tick recomposes only the bar).
@@ -249,6 +257,16 @@ fun GlowingProgressBar(
             }
         }
 
+        // --- Scrub bubble (only while dragging): the target time above the thumb, clear of the
+        // fingertip that hides the thumb itself. It takes no height, so nothing moves. ---
+        if (isDragging) {
+            ScrubBubble(
+                text = formatTime(displayMs),
+                ink = ink,
+                thumbFraction = { displayProgress },
+            )
+        }
+
         // --- Time labels ---
         Spacer(modifier = Modifier.height(2.dp))
 
@@ -273,6 +291,50 @@ fun GlowingProgressBar(
             )
         }
     }
+}
+
+/** From the bar's centre line to the scrub bubble's bottom edge: enough to clear a fingertip. */
+private val ScrubBubbleLift = 24.dp
+
+/**
+ * The scrub bubble: [text] (the drag's target time) in a pill of the bar's [ink], centred over the
+ * thumb at [thumbFraction] of the bar and kept over the bar at either end ([scrubBubbleLeft]), so
+ * it never leaves the screen. Laid out with no height right under the bar's touch strip and drawn
+ * above it, so it costs the layout nothing and overlaps only what is above the bar for the length
+ * of the drag. Visual only: TalkBack reads the bar's own position and target.
+ */
+@Composable
+private fun ScrubBubble(text: String, ink: Color, thumbFraction: () -> Float) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.SemiBold,
+        // The other ink: plum-black on the white pill (dark theme), white on the plum one (light).
+        color = if (ink == Color.White) NpInkLight else Color.White,
+        maxLines = 1,
+        softWrap = false,
+        modifier = Modifier
+            .layout { measurable, constraints ->
+                val bubble = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
+                val barWidth = constraints.maxWidth
+                // This node sits at the bottom of the bar's touch strip; the bar's centre is half
+                // the strip above it.
+                val bottom = (TouchPadding + TrackHeight / 2 + ScrubBubbleLift).roundToPx()
+                layout(barWidth, 0) {
+                    // Read here, at placement: the bubble follows the thumb without recomposing.
+                    val left = scrubBubbleLeft(
+                        thumbX = thumbFraction() * barWidth,
+                        bubbleWidth = bubble.width.toFloat(),
+                        barWidth = barWidth.toFloat(),
+                    )
+                    bubble.place(left.roundToInt(), -bottom - bubble.height)
+                }
+            }
+            .clearAndSetSemantics { }
+            .clip(RoundedCornerShape(50))
+            .background(ink)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+    )
 }
 
 /**
