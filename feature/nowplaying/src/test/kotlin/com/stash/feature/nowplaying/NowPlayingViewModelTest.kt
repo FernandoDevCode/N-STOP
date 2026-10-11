@@ -660,3 +660,70 @@ class NowPlayingViewModelRadioTest {
         coVerify(exactly = 1) { playerRepository.startRadio(any(), any()) }
     }
 }
+
+/**
+ * Play/pause keys on the player's intent (playWhenReady), not isPlaying: while a stream buffers
+ * Media3 reports isPlaying=false with playWhenReady=true, and a toggle on isPlaying sent the tap
+ * to play() — a no-op — so a stalled stream could not be paused.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+class NowPlayingViewModelPlayPauseTest {
+
+    private val dispatcher = UnconfinedTestDispatcher()
+
+    @Before fun setUp() { Dispatchers.setMain(dispatcher) }
+    @After fun tearDown() { Dispatchers.resetMain() }
+
+    private val playerStateFlow = MutableStateFlow(PlayerState())
+
+    private val playerRepository: PlayerRepository = mockk(relaxed = true) {
+        every { playerState } returns playerStateFlow
+        every { currentPosition } returns MutableStateFlow(0L)
+    }
+    private val musicRepository: MusicRepository = mockk(relaxed = true) {
+        every { observeTrackById(any()) } returns flowOf(null)
+        every { observeTrackByYoutubeId(any()) } returns flowOf(null)
+    }
+
+    private fun newViewModel(): NowPlayingViewModel = NowPlayingViewModel(
+        playerRepository = playerRepository,
+        musicRepository = musicRepository,
+        likeCoordinator = mockk(relaxed = true) { every { mirrorFailures } returns MutableSharedFlow() },
+        losslessUpgrader = mockk(relaxed = true),
+        lyricsRepository = mockk(relaxed = true),
+        lyricsPreference = mockk(relaxed = true),
+        nowPlayingPreference = mockk(relaxed = true),
+        lyricsSidecarWriter = mockk(relaxed = true),
+        appContext = mockk(relaxed = true),
+        sleepTimerController = mockk(relaxed = true),
+        ytMusicApiClient = mockk(relaxed = true),
+    )
+
+    private val track = Track(id = 7L, title = "song", artist = "artist")
+
+    @Test fun `a tap while buffering pauses`() = runTest(dispatcher) {
+        playerStateFlow.value = PlayerState(
+            currentTrack = track, isPlaying = false, isBuffering = true, playWhenReady = true,
+        )
+        val vm = newViewModel()
+        advanceUntilIdle()
+
+        vm.onPlayPauseClick()
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { playerRepository.pause() }
+        coVerify(exactly = 0) { playerRepository.play() }
+    }
+
+    @Test fun `a tap while paused plays`() = runTest(dispatcher) {
+        playerStateFlow.value = PlayerState(currentTrack = track, isPlaying = false, playWhenReady = false)
+        val vm = newViewModel()
+        advanceUntilIdle()
+
+        vm.onPlayPauseClick()
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { playerRepository.play() }
+        coVerify(exactly = 0) { playerRepository.pause() }
+    }
+}

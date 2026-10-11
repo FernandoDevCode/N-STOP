@@ -794,6 +794,7 @@ class NowPlayingViewModel @Inject constructor(
                     queue = state.queue,
                     isStreaming = state.isStreaming,
                     isBuffering = state.isBuffering,
+                    playWhenReady = state.playWhenReady,
                     source = state.source,
                 )
             }
@@ -870,10 +871,15 @@ class NowPlayingViewModel @Inject constructor(
     // User Actions
     // ------------------------------------------------------------------
 
-    /** Toggle between play and pause. */
+    /**
+     * Toggle between play and pause, on the player's *intent* ([NowPlayingUiState.playWhenReady]),
+     * not on [NowPlayingUiState.isPlaying]: while a stream buffers isPlaying is false, and a tap
+     * then went to play(), a no-op, so the user couldn't pause a stalled stream at all.
+     */
     fun onPlayPauseClick() {
+        val state = _uiState.value
         viewModelScope.launch {
-            if (_uiState.value.isPlaying) {
+            if (state.playWhenReady || state.isPlaying) {
                 playerRepository.pause()
             } else {
                 playerRepository.play()

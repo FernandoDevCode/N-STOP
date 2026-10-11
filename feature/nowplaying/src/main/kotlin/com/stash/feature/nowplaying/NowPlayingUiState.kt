@@ -26,6 +26,12 @@ data class NowPlayingUiState(
     val shuffleEnabled: Boolean = false,
     val repeatMode: RepeatMode = RepeatMode.OFF,
     val isBuffering: Boolean = false,
+    /**
+     * The player means to play (see [com.stash.core.model.PlayerState.playWhenReady]): true
+     * through buffering, where [isPlaying] is false. The play/pause toggle and its icon key on
+     * this, so a stalled stream can always be paused.
+     */
+    val playWhenReady: Boolean = false,
     val queueSize: Int = 0,
     val currentIndex: Int = 0,
     /** Full list of tracks in the playback queue (including the currently playing track). */

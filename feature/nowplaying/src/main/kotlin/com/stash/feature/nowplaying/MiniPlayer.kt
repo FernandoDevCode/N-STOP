@@ -234,10 +234,15 @@ fun MiniPlayer(
                     // Play / pause: a 40dp circle in the album's vibrant colour, its ink on top;
                     // a spinner while the track is still resolving/buffering (e.g. a slow
                     // YouTube-fallback resolve). One button to TalkBack: its action, and its state.
+                    // It stays ENABLED while buffering and keys on playWhenReady, so a stalled
+                    // stream can be paused from any screen (it used to be disabled while loading,
+                    // which left no in-app way to stop a stream that was about to start).
                     val playPress = remember { MutableInteractionSource() }
-                    val playAction = if (uiState.isPlaying) "Pause" else "Play"
+                    val wantsToPlay = uiState.playWhenReady || uiState.isPlaying
+                    val loading = uiState.isBuffering && wantsToPlay
+                    val playAction = if (wantsToPlay) "Pause" else "Play"
                     val playState = when {
-                        uiState.isBuffering -> "Loading"
+                        loading -> "Loading"
                         uiState.isPlaying -> "Playing"
                         else -> "Paused"
                     }
@@ -247,7 +252,6 @@ fun MiniPlayer(
                             .clickable(
                                 interactionSource = playPress,
                                 indication = null,
-                                enabled = !uiState.isBuffering,
                                 role = Role.Button,
                                 onClick = viewModel::onPlayPauseClick,
                             )
@@ -266,7 +270,7 @@ fun MiniPlayer(
                                 .indication(playPress, ripple(color = chrome.onVib)),
                             contentAlignment = Alignment.Center,
                         ) {
-                            if (uiState.isBuffering) {
+                            if (loading) {
                                 CircularProgressIndicator(
                                     color = chrome.onVib,
                                     strokeWidth = 2.dp,
@@ -274,7 +278,7 @@ fun MiniPlayer(
                                 )
                             } else {
                                 Icon(
-                                    imageVector = if (uiState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    imageVector = if (wantsToPlay) Icons.Default.Pause else Icons.Default.PlayArrow,
                                     contentDescription = null,
                                     tint = chrome.onVib,
                                     modifier = Modifier.size(24.dp),
