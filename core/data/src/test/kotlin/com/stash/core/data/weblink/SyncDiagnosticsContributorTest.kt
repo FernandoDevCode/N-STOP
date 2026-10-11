@@ -9,6 +9,8 @@ import com.stash.core.data.weblink.mirror.InMemoryMirrorStore
 import com.stash.core.data.weblink.mirror.Kind
 import com.stash.core.data.weblink.mirror.MirrorChange
 import com.stash.core.data.weblink.mirror.MirrorEngine
+import com.stash.core.data.weblink.store.WebLinkStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -31,6 +33,22 @@ class SyncDiagnosticsContributorTest {
 
     @Test fun `not linked says so`() = runTest {
         assertThat(section.section()).contains("Linked: no")
+    }
+
+    @Test fun `a bundle cancelled while reading the link stops, it never reports the phone as unlinked`() = runTest {
+        val cancelled = object : WebLinkStore by InMemoryWebLinkStore() {
+            override suspend fun space() = throw CancellationException("bundle cancelled")
+        }
+        val s = SyncDiagnosticsContributor(
+            WebLinkConfig("http://127.0.0.1:8795", true), cancelled, engine, HandoffPrefs(ApplicationProvider.getApplicationContext()),
+        )
+        val thrown = try {
+            s.section()
+            null
+        } catch (e: CancellationException) {
+            e
+        }
+        assertThat(thrown).isNotNull()
     }
 
     @Test fun `linked and mirroring - settings, position and last run, without ids or names`() = runTest {

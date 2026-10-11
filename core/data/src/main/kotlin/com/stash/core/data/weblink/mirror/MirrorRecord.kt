@@ -201,6 +201,11 @@ data class MirrorRecord(
     var baseLikes: List<BaseLike> = emptyList(),
     var basePlays: BasePlays = BasePlays(),
     var basePlaylists: Map<String, BasePl> = emptyMap(),
+    /**
+     * Per mirror id, the last few bases each playlist moved on from (oldest first): a remote op made concurrently with this
+     * phone's base names one of them as its `parent`, and is merged three-way against it (audit A5).
+     */
+    var pastPlaylists: Map<String, List<BasePl>> = emptyMap(),
     var question: LikesQuestion? = null,
     var answer: LikesAnswer? = null,
     var marks: List<PendingMark> = emptyList(),

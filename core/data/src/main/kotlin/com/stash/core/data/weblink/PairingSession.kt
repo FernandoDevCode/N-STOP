@@ -285,8 +285,12 @@ class PairingSession(
         return when (r) {
             is SyncResult.Ok -> WebLinkResult.Ok
             is SyncResult.Error -> {
-                // Refused for good (the code burned, 429, …): the space doesn't exist, so neither does the link here.
-                store.wipe()
+                // A 5xx, or an answer that isn't the Worker's own (a proxy or edge error page): the Worker may have created the
+                // space and then failed (its alarm, the RPC back), and the browser already shows itself linked. Wiping here would
+                // orphan this phone's row and its one-phone slot, so it is kept like an unreachable call: the next refresh
+                // settles it (`401 revoked` clears it, 200 keeps it).
+                // Otherwise refused for good (the code burned, 429, …): the space doesn't exist, so neither does the link here.
+                if (r.status < 500 && r.code != SyncErrorCode.HTTP) store.wipe()
                 WebLinkResult.Failed(r.userMessage())
             }
             // Unknown whether it landed: kept, and the next refresh settles it.

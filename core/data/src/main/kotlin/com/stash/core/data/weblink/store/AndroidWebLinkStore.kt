@@ -93,7 +93,7 @@ class AndroidWebLinkStore @Inject constructor(
         val row = dao.space() ?: return null
         val id = row.spaceId ?: return null
         val k = row.keySealed?.let { readKey { tink.decrypt(it) } } ?: return null
-        LinkedSpace(id, row.epoch, k, row.prevEpoch, row.prevKeySealed?.let { readKey { tink.decrypt(it) } })
+        LinkedSpace.of(id, row.epoch, k, row.prevEpoch, row.prevKeySealed?.let { readKey { tink.decrypt(it) } })
     }
 
     override suspend fun saveSpace(space: LinkedSpace): Unit = lock.withLock {
@@ -104,7 +104,8 @@ class AndroidWebLinkStore @Inject constructor(
                 epoch = space.epoch,
                 keySealed = tink.encrypt(space.k),
                 prevEpoch = space.prevEpoch,
-                prevKeySealed = space.prevK?.let(tink::encrypt),
+                // The previous key and the older ones kept, in the one sealed column (no schema change).
+                prevKeySealed = space.previousKeys()?.let(tink::encrypt),
                 linkedAt = if (row.spaceId == space.spaceId) row.linkedAt else System.currentTimeMillis(),
             ),
         )

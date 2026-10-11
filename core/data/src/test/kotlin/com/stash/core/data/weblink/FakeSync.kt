@@ -66,6 +66,13 @@ class FakeSyncServer : SyncApi {
 
     private fun forced(route: String): SyncResult.Error? = forced[route]?.removeFirstOrNull()
 
+    /** The next call to [route] does its work, then answers [error] (the Worker failed after committing). */
+    fun failAfterNext(route: String, error: SyncResult.Error) {
+        forcedAfter.getOrPut(route) { ArrayDeque() }.addLast(error)
+    }
+
+    private val forcedAfter = HashMap<String, ArrayDeque<SyncResult.Error>>()
+
     private fun err(status: Int, code: String, body: JsonObject? = null) = SyncResult.Error(status, code, code, body)
 
     private fun member(auth: DeviceAuth, spaceId: String): Pair<Space, Dev>? {
@@ -139,6 +146,7 @@ class FakeSyncServer : SyncApi {
         space.devices[b.id] = Dev(b.id, "web", b.tokenHash, b.pub, body.labels[b.id])
         spaces[body.spaceId] = space
         slot.burned = true
+        forcedAfter["create"]?.removeFirstOrNull()?.let { return it }
         return SyncResult.Ok(SpaceCreated(body.spaceId, 1))
     }
 
@@ -260,7 +268,14 @@ class FakeSyncServer : SyncApi {
         return SyncResult.Ok(LogPage(after.take(200), space.head, after.size > 200))
     }
 
+    /** Runs once before the next post, by anyone: another device's batch landing between a device's pull and its push. */
+    var beforeNextPost: (suspend () -> Unit)? = null
+
     override suspend fun postLog(auth: DeviceAuth, spaceId: String, env: SyncEnvelope): SyncResult<LogPosted> {
+        beforeNextPost?.let {
+            beforeNextPost = null
+            it()
+        }
         calls += "postLog"
         forced("postLog")?.let { return it }
         failPostsAfter?.let { n -> if (n <= 0) return SyncResult.Unreachable("offline") else failPostsAfter = n - 1 }
