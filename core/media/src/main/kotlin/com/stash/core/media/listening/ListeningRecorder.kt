@@ -316,17 +316,29 @@ class ListeningRecorder @VisibleForTesting internal constructor(
     private fun playedThrough(track: Track, positionMs: Long): Boolean =
         track.durationMs > 0 && positionMs >= track.durationMs - TRACK_END_SLACK_MS
 
-    /** Records a skip of [track] at [positionMs]. */
+    /**
+     * Records a skip of [track] at [positionMs].
+     *
+     * Persisted first, like a listen ([recordListen]): radio and search tracks carry
+     * a synthetic id with no Room row, so the insert broke the track_id foreign key
+     * and was dropped — skips on the main discovery surface were never counted
+     * although its plays were.
+     */
     private suspend fun recordSkip(track: Track, positionMs: Long) {
-        runCatching {
+        try {
+            val persistedTrackId = musicRepository.ensureTrackPersisted(track)
             trackSkipEventDao.insert(
                 TrackSkipEventEntity(
-                    trackId = track.id,
+                    trackId = persistedTrackId,
                     skippedAt = System.currentTimeMillis(),
                     positionMs = positionMs,
                 ),
             )
-        }.onFailure { Log.w(TAG, "skip insert failed", it) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "skip insert failed", e)
+        }
     }
 
     /** Enough listening time has played: record the listen, unless a transition claimed it first. */

@@ -576,6 +576,34 @@ class ListeningRecorderSkipTest {
     }
 
     @Test
+    fun `a skip of a radio track is stored against its persisted row`() = runTest {
+        // Radio ids are videoId.hashCode() with no Room row: inserting the skip under
+        // that id broke the foreign key and the skip was silently dropped.
+        val radioTrack = Track(id = -987L, title = "R", artist = "Z", durationMs = 200_000, youtubeId = "radio-vid")
+        val playerRepo = FakePlayerRepository(PlayerState(isPlaying = true, currentTrack = radioTrack))
+        val musicRepository = mockk<MusicRepository>()
+        coEvery { musicRepository.ensureTrackPersisted(radioTrack) } returns 77L
+        val skipDao = mockk<TrackSkipEventDao>(relaxed = true)
+        ListeningRecorder(
+            playerRepository = playerRepo,
+            musicRepository = musicRepository,
+            listeningEventDao = mockk(relaxed = true),
+            trackSkipEventDao = skipDao,
+            scrobbler = mockk(relaxed = true),
+            listenSinks = mockk(relaxed = true),
+            scope = backgroundScope,
+            nowMs = { testScheduler.currentTime },
+        ).start()
+        runCurrent()
+
+        advanceTimeBy(10_000)
+        playerRepo.setState(PlayerState(isPlaying = true, currentTrack = trackB))
+        runCurrent()
+
+        coVerify(exactly = 1) { skipDao.insert(match { it.trackId == 77L }) }
+    }
+
+    @Test
     fun `listening time adds up across a pause and the listen lands at 90 s of play`() = runTest {
         // A 3-minute song needs 90 s of play.
         val playing = PlayerState(isPlaying = true, currentTrack = trackA)
