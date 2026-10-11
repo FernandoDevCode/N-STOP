@@ -1030,6 +1030,14 @@ class StashPlaybackService : MediaLibraryService() {
         // depth, rate). Per player: the crossfade spare reports its next song
         // early, and only becomes "the source" once its output is audible.
         val session = renderersFactory.outputSession
+        // Each player normalizes its OWN song: the crossfade spare primes the
+        // next song (a transition on the spare), so it fades in at that song's
+        // level while the master keeps the outgoing song's.
+        player.addListener(object : Player.Listener {
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                updateSessionLoudness(session, mediaItem)
+            }
+        })
         player.addAnalyticsListener(object : AnalyticsListener {
             override fun onAudioInputFormatChanged(
                 eventTime: AnalyticsListener.EventTime,
@@ -1386,6 +1394,22 @@ class StashPlaybackService : MediaLibraryService() {
             val track = trackDao.getById(trackId) ?: return@launch
             val gainDb = computeGain(track.loudnessLufs, track.truePeakDbfs)
             loudnessController.setCurrentTrackGain(gainDb)
+        }
+    }
+
+    /** Looks up [mediaItem]'s loudness and sets it as [session]'s own gain (0 dB when unmeasured or unknown). */
+    private fun updateSessionLoudness(
+        session: com.stash.core.media.output.OutputSession,
+        mediaItem: MediaItem?,
+    ) {
+        val trackId = mediaItem?.mediaId?.toLongOrNull()
+        if (trackId == null) {
+            session.trackGainDb = 0f
+            return
+        }
+        serviceScope.launch {
+            val track = trackDao.getById(trackId)
+            session.trackGainDb = if (track == null) 0f else computeGain(track.loudnessLufs, track.truePeakDbfs)
         }
     }
 

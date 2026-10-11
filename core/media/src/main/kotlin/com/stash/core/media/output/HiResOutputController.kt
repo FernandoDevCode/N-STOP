@@ -69,6 +69,15 @@ class OutputSession {
 
     /** The player's current speed; bit-perfect is only possible at 1x. */
     @Volatile var speed: Float = 1f
+
+    /**
+     * Loudness gain for THIS player's current song, overriding the shared
+     * LoudnessController value. During a crossfade the two players play
+     * different songs; with one shared gain the incoming song faded in at the
+     * outgoing song's level and then stepped (up to ~10 dB) at the swap.
+     * Null until the player's first song has been looked up.
+     */
+    @Volatile var trackGainDb: Float? = null
 }
 
 /**

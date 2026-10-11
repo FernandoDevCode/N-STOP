@@ -65,7 +65,13 @@ class StashRenderersFactory(
             .setEnableAudioOutputPlaybackParameters(true)
             .setAudioOutputProvider(
                 StashAudioOutputProvider(audioTrackProvider, hiResOutputController, outputSession) {
-                    FloatDspChain({ eqController.state.value }, { loudnessController.state.value })
+                    FloatDspChain({ eqController.state.value }) {
+                        // This player's own song gain (see OutputSession.trackGainDb).
+                        val shared = loudnessController.state.value
+                        val own = outputSession.trackGainDb
+                        if (own == null || own == shared.currentTrackGainDb) shared
+                        else shared.copy(currentTrackGainDb = own)
+                    }
                 },
             )
             .build()
