@@ -451,8 +451,40 @@ class DatabaseBackupManager @Inject constructor(
         }
     }
 
+    /**
+     * Runs the production migration chain over the staged backup [stagedDb]
+     * through a throwaway Room instance (as [mergeLibraryFrom] does), so a
+     * replace-restore only ever swaps in a file already at the live schema.
+     *
+     * Without this, `integrity_check` was the only gate: a sound backup that
+     * could not be migrated — schema 1-2, which no migration starts from, or
+     * any migration failing on its data — was swapped in, the rollback copy
+     * was deleted, and Room then threw on every launch, leaving the app
+     * unusable until the user cleared its data. Now that failure happens here,
+     * before anything live is touched. Opening also validates the result
+     * against the entities, and TRUNCATE (not WAL) leaves the migrated file
+     * self-contained, ready to be moved into place.
+     */
+    private fun rollStagedDatabaseForward(stagedDb: File) {
+        val staged = Room.databaseBuilder(context, StashDatabase::class.java, stagedDb.absolutePath)
+            .addMigrations(*StashDatabase.ALL_MIGRATIONS)
+            .setJournalMode(RoomDatabase.JournalMode.TRUNCATE)
+            .build()
+        try {
+            staged.openHelper.writableDatabase
+        } catch (e: Exception) {
+            throw IllegalStateException(
+                "This backup could not be upgraded to this version of Stash, so it was not restored.", e,
+            )
+        } finally {
+            staged.close()
+            File(stagedDb.path + "-journal").delete()
+        }
+    }
+
     private fun cleanupStaging(stagedDb: File, stagedDatastore: List<Pair<File, File>>) {
         stagedDb.delete()
+        File(stagedDb.path + "-journal").delete()
         stagedDatastore.forEach { (tmp, _) -> tmp.delete() }
     }
 
@@ -577,13 +609,16 @@ class DatabaseBackupManager @Inject constructor(
             //    doesn't pass, bail and the live library is untouched.
             //    Scopes that don't consume the DB simply skip it (a
             //    settings-only import from a standard full backup is
-            //    legitimate).
+            //    legitimate). A swap also migrates the staged copy to the live
+            //    schema here, so a backup Room cannot open never replaces the
+            //    library (merge migrates its own throwaway copy).
             if (scope.consumesLibraryDatabase) {
                 try {
                     if (!stagedDb.exists()) {
                         throw IllegalStateException("The selected backup contains no database.")
                     }
                     verifyDatabaseIntegrity(stagedDb)
+                    if (scope.swapsDatabaseFile) rollStagedDatabaseForward(stagedDb)
                 } catch (e: Exception) {
                     cleanupStaging(stagedDb, stagedDatastore)
                     throw e
