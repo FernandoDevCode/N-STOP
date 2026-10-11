@@ -148,8 +148,8 @@ fun LastFmSection(
                 }
                 Spacer(modifier = Modifier.height(12.dp))
                 // "Sync scrobbles now" — manual drain. Useful right after
-                // the Last.fm connect handshake when cold-start import +
-                // accumulated local plays can leave hundreds queued up.
+                // the Last.fm connect handshake when accumulated local
+                // plays can leave hundreds queued up.
                 Button(
                     onClick = onSyncScrobblesNow,
                     enabled = !isScrobbleDraining && state.pendingScrobbles > 0,

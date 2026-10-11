@@ -73,8 +73,7 @@ class LastFmScrobbler @Inject constructor(
      * Manually drain the pending-scrobble queue once, on demand. Used by
      * the Settings "Sync scrobbles now" button — after the user finishes
      * the Last.fm connect handshake, they can tap this to push the full
-     * backlog (cold-start import can leave ~300 synthetic plays +
-     * accumulated real plays pending). When the session is null the call is
+     * backlog of accumulated plays. When the session is null the call is
      * a cheap no-op so the UI can surface a "Connect first" message.
      *
      * A tap is a deliberate probe, so it goes out even while the automatic
