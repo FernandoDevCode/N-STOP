@@ -108,8 +108,11 @@ internal fun LyricsPane(
 ) {
     // Hold the screen on while lyrics are on screen. Restore the previous value rather than
     // forcing false, so we never clear a keep-screen-on set by something else.
+    // Only while playing: paused with the phone set down, the screen never timed out (battery,
+    // and static lyrics burning into an AMOLED panel).
     val view = LocalView.current
-    DisposableEffect(view) {
+    DisposableEffect(view, isPlaying) {
+        if (!isPlaying) return@DisposableEffect onDispose { }
         val wasKeepingScreenOn = view.keepScreenOn
         view.keepScreenOn = true
         onDispose { view.keepScreenOn = wasKeepingScreenOn }
