@@ -89,6 +89,7 @@ import com.stash.core.media.BulkPlayAction
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.Track
 import com.stash.core.ui.components.VerticalScrollbar
+import com.stash.core.ui.components.NowPlayingJumpChip
 import com.stash.core.ui.components.DetailTrackRow
 import com.stash.core.ui.components.SearchFilterBar
 import com.stash.core.ui.components.SourceIndicator
@@ -354,6 +355,15 @@ fun PlaylistDetailScreen(
                 }
             }
             VerticalScrollbar(state = listState)
+            // "Now playing ↑/↓" while the playing song is scrolled out of sight.
+            NowPlayingJumpChip(
+                listState = listState,
+                trackIndex = remember(state.tracks, state.currentlyPlayingTrackId) {
+                    state.tracks.indexOfFirst { it.id == state.currentlyPlayingTrackId }
+                },
+                trackCount = state.tracks.size,
+                enabled = !selection.isActive,
+            )
         }
 
         // ── Selection chrome (overlaid contextual top + bottom bars) ────────

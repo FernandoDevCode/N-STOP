@@ -20,6 +20,8 @@ import com.stash.core.model.Playlist
 import com.stash.core.model.Track
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -53,6 +55,16 @@ import javax.inject.Inject
  * for a string set.
  */
 private val LOSSLESS_CODECS = setOf("flac", "alac", "wav", "ape", "tta", "wv", "aiff")
+
+/**
+ * The order every Library list takes under [SortOrder.ALPHABETICAL] (songs and likes by title;
+ * playlists, artists and albums by name): case-insensitive, character by character, nothing
+ * folded or stripped ("The Beatles" files under T, "Édith Piaf" after Z). The fast-scroll letter
+ * bubble ([com.stash.core.ui.components.fastScrollSectionLetter]) reads the first letter of the
+ * same name the same way, so its letters run in the list's own order. Change the two together:
+ * if this ever folds accents or skips a leading "The", the bubble must too.
+ */
+internal val alphabeticalOrder: Comparator<String> = String.CASE_INSENSITIVE_ORDER
 
 /** Shared track search predicate — every Library list matches title/artist/album. */
 private fun Track.matchesQuery(query: String): Boolean =
@@ -206,6 +218,73 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
+    // ── Single-song "Remove download", with Undo ─────────────────────────
+
+    /**
+     * The ⋮ sheet's "Remove download" on a Songs or Liked row: staged, not done, so the screen
+     * can offer Undo while the song has already left the downloads lists (see
+     * [UndoableDownloadRemoval]). The batch Remove download keeps its confirm dialog instead.
+     *
+     * Its own app-lifetime scope, not viewModelScope: [onCleared] commits a staged removal when
+     * viewModelScope is already cancelled, and a delete cut off between the file and its row
+     * would leave the row pointing at a missing file. Instantiated inline like LikeCoordinator's
+     * (no ApplicationScope qualifier exists in this codebase). If the process dies inside the
+     * Undo window nothing is deleted, which is the safe way to fail.
+     */
+    private val downloadRemoval = UndoableDownloadRemoval(
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+        remove = { track ->
+            try {
+                musicRepository.removeDownload(track.id)
+                true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("LibraryVM", "removeDownload ${track.id} failed", e)
+                _userMessages.tryEmit("Couldn't remove the download for \"${track.title}\".")
+                false
+            }
+        },
+    )
+
+    /** The staged removal the screen's Undo snackbar is for, or null. */
+    val pendingDownloadRemoval: StateFlow<Track?> = downloadRemoval.pending
+
+    /** "Remove download" from a row's ⋮ sheet: the song leaves the lists now, its file goes on [commitPendingDownloadRemoval]. */
+    fun removeDownloadWithUndo(track: Track) {
+        downloadRemoval.stage(track)
+    }
+
+    /** Undo: [trackId]'s file stays and the song is back in the lists. */
+    fun undoRemoveDownload(trackId: Long) {
+        downloadRemoval.undo(trackId)
+    }
+
+    /**
+     * The Undo is gone (its snackbar timed out or was swiped, or the listener left Library):
+     * delete now. A [trackId] commits only that song, so an outdated snackbar can't commit a newer one.
+     */
+    fun commitPendingDownloadRemoval(trackId: Long? = null) {
+        downloadRemoval.commit(trackId)
+    }
+
+    override fun onCleared() {
+        // Gone for good with an Undo still showing: the removal the listener asked for happens
+        // now, in downloadRemoval's own scope.
+        downloadRemoval.commit()
+        super.onCleared()
+    }
+
+    /**
+     * The downloaded songs, minus any whose removal is staged or still landing: they leave
+     * Songs and [LibraryUiState.librarySongCount] the moment Remove download is tapped, not
+     * when the file goes.
+     */
+    private val downloadedTracks: Flow<List<Track>> =
+        combine(musicRepository.getAllTracks(), downloadRemoval.hiddenIds) { tracks, hidden ->
+            if (hidden.isEmpty()) tracks else tracks.filterNot { it.id in hidden }
+        }
+
     /**
      * Derives a pair of (spotifyConnected, youTubeConnected) from TokenManager.
      */
@@ -228,8 +307,13 @@ class LibraryViewModel @Inject constructor(
         // even in Online mode. Recently-added STREAMABLE tracks belong on Home,
         // which is the streaming/discovery surface.
         musicRepository.getRecentlyAdded(20),
-    ) { playlists, recentlyAdded ->
-        LibraryData(playlists = playlists, recentlyAdded = recentlyAdded)
+        // A song whose download removal is staged leaves the recent rail too.
+        downloadRemoval.hiddenIds,
+    ) { playlists, recentlyAdded, hidden ->
+        LibraryData(
+            playlists = playlists,
+            recentlyAdded = if (hidden.isEmpty()) recentlyAdded else recentlyAdded.filterNot { it.id in hidden },
+        )
     }
 
     /**
@@ -252,7 +336,7 @@ class LibraryViewModel @Inject constructor(
      */
     val uiState: StateFlow<LibraryUiState> = combine(
         pipelineControls,
-        musicRepository.getAllTracks(),
+        downloadedTracks,
         libraryDataFlow,
         musicRepository.getAllArtists(),
         musicRepository.getAllAlbums(),
@@ -330,7 +414,7 @@ class LibraryViewModel @Inject constructor(
         // -- Apply sort order --
         val sortedTracks = when (controls.sortOrder) {
             SortOrder.RECENT -> filteredTracks.sortedByDescending { it.dateAdded }
-            SortOrder.ALPHABETICAL -> filteredTracks.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
+            SortOrder.ALPHABETICAL -> filteredTracks.sortedWith(compareBy(alphabeticalOrder) { it.title })
             SortOrder.MOST_PLAYED -> filteredTracks.sortedByDescending { it.playCount }
             SortOrder.DURATION -> filteredTracks.sortedByDescending { it.durationMs }
         }
@@ -339,7 +423,7 @@ class LibraryViewModel @Inject constructor(
             // — the latter reshuffles the list every sync run. See
             // PlaylistEntity.dateAdded + migration v12→v13 (issue #13).
             SortOrder.RECENT -> filteredPlaylists.sortedByDescending { it.dateAdded }
-            SortOrder.ALPHABETICAL -> filteredPlaylists.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+            SortOrder.ALPHABETICAL -> filteredPlaylists.sortedWith(compareBy(alphabeticalOrder) { it.name })
             // Playlists don't track a per-playlist play_count; use
             // trackCount as the most-relevant "size" signal so this
             // chip produces a visible ordering change instead of a
@@ -354,13 +438,13 @@ class LibraryViewModel @Inject constructor(
         // Sort artists/albums — default by track count descending (most tracks first)
         val sortedArtists = when (controls.sortOrder) {
             SortOrder.RECENT -> filteredArtists.sortedByDescending { it.trackCount }
-            SortOrder.ALPHABETICAL -> filteredArtists.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+            SortOrder.ALPHABETICAL -> filteredArtists.sortedWith(compareBy(alphabeticalOrder) { it.name })
             SortOrder.MOST_PLAYED -> filteredArtists.sortedByDescending { it.trackCount }
             SortOrder.DURATION -> filteredArtists.sortedByDescending { it.totalDurationMs }
         }
         val sortedAlbums = when (controls.sortOrder) {
             SortOrder.RECENT -> filteredAlbums.sortedByDescending { it.trackCount }
-            SortOrder.ALPHABETICAL -> filteredAlbums.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+            SortOrder.ALPHABETICAL -> filteredAlbums.sortedWith(compareBy(alphabeticalOrder) { it.name })
             SortOrder.MOST_PLAYED -> filteredAlbums.sortedByDescending { it.trackCount }
             // Albums carry no duration projection — fall back to track count.
             SortOrder.DURATION -> filteredAlbums.sortedByDescending { it.trackCount }
@@ -1086,7 +1170,7 @@ internal fun sortLikedTracks(tracks: List<Track>, order: SortOrder): List<Track>
         val (stamped, synced) = tracks.partition { it.likedAtOrNull() != null }
         stamped.sortedByDescending { it.likedAtOrNull() } + synced
     }
-    SortOrder.ALPHABETICAL -> tracks.sortedBy { it.title.lowercase() }
+    SortOrder.ALPHABETICAL -> tracks.sortedWith(compareBy(alphabeticalOrder) { it.title })
     SortOrder.MOST_PLAYED -> tracks.sortedByDescending { it.playCount }
     SortOrder.DURATION -> tracks.sortedByDescending { it.durationMs }
 }

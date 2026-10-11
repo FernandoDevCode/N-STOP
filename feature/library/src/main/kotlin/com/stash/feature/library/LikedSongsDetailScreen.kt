@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -65,6 +66,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.media.BulkPlayAction
 import com.stash.core.model.Track
 import com.stash.core.ui.components.DetailTrackRow
+import com.stash.core.ui.components.NowPlayingJumpChip
 import com.stash.core.ui.components.SearchFilterBar
 import com.stash.core.ui.components.SourceIndicator
 import com.stash.core.ui.components.TrackOptionsSheet
@@ -123,6 +125,7 @@ fun LikedSongsDetailScreen(
         viewModel.userMessages.collect { snackbarHostState.showSnackbar(it) }
     }
 
+    val listState = rememberLazyListState()
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -148,6 +151,7 @@ fun LikedSongsDetailScreen(
             // -- Content: header + optional search bar + track list (or no-results message) --
             else -> {
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.fillMaxSize(),
                     // Task 7 hides the mini-player while selecting, but the bottom
                     // selection bar then takes its place. Pad enough that the last
@@ -225,6 +229,15 @@ fun LikedSongsDetailScreen(
                         }
                     }
                 }
+                // "Now playing ↑/↓" while the playing song is scrolled out of sight.
+                NowPlayingJumpChip(
+                    listState = listState,
+                    trackIndex = remember(state.tracks, state.currentlyPlayingTrackId) {
+                        state.tracks.indexOfFirst { it.id == state.currentlyPlayingTrackId }
+                    },
+                    trackCount = state.tracks.size,
+                    enabled = !selection.isActive,
+                )
             }
         }
 

@@ -247,6 +247,18 @@ private fun StashNavGraph(
                     )
                 },
                 onSelectionModeChanged = onSelectionModeChanged,
+                // The empty library's buttons: real tab switches (Back and the tab bar behave
+                // as if tapped), and Accounts the way Sync's Re-authenticate opens it.
+                onNavigateToSync = { onNavigateToTab(TopLevelDestination.SYNC) },
+                onNavigateToSearch = { onNavigateToTab(TopLevelDestination.SEARCH) },
+                onNavigateToAccounts = {
+                    navController.navigate(SettingsRoute) {
+                        launchSingleTop = true
+                    }
+                    navController.navigate(SettingsAccountsRoute) {
+                        launchSingleTop = true
+                    }
+                },
             )
         }
         composable<SearchRoute> {
