@@ -190,7 +190,7 @@ class LazyResolvingDataSource(
         pinned = stream
         pinnedAtElapsedMs = elapsedMs()
         // Same wall-clock-once, monotonic-after scheme as StreamUrlCache.
-        pinnedLifetimeMs = stream.expiresAtMs - System.currentTimeMillis()
+        pinnedLifetimeMs = usableLifetimeMs(stream.expiresAtMs - System.currentTimeMillis())
     }
 
     private fun pinStillValid(): Boolean = elapsedMs() - pinnedAtElapsedMs < pinnedLifetimeMs

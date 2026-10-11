@@ -56,6 +56,18 @@ class StreamUrlCacheTest {
     }
 
     @Test
+    fun get_stopsServingAUrlTheLastMinutesBeforeItExpires() {
+        // A URL opened seconds before it dies 403s on the first reconnect, and a
+        // placeholder has no refresh layer. One hour left: the last 5 minutes go.
+        cache.put(1L, url("https://cdn/file", expiresAtMs = 3_600_000L))
+
+        mono = 3_600_000L - 6 * 60_000L
+        assertThat(cache.get(1L)).isNotNull()
+        mono = 3_600_000L - 4 * 60_000L
+        assertThat(cache.get(1L)).isNull()
+    }
+
+    @Test
     fun put_dropsAlreadyExpiredEntry() {
         // Absolute expiry already in the past at insert (wall has advanced
         // past it) → non-positive TTL → not cached at all.
