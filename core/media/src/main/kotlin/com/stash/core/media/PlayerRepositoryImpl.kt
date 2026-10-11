@@ -1901,7 +1901,11 @@ class PlayerRepositoryImpl @Inject constructor(
                                 putLong(EXTRA_TRACK_ID, track.id)
                                 track.youtubeId?.let { putString(EXTRA_TRACK_YOUTUBE_ID, it) }
                                 if (track.durationMs > 0) putLong(EXTRA_TRACK_DURATION_MS, track.durationMs)
-                                putBoolean(EXTRA_TRACK_IS_STREAMABLE, track.isStreamable)
+                                // This branch plays the local file, so it is never "stream-only",
+                                // whatever the row's is_streamable says: rows first seen via Search,
+                                // Discovery, a share or a Stash Mix keep is_streamable=1 after they
+                                // download, and offline silent-skip used to skip them all.
+                                putBoolean(EXTRA_TRACK_IS_STREAMABLE, false)
                             })
                             .build()
                     )
@@ -2929,7 +2933,9 @@ class PlayerRepositoryImpl @Inject constructor(
                 putLong(EXTRA_TRACK_ID, id)
                 youtubeId?.let { putString(EXTRA_TRACK_YOUTUBE_ID, it) }
                 if (durationMs > 0) putLong(EXTRA_TRACK_DURATION_MS, durationMs)
-                putBoolean(EXTRA_TRACK_IS_STREAMABLE, isStreamable)
+                // "Stream-only" means no local file (as AutoBrowse computes it): a
+                // downloaded row can still carry is_streamable=1 from how it was found.
+                putBoolean(EXTRA_TRACK_IS_STREAMABLE, isStreamable && filePath.isNullOrBlank())
             })
             .build()
 
