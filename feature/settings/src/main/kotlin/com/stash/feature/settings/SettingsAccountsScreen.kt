@@ -189,7 +189,11 @@ fun SettingsAccountsScreen(
             accentColor = extendedColors.youtubeRed,
             authState = uiState.youTubeAuthState,
             onConnect = viewModel::onConnectYouTube,
-            onDisconnect = viewModel::onDisconnectYouTube,
+            onDisconnect = {
+                // Also sign the WebView out of Google, so the account isn't left behind in it.
+                com.stash.feature.settings.components.clearYouTubeWebSession()
+                viewModel.onDisconnectYouTube()
+            },
             extraContent = {
                 com.stash.feature.settings.components.YouTubeHistorySyncSection(
                     enabled = uiState.ytHistoryEnabled,

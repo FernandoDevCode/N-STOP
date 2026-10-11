@@ -141,12 +141,13 @@ fun YouTubeLoginWebView(
                 factory = { context ->
                     // Fresh session every launch — stale Google cookies cause
                     // the page to bounce to the consent screen or show a
-                    // half-signed-in state that's hard to recover from.
-                    CookieManager.getInstance().apply {
-                        removeAllCookies(null)
-                        flush()
-                        setAcceptCookie(true)
-                    }
+                    // half-signed-in state that's hard to recover from. Only
+                    // Google's and YouTube's: this used to removeAllCookies(),
+                    // wiping every web session the app holds — Spotify's, the
+                    // squid captcha's, and Google's `_GRECAPTCHA` reputation that
+                    // SpotifyLoginWebView keeps on purpose (#231).
+                    clearYouTubeWebSession()
+                    CookieManager.getInstance().setAcceptCookie(true)
 
                     WebView(context).apply {
                         layoutParams = ViewGroup.LayoutParams(
@@ -169,10 +170,9 @@ fun YouTubeLoginWebView(
                             useWideViewPort = true
                             loadWithOverviewMode = true
                             cacheMode = WebSettings.LOAD_NO_CACHE
-                            // Letting the WebView make framework choices on
-                            // mixed-content keeps Google's CDN scripts loading
-                            // without surprising security overrides.
-                            mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                            // Mixed content stays at the default (never allowed):
+                            // Google's sign-in is https end to end, and a password
+                            // page has no business loading http resources.
                         }
 
                         webViewClient = object : WebViewClient() {
@@ -182,7 +182,10 @@ fun YouTubeLoginWebView(
                                 favicon: Bitmap?,
                             ) {
                                 isLoading = true
-                                Log.d(TAG, "onPageStarted: $url")
+                                // Host only: the full URL carries sign-in query
+                                // parameters, and logcat goes into the logs users
+                                // attach to public bug reports.
+                                Log.d(TAG, "onPageStarted: ${hostOf(url)}")
                                 checkCookies(url, onCookieExtracted) {
                                     cookieFound = true
                                 }
@@ -190,7 +193,7 @@ fun YouTubeLoginWebView(
 
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 isLoading = false
-                                Log.d(TAG, "onPageFinished: $url")
+                                Log.d(TAG, "onPageFinished: ${hostOf(url)}")
                                 checkCookies(url, onCookieExtracted) {
                                     cookieFound = true
                                 }
@@ -241,16 +244,56 @@ private fun checkCookies(
     if (!hasSapiSid || !hasLoginInfo) {
         Log.d(
             TAG,
-            "checkCookies @ $url: jarLen=${cookies.length} " +
+            "checkCookies @ ${hostOf(url)}: jarLen=${cookies.length} " +
                 "sapi=$hasSapiSid login=$hasLoginInfo (waiting)",
         )
         return
     }
     Log.i(
         TAG,
-        "YouTube cookies extracted from $url (len=${cookies.length}, " +
+        "YouTube cookies extracted from ${hostOf(url)} (len=${cookies.length}, " +
             "sapi=$hasSapiSid, login=$hasLoginInfo)",
     )
     onFound()
     onExtracted(cookies)
+}
+
+/** The host of [url], for logs: never the path or query. */
+private fun hostOf(url: String?): String =
+    url?.substringAfter("://")?.substringBefore('/')?.substringBefore('?').orEmpty()
+
+/**
+ * Google's and YouTube's sign-in hosts, each with the cookie domain its
+ * session cookies are set on.
+ */
+private val GOOGLE_SESSION_HOSTS = listOf(
+    "https://www.youtube.com" to ".youtube.com",
+    "https://m.youtube.com" to ".youtube.com",
+    "https://music.youtube.com" to ".youtube.com",
+    "https://accounts.youtube.com" to ".youtube.com",
+    "https://accounts.google.com" to ".google.com",
+    "https://www.google.com" to ".google.com",
+)
+
+/**
+ * Expires the Google / YouTube session cookies in the shared WebView cookie jar
+ * and nothing else, keeping Google's `_GRECAPTCHA` reputation cookie, which
+ * the Spotify sign-in depends on. Names are read from the jar, since Google's
+ * set changes; both cookie forms are expired (see
+ * [WebSessionCookies.expiryHeaders]). Best-effort: a device without a working
+ * WebView throws from [CookieManager.getInstance].
+ */
+internal fun clearYouTubeWebSession() {
+    runCatching {
+        CookieManager.getInstance().apply {
+            GOOGLE_SESSION_HOSTS.forEach { (url, domain) ->
+                WebSessionCookies.names(getCookie(url))
+                    .filterNot { it.startsWith("_GRECAPTCHA") }
+                    .forEach { name ->
+                        WebSessionCookies.expiryHeaders(name, domain).forEach { setCookie(url, it) }
+                    }
+            }
+            flush()
+        }
+    }.onFailure { Log.w(TAG, "clearing the YouTube web session failed", it) }
 }
