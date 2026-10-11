@@ -57,7 +57,7 @@ class TrackDaoLoudnessTest {
         dao.insert(track(id = 2L, filePath = "/b.opus"))
         dao.insert(track(id = 3L, filePath = "/c.opus"))
 
-        val result = dao.tracksNeedingLoudness(limit = 10)
+        val result = dao.tracksNeedingLoudness(afterId = 0L, limit = 10)
 
         assertEquals(setOf(1L, 2L, 3L), result.map { it.id }.toSet())
     }
@@ -79,7 +79,7 @@ class TrackDaoLoudnessTest {
         ))
         dao.insert(track(id = 3L, filePath = "/c.opus"))
 
-        val result = dao.tracksNeedingLoudness(limit = 10)
+        val result = dao.tracksNeedingLoudness(afterId = 0L, limit = 10)
 
         assertEquals(listOf(3L), result.map { it.id })
     }
@@ -93,9 +93,17 @@ class TrackDaoLoudnessTest {
         ))
         dao.insert(track(id = 2L, filePath = "/b.opus"))
 
-        val result = dao.tracksNeedingLoudness(limit = 10)
+        val result = dao.tracksNeedingLoudness(afterId = 0L, limit = 10)
 
         assertEquals(listOf(2L), result.map { it.id })
+    }
+
+    @Test fun tracksNeedingLoudness_pagesByIdAfterTheCursor() = runTest {
+        (1L..5L).forEach { dao.insert(track(id = it, filePath = "/$it.opus")) }
+
+        assertEquals(listOf(1L, 2L), dao.tracksNeedingLoudness(afterId = 0L, limit = 2).map { it.id })
+        assertEquals(listOf(3L, 4L), dao.tracksNeedingLoudness(afterId = 2L, limit = 2).map { it.id })
+        assertEquals(listOf(5L), dao.tracksNeedingLoudness(afterId = 4L, limit = 2).map { it.id })
     }
 
     @Test fun updateLoudness_writesAllThreeColumns() = runTest {

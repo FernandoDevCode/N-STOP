@@ -1120,16 +1120,25 @@ interface TrackDao {
      *
      * A separate weekly resurrection query (added later in the plan) picks
      * up the failed-sentinel rows after a cooldown for a single retry pass.
+     *
+     * Paged by id ([afterId], ascending). Rows the worker cannot measure —
+     * a missing file, or a SAF `content://` path the measurer cannot open —
+     * stay unstamped on purpose (a re-download must still get measured), so
+     * a plain `LIMIT` kept returning the same unmeasurable rows first: with
+     * 250 of them, every run measured nothing. The worker now walks past
+     * them page by page instead.
      */
     @Query(
         """
         SELECT * FROM tracks
         WHERE loudness_measured_at IS NULL
           AND file_path IS NOT NULL
+          AND id > :afterId
+        ORDER BY id
         LIMIT :limit
         """
     )
-    suspend fun tracksNeedingLoudness(limit: Int): List<TrackEntity>
+    suspend fun tracksNeedingLoudness(afterId: Long, limit: Int): List<TrackEntity>
 
     /**
      * Writes a successful loudness measurement: integrated loudness in
@@ -2157,6 +2166,12 @@ interface TrackDao {
      * the file path — no network round-trips are implied by a hit in
      * this result set. Same `LIMIT` safety cap so a huge backlog can't
      * take down the worker.
+     *
+     * `ORDER BY id DESC`: a row no source can fill stays a candidate forever,
+     * and with no order SQLite returned rowid order, so once [limit] such
+     * rows existed every run retried the same oldest ones and newer tracks
+     * were never reached. Newest-first means fresh rows are always tried
+     * next; rows that already failed sink below them.
      */
     @Query(
         """
@@ -2166,6 +2181,7 @@ interface TrackDao {
           AND duration_ms = 0
           AND file_path IS NOT NULL
           AND file_path != ''
+        ORDER BY id DESC
         LIMIT :limit
         """
     )
@@ -2180,6 +2196,12 @@ interface TrackDao {
      * Only rows where the backfill has any chance of succeeding are
      * returned — tracks with a blank artist or title can't match anything
      * upstream, so we skip them entirely.
+     *
+     * `ORDER BY id DESC`: a row no source can fill stays a candidate forever,
+     * and with no order SQLite returned rowid order, so once [limit] such
+     * rows existed every run retried the same oldest ones and newer tracks
+     * were never reached. Newest-first means fresh rows are always tried
+     * next; rows that already failed sink below them.
      */
     @Query(
         """
@@ -2189,6 +2211,7 @@ interface TrackDao {
           AND (album_art_url IS NULL OR album_art_url = '')
           AND artist != ''
           AND title != ''
+        ORDER BY id DESC
         LIMIT :limit
         """
     )
@@ -2205,6 +2228,12 @@ interface TrackDao {
      * "0:00" durations on first paint; metadata only filled in
      * incidentally when the player resolved a queue window at play time
      * (conversation 2026-05-28).
+     *
+     * `ORDER BY id DESC`: a row no source can fill stays a candidate forever,
+     * and with no order SQLite returned rowid order, so once [limit] such
+     * rows existed every run retried the same oldest ones and newer tracks
+     * were never reached. Newest-first means fresh rows are always tried
+     * next; rows that already failed sink below them.
      */
     @Query(
         """
@@ -2215,6 +2244,7 @@ interface TrackDao {
           AND (album_art_url IS NULL OR album_art_url = '' OR duration_ms = 0)
           AND artist != ''
           AND title != ''
+        ORDER BY id DESC
         LIMIT :limit
         """
     )
