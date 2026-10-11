@@ -236,14 +236,15 @@ class PlaylistFetchWorker @AssistedInject constructor(
     }
 
     /**
-     * Called by WorkManager BEFORE [doWork] runs. Promotes the worker to a
-     * foreground service with a "Fetching playlists…" notification so the
-     * system doesn't kill it during long fetches on huge libraries (3000+
-     * liked songs can take more than 10 minutes of paginated API calls).
+     * The "Fetching your library…" foreground notification, used by
+     * [promoteToForeground] so the system doesn't stop the fetch at the
+     * ~10-minute background-job limit on huge libraries (3000+ liked songs can
+     * take more than 10 minutes of paginated API calls).
      *
-     * See [TrackDownloadWorker.getForegroundInfo] for background on why
-     * this override is necessary rather than calling setForeground() inside
-     * doWork().
+     * WorkManager itself only calls this for EXPEDITED work on Android 11 and
+     * below; the sync chain is not expedited, so overriding it alone never
+     * promoted anything — the fetch ran as an ordinary job, was stopped at the
+     * limit, and restarted from scratch with a new sync_history row.
      */
     override suspend fun getForegroundInfo(): ForegroundInfo {
         val cancelIntent = WorkManager.getInstance(applicationContext)
@@ -259,6 +260,24 @@ class PlaylistFetchWorker @AssistedInject constructor(
             notification,
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
         )
+    }
+
+    /**
+     * Best-effort promotion to a foreground service for the long fetch below.
+     * Succeeds when the sync starts with the app in the foreground ("Sync
+     * now"); a scheduled run that starts in the background gets
+     * ForegroundServiceStartNotAllowedException on Android 12+ and carries on
+     * as a regular job, exactly as before — a missing notification is no reason
+     * to fail the sync. Mirrors [TrackDownloadWorker]'s safeSetForeground, but
+     * lets a stopped sync's cancellation through.
+     */
+    private suspend fun promoteToForeground() {
+        try {
+            setForeground(getForegroundInfo())
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Log.w(TAG, "setForeground failed (backgrounded / foreground-restricted); fetching as a regular job", e)
+        }
     }
 
     override suspend fun doWork(): Result {
@@ -330,7 +349,9 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 return Result.failure(workDataOf(KEY_SYNC_ID to syncId))
             }
 
-            // Step 3: Transition to fetching playlists.
+            // Step 3: Transition to fetching playlists. This is the long part,
+            // so ask to run it as a foreground service first.
+            promoteToForeground()
             syncStateManager.onFetchingPlaylists()
             syncHistoryDao.updateStatus(syncId, SyncState.FETCHING_PLAYLISTS)
 

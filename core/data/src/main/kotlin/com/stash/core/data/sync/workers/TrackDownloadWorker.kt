@@ -100,15 +100,13 @@ class TrackDownloadWorker @AssistedInject constructor(
     }
 
     /**
-     * Called by WorkManager BEFORE [doWork] runs. Returning a [ForegroundInfo]
-     * here signals that this is a long-running worker that needs foreground
-     * service promotion, and WorkManager will start the foreground service
-     * itself before invoking [doWork]. This bypasses the Android 12+ restriction
-     * on starting foreground services from the background, because WorkManager
-     * is the one starting the service — not an already-backgrounded app.
-     *
-     * Without this override, the worker is treated as a regular background job
-     * and gets killed within ~10 minutes of the app being backgrounded.
+     * The initial foreground notification. Note what this does NOT do:
+     * WorkManager only calls it on its own for EXPEDITED work on Android 11
+     * and below, and the sync chain is not expedited, so overriding it never
+     * promotes the worker before [doWork]. Promotion happens only through the
+     * [safeSetForeground] call in [doWork], which Android 12+ refuses while the
+     * app is in the background — a scheduled run that starts backgrounded
+     * downloads as a regular job, subject to the ~10-minute job limit.
      */
     override suspend fun getForegroundInfo(): ForegroundInfo {
         return createForegroundInfo(
@@ -219,10 +217,10 @@ class TrackDownloadWorker @AssistedInject constructor(
                 )
             }
 
-            // The worker is already running as a foreground service because
-            // getForegroundInfo() was overridden and WorkManager promoted us
-            // before calling doWork(). This setForeground() call UPDATES the
-            // notification to show the real track count now that we know it.
+            // Promote to a foreground service with the real track count. This
+            // is the ONLY promotion: getForegroundInfo() alone does not run a
+            // non-expedited worker in the foreground. Best-effort — refused
+            // when the app is backgrounded (see safeSetForeground).
             syncStateManager.onDownloading(downloaded = 0, total = total)
             safeSetForeground(createForegroundInfo(downloaded = 0, total = total))
 
