@@ -38,7 +38,12 @@ import com.stash.core.ui.theme.StashTheme
 import com.stash.data.download.files.LocalImportCoordinator
 import com.stash.data.download.lossless.squid.CaptchaExpiredNotifier
 import dagger.hilt.android.AndroidEntryPoint
+import com.stash.core.data.social.LikeCoordinator
+import com.stash.core.media.PlayerRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -75,6 +80,12 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var shareApiClient: ShareApiClient
+
+    @Inject
+    lateinit var playerRepository: PlayerRepository
+
+    @Inject
+    lateinit var likeCoordinator: LikeCoordinator
 
     /**
      * What every song Share sheet's "Stash link" uses to make a short link (via [LocalCreateTrackLink]). Null on any
@@ -121,6 +132,24 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(lifecycleOwner) {
                 lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                     listenTogether.messages.collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+                }
+            }
+            // Player-level notices, on whichever screen is showing. They used to be forwarded
+            // into each NowPlayingViewModel's own message flow, which only Now Playing or the
+            // open queue sheet collected: a SharedFlow with no subscriber drops what it emits,
+            // so a song tapped offline from Library ("Couldn't play this track right now."),
+            // "End of offline Mix" and the streaming halt did nothing visible anywhere else.
+            LaunchedEffect(lifecycleOwner) {
+                lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    // The halt flow replays its last event (replay = 1): skip that one, or every
+                    // return to the app would re-announce an outage that is long over.
+                    val halts = playerRepository.streamingHaltedEvents
+                    merge(
+                        playerRepository.userMessages,
+                        halts.drop(halts.replayCache.size)
+                            .map { "Streaming is failing — try a downloaded track or check your connection" },
+                        likeCoordinator.mirrorFailures,
+                    ).collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
                 }
             }
             // Open Stash on (#428): the tab the NavHost starts on. Saved across recreation so a

@@ -660,23 +660,13 @@ class NowPlayingViewModel @Inject constructor(
             initialValue = 0L,
         )
 
+    // Player-level notices (PlayerRepository.userMessages, streamingHaltedEvents) and like-mirror
+    // failures are NOT forwarded here: MainActivity shows them on every screen. Forwarded into
+    // this flow they reached the user only while Now Playing or the queue sheet collected it.
     init {
         observePlayerStateLive()
         prefetchLyricsWhileForeground()
         observeUserPlaylists()
-        observeStreamingHaltedEvents()
-        observePlayerUserMessages()
-        collectMirrorFailures()
-    }
-
-    /**
-     * v0.9.52: best-effort mirror sync failures surface as one subtle
-     * snackbar per session (LikeCoordinator gates the frequency).
-     */
-    private fun collectMirrorFailures() {
-        viewModelScope.launch {
-            likeCoordinator.mirrorFailures.collect { _userMessages.tryEmit(it) }
-        }
     }
 
     // ------------------------------------------------------------------
@@ -824,43 +814,6 @@ class NowPlayingViewModel @Inject constructor(
                     )
                 }
             }
-            .launchIn(viewModelScope)
-    }
-
-    /**
-     * Subscribes to [PlayerRepository.streamingHaltedEvents] and surfaces
-     * each halt as a Toast via [_userMessages]. The cascade-guard in
-     * PlayerRepositoryImpl already paused the player by the time this
-     * fires — the Toast is purely informational so the user understands
-     * why playback stopped.
-     *
-     * Toast (not Snackbar) matches the existing NowPlayingScreen
-     * convention — see the comment near the `userMessages` collector in
-     * NowPlayingScreen.kt for why we don't wrap this screen in a
-     * Scaffold.
-     */
-    private fun observeStreamingHaltedEvents() {
-        playerRepository.streamingHaltedEvents
-            .onEach {
-                _userMessages.emit(
-                    "Streaming is failing \u2014 try a downloaded track or check your connection"
-                )
-            }
-            .launchIn(viewModelScope)
-    }
-
-    /**
-     * Forwards [PlayerRepository.userMessages] emissions into the screen's
-     * Toast channel. Source examples:
-     *  - "Couldn't play this track right now." (setQueue tap failure)
-     *  - "End of offline Mix" (v0.9.37 auto-advance silent-skip exhausted
-     *    the queue while offline)
-     * The player layer already paused playback when relevant; this
-     * observer is purely informational.
-     */
-    private fun observePlayerUserMessages() {
-        playerRepository.userMessages
-            .onEach { msg -> _userMessages.emit(msg) }
             .launchIn(viewModelScope)
     }
 
