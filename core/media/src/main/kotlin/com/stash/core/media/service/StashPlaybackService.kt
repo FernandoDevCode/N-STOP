@@ -1751,9 +1751,18 @@ class StashPlaybackService : MediaLibraryService() {
 
     private inner class StashSessionCallback : MediaLibrarySession.Callback {
 
-        private suspend fun resolveMediaItem(item: MediaItem): MediaItem {
+        @OptIn(UnstableApi::class)
+        private suspend fun resolveMediaItem(item: MediaItem, controller: MediaSession.ControllerInfo): MediaItem {
+            // A local URI (file, content, android.resource) is opened with Stash's
+            // own file access and SAF grants. The library service is exported, so
+            // any installed app can bind it and hand one over: only a trusted
+            // controller (this app, the system, apps the user granted media
+            // control or notification access) may have Stash open one.
+            val trusted = controller.isTrusted
+            val uri = item.localConfiguration?.uri
+
             // 1. If it's already a fully resolved item (has URI), use it
-            if (item.localConfiguration?.uri != null) {
+            if (uri != null && (trusted || uri.scheme?.lowercase() !in LOCAL_URI_SCHEMES)) {
                 return item
             }
 
@@ -1771,16 +1780,18 @@ class StashPlaybackService : MediaLibraryService() {
                 }
             }
 
-            // 3. Fallback to request metadata URI (with security check)
-            val uri = item.requestMetadata.mediaUri
-            if (uri != null) {
-                val scheme = uri.scheme
+            // 3. Fallback to request metadata URI (with security check; trusted
+            // controllers only, see above)
+            val requestUri = item.requestMetadata.mediaUri
+            if (requestUri != null && trusted) {
+                val scheme = requestUri.scheme
                 if (scheme == "file" || scheme == "android.resource" || scheme == "content") {
-                    return item.buildUpon().setUri(uri).build()
+                    return item.buildUpon().setUri(requestUri).build()
                 }
             }
 
-            return item
+            // An untrusted controller's local URI is dropped, never opened.
+            return if (uri != null) item.buildUpon().setUri(null as android.net.Uri?).build() else item
         }
 
         @OptIn(UnstableApi::class)
@@ -1836,7 +1847,7 @@ class StashPlaybackService : MediaLibraryService() {
                         }
                     }
                 }
-                val resolvedItems = mediaItems.map { resolveMediaItem(it) }
+                val resolvedItems = mediaItems.map { resolveMediaItem(it, controller) }
                 MediaSession.MediaItemsWithStartPosition(resolvedItems, startIndex, startPositionMs)
             }
         }
@@ -1917,7 +1928,7 @@ class StashPlaybackService : MediaLibraryService() {
                     } else {
                         item
                     }
-                    resolveMediaItem(normalized)
+                    resolveMediaItem(normalized, controller)
                 }
             }
         }
@@ -2203,14 +2214,19 @@ class StashPlaybackService : MediaLibraryService() {
             session: MediaSession,
             controller: MediaSession.ControllerInfo,
         ): MediaSession.ConnectionResult {
-            val customCommands = listOf(
-                SessionCommand(COMMAND_TOGGLE_SHUFFLE, /* extras = */ android.os.Bundle.EMPTY),
-                SessionCommand(COMMAND_CYCLE_REPEAT, /* extras = */ android.os.Bundle.EMPTY),
-                SessionCommand(COMMAND_TOGGLE_LIKE, /* extras = */ android.os.Bundle.EMPTY),
-                SessionCommand(COMMAND_STOP_SLEEP_TIMER, /* extras = */ android.os.Bundle.EMPTY),
-                SessionCommand(COMMAND_LEAVE_SESSION, /* extras = */ android.os.Bundle.EMPTY),
-                SessionCommand(COMMAND_SET_SHUFFLE_ORDER, /* extras = */ android.os.Bundle.EMPTY),
-            )
+            // The library service is exported, so any installed app can bind it. Writing Stash's
+            // own state (a like, which LikeCoordinator can mirror to the user's Spotify or YouTube
+            // account; the shuffle order; leaving a Listen Together room) is kept to the
+            // controllers that legitimately drive it: this app and its notification, the system
+            // and apps the user trusted with media control or notification access (SystemUI, the
+            // Wear companion), and Android Auto / Automotive. See [grantedCustomActions].
+            val privileged = controller.isTrusted ||
+                session.isMediaNotificationController(controller) ||
+                session.isAutoCompanionController(controller) ||
+                session.isAutomotiveController(controller)
+            val customCommands = grantedCustomActions(privileged).map {
+                SessionCommand(it, /* extras = */ android.os.Bundle.EMPTY)
+            }
             // FULL library command set — not DEFAULT_SESSION_COMMANDS plus a
             // hand-picked subset. The old hand-picked list omitted
             // COMMAND_CODE_LIBRARY_GET_SEARCH_RESULT (Android Auto could
@@ -2418,6 +2434,28 @@ class StashPlaybackService : MediaLibraryService() {
                 }
             }
         }
+    }
+}
+
+/** URI schemes [StashPlaybackService] opens with its own file access (see resolveMediaItem). */
+private val LOCAL_URI_SCHEMES = setOf("file", "content", "android.resource")
+
+/**
+ * The custom session commands a connecting controller gets. Shuffle, repeat
+ * and stopping the sleep timer are transport, like the player commands every
+ * controller has. A like (a Room write that can mirror to the user's Spotify
+ * or YouTube account), the shuffle order and leaving a Listen Together room
+ * change Stash's own state, so only a [privileged] controller (see onConnect)
+ * gets them.
+ */
+internal fun grantedCustomActions(privileged: Boolean): List<String> = buildList {
+    add(StashPlaybackService.COMMAND_TOGGLE_SHUFFLE)
+    add(StashPlaybackService.COMMAND_CYCLE_REPEAT)
+    add(StashPlaybackService.COMMAND_STOP_SLEEP_TIMER)
+    if (privileged) {
+        add(StashPlaybackService.COMMAND_TOGGLE_LIKE)
+        add(StashPlaybackService.COMMAND_LEAVE_SESSION)
+        add(StashPlaybackService.COMMAND_SET_SHUFFLE_ORDER)
     }
 }
 
