@@ -28,6 +28,7 @@ import org.mockito.kotlin.any
 import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.stub
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 
@@ -276,6 +277,35 @@ class LibraryViewModelTest {
         verify(musicRepo, org.mockito.kotlin.never()).deleteTrack(streamOnly)
         verify(musicRepo, org.mockito.kotlin.never()).deleteTrack(compilation)
         assertEquals(listOf("Deleted 2 songs."), messages)
+    }
+
+    @Test
+    fun deletePlaylist_reports_what_the_cascade_deleted_and_kept() = runTest {
+        // The dialog said "all its tracks will be removed", and the cascade's summary (songs kept
+        // because they're in Liked or another playlist) was never shown.
+        val musicRepo = musicRepoMock().stub {
+            onBlocking { deletePlaylistWithCascade(any(), any()) } doReturn
+                MusicRepository.CascadeRemovalSummary(deleted = 9, keptProtected = 2, keptElsewhere = 1, blacklisted = 0)
+        }
+        val vm = buildVm(musicRepository = musicRepo)
+        val messages = collectMessages(vm)
+
+        vm.deletePlaylist(com.stash.core.model.Playlist(id = 5L, name = "Road trip", source = com.stash.core.model.MusicSource.SPOTIFY))
+        runCurrent()
+
+        assertEquals(listOf("Deleted 9 songs. Kept 3 songs that are in Liked Songs or other playlists."), messages)
+    }
+
+    @Test
+    fun cascade_summary_message_covers_each_outcome() {
+        fun summary(deleted: Int, kept: Int) =
+            MusicRepository.CascadeRemovalSummary(deleted = deleted, keptProtected = kept, keptElsewhere = 0, blacklisted = 0)
+        assertEquals("Deleted 1 song.", cascadeSummaryMessage(summary(1, 0)))
+        assertEquals(
+            "Playlist deleted. Its 4 songs stay: they're in Liked Songs or other playlists.",
+            cascadeSummaryMessage(summary(0, 4)),
+        )
+        assertEquals("Playlist deleted.", cascadeSummaryMessage(summary(0, 0)))
     }
 
     // ------------------------------------------------------------------

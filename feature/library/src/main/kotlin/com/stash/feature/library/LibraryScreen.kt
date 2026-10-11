@@ -1584,8 +1584,9 @@ private fun PlaylistsGrid(
             text = {
                 Column {
                     Text(
-                        "\"${playlist.name}\" and all its tracks will be removed from " +
-                            "your library and deleted from disk. This cannot be undone.",
+                        "\"${playlist.name}\" is removed, and its songs are deleted from your device, " +
+                            "except songs that are also in Liked Songs or another playlist. " +
+                            "This cannot be undone.",
                     )
                     if (mirrored && !offerEverywhere) {
                         Spacer(modifier = Modifier.height(12.dp))

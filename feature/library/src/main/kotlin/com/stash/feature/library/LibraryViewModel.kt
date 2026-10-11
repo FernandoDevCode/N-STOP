@@ -817,10 +817,12 @@ class LibraryViewModel @Inject constructor(
             // "Only here": it stops mirroring first, so its copies elsewhere stay; "Everywhere": the next mirror run deletes them.
             mirror?.beforeDelete(playlist.id, everywhere)
             playlistImageHelper.deletePlaylistCoverFile(playlist.id)
-            musicRepository.deletePlaylistWithCascade(
+            val summary = musicRepository.deletePlaylistWithCascade(
                 playlistId = playlist.id,
                 alsoBlacklist = alsoBlacklist,
             )
+            // Say what really happened: songs that are also in Liked or another playlist stay.
+            _userMessages.tryEmit(cascadeSummaryMessage(summary))
         }
     }
 
@@ -890,15 +892,6 @@ class LibraryViewModel @Inject constructor(
             protectedCount = protected,
         )
     }
-
-    private val _lastCascadeSummary =
-        kotlinx.coroutines.flow.MutableSharedFlow<com.stash.core.data.repository.MusicRepository.CascadeRemovalSummary>(
-            extraBufferCapacity = 1,
-            onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
-        )
-    /** One-shot cascade summaries for the delete Snackbar. */
-    val lastCascadeSummary: kotlinx.coroutines.flow.SharedFlow<com.stash.core.data.repository.MusicRepository.CascadeRemovalSummary> =
-        _lastCascadeSummary.asSharedFlow()
 
     /** Preview counts shown in the playlist-delete confirmation dialog. */
     data class DeletePreview(
@@ -1142,3 +1135,20 @@ private data class LibraryData(
  */
 internal fun artistCardTracks(candidates: List<Track>, artistName: String): List<Track> =
     candidates.filter { it.isDownloaded && it.artist.primaryArtist() == artistName }
+
+/**
+ * The snackbar after "Delete Playlist & Songs". The cascade keeps every song that is also in
+ * Liked Songs or another playlist, so "deleted N" alone (or the dialog's old "all its tracks will
+ * be removed") overstated what went.
+ */
+internal fun cascadeSummaryMessage(summary: com.stash.core.data.repository.MusicRepository.CascadeRemovalSummary): String {
+    val deleted = summary.deleted
+    val kept = summary.keptProtected + summary.keptElsewhere
+    fun songs(n: Int) = if (n == 1) "1 song" else "$n songs"
+    return when {
+        deleted > 0 && kept > 0 -> "Deleted ${songs(deleted)}. Kept ${songs(kept)} that are in Liked Songs or other playlists."
+        deleted > 0 -> "Deleted ${songs(deleted)}."
+        kept > 0 -> "Playlist deleted. Its ${songs(kept)} stay: they're in Liked Songs or other playlists."
+        else -> "Playlist deleted."
+    }
+}
