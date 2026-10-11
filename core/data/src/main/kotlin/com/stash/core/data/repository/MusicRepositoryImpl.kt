@@ -1028,35 +1028,48 @@ class MusicRepositoryImpl @Inject constructor(
                     .onFailure { e -> android.util.Log.w("MusicRepository", "addTracksToPlaylist: track $id failed", e) }
                     .getOrDefault(false)
             }
+            // Callers launch this unguarded in viewModelScope, so like the old
+            // per-song loop it logs a failed write instead of throwing.
             if (present.isNotEmpty()) {
-                val start = playlistDao.getNextPosition(playlistId)
-                val refs = present.mapIndexed { i, id ->
-                    com.stash.core.data.db.entity.PlaylistTrackCrossRef(
-                        playlistId = playlistId,
-                        trackId = id,
-                        position = start + i,
-                        // Issue #42: user-added, so a REFRESH sync keeps it.
-                        locallyAdded = true,
-                    )
-                }
                 try {
-                    playlistDao.insertAllCrossRefs(refs)
-                } catch (batchFailure: android.database.sqlite.SQLiteConstraintException) {
-                    // A track or the playlist was deleted after the checks
-                    // (orphan cleanup, REFRESH sync, blocklist) and the single
-                    // insert rolled back as a whole: save the rest one by one.
-                    android.util.Log.w("MusicRepository", "addTracksToPlaylist: batch insert raced a delete", batchFailure)
-                    refs.forEach { ref ->
-                        try {
-                            playlistDao.insertCrossRef(ref)
-                        } catch (e: android.database.sqlite.SQLiteConstraintException) {
-                            android.util.Log.w("MusicRepository", "addTracksToPlaylist: track ${ref.trackId} raced a delete", e)
-                        }
-                    }
+                    insertBatch(present, playlistId)
+                    afterMembersAdded(playlistId)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    android.util.Log.w("MusicRepository", "addTracksToPlaylist: batch into $playlistId failed", e)
                 }
-                afterMembersAdded(playlistId)
             }
             queueIfKeptOffline(playlistId)
+        }
+    }
+
+    /** One insert of [trackIds] at consecutive positions after the playlist's last member. */
+    private suspend fun insertBatch(trackIds: List<Long>, playlistId: Long) {
+        val start = playlistDao.getNextPosition(playlistId)
+        val refs = trackIds.mapIndexed { i, id ->
+            com.stash.core.data.db.entity.PlaylistTrackCrossRef(
+                playlistId = playlistId,
+                trackId = id,
+                position = start + i,
+                // Issue #42: user-added, so a REFRESH sync keeps it.
+                locallyAdded = true,
+            )
+        }
+        try {
+            playlistDao.insertAllCrossRefs(refs)
+        } catch (batchFailure: android.database.sqlite.SQLiteConstraintException) {
+            // A track or the playlist was deleted after the checks (orphan
+            // cleanup, REFRESH sync, blocklist) and the single insert rolled
+            // back as a whole: save the rest one by one.
+            android.util.Log.w("MusicRepository", "addTracksToPlaylist: batch insert raced a delete", batchFailure)
+            refs.forEach { ref ->
+                try {
+                    playlistDao.insertCrossRef(ref)
+                } catch (e: android.database.sqlite.SQLiteConstraintException) {
+                    android.util.Log.w("MusicRepository", "addTracksToPlaylist: track ${ref.trackId} raced a delete", e)
+                }
+            }
         }
     }
 

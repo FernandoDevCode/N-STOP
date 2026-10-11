@@ -108,6 +108,12 @@ class MusicRepositoryAddTracksToPlaylistTest {
         assertEquals(listOf(1L, 3L), added)
     }
 
+    @Test fun `a failing batch write is logged, never thrown at the screen that started it`() = runTest {
+        coEvery { playlistDao.insertAllCrossRefs(any()) } throws IllegalStateException("disk full")
+        repo().addTracksToPlaylist(listOf(1L, 2L), PID) // must not throw
+        assertEquals(emptyList<Long>(), added)
+    }
+
     private fun track(id: Long) = TrackEntity(
         id = id, title = "T$id", artist = "A$id", durationMs = 1000L, source = MusicSource.SPOTIFY,
         canonicalTitle = "t$id", canonicalArtist = "a$id",
