@@ -299,6 +299,30 @@ class NowPlayingViewModelFindInFlacTest {
         }
     }
 
+    @Test fun `Find in FLAC finishes after the user leaves Now Playing`() = runTest(dispatcher) {
+        // Leaving Now Playing clears its entry-scoped ViewModel; the upgrade (resolve + download,
+        // inline) used to run in viewModelScope and was cancelled mid-download.
+        val gate = CompletableDeferred<Unit>()
+        var finished = false
+        coEvery { upgrader.upgradeToLossless(any()) } coAnswers {
+            gate.await()
+            finished = true
+            UpgradeResult.Upgraded
+        }
+        playerStateFlow.value = playerStateFlow.value.copy(currentTrack = nonFlacTrack)
+        val store = androidx.lifecycle.ViewModelStore()
+        val vm = newViewModel()
+        store.put("now-playing", vm)
+        advanceUntilIdle()
+
+        vm.findInFlacForCurrentTrack()
+        store.clear() // swipe Now Playing away mid-upgrade
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(true, finished)
+    }
+
     @Test fun `findInFlacForCurrentTrack happy path emits looking then upgraded`() = runTest(dispatcher) {
         stubUpgrade(UpgradeResult.Upgraded)
         playerStateFlow.value = playerStateFlow.value.copy(currentTrack = nonFlacTrack)

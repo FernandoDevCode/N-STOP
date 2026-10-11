@@ -96,7 +96,19 @@ class NowPlayingViewModel @Inject constructor(
     // Gates the lyrics prefetch to the foreground. Hilt binds the process lifecycle
     // (ProcessForeground); tests leave the default, which never prefetches.
     private val appForeground: AppForeground = AppForeground.Never,
+    // Runs user-asked writes past this screen's lifetime (see [launchUserAction]). Hilt binds the
+    // process-wide scope; tests leave the default, which runs on their Main test dispatcher.
+    private val userActionScope: UserActionScope = UserActionScope.OnMain,
 ) : ViewModel() {
+
+    /**
+     * Launches work the user asked for that must finish even if they leave Now Playing (this
+     * ViewModel is scoped to its back-stack entry, and leaving cancelled viewModelScope mid-job).
+     * Its messages still go to [userMessages]; once the screen is gone nobody shows them, but the
+     * work itself completes.
+     */
+    private fun launchUserAction(block: suspend kotlinx.coroutines.CoroutineScope.() -> Unit) =
+        userActionScope.scope.launch(block = block)
 
     // ── Share (fork issue ParaliyzedEvo/Stash#40) ──
     // The player-state Track is a slim media-session reconstruction with
@@ -906,10 +918,10 @@ class NowPlayingViewModel @Inject constructor(
      * row, logged, and returned. The sheet closed as if it had worked and nothing was added.
      */
     fun saveTrackToPlaylist(track: Track, playlistId: Long) {
-        viewModelScope.launch {
+        launchUserAction {
             val trackId = persistOrNull(track) ?: run {
                 _userMessages.tryEmit("Couldn't save to playlist.")
-                return@launch
+                return@launchUserAction
             }
             musicRepository.addTrackToPlaylist(trackId, playlistId)
             val name = _uiState.value.userPlaylists.firstOrNull { it.id == playlistId }?.name
@@ -926,10 +938,10 @@ class NowPlayingViewModel @Inject constructor(
      * @param track The track to save into the newly created playlist.
      */
     fun createPlaylistAndAddTrack(name: String, track: Track) {
-        viewModelScope.launch {
+        launchUserAction {
             val trackId = persistOrNull(track) ?: run {
                 _userMessages.tryEmit("Couldn't create the playlist.")
-                return@launch
+                return@launchUserAction
             }
             val playlistId = musicRepository.createPlaylist(name)
             musicRepository.addTrackToPlaylist(trackId, playlistId)
@@ -963,11 +975,11 @@ class NowPlayingViewModel @Inject constructor(
      */
     fun flagCurrentTrackAsWrongMatch() {
         val track = _uiState.value.currentTrack ?: return
-        viewModelScope.launch {
+        launchUserAction {
             // Persisted first: flagging a stream's transient id flagged no row, yet said "Flagged".
             val trackId = persistOrNull(track) ?: run {
                 _userMessages.tryEmit("Couldn't flag this song.")
-                return@launch
+                return@launchUserAction
             }
             musicRepository.setMatchFlagged(trackId, true)
             _userMessages.tryEmit("Flagged. Find it in Sync \u2192 Failed Matches to pick a replacement.")
@@ -1030,7 +1042,7 @@ class NowPlayingViewModel @Inject constructor(
 
     /** Download or remove-download for any [track] (current track or a queue row). */
     fun toggleDownload(track: Track) {
-        viewModelScope.launch {
+        launchUserAction {
             if (track.isDownloaded) {
                 musicRepository.removeDownload(track.id)
                 _userMessages.tryEmit("Download removed.")
@@ -1040,19 +1052,18 @@ class NowPlayingViewModel @Inject constructor(
                 // Resolve a synthetic streaming-engine id to a real DB row
                 // before queuing — otherwise `getById` returns null and the
                 // queue insert silently no-ops while the toast still fires
-                // (issue #105).
-                val realId = runCatching { musicRepository.ensureTrackPersisted(track) }
-                    .getOrElse { e ->
-                        android.util.Log.w("NowPlayingViewModel", "ensureTrackPersisted failed", e)
-                        _downloadingKeys.update { it - key }
-                        _userMessages.tryEmit("Couldn't queue download.")
-                        return@launch
-                    }
+                // (issue #105). persistOrNull rethrows cancellation (runCatching
+                // reported it as a failed download).
+                val realId = persistOrNull(track) ?: run {
+                    _downloadingKeys.update { it - key }
+                    _userMessages.tryEmit("Couldn't queue download.")
+                    return@launchUserAction
+                }
                 val queued = musicRepository.queueDownload(realId)
                 if (!queued) {
                     _downloadingKeys.update { it - key }
                     _userMessages.tryEmit("Couldn't queue download.")
-                    return@launch
+                    return@launchUserAction
                 }
                 _userMessages.tryEmit("Downloading…")
                 // Watchdog: drop the spinner once the row lands on disk, or
@@ -1070,7 +1081,7 @@ class NowPlayingViewModel @Inject constructor(
     fun findInFlacForCurrentTrack() {
         val track = _uiState.value.currentTrack ?: return
         if (track.isFlac) return
-        viewModelScope.launch {
+        launchUserAction {
             _userMessages.tryEmit("Looking for FLAC\u2026")
             val result = losslessUpgrader.upgradeToLossless(track)
             _userMessages.tryEmit(snackbarCopyFor(result))
@@ -1098,11 +1109,11 @@ class NowPlayingViewModel @Inject constructor(
             _userMessages.tryEmit("This song isn't in your library, so there's nothing to delete.")
             return
         }
-        viewModelScope.launch {
+        launchUserAction {
             if (alsoBlock) {
                 val trackId = persistOrNull(track) ?: run {
                     _userMessages.tryEmit("Couldn't block this song.")
-                    return@launch
+                    return@launchUserAction
                 }
                 playerRepository.skipNext()
                 musicRepository.blacklistTrack(trackId)
@@ -1325,8 +1336,10 @@ class NowPlayingViewModel @Inject constructor(
         val trackKey = if (track.id == 0L) track.youtubeId.hashCode().toLong() else track.id
         optimisticLikeState.update { it + (trackKey to !wasLiked) }
 
-        viewModelScope.launch {
-            runCatching {
+        launchUserAction {
+            // try/catch, not runCatching: a cancellation must propagate, not read as a failed
+            // like that rolls the heart back and toasts "Couldn't add to Liked Songs".
+            try {
                 // Handles all three id shapes: real Room PK, search-preview
                 // id=0 (legacy), and v0.9.30 streaming-engine synthetic
                 // `videoId.hashCode().toLong()`. Without this, streaming-only
@@ -1342,7 +1355,9 @@ class NowPlayingViewModel @Inject constructor(
                 // Once the DB write is confirmed, we can clear the optimistic
                 // override; Room's own emission will carry the truth.
                 optimisticLikeState.update { it - trackKey }
-            }.onFailure { e ->
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
                 android.util.Log.w("NowPlayingViewModel", "stash like toggle failed", e)
                 _userMessages.tryEmit(
                     if (wasLiked) "Couldn't remove from Liked Songs"
