@@ -192,6 +192,29 @@ fun LibraryScreen(
         viewModel.userMessages.collect { snackbarHostState.showSnackbar(it) }
     }
 
+    // A row's "Remove download" is staged in the ViewModel and deleted only when this Undo
+    // snackbar goes away without Undo (LibraryViewModel.removeDownloadWithUndo). The snackbar's
+    // own lifetime is the clock, so Undo is never offered for a file already gone: TalkBack
+    // lengthens a snackbar that has an action, and the delete waits for it.
+    val pendingRemoval by viewModel.pendingDownloadRemoval.collectAsStateWithLifecycle()
+    LaunchedEffect(pendingRemoval?.id) {
+        val track = pendingRemoval ?: return@LaunchedEffect
+        val result = snackbarHostState.showSnackbar(
+            message = "\"${track.title}\" removed from downloads",
+            actionLabel = "Undo",
+            duration = androidx.compose.material3.SnackbarDuration.Short,
+        )
+        if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+            viewModel.undoRemoveDownload(track.id)
+        } else {
+            viewModel.commitPendingDownloadRemoval(track.id)
+        }
+    }
+    // Leaving Library (another tab, a detail screen, Back) takes the Undo with it: delete now.
+    androidx.compose.runtime.DisposableEffect(viewModel) {
+        onDispose { viewModel.commitPendingDownloadRemoval() }
+    }
+
     LaunchedEffect(Unit) {
         viewModel.albumNavEvents.collect { a ->
             onNavigateToRemoteAlbum(a.albumId, a.name, a.artUrl, a.artistName)
@@ -250,7 +273,8 @@ fun LibraryScreen(
             onSaveToPlaylist = { trackId, playlistId -> viewModel.saveSelectedToPlaylist(listOf(trackId), playlistId) },
             onCreatePlaylistWithTrack = { name, trackId -> viewModel.createPlaylistAndAddTracks(name, listOf(trackId)) },
             onDownloadTrack = { viewModel.downloadSelected(listOf(it)) },
-            onRemoveDownloadTrack = { viewModel.removeDownloadsForSelected(listOf(it)) },
+            // Staged with Undo (see the snackbar above); the batch path confirms instead.
+            onRemoveDownloadTrack = viewModel::removeDownloadWithUndo,
             likedTracks = likedTracks,
             likedFilter = likedFilter,
             likedSources = likedSources,
@@ -523,7 +547,7 @@ private fun LibraryContent(
     onSaveToPlaylist: (trackId: Long, playlistId: Long) -> Unit,
     onCreatePlaylistWithTrack: (name: String, trackId: Long) -> Unit,
     onDownloadTrack: (Long) -> Unit,
-    onRemoveDownloadTrack: (Long) -> Unit,
+    onRemoveDownloadTrack: (Track) -> Unit,
     likedTracks: List<Track>,
     likedFilter: LikedFilter,
     likedSources: Set<LikedFilter>,
@@ -877,7 +901,7 @@ private fun LikedTab(
     onSaveToPlaylist: (trackId: Long, playlistId: Long) -> Unit,
     onCreatePlaylistWithTrack: (name: String, trackId: Long) -> Unit,
     onDownloadTrack: (Long) -> Unit,
-    onRemoveDownloadTrack: (Long) -> Unit,
+    onRemoveDownloadTrack: (Track) -> Unit,
     /** Empty-state line when the search emptied the list (see [noMatchMessage]). */
     noMatch: String? = null,
     onClearFilters: () -> Unit = {},
@@ -988,7 +1012,7 @@ private fun LikedTab(
                 onDismiss = { selectedTrack = null },
                 onShare = { trackToShare = it; selectedTrack = null },
                 onDownload = { onDownloadTrack(it.id); selectedTrack = null },
-                onRemoveDownload = { onRemoveDownloadTrack(it.id); selectedTrack = null },
+                onRemoveDownload = { onRemoveDownloadTrack(it); selectedTrack = null },
                 onDelete = { trackToDelete = it; selectedTrack = null },
             )
         }
@@ -1710,7 +1734,7 @@ private fun TracksTab(
     onSaveToPlaylist: (trackId: Long, playlistId: Long) -> Unit,
     onCreatePlaylistWithTrack: (name: String, trackId: Long) -> Unit,
     onDownloadTrack: (Long) -> Unit,
-    onRemoveDownloadTrack: (Long) -> Unit,
+    onRemoveDownloadTrack: (Track) -> Unit,
     header: @Composable () -> Unit = {},
     /** Empty-state line when the search or source filter emptied the list (see [noMatchMessage]). */
     noMatch: String? = null,
@@ -1813,7 +1837,7 @@ private fun TracksTab(
                 onShare = { trackToShare = it; selectedTrack = null },
                 onViewAlbum = { onViewAlbum(it); selectedTrack = null },
                 onDownload = { onDownloadTrack(it.id); selectedTrack = null },
-                onRemoveDownload = { onRemoveDownloadTrack(it.id); selectedTrack = null },
+                onRemoveDownload = { onRemoveDownloadTrack(it); selectedTrack = null },
                 onDelete = { trackToDelete = it; selectedTrack = null },
             )
 

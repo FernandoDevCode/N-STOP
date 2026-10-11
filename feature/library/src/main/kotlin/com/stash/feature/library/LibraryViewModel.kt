@@ -20,6 +20,8 @@ import com.stash.core.model.Playlist
 import com.stash.core.model.Track
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -216,6 +218,73 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
+    // ── Single-song "Remove download", with Undo ─────────────────────────
+
+    /**
+     * The ⋮ sheet's "Remove download" on a Songs or Liked row: staged, not done, so the screen
+     * can offer Undo while the song has already left the downloads lists (see
+     * [UndoableDownloadRemoval]). The batch Remove download keeps its confirm dialog instead.
+     *
+     * Its own app-lifetime scope, not viewModelScope: [onCleared] commits a staged removal when
+     * viewModelScope is already cancelled, and a delete cut off between the file and its row
+     * would leave the row pointing at a missing file. Instantiated inline like LikeCoordinator's
+     * (no ApplicationScope qualifier exists in this codebase). If the process dies inside the
+     * Undo window nothing is deleted, which is the safe way to fail.
+     */
+    private val downloadRemoval = UndoableDownloadRemoval(
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+        remove = { track ->
+            try {
+                musicRepository.removeDownload(track.id)
+                true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("LibraryVM", "removeDownload ${track.id} failed", e)
+                _userMessages.tryEmit("Couldn't remove the download for \"${track.title}\".")
+                false
+            }
+        },
+    )
+
+    /** The staged removal the screen's Undo snackbar is for, or null. */
+    val pendingDownloadRemoval: StateFlow<Track?> = downloadRemoval.pending
+
+    /** "Remove download" from a row's ⋮ sheet: the song leaves the lists now, its file goes on [commitPendingDownloadRemoval]. */
+    fun removeDownloadWithUndo(track: Track) {
+        downloadRemoval.stage(track)
+    }
+
+    /** Undo: [trackId]'s file stays and the song is back in the lists. */
+    fun undoRemoveDownload(trackId: Long) {
+        downloadRemoval.undo(trackId)
+    }
+
+    /**
+     * The Undo is gone (its snackbar timed out or was swiped, or the listener left Library):
+     * delete now. A [trackId] commits only that song, so an outdated snackbar can't commit a newer one.
+     */
+    fun commitPendingDownloadRemoval(trackId: Long? = null) {
+        downloadRemoval.commit(trackId)
+    }
+
+    override fun onCleared() {
+        // Gone for good with an Undo still showing: the removal the listener asked for happens
+        // now, in downloadRemoval's own scope.
+        downloadRemoval.commit()
+        super.onCleared()
+    }
+
+    /**
+     * The downloaded songs, minus any whose removal is staged or still landing: they leave
+     * Songs and [LibraryUiState.librarySongCount] the moment Remove download is tapped, not
+     * when the file goes.
+     */
+    private val downloadedTracks: Flow<List<Track>> =
+        combine(musicRepository.getAllTracks(), downloadRemoval.hiddenIds) { tracks, hidden ->
+            if (hidden.isEmpty()) tracks else tracks.filterNot { it.id in hidden }
+        }
+
     /**
      * Derives a pair of (spotifyConnected, youTubeConnected) from TokenManager.
      */
@@ -238,8 +307,13 @@ class LibraryViewModel @Inject constructor(
         // even in Online mode. Recently-added STREAMABLE tracks belong on Home,
         // which is the streaming/discovery surface.
         musicRepository.getRecentlyAdded(20),
-    ) { playlists, recentlyAdded ->
-        LibraryData(playlists = playlists, recentlyAdded = recentlyAdded)
+        // A song whose download removal is staged leaves the recent rail too.
+        downloadRemoval.hiddenIds,
+    ) { playlists, recentlyAdded, hidden ->
+        LibraryData(
+            playlists = playlists,
+            recentlyAdded = if (hidden.isEmpty()) recentlyAdded else recentlyAdded.filterNot { it.id in hidden },
+        )
     }
 
     /**
@@ -262,7 +336,7 @@ class LibraryViewModel @Inject constructor(
      */
     val uiState: StateFlow<LibraryUiState> = combine(
         pipelineControls,
-        musicRepository.getAllTracks(),
+        downloadedTracks,
         libraryDataFlow,
         musicRepository.getAllArtists(),
         musicRepository.getAllAlbums(),
