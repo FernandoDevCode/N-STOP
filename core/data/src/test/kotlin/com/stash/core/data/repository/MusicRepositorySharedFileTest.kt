@@ -1,6 +1,7 @@
 package com.stash.core.data.repository
 
 import com.google.common.truth.Truth.assertThat
+import com.stash.core.data.db.dao.OrphanSweep
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.SharedMixDao
 import com.stash.core.data.db.dao.TrackDao
@@ -8,6 +9,7 @@ import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.model.MusicSource
 import com.stash.core.model.Track
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.flowOf
@@ -162,7 +164,7 @@ class MusicRepositorySharedFileTest {
         paths[2L] = file.absolutePath
         coEvery { trackDao.deleteOrphanedDownloadedTracks() } answers {
             paths.remove(1L)
-            listOf(entity(1L, file.absolutePath))
+            OrphanSweep(deleted = listOf(entity(1L, file.absolutePath)), undownloaded = emptyList())
         }
 
         repo().cleanOrphanedMixTracks()
@@ -176,12 +178,27 @@ class MusicRepositorySharedFileTest {
         paths[1L] = file.absolutePath
         coEvery { trackDao.deleteOrphanedDownloadedTracks() } answers {
             paths.remove(1L)
-            listOf(entity(1L, file.absolutePath))
+            OrphanSweep(deleted = listOf(entity(1L, file.absolutePath)), undownloaded = emptyList())
         }
 
         repo().cleanOrphanedMixTracks()
 
         assertThat(file.exists()).isFalse()
+    }
+
+    @Test
+    fun `an orphan kept for its listening history loses only its file`() = runTest {
+        paths[1L] = file.absolutePath
+        coEvery { trackDao.deleteOrphanedDownloadedTracks() } answers {
+            paths[1L] = null // the sweep cleared its download state; the row stays
+            OrphanSweep(deleted = emptyList(), undownloaded = listOf(entity(1L, file.absolutePath)))
+        }
+
+        val cleaned = repo().cleanOrphanedMixTracks()
+
+        assertThat(cleaned).isEqualTo(1)
+        assertThat(file.exists()).isFalse()
+        coVerify(exactly = 0) { trackDao.delete(any()) }
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────

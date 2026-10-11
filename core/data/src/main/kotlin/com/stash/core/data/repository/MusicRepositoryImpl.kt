@@ -1347,8 +1347,9 @@ class MusicRepositoryImpl @Inject constructor(
         // raced and lose its fresh cross-ref + irrecoverable FLAC. Files are
         // removed only AFTER their rows are gone (a crash mid-file-delete
         // leaves a harmless orphaned file, never a row pointing at nothing).
-        val deleted = trackDao.deleteOrphanedDownloadedTracks()
-        if (deleted.isEmpty()) return 0
+        val sweep = trackDao.deleteOrphanedDownloadedTracks()
+        val deleted = sweep.deleted
+        if (deleted.isEmpty() && sweep.undownloaded.isEmpty()) return 0
 
         for (track in deleted) {
             // Delete the audio file from disk (SAF-aware — see deleteTrackFile),
@@ -1358,12 +1359,20 @@ class MusicRepositoryImpl @Inject constructor(
             track.albumArtPath?.let { deleteTrackFile(it) }
             _trackDeletions.emit(track.id)
         }
+        // Orphans with listening history kept their row (see
+        // deleteOrphanedDownloadedTracks) — only the file goes, as with
+        // removeDownload: no trackDeletions emit (the row is alive and streams)
+        // and the art stays, since the History row still shows it.
+        for (track in sweep.undownloaded) {
+            track.filePath?.let { deleteTrackAudio(track.id, it) }
+        }
 
         android.util.Log.i(
             "StashCleanup",
-            "Cleaned ${deleted.size} orphaned track(s) and their audio files",
+            "Cleaned ${deleted.size + sweep.undownloaded.size} orphaned track(s) and their audio files " +
+                "(${sweep.undownloaded.size} kept as stream-only for their listening history)",
         )
-        return deleted.size
+        return deleted.size + sweep.undownloaded.size
     }
 
     companion object {
