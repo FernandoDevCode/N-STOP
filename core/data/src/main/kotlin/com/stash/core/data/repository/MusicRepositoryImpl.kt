@@ -247,11 +247,15 @@ class MusicRepositoryImpl @Inject constructor(
         // contribute no path. Best-effort, SAF-aware.
         result.junkPaths.forEach { localFileOps.delete(it) }
 
-        // Un-mark the unusable rows in chunks to stay under SQLite's parameter
-        // ceiling — they become not-downloaded and therefore streamable.
-        result.resetIds.chunked(500).forEach { chunk ->
-            trackDao.bulkResetForReDownload(chunk)
-        }
+        // Un-mark the unusable rows — they become not-downloaded and therefore
+        // streamable. Guarded on the path that was found unusable, as
+        // LibraryReconciliationUseCase does (#531 review): classifying a big
+        // SAF library takes seconds (two IPCs per file) and a FLAC upgrade or
+        // swap started at launch can record a new file for a row meanwhile;
+        // resetting by id cleared that new path and orphaned the new file.
+        // Rows that had no path at all are reset only while they still have none.
+        trackDao.resetMissingFiles(result.checkedPaths)
+        trackDao.bulkResetPathlessDownloads(result.resetIds.filter { it !in result.checkedPaths })
         android.util.Log.i(
             "StashMigrations",
             "download integrity: scanned ${refs.size} downloaded rows, reset ${result.resetIds.size} " +

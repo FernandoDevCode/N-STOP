@@ -1390,7 +1390,7 @@ interface TrackDao {
      * the DB write runs **first** so a mid-op crash leaves an orphaned
      * file (cleaned up by the existing orphan sweeper) rather than a
      * row whose `file_path` points at a deleted file. Mirrors the column
-     * set cleared by [resetForReDownload] / [bulkResetForReDownload].
+     * set cleared by [resetForReDownload] / [bulkResetPathlessDownloads].
      */
     @Query(
         """
@@ -2286,11 +2286,13 @@ interface TrackDao {
     suspend fun getDownloadedFileRefs(): List<DownloadedFileRef>
 
     /**
-     * Bulk-reset rows to undownloaded state. Companion to
-     * [resetForReDownload] but takes a list — used by the startup integrity
-     * sweep which collects all missing-file ids and resets them in one
-     * statement. `quality_kbps`/`file_format` deliberately untouched: the
-     * row may still hold useful metadata for a future re-download attempt.
+     * Bulk-reset `is_downloaded = 1` rows that have NO file path back to
+     * undownloaded. The startup integrity sweep's counterpart to
+     * [resetMissingFiles] (which is guarded on the path found missing): a row
+     * with no path has none to guard on, so the reset applies only while the
+     * path is still blank — a download that lands a file meanwhile is kept.
+     * `quality_kbps`/`file_format` deliberately untouched: the row may still
+     * hold useful metadata for a future re-download attempt.
      */
     @Query(
         """
@@ -2300,18 +2302,17 @@ interface TrackDao {
             file_size_bytes = 0,
             download_missing_at = :now
         WHERE id IN (:trackIds)
+          AND (file_path IS NULL OR file_path = '')
         """
     )
-    suspend fun bulkResetForReDownloadRaw(trackIds: List<Long>, now: Long)
+    suspend fun bulkResetPathlessDownloadsRaw(trackIds: List<Long>, now: Long)
 
     /**
-     * Chunked wrapper for [bulkResetForReDownloadRaw]: the startup integrity
-     * sweep collects every missing-file id, which can be library-sized, so the
-     * reset must chunk under the bind cap (#337). Chunks are separate
-     * statements — wrap in a transaction if all-or-nothing is required.
+     * Chunked wrapper for [bulkResetPathlessDownloadsRaw]: the id list can be
+     * library-sized, so the reset must chunk under the bind cap (#337).
      */
-    suspend fun bulkResetForReDownload(trackIds: List<Long>, now: Long = System.currentTimeMillis()) =
-        trackIds.chunkedForBindWrite { bulkResetForReDownloadRaw(it, now) }
+    suspend fun bulkResetPathlessDownloads(trackIds: List<Long>, now: Long = System.currentTimeMillis()) =
+        trackIds.chunkedForBindWrite { bulkResetPathlessDownloadsRaw(it, now) }
 
     /**
      * YT-source tracks the Quick-scan backfill should verify. Two routes
