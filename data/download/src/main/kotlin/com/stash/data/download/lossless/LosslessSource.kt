@@ -141,8 +141,13 @@ suspend fun TrackQuery.resolvedSpotifyTrackUrl(resolver: SpotifyUriResolver): St
 /**
  * The proxy search terms to try for this query, in priority order.
  *
- * - When an [TrackQuery.isrc] is present it is the precise index key — used alone.
- * - Otherwise the FULL artist credit is tried first ("Tyler, The Creator Foo"),
+ * - When an [TrackQuery.isrc] is present it is the precise index key, tried first.
+ *   The artist/title terms still follow it: Qobuz often files a recording under a
+ *   different (regional, reissue, compilation) ISRC, and an ISRC-only search left
+ *   such tracks "no lossless" for good (on release builds with YouTube fallback
+ *   off, stuck in WAITING_FOR_LOSSLESS). Sources read terms in order, so an ISRC
+ *   hit still wins.
+ * - Then the FULL artist credit is tried ("Tyler, The Creator Foo"),
  *   so single artists whose name contains a comma still match.
  * - Then, for multi-artist credits joined with commas (e.g.
  *   "¥$, Kanye West, Ty Dolla $ign"), a fallback using only the PRIMARY artist
@@ -152,10 +157,10 @@ suspend fun TrackQuery.resolvedSpotifyTrackUrl(resolver: SpotifyUriResolver): St
  *   fails; the primary-artist retry rescues it. (Stream + download share this.)
  */
 fun TrackQuery.searchTerms(): List<String> {
-    isrc?.takeIf { it.isNotBlank() }?.let { return listOf(it) }
+    val isrcTerm = listOfNotNull(isrc?.trim()?.takeIf { it.isNotEmpty() })
     val full = "$artist $title".trim()
     val primary = artist.substringBefore(",").trim()
-    return if (primary.isNotEmpty() && !primary.equals(artist.trim(), ignoreCase = true)) {
+    return isrcTerm + if (primary.isNotEmpty() && !primary.equals(artist.trim(), ignoreCase = true)) {
         listOf(full, "$primary $title".trim())
     } else {
         listOf(full)

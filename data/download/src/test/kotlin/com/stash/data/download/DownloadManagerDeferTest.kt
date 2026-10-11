@@ -30,6 +30,8 @@ import com.stash.data.download.lossless.relay.LosslessDownloadPurpose
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
+import com.stash.data.download.model.DownloadStatus
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -126,6 +128,23 @@ class DownloadManagerDeferTest {
         val result = newSubject().downloadTrack(track = stubTrack(), preResolvedUrl = null)
 
         assertTrue("expected Deferred, got $result", result is TrackDownloadResult.Deferred)
+    }
+
+    @Test
+    fun `a deferred download ends its live progress with DEFERRED`() = runTest {
+        // It used to end on the lossless attempt's DOWNLOADING, so Downloads showed
+        // the track "Downloading" for as long as it waited for lossless.
+        coEvery { losslessPrefs.enabledNow() } returns true
+        coEvery { losslessPrefs.youtubeFallbackEnabledNow() } returns false
+        coEvery { losslessRegistry.resolve(any()) } returns null
+        coEvery { playlistDao.isTrackInStashMix(any()) } returns false
+        val subject = newSubject()
+
+        subject.downloadTrack(track = stubTrack(), preResolvedUrl = null)
+
+        val last = subject.progress.replayCache.last()
+        assertEquals(42L, last.trackId)
+        assertEquals(DownloadStatus.DEFERRED, last.status)
     }
 
     @Test

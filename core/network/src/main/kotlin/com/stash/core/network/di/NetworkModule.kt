@@ -38,7 +38,15 @@ object NetworkModule {
     fun provideOkHttpClient(
         appInterceptors: Set<@JvmSuppressWildcards Interceptor>,
     ): OkHttpClient {
-        val loggingInterceptor = HttpLoggingInterceptor().apply {
+        // BASIC prints each request URL; credential query parameters (Qobuz's
+        // login sends email + MD5(password) as a GET) are masked first.
+        val loggingInterceptor = HttpLoggingInterceptor(
+            object : HttpLoggingInterceptor.Logger {
+                override fun log(message: String) {
+                    HttpLoggingInterceptor.Logger.DEFAULT.log(LogRedaction.redactSecrets(message))
+                }
+            },
+        ).apply {
             level = if (com.stash.core.network.BuildConfig.DEBUG) {
                 HttpLoggingInterceptor.Level.BASIC
             } else {

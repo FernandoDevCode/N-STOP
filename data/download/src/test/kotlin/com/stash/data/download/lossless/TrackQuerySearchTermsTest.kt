@@ -38,9 +38,11 @@ class TrackQuerySearchTermsTest {
         assertEquals("Tyler, The Creator EARFQUAKE", terms.first())
     }
 
-    @Test fun `isrc when present is used alone`() {
+    @Test fun `isrc when present is tried first, then artist and title`() {
+        // Qobuz often files a recording under a different (regional, reissue) ISRC;
+        // an ISRC-only search left those tracks without lossless for good.
         assertEquals(
-            listOf("USRC12345678"),
+            listOf("USRC12345678", "¥\$, Kanye West STARS", "¥\$ STARS"),
             TrackQuery(artist = "¥\$, Kanye West", title = "STARS", isrc = "USRC12345678").searchTerms(),
         )
     }

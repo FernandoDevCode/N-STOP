@@ -110,7 +110,7 @@ class KennyySource @Inject constructor(
         // (before the first comma) — rescues multi-artist credits like
         // "¥$, Kanye West, Ty Dolla $ign" whose full-credit query returns the
         // featured artists' tracks (all scoring 0). ISRC, when present, is
-        // used alone. See TrackQuery.searchTerms.
+        // tried first. See TrackQuery.searchTerms.
         var found: Pair<QobuzTrack, Float>? = null
         for (term in query.searchTerms()) {
             val searchData = callLimited(bypassRateLimit) { apiClient.search(term) } ?: continue
