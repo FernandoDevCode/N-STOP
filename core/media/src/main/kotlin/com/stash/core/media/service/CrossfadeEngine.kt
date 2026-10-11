@@ -73,6 +73,11 @@ class CrossfadeEngine(
         when (change) {
             AudioManager.AUDIOFOCUS_LOSS -> {
                 pausedForFocusLoss = false
+                // Another app took over for good: end a running fade here. Its
+                // wall-clock ramp would otherwise run on to the swap, whose
+                // focus request took focus straight back and paused the app
+                // the user had just switched to, leaving both silent.
+                if (transitioning) cancelTransition()
                 playerA.playWhenReady = false
                 playerB.playWhenReady = false
                 abandonFocus()
@@ -284,7 +289,9 @@ class CrossfadeEngine(
             incoming.pauseAtEndOfMediaItems = false
             playerA = incoming
             playerB = outgoing
-            requestFocus()
+            // Only a player that is meant to play takes focus: requesting it for
+            // a paused one would pause whatever app holds focus now, for nothing.
+            if (incoming.playWhenReady) requestFocus()
             onSwap(playerA)
 
             outgoing.pauseAtEndOfMediaItems = false

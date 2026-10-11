@@ -1,6 +1,7 @@
 package com.stash.core.media.service
 
 import android.content.Context
+import android.media.AudioFocusRequest
 import android.media.AudioManager
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -10,6 +11,7 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.runs
+import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -106,6 +108,26 @@ class CrossfadeEngineInterruptTest {
         assertThat(swapped).isNull()
         assertThat(engine.isTransitioning()).isFalse()
         verify { spare.stop() }
+    }
+
+    @Test fun `a permanent focus loss mid-fade ends the fade and focus is not taken back`() = runTest {
+        val request = slot<AudioFocusRequest>()
+        every { audioManager.requestAudioFocus(capture(request)) } returns AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        var swapped: ExoPlayer? = null
+        val engine = engine(backgroundScope)
+        // Playback starts: the master takes focus.
+        masterListeners.forEach { it.onPlayWhenReadyChanged(true, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST) }
+        engine.performTransition(fadeMs = 2_000L) { swapped = it }
+        runCurrent()
+        advanceTimeBy(500)
+
+        // Another app starts playing.
+        request.captured.onAudioFocusChangeListener.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS)
+        advanceUntilIdle()
+
+        assertThat(swapped).isNull()
+        assertThat(engine.isTransitioning()).isFalse()
+        verify(exactly = 1) { audioManager.requestAudioFocus(any<AudioFocusRequest>()) }
     }
 
     @Test fun `a seek after the outgoing reached its end lets it play on`() = runTest {
