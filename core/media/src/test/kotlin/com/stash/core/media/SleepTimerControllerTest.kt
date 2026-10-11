@@ -7,6 +7,8 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.just
+import io.mockk.runs
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.advanceTimeBy
@@ -26,7 +28,7 @@ class SleepTimerControllerTest {
 
     @Test
     fun `countdown pauses playback when it elapses`() = runTest {
-        val timer = SleepTimerController(playerRepository, backgroundScope)
+        val timer = SleepTimerController(playerRepository, backgroundScope) { testScheduler.currentTime }
 
         timer.startMinutes(15)
         assertThat(timer.state.value).isInstanceOf(SleepTimerController.State.Countdown::class.java)
@@ -43,7 +45,7 @@ class SleepTimerControllerTest {
 
     @Test
     fun `re-arming replaces the running countdown`() = runTest {
-        val timer = SleepTimerController(playerRepository, backgroundScope)
+        val timer = SleepTimerController(playerRepository, backgroundScope) { testScheduler.currentTime }
 
         timer.startMinutes(15)
         advanceTimeBy(10 * 60_000L)
@@ -60,7 +62,7 @@ class SleepTimerControllerTest {
 
     @Test
     fun `cancel disarms without pausing`() = runTest {
-        val timer = SleepTimerController(playerRepository, backgroundScope)
+        val timer = SleepTimerController(playerRepository, backgroundScope) { testScheduler.currentTime }
 
         timer.startMinutes(15)
         timer.cancel()
@@ -77,7 +79,7 @@ class SleepTimerControllerTest {
         every { playerRepository.currentPosition } returns position
         playerState.value = PlayerState(currentTrack = track(1), durationMs = 100_000L)
 
-        val timer = SleepTimerController(playerRepository, backgroundScope)
+        val timer = SleepTimerController(playerRepository, backgroundScope) { testScheduler.currentTime }
         timer.stopAtEndOfTrack(fadeOutMs = 0L) // no fade → pause the instant we hit the window
         runCurrent()
         coVerify(exactly = 0) { playerRepository.pause() }
@@ -100,7 +102,7 @@ class SleepTimerControllerTest {
         every { playerRepository.currentPosition } returns position
         playerState.value = PlayerState(currentTrack = track(1), durationMs = 100_000L)
 
-        val timer = SleepTimerController(playerRepository, backgroundScope)
+        val timer = SleepTimerController(playerRepository, backgroundScope) { testScheduler.currentTime }
         timer.stopAtEndOfTrack()
         runCurrent()
 
@@ -120,7 +122,7 @@ class SleepTimerControllerTest {
         every { playerRepository.playbackSpeed } returns MutableStateFlow(2f)
         playerState.value = PlayerState(currentTrack = track(1), durationMs = 100_000L)
 
-        val timer = SleepTimerController(playerRepository, backgroundScope)
+        val timer = SleepTimerController(playerRepository, backgroundScope) { testScheduler.currentTime }
         timer.stopAtEndOfTrack(fadeOutMs = 10_000L)
         runCurrent()
 
@@ -134,6 +136,39 @@ class SleepTimerControllerTest {
         runCurrent()
         coVerify(exactly = 1) { playerRepository.pause() }
         assertThat(timer.state.value).isEqualTo(SleepTimerController.State.Off)
+    }
+
+    @Test
+    fun `re-arming mid-fade puts the volume back`() = runTest {
+        val volumes = mutableListOf<Float>()
+        every { playerRepository.setVolume(capture(volumes)) } just runs
+        val timer = SleepTimerController(playerRepository, backgroundScope) { testScheduler.currentTime }
+
+        timer.startMinutes(15)
+        advanceTimeBy(15 * 60_000L - 3_000L) // 4 s into the 7 s fade: the music has audibly dipped
+        runCurrent()
+        assertThat(volumes.last()).isLessThan(1f)
+        timer.startMinutes(15) // "+15 min"
+        runCurrent()
+
+        assertThat(volumes.last()).isEqualTo(1f)
+        coVerify(exactly = 0) { playerRepository.pause() }
+    }
+
+    @Test
+    fun `the countdown keeps to the wall clock across a doze`() = runTest {
+        var dozedMs = 0L
+        val timer = SleepTimerController(playerRepository, backgroundScope) { testScheduler.currentTime + dozedMs }
+
+        timer.startMinutes(15)
+        advanceTimeBy(60_000L)
+        dozedMs = 10 * 60_000L // the paused device slept 10 min; the monotonic clock didn't move
+        runCurrent()
+
+        // 15 wall minutes are up after 5 minutes of monotonic time, not 15.
+        advanceTimeBy(4 * 60_000L + 1L)
+        runCurrent()
+        coVerify(exactly = 1) { playerRepository.pause() }
     }
 
     private fun track(id: Long) = Track(id = id, title = "T$id", artist = "A")

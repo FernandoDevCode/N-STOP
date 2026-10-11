@@ -32,6 +32,8 @@ import javax.inject.Singleton
 class SleepTimerController @VisibleForTesting internal constructor(
     private val playerRepository: PlayerRepository,
     private val scope: CoroutineScope,
+    /** Wall clock, the one [State.Countdown.endsAtMs] (and the UI's "about N min") is read on. */
+    private val nowMs: () -> Long = System::currentTimeMillis,
 ) {
 
     @Inject
@@ -55,11 +57,22 @@ class SleepTimerController @VisibleForTesting internal constructor(
         require(minutes > 0)
         job?.cancel()
         val durationMs = minutes * 60_000L
-        _state.value = State.Countdown(System.currentTimeMillis() + durationMs)
+        val endsAtMs = nowMs() + durationMs
+        _state.value = State.Countdown(endsAtMs)
         job = scope.launch {
-            val preFadeMs = (durationMs - fadeOutMs).coerceAtLeast(0)
-            delay(preFadeMs)
-            fadeOutAndPause(fadeOutMs.coerceAtMost(durationMs))
+            val fadeMs = fadeOutMs.coerceAtMost(durationMs)
+            // Waits on the wall-clock deadline, re-read at least every
+            // CLOCK_CHECK_MS, not one long delay(): delay() runs on the
+            // monotonic clock, which stands still while a paused device
+            // dozes, so the timer fired that much later than the "about N
+            // min" the UI computes from the wall clock.
+            while (true) {
+                val untilFadeMs = endsAtMs - fadeMs - nowMs()
+                if (untilFadeMs <= 0) break
+                delay(untilFadeMs.coerceAtMost(CLOCK_CHECK_MS))
+            }
+            // Woken past the fade's start: fade over what is left of it.
+            fadeOutAndPause(fadeMs.coerceAtMost((endsAtMs - nowMs()).coerceAtLeast(0)))
             _state.value = State.Off
         }
     }
@@ -103,17 +116,28 @@ class SleepTimerController @VisibleForTesting internal constructor(
         }
         val steps = 20
         val stepDelay = fadeMs / steps
-        // steps delays (i = steps..1), NOT steps+1: `downTo 0` ran one extra
-        // delay and overshot fadeMs by a full step, so pause fired late.
-        for (i in steps downTo 1) {
-            playerRepository.setVolume(i / steps.toFloat())
-            delay(stepDelay)
+        try {
+            // steps delays (i = steps..1), NOT steps+1: `downTo 0` ran one extra
+            // delay and overshot fadeMs by a full step, so pause fired late.
+            for (i in steps downTo 1) {
+                playerRepository.setVolume(i / steps.toFloat())
+                delay(stepDelay)
+            }
+            playerRepository.pause()
+        } finally {
+            // Restore for next playback, and also when the fade is cut short:
+            // re-arming mid-fade ("+15 min" or "end of track" once the music
+            // audibly dips) cancels this job, and only cancel() used to put
+            // the volume back, so playback went on at ~40% until a later
+            // timer completed.
+            playerRepository.setVolume(1f)
         }
-        playerRepository.pause()
-        playerRepository.setVolume(1f) // restore for next playback
     }
 
     companion object {
         private const val DEFAULT_FADE_MS = 7_000L
+
+        /** Longest single wait before the countdown re-reads the wall clock. */
+        private const val CLOCK_CHECK_MS = 60_000L
     }
 }
