@@ -26,7 +26,7 @@ class StashAudioOutputTest {
     private class FakeOutput(var capacity: Int = Int.MAX_VALUE) : AudioOutput {
         val bytes = ByteArrayOutputStream()
         var lastBuffer: ByteBuffer? = null
-        var volume = -1f
+        var lastVolume = -1f
         override fun write(buffer: ByteBuffer, encodedAccessUnitCount: Int, presentationTimeUs: Long): Boolean {
             lastBuffer = buffer
             val n = minOf(capacity, buffer.remaining())
@@ -38,7 +38,7 @@ class StashAudioOutputTest {
         override fun flush() = Unit
         override fun stop() = Unit
         override fun release() = Unit
-        override fun setVolume(volume: Float) { this.volume = volume }
+        override fun setVolume(volume: Float) { lastVolume = volume }
         override fun isOffloadedPlayback() = false
         override fun getAudioSessionId() = 0
         override fun getSampleRate() = 48_000
@@ -133,14 +133,14 @@ class StashAudioOutputTest {
         val b = inner.bytes.toByteArray()
         val left = (b[0].toInt() and 0xFF) or ((b[1].toInt() and 0xFF) shl 8) or (b[2].toInt() shl 16)
         assertThat(left).isEqualTo(1234567)
-        assertThat(inner.volume).isEqualTo(1f)
+        assertThat(inner.lastVolume).isEqualTo(1f)
     }
 
     @Test fun `bit-perfect applies the player's volume itself, keeping the track at unity`() {
         val inner = FakeOutput()
         val out = output(inner, SampleFormat.FLOAT, bitPerfectPlan(SampleFormat.INT32))
         out.setVolume(0.25f)
-        assertThat(inner.volume).isEqualTo(1f)
+        assertThat(inner.lastVolume).isEqualTo(1f)
         out.flush() // snaps the ramp to the target
         out.write(floats(0.5f, 0.5f), 1, 0L)
         val v = inner.bytes.asBuffer().getInt(0) / 2147483648.0
