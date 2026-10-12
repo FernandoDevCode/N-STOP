@@ -255,13 +255,24 @@ class YouTubeHistoryScrobbler @Inject constructor(
         // No cutoff means the feature is off: never fall back to "everything",
         // which would send the user's whole history (see YouTubeHistoryPreference).
         val sinceMs = readCutoff() ?: return
-        val pending = runCatching { listeningEventDao.pendingYtScrobbles(sinceMs = sinceMs, limit = 50) }
+        val lookups = LookupFailures(readLookupFailures())
+        // Room for every play whose lookup failed on top of a full batch, so
+        // those (taken last, below) can't crowd out the plays behind them.
+        val limit = BATCH_SIZE + lookups.size
+        val pending = runCatching { listeningEventDao.pendingYtScrobbles(sinceMs = sinceMs, limit = limit) }
             .getOrElse {
                 Log.w(TAG, "drainQueue: failed to load pending events", it)
                 return
             }
+        // Every queued play fit, so a recorded one that isn't among them was
+        // sent, dropped or is from before the opt-in: forget it.
+        if (pending.size < limit) lookups.forgetAllBut(pending.mapTo(HashSet()) { it.id })
         if (pending.isEmpty()) return
-        for (event in pending) {
+        // Oldest first, but plays whose lookup failed before go last (a stable
+        // sort): one that keeps failing headed every pass and ended it, so no
+        // play behind it was ever sent.
+        val ordered = pending.sortedBy { lookups.failedBefore(it.id) }.take(BATCH_SIZE)
+        for (event in ordered) {
             // Re-checked before every event, not once per pass: the collector only
             // sees a turn-off or a tripped kill-switch after this pass returns, and
             // a 50-event pass runs for about a minute. A cutoff that moved means the
@@ -274,21 +285,193 @@ class YouTubeHistoryScrobbler @Inject constructor(
             if (track == null) {
                 // Track deleted between recording and scrobbling — mark handled.
                 runCatching { listeningEventDao.markYtScrobbled(event.id) }
+                lookups.forget(event.id)
                 continue
             }
-            if (submit(event, track) == SubmitOutcome.STOP_PASS) break
+            if (!lookups.goOn(event.id, submit(event, track))) break
             delay(REQUEST_INTERVAL_MS + Random.nextLong(-JITTER_MS, JITTER_MS))
         }
+        lookups.finish()
     }
 
     /**
-     * Whether the rest of a drain pass can still succeed after one [submit].
-     * A failure every later event would hit too (no network, dead cookies, the
-     * kill-switch tripping) ends the pass; otherwise each new listen re-walked
-     * the whole batch, about three requests per event, against a YouTube that
-     * could not accept any of them. Outcomes tied to one track do not.
+     * What one [submit] means for the rest of a drain pass. A failure every
+     * later event would hit too (no network, dead cookies, the kill-switch
+     * tripping) ends the pass; otherwise each new listen re-walked the whole
+     * batch, about three requests per event, against a YouTube that could not
+     * accept any of them. Outcomes tied to one track do not. A failed lookup
+     * can be either, and [LookupFailures] tells which.
      */
-    internal enum class SubmitOutcome { CONTINUE, STOP_PASS }
+    internal enum class SubmitOutcome {
+        /** YouTube answered: the play was sent, or has no canonical version. */
+        ANSWERED,
+
+        /** Settled or skipped without word from YouTube; the pass goes on. */
+        CONTINUE,
+
+        /** The search did not answer: offline, an outage, or a request refused for this play alone. */
+        LOOKUP_UNANSWERED,
+
+        /** The lookup threw on what the search answered: this play's own failure. */
+        LOOKUP_BROKEN,
+
+        /** A failure every later event would hit too. */
+        STOP_PASS,
+    }
+
+    /**
+     * One drain pass's handling of failed canonical lookups. A failed lookup
+     * used to end the pass, and the queue is oldest first, so a play whose
+     * lookup always failed (a search YouTube refuses for that query, an answer
+     * the resolver can't read) headed every pass: nothing was ever sent, and
+     * Settings said "offline".
+     *
+     * A play whose search went unanswered moves to the back of the queue
+     * (recorded in [YouTubeScrobblerState.lookupFailures]) and the next play
+     * is tried. If another search goes unanswered before anything answers,
+     * nothing is answering: the pass ends, offline, and no play is charged. Once
+     * YouTube answers in a pass, a failed lookup is the play's own and is
+     * charged an attempt; after [MAX_LOOKUP_ATTEMPTS] the play is dropped. A
+     * lookup that threw is always the play's own. [MAX_CHARGED_IN_A_ROW]
+     * charged failures in a row end the pass, so a connection lost mid-pass
+     * charges a few plays once, not the whole batch.
+     *
+     * Every state write is best effort: a lost one costs a play its place at
+     * the back of the queue or one attempt, never the play.
+     */
+    private inner class LookupFailures(recorded: Map<Long, Int>) {
+        /** Event id → attempts charged, for plays whose lookup failed (this pass or before). */
+        private val attempts = recorded.toMutableMap()
+
+        /** YouTube answered a request this pass, so a failed lookup is the play's own. */
+        private var answered = false
+
+        /** A play whose search went unanswered before anything answered this pass. */
+        private var unproven: Long? = null
+
+        /** Charged lookup failures in a row. */
+        private var chargedInARow = 0
+
+        val size: Int get() = attempts.size
+
+        fun failedBefore(eventId: Long): Boolean = eventId in attempts
+
+        /** True when the pass goes on after [eventId]'s [outcome]. */
+        suspend fun goOn(eventId: Long, outcome: SubmitOutcome): Boolean = when (outcome) {
+            SubmitOutcome.ANSWERED -> {
+                onAnswered()
+                chargedInARow = 0
+                forget(eventId)
+                true
+            }
+            SubmitOutcome.CONTINUE -> {
+                // Its lookup worked: it goes back in line with the others.
+                chargedInARow = 0
+                forget(eventId)
+                true
+            }
+            SubmitOutcome.LOOKUP_BROKEN -> charge(eventId)
+            SubmitOutcome.LOOKUP_UNANSWERED -> when {
+                answered -> charge(eventId)
+                unproven == null -> {
+                    // Offline, or this play alone: the next play's search tells.
+                    unproven = eventId
+                    moveBack(eventId)
+                    true
+                }
+                else -> {
+                    // A second search unanswered, nothing answered since: offline.
+                    moveBack(eventId)
+                    unproven = null
+                    _health.value = YouTubeScrobblerHealth.OFFLINE
+                    false
+                }
+            }
+            SubmitOutcome.STOP_PASS -> {
+                // The stop set its own health (auth, network, kill-switch).
+                unproven = null
+                false
+            }
+        }
+
+        /** Ends the pass: an unanswered search nothing answered after says offline. */
+        fun finish() {
+            if (unproven != null) _health.value = YouTubeScrobblerHealth.OFFLINE
+        }
+
+        /** Forgets [eventId] (sent, dropped, or its lookup works now). */
+        suspend fun forget(eventId: Long) {
+            if (attempts.remove(eventId) != null) writeState { state.clearLookupFailures(listOf(eventId)) }
+        }
+
+        /** Forgets every recorded play but [queued]. */
+        suspend fun forgetAllBut(queued: Set<Long>) {
+            val gone = attempts.keys.filterNot { it in queued }
+            if (gone.isEmpty()) return
+            attempts.keys.removeAll(gone.toSet())
+            writeState { state.clearLookupFailures(gone) }
+        }
+
+        private suspend fun onAnswered() {
+            answered = true
+            // The play before this one failed while YouTube was answering.
+            unproven?.let {
+                unproven = null
+                charge(it)
+            }
+        }
+
+        /** Puts [eventId] at the back of the queue, charging nothing. */
+        private suspend fun moveBack(eventId: Long) {
+            if (eventId in attempts) return
+            attempts[eventId] = 0
+            writeState { state.setLookupFailure(eventId, 0) }
+        }
+
+        /**
+         * Charges [eventId] one attempt; at [MAX_LOOKUP_ATTEMPTS] it is dropped
+         * (marked handled). True when the pass goes on.
+         */
+        private suspend fun charge(eventId: Long): Boolean {
+            val charged = (attempts[eventId] ?: 0) + 1
+            if (charged >= MAX_LOOKUP_ATTEMPTS) {
+                Log.w(TAG, "dropping event=$eventId: its canonical lookup failed $charged times while YouTube answered")
+                try {
+                    listeningEventDao.markYtScrobbled(eventId)
+                    forget(eventId)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "could not drop event=$eventId", e)
+                }
+            } else {
+                attempts[eventId] = charged
+                writeState { state.setLookupFailure(eventId, charged) }
+            }
+            return ++chargedInARow < MAX_CHARGED_IN_A_ROW
+        }
+    }
+
+    /** The recorded lookup failures; an unreadable record is an empty one. */
+    private suspend fun readLookupFailures(): Map<Long, Int> = try {
+        state.lookupFailures()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "could not read the lookup failures", e)
+        emptyMap()
+    }
+
+    /** Runs a [state] write, logging instead of failing the pass. */
+    private suspend fun writeState(write: suspend () -> Unit) {
+        try {
+            write()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "could not record a lookup failure", e)
+        }
+    }
 
     /**
      * Resolves the canonical video id, fetches its tracking URL, then fires
@@ -302,22 +485,26 @@ class YouTubeHistoryScrobbler @Inject constructor(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            // InnerTubeClient reads a request that failed as Failed, without
+            // throwing; a throw is an answer this play's lookup can't read (a
+            // response shape it doesn't expect). It fails the same way every
+            // time, so it must not stand for "offline" and stop the pass.
             Log.w(TAG, "submit: canonical lookup threw for event=${event.id}", e)
-            CanonicalLookup.Failed
+            return SubmitOutcome.LOOKUP_BROKEN
         }
         val canonicalId = when (lookup) {
             is CanonicalLookup.Found -> lookup.match.videoId
             CanonicalLookup.NoMatch -> {
                 // No ATV/OMV version found — mark handled to avoid UGC pollution.
                 runCatching { listeningEventDao.markYtScrobbled(event.id) }
-                return SubmitOutcome.CONTINUE
+                return SubmitOutcome.ANSWERED
             }
             CanonicalLookup.Failed -> {
                 // The search did not answer (offline, 429, 5xx). That says nothing
                 // about whether a canonical version exists, so the play stays
                 // queued; marking it handled here dropped every offline listen.
-                onTransientFailure("search_failed")
-                return SubmitOutcome.STOP_PASS
+                // drainQueue tells an outage from a failure of this play alone.
+                return SubmitOutcome.LOOKUP_UNANSWERED
             }
         }
 
@@ -355,7 +542,7 @@ class YouTubeHistoryScrobbler @Inject constructor(
         return when (code) {
             in 200..299 -> {
                 onSuccess(event.id)
-                SubmitOutcome.CONTINUE
+                SubmitOutcome.ANSWERED
             }
             401, 403 -> {
                 onAuthFailure()
@@ -407,5 +594,17 @@ class YouTubeHistoryScrobbler @Inject constructor(
         private const val REQUEST_INTERVAL_MS = 750L
         private const val JITTER_MS = 250L
         private const val KILL_SWITCH_THRESHOLD = 5
+
+        /** Plays one drain pass submits at most. */
+        private const val BATCH_SIZE = 50
+
+        /**
+         * Failed lookups of its own a play gets before it is dropped. Charged
+         * only while YouTube answers other plays, so time offline costs none.
+         */
+        internal const val MAX_LOOKUP_ATTEMPTS = 5
+
+        /** Charged lookup failures in a row that end a pass (a connection lost mid-pass). */
+        private const val MAX_CHARGED_IN_A_ROW = 3
     }
 }

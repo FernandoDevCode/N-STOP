@@ -14,9 +14,12 @@ import com.stash.data.ytmusic.InnerTubeClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.eq
+import org.mockito.kotlin.inOrder
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.times
@@ -52,6 +55,9 @@ class YouTubeHistoryScrobblerTest {
 
     private lateinit var scrobbler: YouTubeHistoryScrobbler
 
+    /** Event id → attempts charged: what [YouTubeScrobblerState.lookupFailures] holds. */
+    private val recorded = mutableMapOf<Long, Int>()
+
     private fun event(id: Long = 1L) = ListeningEventEntity(
         id = id, trackId = 10L, startedAt = 1000L,
     )
@@ -66,6 +72,13 @@ class YouTubeHistoryScrobblerTest {
         whenever(state.currentLastKnownVersionCode()).thenReturn(fakeStoredVersionCode)
         whenever(state.currentDisabledReason()).thenReturn(null)
         whenever(state.incrementConsecutiveFailures()).thenReturn(1)
+        // The lookup-failure record, kept in [recorded] as the DataStore would.
+        whenever(state.lookupFailures()).thenAnswer { recorded.toMap() }
+        whenever(state.setLookupFailure(any(), any())).thenAnswer { recorded[it.getArgument(0)] = it.getArgument(1) }
+        whenever(state.clearLookupFailures(any())).thenAnswer {
+            recorded.keys.removeAll(it.getArgument<Collection<Long>>(0).toSet())
+            Unit
+        }
         whenever(tokenManager.getYouTubeCookie()).thenReturn("SAPISID=abc; LOGIN_INFO=xyz")
         whenever(cookieHelper.extractSapiSid(any())).thenReturn("abc")
         whenever(cookieHelper.generateAuthHeader(any())).thenReturn("SAPISIDHASH 1234_hash")
@@ -264,8 +277,11 @@ class YouTubeHistoryScrobblerTest {
         scrobbler.drainQueue()
 
         verify(listeningEventDao, never()).markYtScrobbled(any())
-        verify(resolver, times(1)).resolve(any())
+        // The second play's search tells offline from a failure of the first
+        // play alone: both unanswered, so the pass ends there.
+        verify(resolver, times(2)).resolve(any())
         assertEquals(YouTubeScrobblerHealth.OFFLINE, scrobbler.health.value)
+        assertEquals("moved back, nothing charged while offline", mapOf(1L to 0, 2L to 0), recorded)
     }
 
     @Test
@@ -335,6 +351,132 @@ class YouTubeHistoryScrobblerTest {
 
         assertEquals(1, pings)
         verify(listeningEventDao, never()).markYtScrobbled(2L)
+    }
+
+    // ── A play whose lookup keeps failing can't block the queue ─────────────
+
+    /** Plays of tracks of their own (track id = 10 × event id), queued oldest first. */
+    private suspend fun stubQueue(vararg ids: Long) {
+        whenever(preference.sendPlaysSinceMs(any())).thenReturn(CUTOFF)
+        whenever(listeningEventDao.pendingYtScrobbles(eq(CUTOFF), any()))
+            .thenReturn(ids.map { ListeningEventEntity(id = it, trackId = it * 10, startedAt = 1000L + it) })
+        ids.forEach { id ->
+            whenever(trackDao.getById(id * 10)).thenReturn(track().copy(id = id * 10, title = "Song $id"))
+        }
+    }
+
+    /** The lookup of event [id]'s track answers [lookup]; every other one finds its song. */
+    private suspend fun lookupOf(id: Long, lookup: () -> CanonicalLookup) {
+        whenever(resolver.resolve(any())).thenAnswer {
+            if (it.getArgument<TrackEntity>(0).id == id * 10) lookup()
+            else CanonicalLookup.Found(CanonicalMatch("vid123", thumbnailUrl = null))
+        }
+    }
+
+    @Test
+    fun `a play whose search fails alone no longer holds back the plays behind it`() = runTest {
+        stubQueue(1L, 2L, 3L)
+        lookupOf(1L) { CanonicalLookup.Failed }
+
+        scrobbler.drainQueue()
+
+        verify(listeningEventDao).markYtScrobbled(2L)
+        verify(listeningEventDao).markYtScrobbled(3L)
+        verify(listeningEventDao, never()).markYtScrobbled(1L)
+        // The next play's search answered, so the failure was the first play's own.
+        assertEquals(mapOf(1L to 1), recorded)
+        assertEquals(YouTubeScrobblerHealth.OK, scrobbler.health.value)
+    }
+
+    @Test
+    fun `a lookup that throws is the play's own failure, not offline`() = runTest {
+        stubQueue(1L, 2L)
+        lookupOf(1L) { throw IllegalArgumentException("Element class JsonPrimitive is not a JsonObject") }
+
+        scrobbler.drainQueue()
+
+        verify(listeningEventDao).markYtScrobbled(2L)
+        assertEquals(mapOf(1L to 1), recorded)
+        assertEquals(YouTubeScrobblerHealth.OK, scrobbler.health.value)
+    }
+
+    @Test
+    fun `a play whose lookup failed before goes after the others`() = runTest {
+        recorded[1L] = 1
+        stubQueue(1L, 2L, 3L)
+
+        scrobbler.drainQueue()
+
+        // Room for the recorded play on top of a full batch.
+        verify(listeningEventDao).pendingYtScrobbles(sinceMs = CUTOFF, limit = 51)
+        val order = inOrder(listeningEventDao)
+        order.verify(listeningEventDao).markYtScrobbled(2L)
+        order.verify(listeningEventDao).markYtScrobbled(3L)
+        order.verify(listeningEventDao).markYtScrobbled(1L)
+        assertEquals("sent, so forgotten", emptyMap<Long, Int>(), recorded)
+    }
+
+    @Test
+    fun `a play whose lookup keeps failing is dropped after its last attempt`() = runTest {
+        recorded[1L] = YouTubeHistoryScrobbler.MAX_LOOKUP_ATTEMPTS - 1
+        stubQueue(1L, 2L)
+        lookupOf(1L) { CanonicalLookup.Failed }
+
+        scrobbler.drainQueue()
+
+        verify(listeningEventDao).markYtScrobbled(2L)
+        verify(listeningEventDao).markYtScrobbled(1L)
+        assertEquals(emptyMap<Long, Int>(), recorded)
+    }
+
+    @Test
+    fun `time offline charges no attempts`() = runTest {
+        recorded[1L] = YouTubeHistoryScrobbler.MAX_LOOKUP_ATTEMPTS - 1
+        stubQueue(1L)
+        lookupOf(1L) { CanonicalLookup.Failed }
+
+        scrobbler.drainQueue()
+
+        verify(listeningEventDao, never()).markYtScrobbled(any())
+        assertEquals(mapOf(1L to YouTubeHistoryScrobbler.MAX_LOOKUP_ATTEMPTS - 1), recorded)
+        assertEquals(YouTubeScrobblerHealth.OFFLINE, scrobbler.health.value)
+    }
+
+    @Test
+    fun `a connection lost mid-pass charges a few plays once and ends the pass`() = runTest {
+        stubQueue(1L, 2L, 3L, 4L, 5L, 6L)
+        var searches = 0
+        whenever(resolver.resolve(any())).thenAnswer {
+            if (++searches == 1) CanonicalLookup.Found(CanonicalMatch("vid123", thumbnailUrl = null))
+            else CanonicalLookup.Failed
+        }
+
+        scrobbler.drainQueue()
+
+        assertEquals(4, searches)
+        assertEquals(mapOf(2L to 1, 3L to 1, 4L to 1), recorded)
+    }
+
+    @Test
+    fun `a recorded play no longer queued is forgotten`() = runTest {
+        recorded[9L] = 2
+        stubQueue(1L)
+
+        scrobbler.drainQueue()
+
+        assertEquals(emptyMap<Long, Int>(), recorded)
+    }
+
+    @Test
+    fun `the lookup-failure record keeps the newest plays and skips junk`() {
+        val max = YouTubeScrobblerState.MAX_LOOKUP_FAILURES.toLong()
+        val entries = (1L..max + 1).associateWith { 1 }
+
+        val kept = YouTubeScrobblerState.decodeLookupFailures(YouTubeScrobblerState.encodeLookupFailures(entries))
+
+        assertEquals(YouTubeScrobblerState.MAX_LOOKUP_FAILURES, kept.size)
+        assertFalse("the oldest play goes", 1L in kept)
+        assertEquals(mapOf(7L to 2), YouTubeScrobblerState.decodeLookupFailures(setOf("7:2", "x", "8:", ":1")))
     }
 
     private companion object {
