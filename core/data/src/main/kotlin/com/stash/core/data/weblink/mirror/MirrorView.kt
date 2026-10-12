@@ -2,16 +2,12 @@ package com.stash.core.data.weblink.mirror
 
 import com.stash.core.data.weblink.merge.PlaysMerge
 import com.stash.core.data.weblink.merge.SyncHashes
-import com.stash.core.model.weblink.Hlc
 import com.stash.core.model.weblink.SongIndex
 
 /**
  * The view of the space, kept as the log is read (sync-v1 §5.4, §7): a port of the web's `src/lib/sync/mirror-view.ts`. Pure.
  */
 object MirrorView {
-    /** Tombstones (an unlike, a deleted playlist) older than this are left out of a snapshot (sync-v1 §5.4). */
-    const val TOMBSTONE_KEEP_MS = 90L * 86_400_000
-
     fun joinMark(kind: Kind, since: Long, device: String) = "${kind.wire}|$since|$device"
 
     /**
@@ -125,15 +121,22 @@ object MirrorView {
         },
     )
 
-    /** The snapshot of [view] after log entry [uptoSeq]; tombstones older than 90 days (server time) left out. */
-    fun stateOf(view: SpaceView, uptoSeq: Long, serverNow: Long): MirrorState {
-        fun old(at: Hlc) = at.wall < serverNow - TOMBSTONE_KEEP_MS
-        return MirrorState(
+    /**
+     * The snapshot of [view] after log entry [uptoSeq], tombstones (an unlike, a deleted playlist) included however old.
+     *
+     * They used to be left out after 90 days (sync-v1 §5.4), on the strength of "a device unseen for 90 days is removed". But
+     * "seen" is any request, so a device whose pull stalls stays linked: once the tombstone was gone, that device's older copy
+     * (a like, the playlist) won its last-writer-wins comparison against nothing and came back for everyone. A tombstone is a
+     * few dozen bytes; the web player writes them the same way. A snapshot written before this, with the old ones already
+     * gone, still reads ([fromState]): it just has nothing to say about those songs and playlists.
+     */
+    fun stateOf(view: SpaceView, uptoSeq: Long): MirrorState =
+        MirrorState(
             uptoSeq = uptoSeq,
-            likes = view.likes.filter { it.on || !old(it.at) }.map { MirrorState.StateLike(it.s, it.on, it.at) },
+            likes = view.likes.map { MirrorState.StateLike(it.s, it.on, it.at) },
             plays = view.plays.map { MirrorState.StatePlay(it.s, it.playedAt, it.device) },
             playsClearedBefore = view.clearedBefore,
-            playlists = view.playlists.filter { (_, p) -> p.items != null || !old(p.at) }
+            playlists = view.playlists
                 .map { (id, p) -> MirrorState.StatePl(id, p.name, p.items, p.follow?.follow(), p.ro, p.at, p.hash) },
             joined = view.joined.mapNotNull { m ->
                 val parts = m.split('|')
@@ -142,5 +145,4 @@ object MirrorView {
                 JoinMark(k, since, parts.getOrNull(2) ?: return@mapNotNull null)
             },
         )
-    }
 }

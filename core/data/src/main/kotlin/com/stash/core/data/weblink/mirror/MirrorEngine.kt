@@ -1173,7 +1173,7 @@ class MirrorEngine internal constructor(
             if (uptoSeq == 0L) return
             if (r.gaps.isNotEmpty()) throw CantCompact()
             val key = dataKey(c, c.sp.epoch) ?: throw Settle()
-            val st = MirrorView.stateOf(MirrorView.sinceFilter(r.view, c.cfg), uptoSeq, wall(c))
+            val st = MirrorView.stateOf(MirrorView.sinceFilter(r.view, c.cfg), uptoSeq)
             val envs = try {
                 SyncCrypto.sealParts(key, c.sp.spaceId, c.sp.epoch, { p, n -> SyncCrypto.Place.snapshot(uptoSeq, p, n) }, MirrorWire.stateJson(st))
             } catch (e: SyncCryptoException) {
