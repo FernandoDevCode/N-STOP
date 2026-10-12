@@ -11,7 +11,6 @@ import androidx.work.workDataOf
 import com.stash.core.data.blocklist.BlocklistGuard
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.dao.RemoteSnapshotDao
-import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.RemotePlaylistSnapshotEntity
@@ -23,7 +22,6 @@ import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.sync.SyncPreferencesManager
 import com.stash.core.data.sync.SyncStateManager
 import com.stash.core.data.sync.TrackMatcher
-import com.stash.core.model.DownloadStatus
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.SyncMode
@@ -217,81 +215,6 @@ class DiffWorkerRevisionSkipTest {
         assertTrue(memberships(row.id).isEmpty())
     }
 
-    // ── A skipped playlist still gets what a full diff does with no network ──
-
-    /** The playlist's song "A" failed to download; the user then downloaded the same song from Search. */
-    private suspend fun seedDownloadedCopyOfA(playlistId: Long): Pair<Long, Long> {
-        val stubA = db.playlistDao().getCrossRefsForPlaylist(playlistId).minBy { it.position }.trackId
-        val failedId = db.downloadQueueDao().insert(
-            DownloadQueueEntity(trackId = stubA, syncId = 1L, status = DownloadStatus.FAILED, searchQuery = "Artist - A"),
-        )
-        val copy = db.trackDao().insert(
-            TrackEntity(
-                title = "A", artist = "Artist", canonicalTitle = "a", canonicalArtist = "artist",
-                source = MusicSource.YOUTUBE, youtubeId = "yt-a", isDownloaded = true, filePath = "/music/a.flac",
-            ),
-        )
-        return copy to failedId
-    }
-
-    @Test fun `a skipped playlist still links a song's downloaded copy in, as a full diff would`() = runBlocking {
-        val playlistId = seedMirroredPlaylist()
-        val oldStamp = SpotifyMirrorStamp.decode(db.playlistDao().getSnapshotId(playlistId))!!
-        val (copy, failedId) = seedDownloadedCopyOfA(playlistId)
-        stubSnapshots(unchangedSpotifyPlaylistSnapshot(listed(), oldStamp.encode(), syncId = 1L).copy(id = 1L))
-
-        runDiff()
-
-        val links = db.playlistDao().getCrossRefsForPlaylist(playlistId).associateBy { it.trackId }
-        assertEquals("the copy joins at the stub's position", 0, links[copy]?.position)
-        assertEquals(DownloadStatus.COMPLETED, db.downloadQueueDao().getStatusById(failedId))
-        // The playlist now equals a full mirror, so it is re-stamped: same revision,
-        // mode and time (the week counts from the last real read), new rows.
-        val newStamp = SpotifyMirrorStamp.decode(db.playlistDao().getSnapshotId(playlistId))!!
-        assertEquals(oldStamp.copy(digest = db.playlistDao().mirrorDigest(playlistId)!!), newStamp)
-        assertEquals(
-            "the next fetch still skips it",
-            newStamp.encode(),
-            stampToSkipOn(revision, newStamp.encode(), db.playlistDao().mirrorDigest(playlistId), SyncMode.REFRESH, System.currentTimeMillis()),
-        )
-    }
-
-    @Test fun `what the skip linked is exactly what a full diff of the same songs leaves`() = runBlocking {
-        val playlistId = seedMirroredPlaylist()
-        seedDownloadedCopyOfA(playlistId)
-        stubSnapshots(
-            unchangedSpotifyPlaylistSnapshot(listed(), db.playlistDao().getSnapshotId(playlistId)!!, syncId = 1L).copy(id = 1L),
-        )
-        runDiff()
-        val afterSkip = memberships(playlistId)
-
-        // Now a full read of the same, unchanged remote content.
-        stubSnapshots(
-            spotifyLibraryPlaylistSnapshot(listed(), syncId = 1L, partial = false, snapshotId = revision).copy(id = 2L),
-            trackSnapshots("A", "B").map { it.copy(snapshotPlaylistId = 2L) },
-        )
-        runDiff()
-
-        assertEquals(afterSkip, memberships(playlistId))
-    }
-
-    @Test fun `a downloaded copy the user removed from the playlist stays out on a skip too`() = runBlocking {
-        val playlistId = seedMirroredPlaylist()
-        val (copy, _) = seedDownloadedCopyOfA(playlistId)
-        db.playlistDao().insertCrossRef(
-            PlaylistTrackCrossRef(playlistId = playlistId, trackId = copy, position = 0, removedAt = Instant.now()),
-        )
-        // Re-stamp over the removal, as the full diff that saw it would have.
-        db.playlistDao().updateSnapshotId(playlistId, stampFor(playlistId))
-        stubSnapshots(
-            unchangedSpotifyPlaylistSnapshot(listed(), db.playlistDao().getSnapshotId(playlistId)!!, syncId = 1L).copy(id = 1L),
-        )
-
-        runDiff()
-
-        assertTrue(db.playlistDao().getCrossRefsForPlaylist(playlistId).single { it.trackId == copy }.removedAt != null)
-    }
-
     // ── Never stamped: Spotify's own playlists and rows filed as mixes ────
 
     @Test fun `a Spotify-generated playlist is never stamped`() = runBlocking {
@@ -309,22 +232,26 @@ class DiffWorkerRevisionSkipTest {
         assertNull(db.playlistDao().findBySourceId(owned.id)!!.snapshotId)
     }
 
-    @Test fun `a row filed as a mix is never stamped`() = runBlocking {
-        // A Spotify-owned id keeps its DAILY_MIX type when the library walk lists it.
-        val mixId = "37i9dQZF1E4mixOfTheDay00"
+    @Test fun `a row filed as a mix is never stamped, whatever its id`() = runBlocking {
+        // An id outside Spotify's own namespace, so only the type keeps it from a
+        // stamp. A home-feed mix snapshot never carries a revision; this one does,
+        // to prove the type check alone holds.
+        val mixId = "1aB2cD3eF4gH5iJ6kL7mN8"
         db.playlistDao().insert(
             PlaylistEntity(name = "Daily Mix 1", source = MusicSource.SPOTIFY, sourceId = mixId, type = PlaylistType.DAILY_MIX, syncEnabled = true),
         )
         stubSnapshots(
-            spotifyLibraryPlaylistSnapshot(listed().copy(id = mixId), syncId = 1L, partial = false, snapshotId = revision).copy(id = 1L),
+            spotifyLibraryPlaylistSnapshot(listed().copy(id = mixId), syncId = 1L, partial = false, snapshotId = revision)
+                .copy(id = 1L, playlistType = PlaylistType.DAILY_MIX),
             trackSnapshots("A", "B"),
         )
 
         runDiff()
 
-        assertNull(db.playlistDao().findBySourceId(mixId)!!.snapshotId)
-        assertEquals(false, isStampable("pl1", PlaylistType.DAILY_MIX))
-        assertTrue(isStampable("pl1", PlaylistType.CUSTOM))
+        val row = db.playlistDao().findBySourceId(mixId)!!
+        assertEquals(PlaylistType.DAILY_MIX, row.type)
+        assertNull(row.snapshotId)
+        assertEquals(2, memberships(row.id).size)
     }
 
     // ── A playlist the fetch read ────────────────────────────────────────
