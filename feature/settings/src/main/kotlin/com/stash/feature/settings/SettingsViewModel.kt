@@ -1577,8 +1577,8 @@ class SettingsViewModel @Inject constructor(
     )
 
     fun onUiScaleChanged(scale: Float) {
-        // Snap to 0.05 so float drift from the slider never lands in the pref.
-        val snapped = Math.round(scale.coerceIn(0.85f, 1.30f) * 20) / 20f
+        // Snap to 0.01 so float drift from the slider never lands in the pref.
+        val snapped = Math.round(scale.coerceIn(0.8f, 1.6f) * 100) / 100f
         viewModelScope.launch { themePreference.setUiScale(snapped) }
     }
 

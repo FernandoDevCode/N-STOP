@@ -120,13 +120,13 @@ fun SettingsAppearanceScreen(
 
         SettingsSliderRow(
             title = "UI scale",
-            valueLabel = "${Math.round(draftScale * 100)}%",
+            valueLabel = String.format(java.util.Locale.US, "%.2fx", draftScale),
             subtitle = "Resizes text and layout across the whole app. Applies when you let go.",
             value = draftScale,
-            onValueChange = { draftScale = it },
+            onValueChange = { draftScale = Math.round(it * 100) / 100f },
             onValueChangeFinished = { viewModel.onUiScaleChanged(draftScale) },
-            valueRange = 0.85f..1.30f,
-            steps = 8, // 0.05 increments
+            valueRange = 0.8f..1.6f,
+            steps = 0, // continuous; the draft snaps to 0.01 in onValueChange
         )
 
         Spacer(Modifier.height(20.dp))

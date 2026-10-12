@@ -78,7 +78,7 @@ class ThemePreferencesManager @Inject constructor(
     }
 
     private companion object {
-        const val UI_SCALE_MIN = 0.85f
-        const val UI_SCALE_MAX = 1.30f
+        const val UI_SCALE_MIN = 0.8f
+        const val UI_SCALE_MAX = 1.6f
     }
 }
