@@ -651,6 +651,8 @@ class DatabaseBackupManager @Inject constructor(
                             "${counts.mergedMemberships} memberships",
                     )
                     cleanupStaging(stagedDb, stagedDatastore)
+                    // No restart follows a merge, so the re-key runs now.
+                    rearmCanonicalRecompute(runNow = true)
                     return@runCatching BackupImportResult(
                         restoredTreeUri = null,
                         requiresRestart = false,
@@ -696,6 +698,9 @@ class DatabaseBackupManager @Inject constructor(
                 cleanupStaging(stagedDb, stagedDatastore)
                 throw e
             }
+            // After the settings files: a restored canonical_recompute file must not
+            // hide that the swapped-in library needs the re-key.
+            if (scope.swapsDatabaseFile) rearmCanonicalRecompute(runNow = false)
 
             // 5. Read the restored Tree URI from DataStore — only meaningful
             //    when this scope actually restored settings files. We use a
@@ -710,6 +715,27 @@ class DatabaseBackupManager @Inject constructor(
                 restoredTreeUri = restoredTreeUri,
                 requiresRestart = true,
             )
+        }
+    }
+
+    /**
+     * A restored or merged backup made before schema 55 brings back rows whose canonical words are
+     * in the old strict form, which lookups by words can't find. Re-arming makes the next app start
+     * run the one-time re-key ([com.stash.core.data.library.CanonicalRecompute]) again; on rows it
+     * already re-keyed it changes nothing. [runNow] also enqueues it at once (a merge keeps the live
+     * database open); a swap leaves it to the restart, since the old database is closed. Best-effort:
+     * the import has already succeeded, and a missed re-arm only leaves those rows as they were
+     * before this version.
+     */
+    private suspend fun rearmCanonicalRecompute(runNow: Boolean) {
+        try {
+            val state = com.stash.core.data.library.CanonicalRecomputeState.forContext(context)
+            state.rearm()
+            if (runNow) com.stash.core.data.sync.workers.CanonicalRecomputeWorker.enqueueIfPending(context, state)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("BackupManager", "Couldn't re-arm the canonical re-key", e)
         }
     }
 

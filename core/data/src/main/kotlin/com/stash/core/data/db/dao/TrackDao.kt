@@ -194,6 +194,21 @@ data class ArtBackfillRow(
 )
 
 /**
+ * A row's words and its stored canonical words, for the one-time recompute
+ * that re-keys rows a stricter rule wrote before schema 55
+ * ([com.stash.core.data.library.CanonicalRecompute]).
+ */
+data class CanonicalWordsRow(
+    val id: Long,
+    val title: String,
+    val artist: String,
+    @androidx.room.ColumnInfo(name = "canonical_title")
+    val canonicalTitle: String,
+    @androidx.room.ColumnInfo(name = "canonical_artist")
+    val canonicalArtist: String,
+)
+
+/**
  * Minimal row projection for the duration-backfill pass. File path is all
  * we need — `AudioDurationExtractor.extractMs` reads ground-truth duration
  * directly from the container.
@@ -735,6 +750,43 @@ interface TrackDao {
     /** Every row with these canonical words, oldest first (the mirror skips one that already stands for another song). */
     @Query("SELECT * FROM tracks WHERE canonical_title = :title AND canonical_artist = :artist ORDER BY id ASC")
     suspend fun findAllByCanonicalIdentity(title: String, artist: String): List<TrackEntity>
+
+    /**
+     * The next [limit] rows after [afterId], in id order, with just the columns the canonical
+     * recompute reads. Keyset paging on the primary key: each page is an index seek, however far
+     * into a ~19k-row library a resumed run starts.
+     */
+    @Query(
+        """
+        SELECT id, title, artist, canonical_title, canonical_artist FROM tracks
+        WHERE id > :afterId
+        ORDER BY id ASC
+        LIMIT :limit
+        """
+    )
+    suspend fun canonicalWordsAfter(afterId: Long, limit: Int): List<CanonicalWordsRow>
+
+    /**
+     * Re-keys one row's canonical words, only while they are still [oldTitle] / [oldArtist]: a
+     * writer that changed them since the recompute read the row (the YouTube canonicalizer, a
+     * concurrent sync) wins, and this write is skipped. Touches no other column and no other row.
+     *
+     * @return 1 when the row was re-keyed, 0 when it had changed (or is gone).
+     */
+    @Query(
+        """
+        UPDATE tracks
+        SET canonical_title = :newTitle, canonical_artist = :newArtist
+        WHERE id = :id AND canonical_title = :oldTitle AND canonical_artist = :oldArtist
+        """
+    )
+    suspend fun recomputeCanonicalIfUnchanged(
+        id: Long,
+        oldTitle: String,
+        oldArtist: String,
+        newTitle: String,
+        newArtist: String,
+    ): Int
 
     /**
      * Consolidated lookup used by the sync diff pass: matches by Spotify

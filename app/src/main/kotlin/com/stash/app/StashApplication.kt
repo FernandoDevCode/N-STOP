@@ -243,6 +243,10 @@ class StashApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var backfillVersionTracker: BackfillVersionTracker
 
+    /** Gate for the one-time canonical re-key after schema 55, see [maybeEnqueueCanonicalRecompute]. */
+    @Inject
+    lateinit var canonicalRecomputeState: com.stash.core.data.library.CanonicalRecomputeState
+
     @Inject
     lateinit var lyricsUpgradeTrigger: LyricsUpgradeTrigger
 
@@ -556,6 +560,7 @@ class StashApplication : Application(), Configuration.Provider {
         // own predicate is idempotent.
         maybeEnqueueQualityBackfill()
         maybeEnqueueBlocklistIntegrity()
+        applicationScope.launch { maybeEnqueueCanonicalRecompute() }
         // Also fire a one-shot check on every cold start so a release pushed
         // between periodic-worker windows surfaces within seconds of the
         // next launch — the 24-hour periodic worker alone can leave users
@@ -1045,6 +1050,21 @@ class StashApplication : Application(), Configuration.Provider {
      * missed), so a re-run after a clean finish is an instant no-op. The manual retag path needs
      * nothing here: MetadataBackfillWorker chains into the same trigger when it finishes.
      */
+    /**
+     * Schema 55: rows that songs saved from Search, a stream, a like or a hand-off wrote in the
+     * old strict words get the one loose rule's canonical words, so lookups find them
+     * ([com.stash.core.data.sync.workers.CanonicalRecomputeWorker]; no row is merged or deleted).
+     * Enqueued on every start until it finishes once (a restored older backup re-arms it), then
+     * this is a single DataStore read.
+     */
+    private suspend fun maybeEnqueueCanonicalRecompute() {
+        runCatching {
+            if (com.stash.core.data.sync.workers.CanonicalRecomputeWorker.enqueueIfPending(this, canonicalRecomputeState)) {
+                Log.i("StashMigration", "maybeEnqueueCanonicalRecompute: enqueued the one-time canonical re-key")
+            }
+        }.onFailure { Log.w("StashMigration", "canonical re-key enqueue failed", it) }
+    }
+
     private suspend fun maybeEnqueueLyricsTtmlUpgrade() {
         runCatching {
             if (backfillVersionTracker.shouldRunForCurrentVersion(LYRICS_TTML_UPGRADE_KEY)) {
