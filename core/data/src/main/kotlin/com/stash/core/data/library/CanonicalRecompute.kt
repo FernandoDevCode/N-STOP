@@ -104,8 +104,10 @@ class CanonicalRecompute @Inject constructor(
         /**
          * The loose (title, artist) words [row] should hold, or null when it must be left alone:
          * its stored words are not exactly the strict form of its own title and artist (the sync,
-         * discovery, the canonicalizer or nobody wrote them), or they already equal the loose
-         * form. Pure, so the rule is testable without a database.
+         * discovery, the canonicalizer or nobody wrote them), they already equal the loose form,
+         * or the loose title would be blank ("(Intro)", "[Untitled]", "Ft. Lauderdale"): its strict
+         * words still name the song, and a blank one would only join the local imports' blank key.
+         * Pure, so the rule is testable without a database.
          */
         fun looseWordsFor(row: CanonicalWordsRow): Pair<String, String>? {
             if (row.canonicalTitle.isEmpty() && row.canonicalArtist.isEmpty()) return null
@@ -113,6 +115,7 @@ class CanonicalRecompute @Inject constructor(
             if (row.canonicalArtist != strictCanonical(row.artist)) return null
             val title = TrackCanonical.title(row.title)
             val artist = TrackCanonical.artist(row.artist)
+            if (title.isBlank()) return null
             if (title == row.canonicalTitle && artist == row.canonicalArtist) return null
             return title to artist
         }

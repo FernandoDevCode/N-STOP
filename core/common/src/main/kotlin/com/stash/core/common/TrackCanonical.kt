@@ -74,6 +74,15 @@ object TrackCanonical {
             .trim()
 
     /**
+     * Whether a pair of canonical words is blank on either side, so it can't identify a song: a
+     * title that is only brackets ("(Intro)", "[Untitled]") or only a credit ("Ft. Lauderdale"), or no
+     * artist. Every never-keyed local import is ("", ""), so a lookup by a blank key would load them
+     * all, and match every other song with a blank key. Every lookup by words skips such a pair.
+     */
+    fun isBlankKey(canonicalTitle: String, canonicalArtist: String): Boolean =
+        canonicalTitle.isBlank() || canonicalArtist.isBlank()
+
+    /**
      * The canonical (loose) form of an artist credit.
      *
      * @param artist Raw artist string (may name several artists).

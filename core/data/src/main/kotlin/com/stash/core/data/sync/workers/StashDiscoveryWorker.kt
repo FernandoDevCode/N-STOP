@@ -357,10 +357,15 @@ class StashDiscoveryWorker @AssistedInject constructor(
         // "Song (Live)" must not stand in for a recommended "Song".
         val canonicalTitle = trackMatcher.canonicalTitle(entry.title)
         val canonicalArtist = trackMatcher.canonicalArtist(entry.artist)
-        val existing = trackDao.findAllDownloadedByCanonical(
-            canonicalTitle = canonicalTitle.lowercase(),
-            canonicalArtist = canonicalArtist.lowercase(),
-        ).firstOrNull { TrackCanonical.sameVersion(it.title, entry.title) }
+        // A blank key ("(Intro)", no artist) names no song, and would load every local import.
+        val existing = if (TrackCanonical.isBlankKey(canonicalTitle, canonicalArtist)) {
+            null
+        } else {
+            trackDao.findAllDownloadedByCanonical(
+                canonicalTitle = canonicalTitle.lowercase(),
+                canonicalArtist = canonicalArtist.lowercase(),
+            ).firstOrNull { TrackCanonical.sameVersion(it.title, entry.title) }
+        }
 
         val trackId = if (existing != null) {
             // Nothing to download — just link.

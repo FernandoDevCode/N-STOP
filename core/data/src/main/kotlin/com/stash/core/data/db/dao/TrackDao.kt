@@ -7,6 +7,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
+import com.stash.core.common.TrackCanonical
 import com.stash.core.data.db.SQLITE_BIND_LIMIT
 import com.stash.core.data.db.chunkedForBind
 import com.stash.core.data.db.chunkedForBindWrite
@@ -875,14 +876,19 @@ interface TrackDao {
      *
      * The query matches the canonical branch by title alone (so it can use
      * the index); a row that shares only the title with a wanted identity is
-     * dropped here, so callers get exactly the rows they asked for.
+     * dropped here, so callers get exactly the rows they asked for. A blank
+     * identity ([TrackCanonical.isBlankKey]: "(Intro)", no artist) is skipped:
+     * `canonical_title IN ('')` loaded every local import, per playlist,
+     * every sync, inside the diff's write transaction.
      */
     suspend fun findExistingForBatch(
         spotifyUris: List<String>,
         youtubeIds: List<String>,
         canonicalIdentities: List<Pair<String, String>>,
     ): List<TrackEntity> {
-        val titles = canonicalIdentities.map { it.first }.distinct()
+        val wantedIdentities = canonicalIdentities.filterNot { (t, a) -> TrackCanonical.isBlankKey(t, a) }
+        // Never an empty IN (): that is a syntax error.
+        val titles = wantedIdentities.map { it.first }.distinct().ifEmpty { listOf(BATCH_NEVER_MATCH) }
         val rows = if (spotifyUris.size + youtubeIds.size + titles.size <= BATCH_BIND_LIMIT) {
             findExistingForBatchRaw(spotifyUris, youtubeIds, titles)
         } else {
@@ -901,7 +907,7 @@ interface TrackDao {
         }
         val uris = spotifyUris.toHashSet()
         val videoIds = youtubeIds.toHashSet()
-        val identities = canonicalIdentities.toHashSet()
+        val identities = wantedIdentities.toHashSet()
         return rows.filter {
             it.spotifyUri in uris || it.youtubeId in videoIds ||
                 (it.canonicalTitle to it.canonicalArtist) in identities
@@ -2654,11 +2660,12 @@ interface TrackDao {
      * it used to match `LOWER(canonical_title) || '|' || LOWER(canonical_artist)`, a full table
      * scan per playlist inside the diff's write transactions, and a `|`-joined key that could
      * collide ("a|b" + "c" vs "a" + "b|c"). Pairs can't collide. Chunks for the bind cap; empty
-     * input runs no query.
+     * input runs no query. A blank identity ([TrackCanonical.isBlankKey]) is skipped: it would load
+     * every local import.
      */
     suspend fun findDownloadedByCanonicalIdentities(canonicalIdentities: List<Pair<String, String>>): List<TrackEntity> {
-        val wanted = canonicalIdentities.toHashSet()
-        return canonicalIdentities.map { it.first }.distinct()
+        val wanted = canonicalIdentities.filterNot { (t, a) -> TrackCanonical.isBlankKey(t, a) }.toHashSet()
+        return wanted.map { it.first }.distinct()
             .chunkedForBind { findDownloadedByCanonicalTitlesRaw(it) }
             .filter { (it.canonicalTitle to it.canonicalArtist) in wanted }
     }

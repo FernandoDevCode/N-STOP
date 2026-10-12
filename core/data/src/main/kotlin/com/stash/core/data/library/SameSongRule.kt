@@ -73,7 +73,7 @@ suspend fun TrackDao.findReusableByWords(
 ): TrackEntity? {
     val canonicalTitle = TrackCanonical.title(title)
     val canonicalArtist = TrackCanonical.artist(artist)
-    if (canonicalTitle.isBlank() || canonicalArtist.isBlank()) return null
+    if (TrackCanonical.isBlankKey(canonicalTitle, canonicalArtist)) return null
     return findAllByCanonicalIdentity(canonicalTitle, canonicalArtist).firstOrNull {
         SameSongRule.mayReuseByWords(it, title, youtubeId, spotifyUri, forDownload)
     }

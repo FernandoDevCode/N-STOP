@@ -630,7 +630,11 @@ class DiffWorker @AssistedInject constructor(
             .ifEmpty { listOf(NEVER_MATCH_SENTINEL) }
         val youtubeIds = allowedSnapshots.mapNotNull { it.youtubeId?.takeIf(String::isNotBlank) }.distinct()
             .ifEmpty { listOf(NEVER_MATCH_SENTINEL) }
-        val canonicalIdentities = canonicalOf.values.map { (t, a) -> t to a }.distinct()
+        // Blank keys are left out (the DAO skips them too): they name no song.
+        val canonicalIdentities = canonicalOf.values
+            .filterNot { TrackCanonical.isBlankKey(it.title, it.artist) }
+            .map { (t, a) -> t to a }
+            .distinct()
 
         val candidates = trackDao.findExistingForBatch(spotifyUris, youtubeIds, canonicalIdentities)
         val candidateTracks = candidates.associate { candidate ->
@@ -688,7 +692,11 @@ class DiffWorker @AssistedInject constructor(
             snapshot.youtubeId?.takeIf(String::isNotBlank)?.let { yid ->
                 byYoutubeId[yid]?.let { return it }
             }
-            return byCanonical[canonicalOf.getValue(snapshot)]?.firstOrNull {
+            // A blank key ("(Intro)", no artist) names no song: "(Intro)" and
+            // "[Untitled]" by one artist would otherwise be one row.
+            val key = canonicalOf.getValue(snapshot)
+            if (TrackCanonical.isBlankKey(key.title, key.artist)) return null
+            return byCanonical[key]?.firstOrNull {
                 mayReuseByWords(it, snapshot)
             }
         }
@@ -852,6 +860,8 @@ class DiffWorker @AssistedInject constructor(
             .map { it.first.entity }
             .filter { !it.isDownloaded && !it.matchDismissed }
             .map { reconcileKey(it) }
+            // A blank key would take any downloaded song with a blank key, every local import included.
+            .filterNot { TrackCanonical.isBlankKey(it.title, it.artist) }
             .distinct()
         val downloadedByKey: Map<CanonicalKey, List<TrackEntity>> = if (reconcileKeys.isEmpty()) {
             emptyMap()

@@ -156,6 +156,24 @@ class StashDiscoveryWorkerStreamOnlyTest {
         }
     }
 
+    @Test fun `a recommendation with no canonical words is never looked up by them`() = runTest {
+        // "(Intro)" keys as a blank title: a lookup by it would load every song with a blank key.
+        val recipe = StashMixRecipeEntity(id = 1L, name = "Daily Discover", playlistId = 100L, isBuiltin = true, isActive = true)
+        val pending = DiscoveryQueueEntity(id = 9L, recipeId = 1L, artist = "Artist", title = "(Intro)", seedArtist = "Some Seed")
+        coEvery { discoveryQueueDao.deleteStalePending(any()) } returns 0
+        coEvery { discoveryQueueDao.findRecipesAtWeeklyCap(any(), any()) } returns emptyList()
+        coEvery { discoveryQueueDao.getRecipesWithPending(any()) } returns listOf(1L)
+        coEvery { discoveryQueueDao.getPendingForRecipe(1L, any()) } returns listOf(pending)
+        coEvery { discoveryQueueDao.countRecentCompletedForRecipe(1L, any()) } returns 0
+        coEvery { recipeDao.getById(1L) } returns recipe
+        coEvery { trackDao.insert(any<TrackEntity>()) } returns 1000L
+
+        newWorker().doWork()
+
+        coVerify(exactly = 0) { trackDao.findAllDownloadedByCanonical(any(), any()) }
+        coVerify(exactly = 1) { trackDao.insert(any<TrackEntity>()) }
+    }
+
     @Test fun `existing downloaded track is reused without re-insert or enqueue`() = runTest {
         // Sanity guard: the dedup branch (matched a track already on disk) must
         // continue to skip BOTH the stub-insert AND the download-queue insert.

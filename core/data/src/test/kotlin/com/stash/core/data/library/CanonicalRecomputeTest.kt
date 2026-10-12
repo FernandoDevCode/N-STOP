@@ -92,6 +92,21 @@ class CanonicalRecomputeTest {
         assertNull("only the title is strict", CanonicalRecompute.looseWordsFor(row("Don't Stop", "A & B", "don t stop", "a, b")))
         assertNull("never keyed", CanonicalRecompute.looseWordsFor(row("!!!", "???", "", "")))
         assertNull("strict equals loose", CanonicalRecompute.looseWordsFor(row("hello", "adele", "hello", "adele")))
+        assertNull("a blank loose title", CanonicalRecompute.looseWordsFor(row("(Intro)", "A & B", "intro", "a b")))
+        assertNull("a blank loose title", CanonicalRecompute.looseWordsFor(row("Ft. Lauderdale", "A", "ft lauderdale", "a")))
+    }
+
+    @Test fun `a row whose loose title would be blank keeps its words`() = runTest {
+        val dao = db.trackDao()
+        // A blank title would join every local import's blank key, and name no song.
+        val intro = dao.insert(strictRow("(Intro)", "A & B", youtubeId = "video000001"))
+        val untitled = dao.insert(strictRow("[Untitled]", "A & B", youtubeId = "video000002"))
+
+        val outcome = recompute.run()
+
+        assertEquals(0, outcome.rekeyed)
+        assertEquals("intro" to "a b", words(intro))
+        assertEquals("untitled" to "a b", words(untitled))
     }
 
     @Test fun `runs in batches, handing back each batch's last id`() = runTest {

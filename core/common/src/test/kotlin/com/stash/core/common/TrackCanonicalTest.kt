@@ -188,6 +188,15 @@ class TrackCanonicalTest {
         assertEquals(TrackCanonical.Version("", emptySet()), TrackCanonical.version(""))
     }
 
+    @Test fun `a key blank on either side can't identify a song`() {
+        assertTrue(TrackCanonical.isBlankKey(TrackCanonical.title("(Intro)"), TrackCanonical.artist("Artist")))
+        assertTrue(TrackCanonical.isBlankKey(TrackCanonical.title("[Untitled]"), "artist"))
+        assertTrue(TrackCanonical.isBlankKey(TrackCanonical.title("Ft. Lauderdale"), "artist"))
+        assertTrue(TrackCanonical.isBlankKey("song", TrackCanonical.artist(" ")))
+        assertTrue("a never-keyed local import", TrackCanonical.isBlankKey("", ""))
+        assertFalse(TrackCanonical.isBlankKey("song", "artist"))
+    }
+
     @Test fun `is idempotent on its own output`() {
         for (input in titles.keys) {
             val once = TrackCanonical.title(input)

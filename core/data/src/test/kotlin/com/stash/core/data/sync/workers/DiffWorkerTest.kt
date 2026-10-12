@@ -453,6 +453,37 @@ class DiffWorkerTest {
     }
 
     @Test
+    fun `a title with no canonical words is never matched by them`() = runBlocking {
+        // "(Intro)" and "[Untitled]" both key as a blank title: by their words they'd be one song.
+        val playlistId = seedAccumulatePlaylist()
+        val untitled = db.trackDao().insert(searchSaved("[Untitled]", "Artist", "video000015"))
+        val localImport = db.trackDao().insert(
+            TrackEntity(title = "Intro", artist = "Me", source = MusicSource.LOCAL, isDownloaded = true, filePath = "/music/intro.mp3"),
+        )
+        stubGrowingSnapshot(remoteTrack("(Intro)", "spotify:track:intro", 0))
+
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+
+        val intro = db.trackDao().findBySpotifyUri("spotify:track:intro")!!
+        assertTrue("the intro gets its own row", intro.id != untitled && intro.id != localImport)
+        assertEquals(listOf(intro.id), db.playlistDao().getCrossRefsForPlaylist(playlistId).map { it.trackId })
+    }
+
+    @Test
+    fun `an undownloaded track with no canonical words links no downloaded twin`() = runBlocking {
+        val playlistId = seedAccumulatePlaylist()
+        val stub = db.trackDao().insert(
+            TrackEntity(title = "(Intro)", artist = "Artist", spotifyUri = "spotify:track:intro", canonicalTitle = "", canonicalArtist = "artist"),
+        )
+        db.trackDao().insert(searchSaved("[Untitled]", "Artist", "video000016"))
+        stubGrowingSnapshot(remoteTrack("(Intro)", "spotify:track:intro", 0))
+
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+
+        assertEquals(listOf(stub), db.playlistDao().getCrossRefsForPlaylist(playlistId).map { it.trackId })
+    }
+
+    @Test
     fun `an undownloaded track does not link a downloaded twin of another version`() = runBlocking {
         val playlistId = seedAccumulatePlaylist()
         val stub = db.trackDao().insert(

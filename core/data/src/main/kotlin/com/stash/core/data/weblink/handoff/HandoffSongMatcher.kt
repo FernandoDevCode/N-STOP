@@ -125,7 +125,7 @@ class HandoffSongMatcher @Inject constructor(
 
     /** [byWords] for the mirror: the first row with the same words that doesn't already stand for another song. */
     private suspend fun byWords(song: WireSong, c: Claims): TrackEntity? =
-        trackDao.findAllByCanonicalIdentity(TrackCanonical.title(song.title), TrackCanonical.artist(song.artist)).firstOrNull { c.fits(it, song, byId = false) }
+        rowsWithWordsOf(song).firstOrNull { c.fits(it, song, byId = false) }
 
     /**
      * The library's oldest row with the same words that is the same song by sync-v1 identity (an ISRC on both sides must
@@ -133,8 +133,15 @@ class HandoffSongMatcher @Inject constructor(
      * row with those words is checked, not just the first: the loose words group "Song" with "Song (Live)".
      */
     private suspend fun byWords(song: WireSong): TrackEntity? =
-        trackDao.findAllByCanonicalIdentity(TrackCanonical.title(song.title), TrackCanonical.artist(song.artist))
-            .firstOrNull { SongKey.sameSong(SongRef(it.title, it.artist, it.isrc), song) }
+        rowsWithWordsOf(song).firstOrNull { SongKey.sameSong(SongRef(it.title, it.artist, it.isrc), song) }
+
+    /** Every row with [song]'s canonical words, oldest first; none for a blank key, which would load every local import. */
+    private suspend fun rowsWithWordsOf(song: WireSong): List<TrackEntity> {
+        val title = TrackCanonical.title(song.title)
+        val artist = TrackCanonical.artist(song.artist)
+        if (TrackCanonical.isBlankKey(title, artist)) return emptyList()
+        return trackDao.findAllByCanonicalIdentity(title, artist)
+    }
 
     companion object {
         private const val TAG = "WebLinkHandoff"
