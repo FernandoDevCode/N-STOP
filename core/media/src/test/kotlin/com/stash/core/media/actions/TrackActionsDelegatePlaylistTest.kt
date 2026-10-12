@@ -66,7 +66,7 @@ class TrackActionsDelegatePlaylistTest {
         val d = delegate().apply { bindToScope(backgroundScope) }
         coEvery { blocklistGuard.isBlocked(any(), any(), any(), any()) } returns false
         coEvery { trackDao.findByYoutubeId("vid") } returns null
-        coEvery { trackDao.findByCanonicalIdentity(any(), any()) } returns null
+        coEvery { trackDao.findAllByCanonicalIdentity(any(), any()) } returns emptyList()
         coEvery { trackDao.insert(any()) } returns 99L
 
         d.addToPlaylist(item, playlistId = 7L)
@@ -74,6 +74,39 @@ class TrackActionsDelegatePlaylistTest {
 
         coVerify(exactly = 1) { trackDao.insert(any()) }
         coVerify(exactly = 1) { musicRepository.addTrackToPlaylist(99L, 7L) }
+    }
+
+    @Test
+    fun `addToPlaylist of a live version does not add the library's studio row`() = runTest {
+        val d = delegate().apply { bindToScope(backgroundScope) }
+        coEvery { blocklistGuard.isBlocked(any(), any(), any(), any()) } returns false
+        coEvery { trackDao.findByYoutubeId("live") } returns null
+        // "Song (Live)" and "Song" share the loose words song|artist.
+        coEvery { trackDao.findAllByCanonicalIdentity("song", "artist") } returns
+            listOf(TrackEntity(id = 42L, title = "Song", artist = "Artist", filePath = "/m/song.opus", isDownloaded = true))
+        coEvery { trackDao.insert(any()) } returns 99L
+
+        d.addToPlaylist(item.copy(videoId = "live", title = "Song (Live)"), playlistId = 7L)
+        runCurrent()
+
+        coVerify(exactly = 1) { musicRepository.addTrackToPlaylist(99L, 7L) }
+        coVerify(exactly = 0) { musicRepository.addTrackToPlaylist(42L, any()) }
+    }
+
+    @Test
+    fun `addToPlaylist of the same song by its words links the library's copy`() = runTest {
+        val d = delegate().apply { bindToScope(backgroundScope) }
+        coEvery { blocklistGuard.isBlocked(any(), any(), any(), any()) } returns false
+        coEvery { trackDao.findByYoutubeId("vid") } returns null
+        // A lossless download of the song: a file, no video id, so nothing conflicts.
+        coEvery { trackDao.findAllByCanonicalIdentity("song", "artist") } returns
+            listOf(TrackEntity(id = 42L, title = "Song (feat. X)", artist = "Artist", filePath = "/m/song.flac", isDownloaded = true))
+
+        d.addToPlaylist(item, playlistId = 7L)
+        runCurrent()
+
+        coVerify(exactly = 0) { trackDao.insert(any()) }
+        coVerify(exactly = 1) { musicRepository.addTrackToPlaylist(42L, 7L) }
     }
 
     @Test

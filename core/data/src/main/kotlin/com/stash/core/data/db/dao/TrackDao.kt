@@ -2540,18 +2540,22 @@ interface TrackDao {
         userLoved: Boolean,
     )
 
-    /** Find a downloaded track by canonical identity (for auto-reconciliation). */
+    /**
+     * Every downloaded track with this canonical identity, oldest first. Discovery's library
+     * dedup takes the first of the same version (SameSongRule): the canonical words are loose, so
+     * one key can hold "Song" and "Song (Live)".
+     */
     @Query("""
         SELECT * FROM tracks
         WHERE is_downloaded = 1
           AND LOWER(canonical_title) = LOWER(:canonicalTitle)
           AND LOWER(canonical_artist) = LOWER(:canonicalArtist)
-        LIMIT 1
+        ORDER BY id ASC
     """)
-    suspend fun findDownloadedByCanonical(canonicalTitle: String, canonicalArtist: String): TrackEntity?
+    suspend fun findAllDownloadedByCanonical(canonicalTitle: String, canonicalArtist: String): List<TrackEntity>
 
     /**
-     * Batched [findDownloadedByCanonical] for DiffWorker's auto-reconciliation:
+     * Batched [findAllDownloadedByCanonical] for DiffWorker's auto-reconciliation:
      * every downloaded track whose lowercased `title|artist` key is in
      * [canonicalKeys]. The single-row form ran once per undownloaded existing
      * track of every playlist, every sync, and each call is a full table scan

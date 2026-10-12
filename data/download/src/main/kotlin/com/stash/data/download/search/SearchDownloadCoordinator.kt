@@ -10,6 +10,8 @@ import androidx.media3.datasource.cache.CacheKeyFactory
 import androidx.media3.datasource.cache.SimpleCache
 import com.stash.core.common.TrackCanonical
 import com.stash.core.data.db.dao.DownloadQueueDao
+import com.stash.core.data.library.SameSongRule
+import com.stash.core.data.library.findReusableByWords
 import com.stash.core.data.prefs.QualityPreference
 import com.stash.core.data.audio.AudioDurationExtractor
 import com.stash.core.model.DownloadStatus
@@ -581,8 +583,9 @@ class SearchDownloadCoordinator @Inject constructor(
     // -------------------------------------------------------------------------
 
     /**
-     * Looks up an existing Track row by videoId or canonical identity;
-     * inserts a new stub row when neither matches. Then records the
+     * Looks up an existing Track row by videoId, or by canonical identity
+     * under [SameSongRule] ([findReusableRow]); inserts a new row when
+     * neither matches. Then records the
      * download columns and links to the "Your Downloads" playlist so
      * orphan-cleanup cannot delete the file.
      */
@@ -610,11 +613,13 @@ class SearchDownloadCoordinator @Inject constructor(
         }
 
 
-        val existing = trackDao.findByYoutubeId(track.videoId)
-            ?: trackDao.findByCanonicalIdentity(
-                title = TrackCanonical.title(track.title),
-                artist = TrackCanonical.artist(track.artist),
-            )
+        val existing = findReusableRow(track)
+        // A stub taken by its words has no video id (SameSongRule): record this one, so the
+        // next download or lookup of the same video finds the row by id, and the row says which
+        // video its file came from. Guarded: a concurrent claim leaves the row as it is.
+        if (existing != null && existing.youtubeId.isNullOrBlank()) {
+            trackDao.updateYoutubeIdIfUnclaimed(existing.id, track.videoId)
+        }
 
         val albumName = track.album.orEmpty()
         val albumArtistName = track.albumArtist.orEmpty()
@@ -755,6 +760,24 @@ class SearchDownloadCoordinator @Inject constructor(
     }
 
     /**
+     * The library row a download of [track] is recorded on, or null for a new row. The same
+     * video always reuses its row. Otherwise a row with the same canonical words is taken only
+     * under [SameSongRule] for a download: no conflicting video or Spotify id, the same version
+     * ("Song (Live)" never lands on "Song"), and no file of its own (a row that already has audio
+     * is another copy, which this download must not replace). In practice that is a synced song's
+     * stub still waiting for its download, which this download then fills.
+     */
+    private suspend fun findReusableRow(track: TrackItem) =
+        trackDao.findByYoutubeId(track.videoId)
+            ?: trackDao.findReusableByWords(
+                title = track.title,
+                artist = track.artist,
+                youtubeId = track.videoId,
+                spotifyUri = null,
+                forDownload = true,
+            )
+
+    /**
      * The library row this download will be recorded on, when there is one:
      * the same lookup [upsertSearchTrack] makes. The commit replaces a file
      * at its name only when no OTHER track records it; without the row's id
@@ -762,13 +785,7 @@ class SearchDownloadCoordinator @Inject constructor(
      * library would step around its own file and orphan it.
      */
     private suspend fun existingTrackId(track: TrackItem): Long? = try {
-        (
-            trackDao.findByYoutubeId(track.videoId)
-                ?: trackDao.findByCanonicalIdentity(
-                    title = TrackCanonical.title(track.title),
-                    artist = TrackCanonical.artist(track.artist),
-                )
-            )?.id
+        findReusableRow(track)?.id
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {

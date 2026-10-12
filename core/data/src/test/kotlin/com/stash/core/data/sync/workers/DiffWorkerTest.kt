@@ -355,6 +355,76 @@ class DiffWorkerTest {
         )
     }
 
+    // ── One "same song" rule: the sync meets rows saved from Search ────────
+
+    /** A row as a Search download now stores it: the one loose rule, its video id, a file. */
+    private fun searchSaved(title: String, artist: String, videoId: String) = TrackEntity(
+        title = title, artist = artist, youtubeId = videoId, source = MusicSource.YOUTUBE,
+        canonicalTitle = TrackMatcher().canonicalTitle(title), canonicalArtist = TrackMatcher().canonicalArtist(artist),
+        isDownloaded = true, filePath = "/music/$videoId.opus",
+    )
+
+    @Test
+    fun `a synced song finds the row Search saved for it and does not download it again`() = runBlocking {
+        val playlistId = seedAccumulatePlaylist()
+        val saved = db.trackDao().insert(searchSaved("Don't Stop", "B, A", "video000001"))
+        stubGrowingSnapshot(
+            RemoteTrackSnapshotEntity(
+                syncId = 1L, snapshotPlaylistId = 21L,
+                title = "Don't Stop (feat. C)", artist = "A & B",
+                spotifyUri = "spotify:track:dontstop", position = 0,
+            )
+        )
+
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+
+        assertEquals(listOf(saved), db.trackDao().getAllForIntegrityScan().map { it.id })
+        assertEquals(listOf(saved), db.playlistDao().getCrossRefsForPlaylist(playlistId).map { it.trackId })
+        coVerify(exactly = 0) { downloadQueueDao.insertAll(match { it.isNotEmpty() }) }
+    }
+
+    @Test
+    fun `a live version saved from Search does not stand in for the synced studio song`() = runBlocking {
+        val playlistId = seedAccumulatePlaylist()
+        val live = db.trackDao().insert(searchSaved("Song (Live)", "Artist", "video000002"))
+        val queued = mutableListOf<Long>()
+        coEvery { downloadQueueDao.insertAll(any()) } answers {
+            queued += firstArg<List<DownloadQueueEntity>>().map { it.trackId }
+            emptyList()
+        }
+        stubGrowingSnapshot(remoteTrack("Song", "spotify:track:studio", 0))
+
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+
+        val studio = db.trackDao().findBySpotifyUri("spotify:track:studio")!!
+        assertTrue("the studio song gets its own row", studio.id != live)
+        assertEquals("song", studio.canonicalTitle)
+        assertEquals(
+            "the live row is neither taken nor linked as the studio song's downloaded twin",
+            listOf(studio.id),
+            db.playlistDao().getCrossRefsForPlaylist(playlistId).map { it.trackId },
+        )
+        assertEquals(listOf(studio.id), queued)
+        assertEquals("/music/video000002.opus", db.trackDao().getById(live)?.filePath)
+    }
+
+    @Test
+    fun `an undownloaded track does not link a downloaded twin of another version`() = runBlocking {
+        val playlistId = seedAccumulatePlaylist()
+        val stub = db.trackDao().insert(
+            TrackEntity(
+                title = "Song", artist = "Artist", spotifyUri = "spotify:track:studio",
+                canonicalTitle = "song", canonicalArtist = "artist",
+            )
+        )
+        db.trackDao().insert(searchSaved("Song (Remix)", "Artist", "video000003"))
+        stubGrowingSnapshot(remoteTrack("Song", "spotify:track:studio", 0))
+
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+
+        assertEquals(listOf(stub), db.playlistDao().getCrossRefsForPlaylist(playlistId).map { it.trackId })
+    }
+
     private suspend fun seedAccumulatePlaylist(): Long {
         every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.ACCUMULATE)
         return db.playlistDao().insert(

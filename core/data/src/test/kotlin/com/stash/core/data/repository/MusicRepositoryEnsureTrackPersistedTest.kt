@@ -27,7 +27,7 @@ class MusicRepositoryEnsureTrackPersistedTest {
         val trackDao = mockk<TrackDao>(relaxed = true)
         // No id, no youtube match, no canonical match — only the spotify_uri hits.
         coEvery { trackDao.findByYoutubeId(any()) } returns null
-        coEvery { trackDao.findByCanonicalIdentity(any(), any()) } returns null
+        coEvery { trackDao.findAllByCanonicalIdentity(any(), any()) } returns emptyList()
         coEvery { trackDao.findBySpotifyUri("spotify:track:xyz") } returns
             TrackEntity(
                 id = 55L,
@@ -59,11 +59,29 @@ class MusicRepositoryEnsureTrackPersistedTest {
 
     @Test fun `a fuzzy title-artist match never takes the incoming isrc`() = runTest {
         val trackDao = mockk<TrackDao>(relaxed = true)
-        coEvery { trackDao.findByCanonicalIdentity(any(), any()) } returns
-            TrackEntity(id = 8L, title = "Song", artist = "Artist", source = MusicSource.SPOTIFY)
+        coEvery { trackDao.findAllByCanonicalIdentity("song", "artist") } returns
+            listOf(TrackEntity(id = 8L, title = "Song", artist = "Artist", source = MusicSource.SPOTIFY))
         val repo = buildRepo(trackDao)
-        repo.ensureTrackPersisted(Track(title = "Song", artist = "Artist", isrc = "USABC1234567"))
+        val id = repo.ensureTrackPersisted(Track(title = "Song", artist = "Artist", isrc = "USABC1234567"))
+        assertEquals(8L, id)
         coVerify(exactly = 0) { trackDao.backfillIsrcIfMissing(any(), any()) }
+    }
+
+    @Test fun `a words match of another version or another video is not taken`() = runTest {
+        val trackDao = mockk<TrackDao>(relaxed = true)
+        coEvery { trackDao.findByYoutubeId(any()) } returns null
+        coEvery { trackDao.findBySpotifyUri(any()) } returns null
+        // Loose words: "Song (Live)" and another upload of "Song" both key as song|artist.
+        coEvery { trackDao.findAllByCanonicalIdentity("song", "artist") } returns listOf(
+            TrackEntity(id = 3L, title = "Song (Live)", artist = "Artist", source = MusicSource.YOUTUBE),
+            TrackEntity(id = 4L, title = "Song", artist = "Artist", youtubeId = "otherVideo1", source = MusicSource.YOUTUBE),
+        )
+        coEvery { trackDao.insert(any()) } returns 9L
+
+        val id = buildRepo(trackDao).ensureTrackPersisted(Track(title = "Song", artist = "Artist", youtubeId = "thisVideo01"))
+
+        assertEquals("neither the live row nor the other video's row is this song's", 9L, id)
+        coVerify(exactly = 1) { trackDao.insert(match { it.canonicalTitle == "song" && it.canonicalArtist == "artist" }) }
     }
 
     @Test fun `losing the insert race to a concurrent caller adopts the winner's row`() = runTest {
@@ -72,7 +90,7 @@ class MusicRepositoryEnsureTrackPersistedTest {
         // Our lookup misses; by the time we insert, the other caller's row exists.
         coEvery { trackDao.findByYoutubeId("yt1") } returnsMany listOf(null, winner)
         coEvery { trackDao.findBySpotifyUri(any()) } returns null
-        coEvery { trackDao.findByCanonicalIdentity(any(), any()) } returns null
+        coEvery { trackDao.findAllByCanonicalIdentity(any(), any()) } returns emptyList()
         coEvery { trackDao.insert(any()) } throws SQLiteConstraintException("UNIQUE constraint failed: tracks.youtube_id")
 
         val id = buildRepo(trackDao).ensureTrackPersisted(Track(title = "Song", artist = "Artist", youtubeId = "yt1"))
@@ -84,7 +102,7 @@ class MusicRepositoryEnsureTrackPersistedTest {
         val trackDao = mockk<TrackDao>(relaxed = true)
         coEvery { trackDao.findByYoutubeId(any()) } returns null
         coEvery { trackDao.findBySpotifyUri(any()) } returns null
-        coEvery { trackDao.findByCanonicalIdentity(any(), any()) } returns null
+        coEvery { trackDao.findAllByCanonicalIdentity(any(), any()) } returns emptyList()
         coEvery { trackDao.insert(any()) } throws SQLiteConstraintException("NOT NULL constraint failed")
 
         val thrown = runCatching {

@@ -1,6 +1,8 @@
 package com.stash.core.common
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -82,6 +84,59 @@ class TrackCanonicalTest {
             assertEquals("title \"$input\"", formerTitle(input), TrackCanonical.title(input))
             assertEquals("artist \"$input\"", formerArtist(input), TrackCanonical.artist(input))
         }
+    }
+
+    /** Pairs that share a canonical title and ARE the same version: a row may be reused. */
+    private val sameVersions = listOf(
+        "Don't Stop (feat. X)" to "Don't Stop",
+        "Song (ft. X & Y)" to "Song",
+        "Song [Featuring X]" to "Song",
+        "Song ft. X" to "Song",
+        "Song (Official Video)" to "Song",
+        "Song [Official Music Video] (HD)" to "Song",
+        "Song (Lyrics)" to "Song",
+        "Song (Explicit)" to "Song",
+        "Song (feat. X) [Live]" to "Song (Live)",
+        "SONG (LIVE)" to "song [live]",
+    )
+
+    /** Pairs that share a canonical title but are NOT the same version: each keeps its own row. */
+    private val otherVersions = listOf(
+        "Song (Live)" to "Song",
+        "Song [Live at Wembley]" to "Song",
+        "Song (Remix)" to "Song",
+        "Song (Remastered 2011)" to "Song",
+        "Song (Acoustic)" to "Song (Live)",
+        "Song (Taylor's Version)" to "Song",
+        "Song (Clean)" to "Song",
+        "Song (Official Video HD)" to "Song",
+        "Song (with X)" to "Song",
+        // The loose rule drops everything after "feat." (so this is "song"); the version key keeps "- Live".
+        "Song feat. Jay-Z - Live" to "Song",
+        // The loose rule cuts a mid-word "ft " ("le" for both); the version key doesn't.
+        "Left Hand Free" to "Left Outside Alone",
+        "Lift Me Up" to "Lift Off",
+    )
+
+    @Test fun `credits and presentation tags are the same version`() {
+        for ((a, b) in sameVersions) {
+            assertEquals("canonical title of \"$a\" / \"$b\"", TrackCanonical.title(a), TrackCanonical.title(b))
+            assertTrue("\"$a\" and \"$b\" are one version", TrackCanonical.sameVersion(a, b))
+        }
+    }
+
+    @Test fun `live, remix, remaster and other bracketed words are other versions`() {
+        for ((a, b) in otherVersions) {
+            assertEquals("canonical title of \"$a\" / \"$b\"", TrackCanonical.title(a), TrackCanonical.title(b))
+            assertFalse("\"$a\" and \"$b\" are two versions", TrackCanonical.sameVersion(a, b))
+        }
+    }
+
+    @Test fun `version keys`() {
+        assertEquals("song", TrackCanonical.versionKey("Song (feat. X) [Official Video]"))
+        assertEquals("song live", TrackCanonical.versionKey("Song (Live) (feat. X)"))
+        assertEquals("ft lauderdale", TrackCanonical.versionKey("Ft. Lauderdale"))
+        assertEquals("", TrackCanonical.versionKey(""))
     }
 
     @Test fun `is idempotent on its own output`() {

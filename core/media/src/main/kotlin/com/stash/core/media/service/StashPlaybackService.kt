@@ -28,6 +28,7 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.stash.core.common.TrackCanonical
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.library.findReusableByWords
 import com.stash.core.data.prefs.CrossfadePreference
 import com.stash.core.data.social.LikeCoordinator
 import com.stash.core.media.R
@@ -1685,9 +1686,15 @@ class StashPlaybackService : MediaLibraryService() {
         val cTitle = TrackCanonical.title(title)
         val cArtist = TrackCanonical.artist(artist)
 
-        if (cTitle.isNotBlank() && cArtist.isNotBlank()) {
-            trackDao.findByCanonicalIdentity(cTitle, cArtist)?.let { return it.id }
-        }
+        // By words only under SameSongRule: a like on "Song (Live)" or on another
+        // video of the song must not land on the library's "Song".
+        trackDao.findReusableByWords(
+            title = title,
+            artist = artist,
+            youtubeId = youtubeId,
+            spotifyUri = null,
+            forDownload = false,
+        )?.let { return it.id }
 
         check(title.isNotBlank() && artist.isNotBlank()) {
             "Cannot resolve track id for like: no youtubeId and no title/artist metadata"

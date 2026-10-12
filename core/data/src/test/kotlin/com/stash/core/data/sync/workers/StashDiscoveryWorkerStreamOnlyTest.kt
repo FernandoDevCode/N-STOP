@@ -119,8 +119,8 @@ class StashDiscoveryWorkerStreamOnlyTest {
         coEvery { recipeDao.getById(1L) } returns recipe
         // No existing track collision — forces the new-stub branch.
         coEvery {
-            trackDao.findDownloadedByCanonical(any(), any())
-        } returns null
+            trackDao.findAllDownloadedByCanonical(any(), any())
+        } returns emptyList()
 
         val insertedTrack = slot<TrackEntity>()
         coEvery { trackDao.insert(capture(insertedTrack)) } returns 999L
@@ -199,8 +199,8 @@ class StashDiscoveryWorkerStreamOnlyTest {
         } returns 0
         coEvery { recipeDao.getById(1L) } returns recipe
         coEvery {
-            trackDao.findDownloadedByCanonical(any(), any())
-        } returns existing
+            trackDao.findAllDownloadedByCanonical(any(), any())
+        } returns listOf(existing)
 
         newWorker().doWork()
 

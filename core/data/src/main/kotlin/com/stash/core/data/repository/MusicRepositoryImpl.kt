@@ -17,6 +17,7 @@ import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.SyncHistoryEntity
+import com.stash.core.data.library.findReusableByWords
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.mapper.toEntity
 import com.stash.core.data.mix.LastFmRecommendationSource
@@ -521,13 +522,19 @@ class MusicRepositoryImpl @Inject constructor(
         }
         val cTitle = TrackCanonical.title(track.title)
         val cArtist = TrackCanonical.artist(track.artist)
-        if (cTitle.isNotBlank() && cArtist.isNotBlank()) {
-            trackDao.findByCanonicalIdentity(cTitle, cArtist)?.let { existing ->
-                // Fuzzy title/artist match: could be a different recording (radio edit vs album),
-                // and lossless trusts ISRC, so only duration is taken here.
-                backfillFrom(existing, track, trustIsrc = false)
-                return existing.id
-            }
+        // By words only under SameSongRule (no conflicting id, same version): the words are
+        // loose, so "Song (Live)" or another upload of the song would otherwise take "Song".
+        trackDao.findReusableByWords(
+            title = track.title,
+            artist = track.artist,
+            youtubeId = track.youtubeId,
+            spotifyUri = track.spotifyUri,
+            forDownload = false,
+        )?.let { existing ->
+            // Matched by words, not by id: could still be a different recording (radio edit vs
+            // album), and lossless trusts ISRC, so only duration is taken here.
+            backfillFrom(existing, track, trustIsrc = false)
+            return existing.id
         }
 
         // Insert a fresh stub — id = 0 so Room autogens.

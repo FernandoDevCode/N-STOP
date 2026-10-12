@@ -10,8 +10,9 @@ package com.stash.core.common
  * NOT what `tracks.canonical_title` / `canonical_artist` hold: every writer stores
  * [TrackCanonical]'s loose rule. Until schema 55, songs saved from search, a stream, a hand-off or
  * a tap were stored in this strict form instead, so a song synced from Spotify and the same song
- * saved from search were filed as two rows. It stays, unchanged, because rows written by it are
- * still in users' libraries and must be recognised by exactly this output to be re-keyed.
+ * saved from search were filed as two rows. It stays, unchanged, for two jobs that need strict
+ * words: rows written by it are still in users' libraries and are recognised by exactly this
+ * output to be re-keyed, and [TrackCanonical.versionKey] uses it to tell versions apart.
  */
 fun strictCanonical(s: String): String =
     s.lowercase()

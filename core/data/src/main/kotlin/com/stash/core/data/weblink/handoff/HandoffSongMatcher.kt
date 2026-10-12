@@ -127,11 +127,14 @@ class HandoffSongMatcher @Inject constructor(
     private suspend fun byWords(song: WireSong, c: Claims): TrackEntity? =
         trackDao.findAllByCanonicalIdentity(TrackCanonical.title(song.title), TrackCanonical.artist(song.artist)).firstOrNull { c.fits(it, song, byId = false) }
 
-    /** The library's row with the same words, checked with sync-v1 identity (an ISRC on both sides must agree). */
-    private suspend fun byWords(song: WireSong): TrackEntity? {
-        val row = trackDao.findByCanonicalIdentity(TrackCanonical.title(song.title), TrackCanonical.artist(song.artist)) ?: return null
-        return row.takeIf { SongKey.sameSong(SongRef(it.title, it.artist, it.isrc), song) }
-    }
+    /**
+     * The library's oldest row with the same words that is the same song by sync-v1 identity (an ISRC on both sides must
+     * agree; `SongKey.fold` keeps version words like "(Live)", so the loose canonical words never stand in for it). Every
+     * row with those words is checked, not just the first: the loose words group "Song" with "Song (Live)".
+     */
+    private suspend fun byWords(song: WireSong): TrackEntity? =
+        trackDao.findAllByCanonicalIdentity(TrackCanonical.title(song.title), TrackCanonical.artist(song.artist))
+            .firstOrNull { SongKey.sameSong(SongRef(it.title, it.artist, it.isrc), song) }
 
     companion object {
         private const val TAG = "WebLinkHandoff"

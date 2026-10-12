@@ -5,6 +5,8 @@ import android.util.Log
 import androidx.media3.common.PlaybackException
 import com.stash.core.common.TrackCanonical
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.library.SameSongRule
+import com.stash.core.data.library.findReusableByWords
 import com.stash.core.media.preview.PreviewPlayer
 import com.stash.core.media.preview.PreviewState
 import com.stash.core.media.preview.SearchPreviewMediaSource
@@ -570,7 +572,11 @@ class TrackActionsDelegate @Inject constructor(
      *
      * Mirrors [SearchDownloadCoordinator.upsertSearchTrack]'s lookup sequence
      * and TrackEntity construction so identity-matching agrees with the
-     * download path (same row, no duplicate).
+     * download path (same row, no duplicate). A row found by its words is taken
+     * only under [SameSongRule]: no conflicting video id and the same version,
+     * so adding "Song (Live)" never adds the library's "Song". A row with a file
+     * is fine here: nothing is downloaded, and the playlist gets the copy the
+     * library already holds.
      */
     private suspend fun ensureTrackPersisted(item: TrackItem): Long? {
         if (blocklistGuard.isBlocked(
@@ -582,9 +588,12 @@ class TrackActionsDelegate @Inject constructor(
             return null
         }
         val existing = trackDao.findByYoutubeId(item.videoId)
-            ?: trackDao.findByCanonicalIdentity(
-                title = TrackCanonical.title(item.title),
-                artist = TrackCanonical.artist(item.artist),
+            ?: trackDao.findReusableByWords(
+                title = item.title,
+                artist = item.artist,
+                youtubeId = item.videoId,
+                spotifyUri = null,
+                forDownload = false,
             )
         return existing?.id ?: trackDao.insert(
             com.stash.core.data.db.entity.TrackEntity(
