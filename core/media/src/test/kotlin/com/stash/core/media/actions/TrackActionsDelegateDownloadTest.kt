@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
@@ -62,10 +63,33 @@ class TrackActionsDelegateDownloadTest {
 
         d.downloadTrack(item)
         runCurrent()
-
-        assertThat(messages).containsExactly("Already in your library")
         assertThat(d.downloadedIds.value).contains(item.videoId)
         assertThat(d.downloadingIds.value).doesNotContain(item.videoId)
+
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertThat(messages).containsExactly("Already in your library")
+    }
+
+    @Test
+    fun `an album's songs already in the library are told once, with a count`() = runTest {
+        val d = delegate().apply { bindToScope(backgroundScope) }
+        val items = (1..3).map { item.copy(videoId = "vid000000$it", title = "Song $it") }
+        items.forEach {
+            every { coordinator.download(it) } returns
+                flowOf(SearchDownloadStatus.Resolving, SearchDownloadStatus.AlreadyInLibrary)
+        }
+        val messages = mutableListOf<String>()
+        backgroundScope.launch { d.userMessages.collect { messages.add(it) } }
+        runCurrent()
+
+        items.forEach { d.downloadTrack(it) }
+        runCurrent()
+        advanceTimeBy(1_000)
+        runCurrent()
+
+        assertThat(messages).containsExactly("3 songs already in your library")
+        assertThat(d.downloadedIds.value).containsAtLeastElementsIn(items.map { it.videoId })
     }
 
     @Test

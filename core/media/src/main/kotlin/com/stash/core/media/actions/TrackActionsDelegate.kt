@@ -20,6 +20,7 @@ import dagger.hilt.android.scopes.ViewModelScoped
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -134,6 +135,28 @@ class TrackActionsDelegate @Inject constructor(
 
     private fun scope(): CoroutineScope =
         checkNotNull(boundScope) { "TrackActionsDelegate used before bindToScope" }
+
+    /**
+     * "Already in your library" answers that arrive together are told once: an album's
+     * Download all walks every track, and a message per song already held queued up a run
+     * of identical snackbars (the buffer holds 4; the rest were dropped). A burst of N says
+     * "N songs already in your library". Main thread, like every status collector here.
+     */
+    private var alreadyInLibraryCount = 0
+    private var alreadyInLibraryNotice: Job? = null
+
+    private fun noteAlreadyInLibrary() {
+        alreadyInLibraryCount++
+        alreadyInLibraryNotice?.cancel()
+        alreadyInLibraryNotice = scope().launch {
+            delay(ALREADY_IN_LIBRARY_WINDOW_MS)
+            val count = alreadyInLibraryCount
+            alreadyInLibraryCount = 0
+            _userMessages.tryEmit(
+                if (count == 1) "Already in your library" else "$count songs already in your library",
+            )
+        }
+    }
 
     /**
      * Starts an audio preview for [track] using the v0.9.12 MediaSource-based
@@ -479,7 +502,7 @@ class TrackActionsDelegate @Inject constructor(
                             _downloadingIds.update { it - key }
                             _downloadedIds.update { it + key }
                             _waitingForLosslessIds.update { it - key }
-                            _userMessages.tryEmit("Already in your library")
+                            noteAlreadyInLibrary()
                         }
                         is SearchDownloadStatus.Failed -> {
                             _downloadingIds.update { it - key }
@@ -704,6 +727,9 @@ class TrackActionsDelegate @Inject constructor(
 
     companion object {
         private const val TAG = "TrackActionsDelegate"
+
+        /** How long to gather "Already in your library" answers into one message. */
+        private const val ALREADY_IN_LIBRARY_WINDOW_MS = 800L
 
         /**
          * Retry window after `playUrl` — an ExoPlayer error inside this window
