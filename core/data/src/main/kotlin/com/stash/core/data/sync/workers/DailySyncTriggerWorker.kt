@@ -6,6 +6,7 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.stash.core.data.sync.DayOfWeekSet
+import com.stash.core.data.sync.SyncPreferences
 import com.stash.core.data.sync.SyncPreferencesManager
 import com.stash.core.data.sync.SyncScheduler
 import dagger.assisted.Assisted
@@ -22,9 +23,10 @@ import java.time.LocalDateTime
  * the sync chain when today is a sync day.
  *
  * Reads the sync settings fresh on every run, so changed days or Wi-Fi-only
- * apply without rescheduling. Does nothing when Auto-sync is off, when the
- * run's day isn't a sync day, or when a sync is already running or queued by
- * "Sync now" ([SyncScheduler.startScheduledSync]).
+ * apply without rescheduling. Does nothing when Auto-sync is off, while it is
+ * paused after "Undo last sync" ([SyncPreferences.autoSyncPausedAfterUndo]),
+ * when the run's day isn't a sync day, or when a sync is already running or
+ * queued by "Sync now" ([SyncScheduler.startScheduledSync]).
  */
 @HiltWorker
 class DailySyncTriggerWorker @AssistedInject constructor(
@@ -55,7 +57,11 @@ class DailySyncTriggerWorker @AssistedInject constructor(
             Log.i(TAG, "Auto-sync is off — nothing to do")
         } else {
             val day = dueDay(prefs.syncHour, prefs.syncMinute)
-            if (DayOfWeekSet(prefs.syncDays).contains(day)) {
+            if (prefs.autoSyncPausedAfterUndo) {
+                // The user undid the last sync; redoing it unasked would undo their undo.
+                // The schedule stays (pinned below) and resumes at their next "Sync now".
+                Log.i(TAG, "Auto-sync is paused after Undo last sync — skipping until Sync now")
+            } else if (DayOfWeekSet(prefs.syncDays).contains(day)) {
                 syncScheduler.startScheduledSync(prefs.wifiOnly)
             } else {
                 Log.i(TAG, "$day isn't a sync day — skipping")

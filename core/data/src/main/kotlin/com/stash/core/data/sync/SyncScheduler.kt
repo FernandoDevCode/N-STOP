@@ -284,6 +284,22 @@ class SyncScheduler @Inject constructor(
     }
 
     /**
+     * Cancels a sync chain with no step running: one waiting to start (a
+     * scheduled run waiting for Wi-Fi, a "Sync now" waiting for a network) or
+     * paused between steps. "Undo last sync" calls this so a sync queued before
+     * the undo doesn't redo it as soon as its network turns up. A running step
+     * is left alone. Returns whether a chain was cancelled.
+     */
+    suspend fun cancelPendingSync(): Boolean {
+        val chain = chainInfos()
+        if (chain.all { it.state.isFinished } || chain.any { it.state == WorkInfo.State.RUNNING }) return false
+        Log.i(TAG, "Cancelling a sync that hadn't finished starting (Undo last sync)")
+        workManager.cancelUniqueWork(UNIQUE_WORK_NAME)
+        syncStateManager.reset()
+        return true
+    }
+
+    /**
      * Turns the daily sync off: cancels the trigger, and a scheduled chain that
      * hasn't started (one the trigger queued, or one the old one-time schedule
      * left, the only chains with a delay). A sync that has started finishes,

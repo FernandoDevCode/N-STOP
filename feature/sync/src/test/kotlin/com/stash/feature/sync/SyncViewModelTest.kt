@@ -6,7 +6,9 @@ import com.stash.core.data.sync.SyncPhase
 import com.stash.core.data.sync.SyncPreferences
 import com.stash.core.model.MusicSource
 import com.stash.core.model.SyncMode
+import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.coVerifyOrder
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -14,6 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -245,6 +248,105 @@ class SyncViewModelTest {
         advanceUntilIdle()
 
         coVerify(exactly = 0) { syncScheduler.triggerManualSync(any()) }
+    }
+
+    // -- Undo last sync (2026-10-11): counts what changed, pauses Auto-sync -----------------
+
+    private val point = com.stash.core.data.db.entity.SyncUndoPointEntity(
+        syncId = 9L, createdAtEpochMs = 1_000L, playlistCount = 50, membershipCount = 900,
+    )
+
+    @Test
+    fun `undo restores, drops a waiting sync, and pauses Auto-sync until Sync now`() = runTest {
+        every { prefs.preferences } returns MutableStateFlow(SyncPreferences(autoSyncEnabled = true))
+        coEvery { syncUndoDao.latestPointNow() } returns point
+        coEvery { syncUndoDao.countChangedPlaylists(9L, 1_000L) } returns 2
+        val vm = newVm()
+
+        vm.onUndoLastSync()
+        advanceUntilIdle()
+
+        coVerifyOrder {
+            syncScheduler.cancelPendingSync()
+            syncUndoDao.restore(9L)
+            prefs.setAutoSyncPausedAfterUndo(true)
+        }
+        assertEquals(
+            "Undone — 2 playlists are back to how they were before that sync. Auto-sync is paused until you tap Sync.",
+            vm.undoResult.value,
+        )
+    }
+
+    @Test
+    fun `a failed undo changes nothing and pauses nothing`() = runTest {
+        coEvery { syncUndoDao.latestPointNow() } returns point
+        coEvery { syncUndoDao.restore(9L) } throws IllegalStateException("disk I/O")
+        val vm = newVm()
+
+        vm.onUndoLastSync()
+        advanceUntilIdle()
+
+        assertEquals("Couldn't undo that sync. Nothing was changed.", vm.undoResult.value)
+        coVerify(exactly = 0) { prefs.setAutoSyncPausedAfterUndo(any()) }
+    }
+
+    @Test
+    fun `Sync now resumes Auto-sync paused by an undo`() = runTest {
+        every { prefs.preferences } returns MutableStateFlow(SyncPreferences(autoSyncPausedAfterUndo = true))
+        val vm = newVm()
+
+        vm.onSyncNow()
+        advanceUntilIdle()
+
+        coVerifyOrder {
+            prefs.setAutoSyncPausedAfterUndo(false)
+            syncScheduler.triggerManualSync(any())
+        }
+    }
+
+    @Test
+    fun `Sync now with nothing paused leaves the pause alone`() = runTest {
+        val vm = newVm()
+
+        vm.onSyncNow()
+        advanceUntilIdle()
+
+        coVerify(exactly = 0) { prefs.setAutoSyncPausedAfterUndo(any()) }
+        coVerify { syncScheduler.triggerManualSync(any()) }
+    }
+
+    @Test
+    fun `the undo card counts the playlists the last sync changed`() = runTest {
+        every { syncUndoDao.latestPoint() } returns MutableStateFlow(point)
+        coEvery { syncUndoDao.countChangedPlaylists(9L, 1_000L) } returns 3
+        val vm = newVm()
+        backgroundScope.launch { vm.undoCard.collect {} }
+        advanceUntilIdle()
+
+        assertEquals(UndoCard(syncId = 9L, createdAtEpochMs = 1_000L, changedPlaylists = 3), vm.undoCard.value)
+    }
+
+    @Test
+    fun `no undo card for a sync that changed nothing`() = runTest {
+        every { syncUndoDao.latestPoint() } returns MutableStateFlow(point)
+        coEvery { syncUndoDao.countChangedPlaylists(9L, 1_000L) } returns 0
+        val vm = newVm()
+        backgroundScope.launch { vm.undoCard.collect {} }
+        advanceUntilIdle()
+
+        assertNull(vm.undoCard.value)
+    }
+
+    @Test
+    fun `no undo card while a sync runs`() = runTest {
+        every { syncUndoDao.latestPoint() } returns MutableStateFlow(point)
+        every { syncStateManager.phase } returns MutableStateFlow(SyncPhase.Diffing(1, 4))
+        val vm = newVm()
+        backgroundScope.launch { vm.undoCard.collect {} }
+        advanceUntilIdle()
+
+        assertNull(vm.undoCard.value)
+        coVerify(exactly = 0) { syncUndoDao.countChangedPlaylists(any(), any()) }
     }
 
     @Test

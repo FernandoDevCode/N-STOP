@@ -173,6 +173,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
     private val spotifyAuthHealthProbe: SpotifyAuthHealthProbe,
     private val youtubeAuthHealthProbe: YoutubeAuthHealthProbe,
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
+    private val syncUndoDao: com.stash.core.data.db.dao.SyncUndoDao,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -922,6 +923,10 @@ class PlaylistFetchWorker @AssistedInject constructor(
             }
 
             if (shouldDeactivateMissingPlaylists(syncPreferencesManager.spotifySyncMode.first(), inventoryComplete)) {
+                // The first change this sync makes to the library: "Undo last sync"
+                // must restore from before it, or the playlists hidden here never
+                // come back. The diff step keeps this point instead of taking its own.
+                captureUndoPoint(syncUndoDao, syncLog, syncId, TAG)
                 // Observed, not snapshotted — see [spotifyLivenessIds].
                 val currentIds = spotifyLivenessIds(userPlaylists.map { it.id })
                 val hidden = playlistDao.deactivateMissingSpotifyCustomPlaylists(

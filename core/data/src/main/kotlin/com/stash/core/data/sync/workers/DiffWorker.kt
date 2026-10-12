@@ -219,18 +219,10 @@ class DiffWorker @AssistedInject constructor(
             // destructive: everything above this line only reads or writes
             // snapshot tables, while below it REFRESH clears playlist membership
             // and stale playlists get deactivated. Bulk INSERT…SELECT, so this is
-            // one statement per table rather than a per-row copy.
-            //
-            // Never fatal: a sync that works must not be blocked because the
-            // safety net couldn't be set up. Worst case the user has no undo for
-            // this run, which is exactly where they were before the feature.
-            runCatching {
-                syncUndoDao.capture(syncId, System.currentTimeMillis())
-            }.onFailure { e ->
-                if (e is kotlin.coroutines.cancellation.CancellationException) throw e
-                Log.w(TAG, "Undo restore point capture failed for sync $syncId", e)
-                syncLog.warn("Couldn't save a restore point — undo unavailable for this sync")
-            }
+            // one statement per table rather than a per-row copy. Kept as is when
+            // the fetch step already took it, before hiding Spotify playlists the
+            // account no longer has. Never fatal (see captureUndoPoint).
+            captureUndoPoint(syncUndoDao, syncLog, syncId, TAG)
 
             // Read each source's sync mode once at the start of the diff
             // pass. Per-source (not global) as of v0.5 — the user picks

@@ -212,6 +212,32 @@ class DailySyncTest {
         assertTrue(chain().isEmpty())
     }
 
+    /** "Undo last sync": the next scheduled run would redo what the user just undid. */
+    @Test fun `the trigger does nothing while Auto-sync is paused after an undo, and keeps its time`() {
+        val at = LocalDateTime.now().plusHours(3)
+        prefs.value = SyncPreferences(
+            autoSyncEnabled = true, syncHour = at.hour, syncMinute = at.minute, autoSyncPausedAfterUndo = true,
+        )
+
+        fireTrigger(at.hour, at.minute)
+
+        assertTrue(chain().isEmpty())
+        // The schedule itself stays, so the next "Sync now" resumes it as it was.
+        val expected = System.currentTimeMillis() + scheduler.computeDelayToNextSync(at.hour, at.minute)!!
+        assertAbout(expected, trigger()!!.nextScheduleTimeMillis)
+    }
+
+    @Test fun `Undo drops a scheduled sync still waiting for Wi-Fi, but not a running one`() = runBlocking {
+        fireTrigger() // waits for Wi-Fi
+        assertTrue(scheduler.cancelPendingSync())
+        assertEquals(WorkInfo.State.CANCELLED, step().state)
+
+        scheduler.cancelSync()
+        holdSyncRunning()
+        assertEquals(false, scheduler.cancelPendingSync())
+        assertEquals(WorkInfo.State.RUNNING, step().state)
+    }
+
     @Test fun `the trigger does nothing when today isn't a sync day`() {
         // Only the day after tomorrow: neither today nor the day an early-morning run counts for.
         val notToday = DayOfWeekSet.NONE.with(LocalDate.now().dayOfWeek.plus(2), true)

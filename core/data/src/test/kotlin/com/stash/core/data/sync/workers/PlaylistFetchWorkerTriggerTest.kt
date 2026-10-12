@@ -94,6 +94,7 @@ class PlaylistFetchWorkerTriggerTest {
                     spotifyAuthHealthProbe = mockk(relaxed = true),
                     youtubeAuthHealthProbe = mockk(relaxed = true),
                     streamingPreference = mockk(relaxed = true),
+                    syncUndoDao = mockk(relaxed = true),
                 )
             })
             .build()
