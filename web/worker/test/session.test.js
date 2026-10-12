@@ -3,13 +3,17 @@ import assert from "node:assert/strict";
 import { b64urlDecode, b64urlEncode } from "../crypto.js";
 import {
     clearedCookie,
+    clearedSigninCookie,
     cookieValue,
     currentSession,
     forgetAllAccess,
+    newSigninId,
     readSession,
     sessionCookie,
     sessionSecret,
     SESSION_SECONDS,
+    signinCookie,
+    signinId,
     signSession,
 } from "../session.js";
 import { env, fakeKV, freezeClock, get, SECRET } from "./fakes.js";
@@ -63,6 +67,30 @@ test("SESSION_SECRET must be at least 32 characters, or nobody is signed in", ()
 test("the cookie's attributes: HttpOnly, Secure, SameSite=Lax, Path=/, 90 days; sign-out clears it", () => {
     assert.equal(sessionCookie("v"), "stash_access=v; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=7776000");
     assert.equal(clearedCookie, "stash_access=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0");
+});
+
+test("the pending sign-in cookie: random, HttpOnly, Secure, SameSite=Lax, only for /access, 30 minutes; signing in clears it", () => {
+    const id = newSigninId();
+    assert.match(id, /^[0-9a-f]{32}$/);
+    assert.equal(signinCookie(id), `stash_signin=${id}; HttpOnly; Secure; SameSite=Lax; Path=/access; Max-Age=1800`);
+    assert.equal(clearedSigninCookie, "stash_signin=; HttpOnly; Secure; SameSite=Lax; Path=/access; Max-Age=0");
+});
+
+test("signinId reads a well-formed id only: anything else is no id at all", () => {
+    const id = "0123456789abcdef0123456789abcdef";
+    assert.equal(signinId(get("/", { Cookie: `stash_access=x.y; stash_signin=${id}` })), id);
+    for (const value of ["", "abc", id.toUpperCase(), `${id}0`, "../../x", "0123456789abcdef0123456789abcdeg"]) {
+        assert.equal(signinId(get("/", { Cookie: `stash_signin=${value}` })), null, value);
+    }
+    assert.equal(signinId(get("/")), null);
+});
+
+test("a stash_access cookie from before the sign-in changes still signs you in: its format and secret are the same", async () => {
+    // Made by hand the way signSession has made it since launch: b64url({h, exp}).b64url(HMAC-SHA256).
+    const { hmacBytes } = await import("../crypto.js");
+    const payload = b64urlEncode(JSON.stringify({ h: H, exp: T0 / 1000 + 3600 }));
+    const value = `${payload}.${b64urlEncode(await hmacBytes(SECRET, payload))}`;
+    assert.deepEqual(await readSession(SECRET, value, T0), { h: H, exp: T0 / 1000 + 3600 });
 });
 
 test("cookieValue finds stash_access among other cookies", () => {

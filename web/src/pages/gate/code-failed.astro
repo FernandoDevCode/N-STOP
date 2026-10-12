@@ -8,11 +8,15 @@ import CodeForm from '../../components/gate/CodeForm.astro';
   <div class="gate-card glass">
     <p class="overline">Early access</p>
     <h1>That code didn't work</h1>
-    <p>Each code works for 10 minutes and 5 tries. Check you're using the newest one, or get a new code.</p>
+    <p>
+      Each code works for 10 minutes and 5 tries, in the browser that asked for it. Check you're using the newest one,
+      or get a new code.
+    </p>
     <CodeForm />
     <form method="post" action="/access" class="resend">
       <input type="hidden" name="email" value="" data-value="email" />
       <input type="hidden" name="next" value="" data-value="next" />
+      <input type="hidden" name="signin" value="" data-value="signin" />
       <button type="submit" class="button button-secondary button-small">Send a new code</button>
     </form>
     <p class="gate-small">Not on the list? <a href="/request">Request access</a>.</p>

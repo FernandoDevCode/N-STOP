@@ -4,6 +4,7 @@
  * with an `action`, answered with a redirect back to /admin?done=<what happened> (so a reload never repeats it).
  */
 import { verifyAccess } from "./access-jwt.js";
+import { clearCodes } from "./codes.js";
 import { clock, hashEmail, normalizeEmail, validEmail } from "./crypto.js";
 import { sendEmail, welcomeEmail } from "./email.js";
 import { addManualEntry, exactDollars, goalTarget, goalView, monthKey, parseDollars, readGoal, removeManualEntry } from "./goal.js";
@@ -190,7 +191,7 @@ async function act(request, env, url, admin) {
             const h = await hashOf(email);
             const listed = (await kv.get(KEYS.access(h))) !== null;
             await kv.delete(KEYS.access(h));
-            await kv.delete(KEYS.code(h));
+            await clearCodes(env, h);
             rememberAccess(h, false);
             return back(url, listed ? "removed" : "not-listed");
         }

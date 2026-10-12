@@ -108,14 +108,15 @@ const html = (body) => `<!doctype html><html><head><title>t</title></head><body>
 
 /** Small stand-ins for the built pages, with the same data-* blanks as src/pages/gate/*.astro. */
 export const PAGES = {
-    "/": html('<main id="home">HOME<a href="#web-player" data-if="signed-out">HERO SIGN IN</a><a href="/player" data-if="signed-in">HERO OPEN PLAYER</a><section id="web-player"><div class="access" data-if="signed-out"><form method="post" action="/access"><input name="email"></form><a href="/request">Request access</a></div><div class="access" data-if="signed-in"><a href="/player">Open the player</a></div><div class="goal" data-if="goal" data-astro-cid-x><strong data-goal="raised">$0</strong> of <span data-goal="target">$100</span><div class="track" data-goal="bar" aria-valuenow="0"><span class="fill" data-goal="fill" style="width:0%"></span></div></div></section></main><footer><form class="signout" method="post" action="/signout" data-if="signed-in"><button>Sign out</button></form></footer>'),
+    "/": html('<main id="home">HOME<a href="#web-player" data-if="signed-out">HERO SIGN IN</a><a href="/player" data-if="signed-in">HERO OPEN PLAYER</a><section id="web-player"><div class="access" data-if="signed-out"><form method="post" action="/access"><input type="hidden" name="signin" value="" data-value="signin"><input name="email"></form><a href="/request">Request access</a></div><div class="access" data-if="signed-in"><a href="/player">Open the player</a></div><div class="goal" data-if="goal" data-astro-cid-x><strong data-goal="raised">$0</strong> of <span data-goal="target">$100</span><div class="track" data-goal="bar" aria-valuenow="0"><span class="fill" data-goal="fill" style="width:0%"></span></div></div></section></main><footer><form class="signout" method="post" action="/signout" data-if="signed-in"><button>Sign out</button></form></footer>'),
     "/privacy": html("<main>PRIVACY</main>"),
     "/link": html("<main>LINK</main>"),
     "/404": html("<main>NOT FOUND PAGE</main>"),
-    "/gate/front": html('<main id="front">FRONT<div class="goal" data-if="goal"><strong data-goal="raised">$0</strong> of <span data-goal="target">$100</span> this month<div class="track" role="progressbar" data-goal="bar" aria-valuenow="0" aria-valuetext="$0 of $100 this month"><span class="fill" data-goal="fill" style="width:0%"></span></div></div><form method="post" action="/access"><input type="hidden" name="next" value="" data-value="next"><input name="email"></form></main>'),
+    "/gate/front": html('<main id="front">FRONT<div class="goal" data-if="goal"><strong data-goal="raised">$0</strong> of <span data-goal="target">$100</span> this month<div class="track" role="progressbar" data-goal="bar" aria-valuenow="0" aria-valuetext="$0 of $100 this month"><span class="fill" data-goal="fill" style="width:0%"></span></div></div><form method="post" action="/access"><input type="hidden" name="next" value="" data-value="next"><input type="hidden" name="signin" value="" data-value="signin"><input name="email"></form></main>'),
     "/gate/sent": html('<main id="sent">SENT If <strong data-fill="email">that email</strong> has early access, a code is on its way.<form method="post" action="/access/verify"><input type="hidden" name="email" value="" data-value="email" data-astro-cid-c><input type="hidden" name="next" value="" data-value="next"><input name="code"></form></main>'),
-    "/gate/code-failed": html('<main id="code-failed">FAILED<form><input type="hidden" name="email" value="" data-value="email"><input type="hidden" name="next" value="" data-value="next"></form><form action="/access"><input type="hidden" name="email" value="" data-value="email"><input type="hidden" name="next" value="" data-value="next"></form></main>'),
+    "/gate/code-failed": html('<main id="code-failed">FAILED<form><input type="hidden" name="email" value="" data-value="email"><input type="hidden" name="next" value="" data-value="next"></form><form action="/access"><input type="hidden" name="email" value="" data-value="email"><input type="hidden" name="next" value="" data-value="next"><input type="hidden" name="signin" value="" data-value="signin"></form></main>'),
     "/gate/request": html('<main id="request">REQUEST<form method="post" action="/request"></form></main>'),
+    "/gate/other-browser": html('<main id="other-browser">OTHER BROWSER <strong data-fill="email">your email</strong><form method="post" action="/access"><input type="hidden" name="email" value="" data-value="email"><input type="hidden" name="next" value="" data-value="next"><input type="hidden" name="signin" value="" data-value="signin"></form></main>'),
     "/gate/requested": html('<main id="requested">REQUESTED</main>'),
     "/gate/signed-out": html('<main id="signed-out">SIGNED OUT</main>'),
     "/gate/slow-down": html('<main id="slow-down">SLOW DOWN</main>'),
@@ -211,6 +212,30 @@ export function post(path, fields, { origin = BASE, headers = {}, ip = "203.0.11
     const h = { "content-type": "application/x-www-form-urlencoded", "CF-Connecting-IP": ip, ...headers };
     if (origin) h.Origin = origin;
     return new Request(`${BASE}${path}`, { method: "POST", headers: h, body: new URLSearchParams(fields).toString() });
+}
+
+/**
+ * A browser's cookie jar, as much as the sign-in flow needs: keeps what each response's Set-Cookie sets (Max-Age=0
+ * deletes it) and sends all of it back in `cookie`. Paths and expiry are ignored; tests check those on the headers.
+ */
+export function browser() {
+    const jar = new Map();
+    return {
+        jar,
+        get cookie() {
+            return [...jar].map(([k, v]) => `${k}=${v}`).join("; ");
+        },
+        keep(res) {
+            for (const line of res.headers.getSetCookie()) {
+                const [pair] = line.split(";");
+                const i = pair.indexOf("=");
+                const name = pair.slice(0, i).trim();
+                if (/;\s*Max-Age=0\s*(;|$)/i.test(line)) jar.delete(name);
+                else jar.set(name, pair.slice(i + 1).trim());
+            }
+            return res;
+        },
+    };
 }
 
 export const get = (path, headers = {}) => new Request(`${BASE}${path}`, { headers: { "CF-Connecting-IP": "203.0.113.7", ...headers } });

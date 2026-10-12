@@ -167,13 +167,14 @@ The site practises what the app promises:
 - **No third-party requests.** No Google Fonts, CDNs, embeds, analytics or trackers. Self-host
   anything you need. `public/_headers` sets a Content-Security-Policy that blocks other origins, so
   something that loads in `npm run dev` but not in production is probably being blocked on purpose.
-- **No scripts, and one cookie.** The site ships no JavaScript, and the Content-Security-Policy enforces
+- **No scripts, and two cookies.** The site ships no JavaScript, and the Content-Security-Policy enforces
   it with `script-src 'none'`: in `public/_headers` for the files Cloudflare serves directly, and in
   `worker/pages.js` for everything the Worker answers (a test keeps the two equal). The Website check
   fails if a built page has a script. Forms are plain HTML posts, allowed only to this site
   (`form-action 'self'`). If something truly needs a script, keep it small and inline, allow that one
   script by its sha256 hash in `script-src` (never `'unsafe-inline'`), and update the check in
-  `.github/workflows/web.yml`. The only cookie is `stash_access`, set when someone signs in (see
+  `.github/workflows/web.yml`. The only cookies are `stash_access`, set when someone signs in, and
+  `stash_signin`, a random id set when someone asks for a code, which ties the code to that browser (see
   [Early access](#early-access)). Don't add another without updating the privacy page.
 - **Astro's own telemetry is switched off** in `astro.config.mjs`, and Wrangler's in `wrangler.jsonc`
   (`send_metrics: false`), for everyone who works on the site.
@@ -208,8 +209,8 @@ in `worker/index.js`.
 | --- | --- |
 | `GET /` | The home page, with this month's goal, in its signed-in or signed-out version |
 | `GET /access` | The early-access sign-in page, with the goal (signed in: back to `/`) |
-| `POST /access` | Email in. If it's on the list, a 6-digit code goes out by email. The page is the same either way |
-| `POST /access/verify` | Email and code in. The right code sets the `stash_access` cookie and goes to `/` (or back to `/player`, if signing in started there) |
+| `POST /access` | Email in. If it's on the list, an 8-digit code goes out by email. The page is the same either way, and sets the `stash_signin` cookie |
+| `POST /access/verify` | Email and code in, from the browser that asked for the code. The right code sets the `stash_access` cookie (and deletes `stash_signin`) and goes to `/` (or back to `/player`, if signing in started there). From a browser with no `stash_signin`, a page that says to enter the code where it was asked for |
 | `GET` and `POST /request` | The request-access form, and storing a request (the same answer for everyone) |
 | `POST /signout` | Clears the cookie (the button is in the home page's footer) |
 | `GET` and `POST /admin` | Requests, the access list and the goal, behind Cloudflare Access |
@@ -229,10 +230,22 @@ both sides together. `/gate/...` itself is never served.
 `EMAIL_PEPPER`, which is required (sign-in and requests say they aren't working without it), the same
 way as the tip jar
 (`infra/tipjar-worker/src/access.js`) and its import script; tests in both places check the same
-vectors. Codes: only an HMAC of each is stored, each lasts 10 minutes, and an email can have up to 3
-live at once (asking again adds one instead of cancelling the one on its way). Any of them signs you
-in and clears them all; 5 wrong tries clear them all too. An email gets at most one code email a
-minute per Cloudflare location, and about 5 an hour (a KV count, approximate under concurrency). The cookie is `b64url({h, exp}).b64url(HMAC-SHA256)` with `SESSION_SECRET`,
+vectors. Codes are 8 digits, and each belongs to the browser that asked for it: asking sets
+`stash_signin` (a random 128-bit id; `HttpOnly; Secure; SameSite=Lax; Path=/access`, 30 minutes; a
+browser that asks again keeps its id, and one with none yet takes the random id the Worker filled into its
+email form's hidden `signin` field, so a double-clicked button gives both asks the same id), and the
+codes are kept per email and browser,
+`code:<hash>:<id>`. Only an HMAC of each is stored, over the email hash, the browser's id and the code,
+so a code only matches in its own browser. Each lasts 10 minutes, and a browser can have up to 3 live
+for an email at once (asking again adds one instead of cancelling the one on its way). Any of them
+signs that browser in and clears them all; 5 wrong tries from that browser clear them all too. Wrong
+tries from any other browser count against that browser's own codes, so someone who knows a
+supporter's email can't use up or cancel the supporter's code (before 2026-10 they could, with 5 wrong
+tries or a few more asks). What every browser shares is the email's sends: at most one code email a
+minute per Cloudflare location, and about 5 an hour (a KV count, approximate under concurrency), so
+asking for someone's email can still use up that hour's emails, though never a code already sent.
+Guessing is about 25 tries an hour at most (5 sends, 5 tries each), each a 3-in-100-million chance and
+each emailing the owner. Signing in deletes `stash_signin`. The session cookie is `b64url({h, exp}).b64url(HMAC-SHA256)` with `SESSION_SECRET`,
 `HttpOnly; Secure; SameSite=Lax; Path=/`, and a session lasts 90 days unless the email is taken off the
 list: each signed-in request checks the email's hash is still there (cached for 5 minutes), so removing
 someone signs them out within a few minutes. Signing out deletes the cookie from that browser but
@@ -246,7 +259,9 @@ after the response, in `ctx.waitUntil`, so they don't show in the response time.
 checking a code reads the email's code record, and while a code is live that record exists, so the
 read can take slightly longer than for an email with no record (a few milliseconds on `wrangler dev`).
 Telling the two apart would mean first asking for a code for that address (which emails its owner)
-and then timing guesses, at 5 a minute per Cloudflare location.
+and then timing guesses, at 5 a minute per Cloudflare location. The "enter the code where you asked
+for it" page depends only on whether this browser has a `stash_signin` cookie, and every answer that
+says a code is on its way sets one, listed or not.
 
 **Rate limits** (Workers ratelimit bindings in `wrangler.jsonc`, per Cloudflare location, namespace ids
 2010 to 2015; the share Worker has 2001 to 2009). Per-IP limits key IPv6 by its /48.
@@ -257,7 +272,7 @@ and then timing guesses, at 5 a minute per Cloudflare location.
 | `SEND_EMAIL_RL` | Code emails asked for: 3 a minute per email hash, listed or not | "Slow down a little" (429) |
 | `CODE_SEND_RL` | Code emails sent: 1 a minute per email hash (plus about 5 an hour, a KV count) | Nothing shows; no email goes out |
 | `VERIFY_IP_RL` | Code tries: 10 a minute per IP | "Slow down a little" (429) |
-| `VERIFY_EMAIL_RL` | Code tries: 5 a minute per email hash, every email, before its code is looked up | "Slow down a little" (429) |
+| `VERIFY_EMAIL_RL` | Code tries: 5 a minute per email hash and browser (`stash_signin`), every email, before its code is looked up | "Slow down a little" (429) |
 | `REQUEST_IP_RL` | Access requests: 3 a minute per IP | "Slow down a little" (429) |
 
 **The goal.** Every donation is its own key, `goal:<YYYY-MM>:kofi:<id>` (the tip jar) or
@@ -281,7 +296,7 @@ the Access session expired can be sent to its sign-in page.
 
 | Name | Kind | What |
 | --- | --- | --- |
-| `SESSION_SECRET` | secret | Signs the cookie and the stored codes. 32+ random characters. Changing it signs everyone out |
+| `SESSION_SECRET` | secret | Signs the session cookie and the stored codes. 32+ random characters. Changing it signs everyone out |
 | `ADMIN_EMAILS` | secret | Comma-separated emails allowed on `/admin` |
 | `EMAIL_PEPPER` | secret, required | Keys the email hashes. The same value on the tip jar and for its import script. Without it, sign-in and requests are off |
 | `ACCESS_TEAM_DOMAIN` | var | `https://<team>.cloudflareaccess.com` |

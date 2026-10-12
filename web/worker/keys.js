@@ -7,8 +7,13 @@
 export const KEYS = {
     /** On the access list: { source: "kofi", firstAt, lastAt } or { source: "approved" | "manual", by, at }. */
     access: (h) => `access:${h}`,
-    /** Up to 3 live sign-in codes and the wrong tries: { codes: [{ c: HMAC, exp }], n }. 10 minutes after the newest. */
-    code: (h) => `code:${h}`,
+    /**
+     * Up to 3 live sign-in codes one browser asked for, and that browser's wrong tries: { codes: [{ c: HMAC, exp }], n }.
+     * [browser] is its stash_signin id (worker/session.js). 10 minutes after the newest code.
+     */
+    code: (h, browser) => `code:${h}:${browser}`,
+    /** Every browser's codes for one email (the admin page clears them when it removes the email). */
+    codePrefix: (h) => `code:${h}:`,
     /** Codes sent to this email in the current hour: { n, until }. 1 hour. */
     sends: (h) => `sends:${h}`,
     /** An access request: { email, note, at }, metadata { at }. Until handled, or 30 days. */

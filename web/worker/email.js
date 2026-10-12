@@ -26,8 +26,8 @@ export function codeEmail(code) {
     return {
         // Not in the subject: subjects show on lock screens and in inbox previews.
         subject: "Your Stash sign-in code",
-        text: `Your code for stashfm.app is ${code}\n\nIt works for 10 minutes. If you didn't ask for it, you can ignore this email.\n`,
-        html: page(`<p>Your code for stashfm.app is</p><p style="font-size:32px;font-weight:700;letter-spacing:6px;margin:8px 0 16px">${code}</p><p>It works for 10 minutes. If you didn't ask for it, you can ignore this email.</p>`),
+        text: `Your code for stashfm.app is ${code}\n\nIt works for 10 minutes, in the browser where you asked for it. If you didn't ask for it, you can ignore this email.\n`,
+        html: page(`<p>Your code for stashfm.app is</p><p style="font-size:32px;font-weight:700;letter-spacing:6px;margin:8px 0 16px">${code}</p><p>It works for 10 minutes, in the browser where you asked for it. If you didn't ask for it, you can ignore this email.</p>`),
     };
 }
 

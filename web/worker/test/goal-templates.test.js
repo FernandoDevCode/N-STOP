@@ -111,16 +111,17 @@ const built = existsSync(new URL("gate/front.html", DIST));
 test("the built gate pages have every blank the Worker fills, and no scripts", { skip: !built && "run npm run build first" }, () => {
     const page = (name) => readFileSync(new URL(name, DIST), "utf8");
     const expect = {
-        "gate/front.html": ['data-if="goal"', 'data-goal="raised"', 'data-goal="target"', 'data-goal="bar"', 'data-goal="fill"', 'action="/access"', 'href="/request"', 'data-value="next"'],
-        "gate/sent.html": ['data-fill="email"', 'data-value="email"', 'data-value="next"', 'action="/access/verify"', 'autocomplete="one-time-code"'],
-        "gate/code-failed.html": ['data-value="email"', 'data-value="next"', 'action="/access/verify"', 'action="/access"'],
+        "gate/front.html": ['data-if="goal"', 'data-goal="raised"', 'data-goal="target"', 'data-goal="bar"', 'data-goal="fill"', 'action="/access"', 'href="/request"', 'data-value="next"', 'data-value="signin"'],
+        "gate/sent.html": ['data-fill="email"', 'data-value="email"', 'data-value="next"', 'action="/access/verify"', 'autocomplete="one-time-code"', 'minlength="8"', "8-digit code"],
+        "gate/code-failed.html": ['data-value="email"', 'data-value="next"', 'action="/access/verify"', 'action="/access"', 'minlength="8"', 'data-value="signin"'],
+        "gate/other-browser.html": ['data-fill="email"', 'data-value="email"', 'data-value="next"', 'action="/access"', 'data-value="signin"'],
         "gate/request.html": ['action="/request"', 'name="note"'],
         "gate/requested.html": [],
         "gate/signed-out.html": [],
         "gate/slow-down.html": [],
         "gate/problem.html": ['data-fill="title"', 'data-fill="message"'],
         "gate/admin.html": ['data-fill="admin-email"', 'data-fill="flash"', 'data-if="hash-mismatch"', 'data-html="requests"', 'data-html="pager"', 'data-html="entries"', 'data-fill="goal-exact"', 'data-fill="month"', 'data-fill="request-count"', 'data-if="no-requests"', 'data-if="has-entries"', 'value="donation"', 'value="add"', 'value="remove"'],
-        "index.html": ['data-if="goal"', 'data-goal="raised"', 'action="/signout"', 'data-if="signed-in"', 'data-if="signed-out"', 'action="/access"', 'href="/request"', 'href="/player"'],
+        "index.html": ['data-if="goal"', 'data-goal="raised"', 'action="/signout"', 'data-if="signed-in"', 'data-if="signed-out"', 'action="/access"', 'href="/request"', 'href="/player"', 'data-value="signin"'],
     };
     for (const [file, markers] of Object.entries(expect)) {
         const html = page(file);
