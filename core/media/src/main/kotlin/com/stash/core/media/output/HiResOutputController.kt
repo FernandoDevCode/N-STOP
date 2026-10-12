@@ -57,10 +57,13 @@ class OutputPlan internal constructor(
 
     /**
      * Two plans with equal keys configure the hardware identically. Only what
-     * the hardware does counts: every shared plan writing the same track format
-     * shares a key whatever its [MixerDecision.Shared.reason] (STANDARD → MATCH
-     * on the speaker changes the reason, not the output, and must not rebuild
-     * the stream). The reason stays on [decision] for the signal path.
+     * the hardware does counts: every shared plan shares one key, whatever its
+     * [MixerDecision.Shared.reason] (STANDARD → MATCH on the speaker changes the
+     * reason, not the output, and must not rebuild the stream) and whatever its
+     * track format (a shared stream opens in the source's own format and Android
+     * converts it, so the planned and the live format can differ; keying on it
+     * rebuilt the stream on every recheck). The reason stays on [decision] for
+     * the signal path.
      */
     val key: String = when (decision) {
         is MixerDecision.Configure ->
