@@ -50,8 +50,9 @@ data class PlaylistEntity(
      * ([com.stash.core.data.sync.workers.SpotifyMirrorStamp]): Spotify's revision
      * plus what that mirror left here. While it still matches, a sync skips
      * reading the playlist. Null means "read it in full next time": never
-     * mirrored, mirrored incompletely, or forgotten (Undo, an unblock, a backup
-     * restore or merge). Only the sync's diff writes a value.
+     * mirrored, mirrored incompletely, or forgotten (Undo, a block or unblock,
+     * a backup restore, or a playlist a backup merge adds). Only the sync's
+     * diff writes a value.
      */
     @ColumnInfo(name = "snapshot_id")
     val snapshotId: String? = null,

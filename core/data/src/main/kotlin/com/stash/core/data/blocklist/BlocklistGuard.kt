@@ -107,6 +107,12 @@ class BlocklistGuard @Inject constructor(
             playlistDao.deleteAllCrossRefsForTrack(track.id)
             downloadQueueDao.deleteByTrackId(track.id)
             trackDao.deleteById(track.id)
+            // Every Spotify playlist is read in full at the next sync. A full sync
+            // filters the song by its key everywhere, including a twin row of it
+            // (another upload or version) that only another playlist holds; that
+            // playlist's own rows didn't move, so a skip would keep the twin
+            // (see SpotifyMirrorStamp). Blocks are rare; one full read is cheap.
+            playlistDao.forgetSpotifyMirrorStamps()
             heldBy
         }
         // The Library cards show a stored count; every playlist that held the song loses one.
@@ -125,11 +131,14 @@ class BlocklistGuard @Inject constructor(
      * Every Spotify playlist is read in full at the next sync: an unblocked song goes back into
      * the playlists that hold it on Spotify, and which ones those are isn't known here (its links
      * were deleted with the block). A playlist unchanged since its last sync would otherwise be
-     * skipped and never get the song back (see SpotifyMirrorStamp).
+     * skipped and never get the song back (see SpotifyMirrorStamp). In one transaction with the
+     * unblock, so a sync can never see the song unblocked with the stamps still trusted.
      */
     suspend fun unblock(canonicalKey: String) {
-        blocklistDao.deleteByKey(canonicalKey)
-        playlistDao.forgetSpotifyMirrorStamps()
+        database.withTransaction {
+            blocklistDao.deleteByKey(canonicalKey)
+            playlistDao.forgetSpotifyMirrorStamps()
+        }
         canonicalRecompute.rearm()
     }
 

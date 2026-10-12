@@ -14,6 +14,7 @@ import com.stash.core.data.library.CanonicalRecomputeState
 import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.coVerifyOrder
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
@@ -183,8 +184,29 @@ class BlocklistGuardTest {
      * would otherwise be skipped (SpotifyMirrorStamp) and never get it back.
      */
     @Test
-    fun `unblock makes the next sync read every Spotify playlist again`() = runTest {
+    fun `unblock makes the next sync read every Spotify playlist again, in the unblock's transaction`() = runTest {
         guard.unblock("arctic monkeys|505")
+        coVerifyOrder {
+            database.withTransaction(any<suspend () -> Any>())
+            blocklistDao.deleteByKey("arctic monkeys|505")
+            playlistDao.forgetSpotifyMirrorStamps()
+        }
+    }
+
+    /**
+     * A full sync filters the blocked song by its key everywhere, a twin row of
+     * it in another playlist included; that playlist's rows didn't move, so its
+     * stamp would still match and a skip would keep the twin.
+     */
+    @Test
+    fun `block makes the next sync read every Spotify playlist again`() = runTest {
+        val track = TrackEntity(
+            id = 7, title = "505", artist = "Arctic Monkeys",
+            source = MusicSource.SPOTIFY, spotifyUri = "spotify:track:single",
+        )
+
+        guard.block(track, BlockSource.CONTEXT_MENU)
+
         coVerify(exactly = 1) { playlistDao.forgetSpotifyMirrorStamps() }
     }
 }

@@ -984,6 +984,11 @@ class DatabaseBackupManager @Inject constructor(
                             dateAdded = if (playlist.dateAdded.toEpochMilli() > 0) {
                                 playlist.dateAdded
                             } else Instant.now(),
+                            // A remote version stamp (SpotifyMirrorStamp) vouches for the
+                            // backup's library, not this one: the next sync reads it in full.
+                            // A live playlist the merge adds rows to needs nothing: its
+                            // stamp's digest no longer matches those rows.
+                            snapshotId = null,
                         )
                     )
                     liveBySourceId.putIfAbsent(playlist.sourceId, newId)
@@ -1073,14 +1078,6 @@ class DatabaseBackupManager @Inject constructor(
                         playlistDao.getOrderedTrackIdsForPlaylist(playlistId).size,
                     )
                 }
-
-                // The next sync reads every Spotify playlist in full. A merged
-                // playlist row arrives with the backup's remote version stamp
-                // (snapshot_id), which vouches for the backup's library, not this
-                // one; and the songs the merge adds can change what a sync links
-                // into playlists whose rows didn't move (see SpotifyMirrorStamp).
-                // In the merge's transaction, so a failed merge forgets nothing.
-                playlistDao.forgetSpotifyMirrorStamps()
             }
 
             return MergeCounts(addedTracks, addedPlaylists, mergedMemberships, likedTracks)
