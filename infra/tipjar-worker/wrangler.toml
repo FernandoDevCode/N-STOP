@@ -40,3 +40,10 @@ service = "stash-mailer"
 # Secret: MAILER_TOKEN, the same value as stash-mailer's MAILER_TOKEN
 # (`wrangler secret put MAILER_TOKEN`). Without it no welcome is sent; the
 # webhook works as before.
+
+# Daily at 04:17 UTC: rebuilds the supporters list from the supporter:* keys
+# (src/supporters.js), so a donor that two webhooks at once (or KV's list()
+# lagging) left off the list is back on it within a day. Cheap: one KV list()
+# per 1,000 supporters, and a write only when the list changed.
+[triggers]
+crons = ["17 4 * * *"]

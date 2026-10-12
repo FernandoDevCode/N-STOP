@@ -12,10 +12,10 @@ Jar pill on Home with no app rebuild and no manual JSON edits.
    Ko-fi (tip received)
          │  POST webhook
          ▼
-   Cloudflare Worker
-         │  read+write
+   Cloudflare Worker  ◄── daily cron (rebuilds the list)
+         │  one key per supporter, then a rebuild
          ▼
-   Cloudflare KV (key: "supporters")
+   Cloudflare KV ("supporter:<time>:<id>" keys → "supporters")
          ▲
          │  GET (60s edge cache)
          │
@@ -25,6 +25,35 @@ Jar pill on Home with no app rebuild and no manual JSON edits.
 One Worker, one URL. POST = webhook receiver. GET = JSON endpoint the
 app reads. Cloudflare's free tier (100k requests/day, 1GB KV) covers
 ~100,000× more than this needs.
+
+### How the list is stored
+
+Each supporter is a KV key of their own, `supporter:<time>:<id>`: the
+donation's time (ISO, so the keys sort oldest to newest) and Ko-fi's
+transaction id (so a Ko-fi retry writes the same key again). Those keys
+are kept for good. `supporters`, the JSON the app reads, is rebuilt from
+them after every donation and once a day by a cron (`[triggers]` in
+`wrangler.toml`); nothing edits it in place (`src/supporters.js`).
+
+Before 2026-10 the webhook read `supporters`, added the new donor and
+wrote it back, so two donations arriving at once kept only one of the two
+donors, for good. Now a rebuild that misses someone (two at once, or KV's
+`list()` lagging up to a minute behind a write) loses nothing: their own
+key is still there, and the next rebuild, a day later at the latest,
+lists them.
+
+**The old list moves over by itself.** Each entry in `supporters` now
+names the key it came from (`key`, which the app never sees). An entry
+without one is from the list as it was before 2026-10, and the first
+rebuild that sees it (after the next donation, or at the next daily cron)
+gives it a key of its own, keeping the list's order and the exact JSON the
+app gets. There's nothing to run by hand. It's safe to repeat: the same
+old list always gets the same keys (`supporter:<time>:legacy-<n>`), so two
+rebuilds converting it at once, or a stale read of it, write nothing new.
+A one-off import script was the other option, but it can't be timed
+safely: run before the deploy, it misses donations the old code lists in
+between; run after, the new code's first rebuild could already have
+dropped the entries it hadn't moved.
 
 ## One-time setup (~30 min)
 
@@ -96,8 +125,11 @@ Free, indefinitely, for any realistic Stash supporter volume.
 - KV: 100,000 reads/day, 1,000 writes/day, 1GB storage.
 
 If Stash had 1,000 daily active users each opening Home twice = 2,000
-Worker requests/day. KV writes happen only when a tip arrives, so
-maybe 10/day at the high end. Well under every limit.
+Worker requests/day. KV writes happen only when a tip arrives (a few per
+tip), so maybe 30/day at the high end. A rebuild reads the supporters
+with one KV `list()` per 1,000 of them (each key carries its entry as
+metadata), and the daily cron writes only when the list changed. Well
+under every limit.
 
 ## Schema the Worker exposes
 
@@ -111,7 +143,8 @@ maybe 10/day at the high end. Well under every limit.
 ```
 
 Sorted newest-first. Capped at the 500 most recent entries (bumpable
-via `SUPPORTERS_LIMIT` in `src/index.js`).
+via `SUPPORTERS_LIMIT` in `src/supporters.js`). Older supporters keep
+their keys; they just aren't listed.
 
 ## Migrating off Cloudflare
 
@@ -124,14 +157,18 @@ ports to:
 The schema the Worker exposes (the GET response shape) stays
 identical, so the Stash app needs no changes when you migrate.
 
-## Manual seeding
+## Adding or removing a supporter by hand
 
-If you want to pre-seed the KV with existing supporters before
-plugging in Ko-fi:
+Don't edit `supporters` itself: it's rebuilt from the `supporter:*` keys
+(see "How the list is stored"). To add someone, give them a key of their
+own, with the time first so they sort into place:
 ```bash
-npx wrangler kv:key put --binding=STASH_KV supporters '{"supporters":[{"name":"Cedric","amountUsd":10,"message":"Just downloaded..."}]}'
+npx wrangler kv key put --binding STASH_KV --remote "supporter:2026-10-11T12:00:00.000Z:manual-1" '{"name":"Cedric","amountUsd":10,"message":"Just downloaded...","timestamp":"2026-10-11T12:00:00.000Z"}'
 ```
-Or use the Cloudflare dashboard's KV editor.
+To take someone off, delete their `supporter:` key
+(`npx wrangler kv key delete --binding STASH_KV --remote "<key>"`). Either
+change reaches the app at the next rebuild: the next donation, or the
+daily cron. The Cloudflare dashboard's KV editor works too.
 
 ## Lossless relay config
 
@@ -160,10 +197,11 @@ change.
   still gets access).
 - **Retries.** Ko-fi resends a webhook that didn't get a 200, with the same
   ids. `kofitxn:<id>` (in `STASH_KV`, 60 days; the transaction id, or the
-  message id if there's none) is `listed` once the supporter is on the list
-  and `done` once early access and the goal are written. If those writes
-  fail, the webhook answers 500 so Ko-fi tries again, and the retry skips the
-  supporters list, so nobody is listed twice. A retry of a `done`
+  message id if there's none) is `listed` once the supporter's own key is
+  written and `done` once the list is rebuilt and early access and the goal
+  are written. If any of that fails, the webhook answers 500 so Ko-fi tries
+  again, and the retry doesn't store the supporter again (if it did, it
+  would write the same key), so nobody is listed twice. A retry of a `done`
   transaction changes nothing.
 - Ko-fi's **"Send test"** webhooks (transaction id
   `00000000-1111-2222-3333-444444444444`) never reach the goal or the
@@ -231,9 +269,10 @@ email hash above.
 
 | Key | Written by | Value | Kept |
 | --- | --- | --- | --- |
-| `supporters` | tip jar webhook | The list the app reads (`GET /`) | Until replaced |
+| `supporter:<time>:<id>` | tip jar webhook; the first rebuild moves each pre-2026-10 entry to `supporter:<time>:legacy-<n>` | One supporter: `{name, amountUsd, message, timestamp}`, also as metadata when it fits | Forever |
+| `supporters` | tip jar webhook and its daily cron, rebuilt from the `supporter:*` keys | The list the app reads (`GET /`): the newest 500, each with the `key` it came from | Until rebuilt |
 | `lossless_config`, `lossless_config_sig` | `infra/lossless-relay/scripts/publish-config.mjs` | The signed relay config, served byte for byte | Until replaced |
-| `kofitxn:<id>` | tip jar webhook | `listed` or `done`: how far this Ko-fi donation got | 60 days |
+| `kofitxn:<id>` | tip jar webhook | `listed` (the supporter's key is written) or `done`: how far this Ko-fi donation got | 60 days |
 
 **`ACCESS_KV`** (the tip jar and the website, `web/wrangler.jsonc`):
 
@@ -243,6 +282,6 @@ email hash above.
 | `goal:<YYYY-MM>:kofi:<id>` | tip jar webhook | One Ko-fi donation; metadata `{cents, source, at, orig?}` | Forever |
 | `goal:<YYYY-MM>:manual:<id>` | the website's admin page | One donation added by hand; metadata `{cents, source, at, by}` | Until removed on the admin page |
 | `meta:hashcheck` | tip jar webhook (when it changes), the import script | The hash of `hashcheck@stashfm.app`, to spot a pepper mismatch | Until replaced |
-| `code:<hash>` | website | Up to 3 live sign-in codes (their HMACs and expiry times) and the wrong tries so far | 10 minutes after the newest code |
+| `code:<hash>:<browser>` | website | Up to 3 live sign-in codes one browser asked for (their HMACs and expiry times) and that browser's wrong tries so far; `<browser>` is its `stash_signin` cookie | 10 minutes after the newest code |
 | `sends:<hash>` | website | How many codes went to this email this hour | 1 hour |
 | `request:<hash>` | website | `{email, note, at}` (metadata `{at}`): an access request, the only place a raw email is kept | Until approved or denied, or 30 days |

@@ -117,9 +117,9 @@ export function toUsdCents(amount, currency) {
 }
 
 /**
- * Everything early access needs from one Ko-fi Donation or Subscription. Called after the supporters
- * list is written. It's safe to run again for the same donation (every write is to a key of its own),
- * which is what a Ko-fi retry does after a throw here.
+ * Everything early access needs from one Ko-fi Donation or Subscription. Called after the supporter is
+ * stored and the list rebuilt (src/supporters.js). It's safe to run again for the same donation (every
+ * write is to a key of its own), which is what a Ko-fi retry does after a throw here.
  *
  * [onNewAccess] (optional) is called with the normalised email right after an access entry is written for
  * an email that had none: the welcome email (src/welcome.js). Called at that point, not at the end, so a
