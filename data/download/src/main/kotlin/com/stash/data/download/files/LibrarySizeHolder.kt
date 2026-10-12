@@ -29,8 +29,8 @@ import kotlinx.coroutines.flow.update
  * 0 and the recovery backfill fails on orphaned rows + content:// path
  * mismatches. [FileOrganizer.computeMusicLibrarySize] walks the actual
  * filesystem (storage-mode-aware: internal `filesDir/music` for default,
- * SAF DocumentFile traversal for users on external storage) and returns
- * disk truth.
+ * one SAF children query per folder for users on external storage) and
+ * returns disk truth.
  *
  * Lifecycle:
  *  - The walker only runs when at least one consumer observes [size]
@@ -41,14 +41,15 @@ import kotlinx.coroutines.flow.update
  *    never flashes to 0 mid-recompute.
  *  - A track-count change walks again at most every [MIN_WALK_GAP_MS] after
  *    the last walk ended. A sync inserts or downloads hundreds of tracks,
- *    each a count change, and on an SD card a walk is thousands of binder
- *    queries, so Home re-walked the tree back to back for the whole sync,
+ *    each a count change, and on an SD card a walk is a binder query per
+ *    folder, so Home re-walked the tree back to back for the whole sync,
  *    competing with the downloads' own writes. [refresh] still walks at once.
  *
- * Cold-start: the StateFlow starts at `LibrarySizeBreakdown(0, 0, 0)`. On
- * SAF storage with ~3000 files the first walk can take 1-2 minutes; the
- * UI shows 0 GB during that window. Persisting the last value across app
- * restarts is out of scope (see spec).
+ * Cold-start: the StateFlow starts at `LibrarySizeBreakdown(0, 0, 0)`, and
+ * the UI shows 0 GB until the first walk ends. On SAF storage that used to
+ * take 1-2 minutes per ~3000 files (DocumentFile queried the provider about
+ * four times per file); it is now one query per folder. Persisting the last
+ * value across app restarts is out of scope (see spec).
  */
 @Singleton
 class LibrarySizeHolder @Inject constructor(
