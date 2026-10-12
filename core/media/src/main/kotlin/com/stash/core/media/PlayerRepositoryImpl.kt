@@ -1404,9 +1404,18 @@ class PlayerRepositoryImpl @Inject constructor(
         val currentIndex = controller.currentMediaItemIndex
         val insertIndex = if (controller.shuffleModeEnabled) currentIndex + 1
             else (currentIndex + 1 + ahead).coerceAtMost(controller.mediaItemCount)
-        val walk = if (wasEmpty) null else shuffleWalk(controller)
-        controller.addMediaItem(insertIndex, queueItem)
-        placeInShuffleOrder(controller, walk, insertIndex, 1, currentIndex, afterCurrent = true, ahead = ahead)
+        if (!wasEmpty && controller.shuffleModeEnabled) {
+            // The service inserts AND places it in the shuffle order in one step.
+            controller.sendCustomCommand(
+                SessionCommand(StashPlaybackService.COMMAND_PLAY_NEXT_SHUFFLED, Bundle.EMPTY),
+                Bundle().apply {
+                    putBundle(StashPlaybackService.EXTRA_PLAY_NEXT_ITEM, queueItem.toBundleIncludeLocalConfiguration())
+                    putInt(StashPlaybackService.EXTRA_PLAY_NEXT_AHEAD, ahead)
+                },
+            )
+        } else {
+            controller.addMediaItem(insertIndex, queueItem)
+        }
         playNextAhead = ahead + 1
         if (wasEmpty) {
             controller.prepare()

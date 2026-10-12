@@ -134,6 +134,9 @@ class StashPlaybackService : MediaLibraryService() {
          */
         const val COMMAND_SET_SHUFFLE_ORDER = "com.stash.SET_SHUFFLE_ORDER"
         const val EXTRA_SHUFFLE_ORDER = "com.stash.extra.SHUFFLE_ORDER"
+        const val COMMAND_PLAY_NEXT_SHUFFLED = "com.stash.PLAY_NEXT_SHUFFLED"
+        const val EXTRA_PLAY_NEXT_ITEM = "com.stash.extra.PLAY_NEXT_ITEM"
+        const val EXTRA_PLAY_NEXT_AHEAD = "com.stash.extra.PLAY_NEXT_AHEAD"
 
         /** Custom command action for cycling repeat mode. */
         const val COMMAND_CYCLE_REPEAT = "com.stash.CYCLE_REPEAT"
@@ -2362,6 +2365,39 @@ class StashPlaybackService : MediaLibraryService() {
                         android.util.Log.w("StashPlayback", "shuffle order refused (${order?.size} for ${master?.mediaItemCount})")
                     }
                 }
+                COMMAND_PLAY_NEXT_SHUFFLED -> {
+                    val master = crossfadeEngine?.masterPlayer
+                    val itemBundle = args.getBundle(EXTRA_PLAY_NEXT_ITEM)
+                    val ahead = args.getInt(EXTRA_PLAY_NEXT_AHEAD, 0)
+                    if (master != null && session.player === master && itemBundle != null) {
+                        val item = MediaItem.fromBundle(itemBundle)
+                        val cur = master.currentMediaItemIndex
+                        val count = master.mediaItemCount
+                        val timeline = master.currentTimeline
+                        // The real play order BEFORE the insert (null when shuffle is off).
+                        val walk = if (master.shuffleModeEnabled && !timeline.isEmpty) buildList {
+                            var i = timeline.getFirstWindowIndex(true)
+                            while (i != C.INDEX_UNSET && size < count) {
+                                add(i)
+                                i = timeline.getNextWindowIndex(i, Player.REPEAT_MODE_OFF, true)
+                            }
+                        } else null
+
+                        val at = if (walk != null) cur + 1 else (cur + 1 + ahead).coerceAtMost(count)
+                        master.addMediaItem(at, item)
+
+                        if (walk != null && walk.size == count) {
+                            val shifted = walk.map { if (it >= at) it + 1 else it }
+                            val pos = (walk.indexOf(cur).coerceAtLeast(0) + ahead).coerceAtMost(shifted.size - 1)
+                            val order = shifted.subList(0, pos + 1) + at + shifted.subList(pos + 1, shifted.size)
+                            master.setShuffleOrder(
+                                androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder(
+                                    order.toIntArray(), android.os.SystemClock.elapsedRealtime(),
+                                ),
+                            )
+                        }
+                    }
+                }
                 COMMAND_TOGGLE_SHUFFLE -> {
                     val player = session.player
                     player.shuffleModeEnabled = !player.shuffleModeEnabled
@@ -2539,6 +2575,7 @@ internal fun grantedCustomActions(privileged: Boolean): List<String> = buildList
         add(StashPlaybackService.COMMAND_TOGGLE_LIKE)
         add(StashPlaybackService.COMMAND_LEAVE_SESSION)
         add(StashPlaybackService.COMMAND_SET_SHUFFLE_ORDER)
+        add(StashPlaybackService.COMMAND_PLAY_NEXT_SHUFFLED)
     }
 }
 
