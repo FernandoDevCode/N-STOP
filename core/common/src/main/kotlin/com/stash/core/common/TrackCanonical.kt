@@ -4,7 +4,9 @@ package com.stash.core.common
  * The library's one "same song" rule: what `tracks.canonical_title` and `tracks.canonical_artist`
  * hold for every row, whoever writes it (sync, discovery, the YouTube canonicalizer, search
  * downloads, stream stubs, likes, hand-offs), and what every lookup by words computes. One rule so
- * a song filed by two paths is found as one row instead of being filed twice.
+ * a song filed by two paths is found as one row instead of being filed twice. (One exception: a
+ * song the user saves by hand under a blocked loose key keeps [strictCanonical] words, see
+ * `canonicalWordsForSave` in core:data.)
  *
  * Loose on purpose, so the same song from two sources meets:
  *  - [title]: every bracketed group ("(feat. X)", "[Live]", "(Remastered 2011)") and a trailing

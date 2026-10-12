@@ -14,6 +14,7 @@ import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackBlocklistDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.dao.fileUsedByAnotherTrack
+import com.stash.core.data.db.entity.TrackEntity
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 
@@ -38,6 +39,15 @@ import dagger.assisted.AssistedInject
  * StashApplication.onCreate so it runs exactly once per install +
  * upgrade, idempotent on re-runs (matching rows are gone after the
  * first pass).
+ *
+ * Only stragglers: the block action itself ([com.stash.core.data.blocklist.BlocklistGuard.block],
+ * behind every "Block" and "Delete & block") deletes the row the user blocked, liked or not.
+ * What this finds is another row whose stored words share the blocked key, and the key is the
+ * loose canonical words, which don't tell versions apart: a liked "Song (Live)" next to the
+ * blocked studio "Song". So a row the user holds on to is kept ([heldByUser]): liked, in a
+ * protected playlist, audio the user picked, or a download they asked for. The library lists
+ * still hide it while the block stands; unblocking brings it back with its file, likes and
+ * playlists. A row nobody holds goes, as before.
  */
 @HiltWorker
 class BlocklistIntegrityWorker @AssistedInject constructor(
@@ -60,9 +70,14 @@ class BlocklistIntegrityWorker @AssistedInject constructor(
 
         val candidates = trackDao.getAllForIntegrityScan()
         var cleaned = 0
+        var kept = 0
         for (t in candidates) {
             val key = BlocklistKey.fromStoredCanonicals(t.canonicalArtist, t.canonicalTitle)
             if (key !in keys) continue
+            if (heldByUser(t)) {
+                kept++
+                continue
+            }
 
             // Off-transaction file deletes (slow I/O), then atomic row
             // teardown. Mirrors BlocklistGuard.block's ordering. A file another
@@ -77,9 +92,21 @@ class BlocklistIntegrityWorker @AssistedInject constructor(
             }
             cleaned++
         }
-        Log.i(TAG, "BlocklistIntegrityWorker cleaned $cleaned leaked tracks")
+        Log.i(TAG, "BlocklistIntegrityWorker cleaned $cleaned leaked tracks, kept $kept the user holds")
         return Result.success()
     }
+
+    /**
+     * Whether the user holds on to [t]: liked (a Stash, Spotify or YouTube Music like Stash
+     * recorded), in a protected playlist (Liked Songs or one of their own), audio they picked for a
+     * wrong match (#531), or a download they asked for by hand. A straggler like this is never
+     * swept: deleting it would take their file, likes and playlists with it.
+     */
+    private suspend fun heldByUser(t: TrackEntity): Boolean =
+        t.stashLikedAt != null || t.spotifySavedAt != null || t.ytMusicSavedAt != null ||
+            t.matchPickedAt != null ||
+            trackDao.isTrackInProtectedPlaylist(t.id) ||
+            downloadQueueDao.hasUserRequest(t.id)
 
     private companion object {
         const val TAG = "BlocklistIntegrity"

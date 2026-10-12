@@ -64,6 +64,14 @@ class BlocklistGuard @Inject constructor(
     }
 
     /**
+     * Whether a row stored under these canonical words would have a blocked key: the words'
+     * `artist|title` ([BlocklistKey.fromStoredCanonicals]) is on the blocklist, which is what the
+     * library lists hide by and the integrity sweep deletes by. Ids are not consulted.
+     */
+    suspend fun isKeyBlocked(canonicalTitle: String, canonicalArtist: String): Boolean =
+        blocklistDao.findByKey(BlocklistKey.fromStoredCanonicals(canonicalArtist, canonicalTitle)) != null
+
+    /**
      * Atomic block. Inserts a blocklist entry, hard-deletes every
      * `playlist_tracks` row referencing this track id, deletes any
      * `download_queue` rows, deletes the audio + art files, and deletes

@@ -25,10 +25,8 @@ import androidx.media3.common.MediaMetadata
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
-import com.stash.core.common.TrackCanonical
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackDao
-import com.stash.core.data.library.findReusableByWords
 import com.stash.core.data.prefs.CrossfadePreference
 import com.stash.core.data.social.LikeCoordinator
 import com.stash.core.media.R
@@ -91,6 +89,7 @@ class StashPlaybackService : MediaLibraryService() {
     @Inject lateinit var trackDao: TrackDao
     @Inject lateinit var playlistDao: PlaylistDao
     @Inject lateinit var likeCoordinator: LikeCoordinator
+    @Inject lateinit var likeTargetResolver: LikeTargetResolver
     @Inject lateinit var prefetchOrchestrator: PrefetchOrchestrator
     @Inject lateinit var sleepTimerController: SleepTimerController
     @Inject lateinit var streamingMediaSourceFactory: StreamingMediaSourceFactory
@@ -1654,12 +1653,8 @@ class StashPlaybackService : MediaLibraryService() {
     }
 
     /**
-     * Resolves the Room PK for a Like-toggle from MediaSession state. The
-     * `mediaId` may be a v0.9.30 streaming-engine synthetic id
-     * (`videoId.hashCode().toLong()`) that doesn't exist in `tracks` —
-     * passing it to a FK-bearing write crashes the service. Mirrors the
-     * upsert pattern in `MusicRepositoryImpl.ensureTrackPersisted` /
-     * `SearchDownloadCoordinator.upsertSearchTrack`.
+     * Resolves the Room PK for a Like-toggle from MediaSession state ([LikeTargetResolver]: the
+     * `mediaId` may be a streaming-engine synthetic id that isn't a `tracks` row).
      *
      * @return the real `tracks.id` to use; never returns a synthetic id.
      * @throws IllegalStateException when no identity info is recoverable
@@ -1670,51 +1665,14 @@ class StashPlaybackService : MediaLibraryService() {
         candidateId: Long,
         youtubeId: String?,
         metadata: MediaMetadata,
-    ): Long {
-        // Real Room PK already? Cheap exit.
-        if (candidateId > 0L && trackDao.getById(candidateId) != null) return candidateId
-
-        // YouTube id is the most reliable secondary identity.
-        if (!youtubeId.isNullOrBlank()) {
-            trackDao.findByYoutubeId(youtubeId)?.let { return it.id }
-        }
-
-        val title = metadata.title?.toString().orEmpty()
-        val artist = metadata.artist?.toString().orEmpty()
-        val album = metadata.albumTitle?.toString().orEmpty()
-        val albumArtist = metadata.albumArtist?.toString().orEmpty()
-        val cTitle = TrackCanonical.title(title)
-        val cArtist = TrackCanonical.artist(artist)
-
-        // By words only under SameSongRule: a like on "Song (Live)" or on another
-        // video of the song must not land on the library's "Song".
-        trackDao.findReusableByWords(
-            title = title,
-            artist = artist,
-            youtubeId = youtubeId,
-            spotifyUri = null,
-            forDownload = false,
-        )?.let { return it.id }
-
-        check(title.isNotBlank() && artist.isNotBlank()) {
-            "Cannot resolve track id for like: no youtubeId and no title/artist metadata"
-        }
-
-        return trackDao.insert(
-            TrackEntity(
-                title = title,
-                artist = artist,
-                album = album,
-                albumArtist = albumArtist,
-                youtubeId = youtubeId,
-                canonicalTitle = cTitle,
-                canonicalArtist = cArtist,
-                source = com.stash.core.model.MusicSource.YOUTUBE,
-                isStreamable = true,
-                isDownloaded = false,
-            )
-        )
-    }
+    ): Long = likeTargetResolver.resolve(
+        candidateId = candidateId,
+        youtubeId = youtubeId,
+        title = metadata.title?.toString().orEmpty(),
+        artist = metadata.artist?.toString().orEmpty(),
+        album = metadata.albumTitle?.toString().orEmpty(),
+        albumArtist = metadata.albumArtist?.toString().orEmpty(),
+    )
 
     private val sessionPlayer = ServiceSessionPlayer()
 

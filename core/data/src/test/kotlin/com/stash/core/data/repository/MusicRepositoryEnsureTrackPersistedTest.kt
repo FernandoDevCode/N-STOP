@@ -1,6 +1,7 @@
 package com.stash.core.data.repository
 
 import android.database.sqlite.SQLiteConstraintException
+import com.stash.core.data.blocklist.BlocklistGuard
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.model.MusicSource
@@ -84,6 +85,33 @@ class MusicRepositoryEnsureTrackPersistedTest {
         coVerify(exactly = 1) { trackDao.insert(match { it.canonicalTitle == "song" && it.canonicalArtist == "artist" }) }
     }
 
+    @Test fun `a saved song whose loose key is blocked keeps its strict words`() = runTest {
+        // The user blocked the studio "Song"; the blocklist key is loose, so it covers "Song (Live)" too.
+        val trackDao = mockk<TrackDao>(relaxed = true)
+        coEvery { trackDao.findByYoutubeId(any()) } returns null
+        coEvery { trackDao.findAllByCanonicalIdentity(any(), any()) } returns emptyList()
+        coEvery { trackDao.insert(any()) } returns 9L
+        val guard = mockk<BlocklistGuard>(relaxed = true)
+        coEvery { guard.isKeyBlocked("song", "a, b") } returns true
+
+        buildRepo(trackDao, guard).ensureTrackPersisted(Track(title = "Song (Live)", artist = "B & A", youtubeId = "thisVideo01"))
+
+        coVerify(exactly = 1) { trackDao.insert(match { it.canonicalTitle == "song live" && it.canonicalArtist == "b a" }) }
+    }
+
+    @Test fun `a saved song with nothing blocked is stored under the loose words`() = runTest {
+        val trackDao = mockk<TrackDao>(relaxed = true)
+        coEvery { trackDao.findByYoutubeId(any()) } returns null
+        coEvery { trackDao.findAllByCanonicalIdentity(any(), any()) } returns emptyList()
+        coEvery { trackDao.insert(any()) } returns 9L
+        val guard = mockk<BlocklistGuard>(relaxed = true)
+        coEvery { guard.isKeyBlocked(any(), any()) } returns false
+
+        buildRepo(trackDao, guard).ensureTrackPersisted(Track(title = "Song (Live)", artist = "B & A", youtubeId = "thisVideo01"))
+
+        coVerify(exactly = 1) { trackDao.insert(match { it.canonicalTitle == "song" && it.canonicalArtist == "a, b" }) }
+    }
+
     @Test fun `losing the insert race to a concurrent caller adopts the winner's row`() = runTest {
         val trackDao = mockk<TrackDao>(relaxed = true)
         val winner = TrackEntity(id = 91L, title = "Song", artist = "Artist", youtubeId = "yt1", source = MusicSource.YOUTUBE)
@@ -129,14 +157,17 @@ class MusicRepositoryEnsureTrackPersistedTest {
         assertEquals(12L, id)
     }
 
-    private fun buildRepo(trackDao: TrackDao): MusicRepositoryImpl = MusicRepositoryImpl(
+    private fun buildRepo(
+        trackDao: TrackDao,
+        blocklistGuard: BlocklistGuard = mockk(relaxed = true),
+    ): MusicRepositoryImpl = MusicRepositoryImpl(
         context = mockk(relaxed = true),
         trackDao = trackDao,
         playlistDao = mockk(relaxed = true),
         syncHistoryDao = mockk(relaxed = true),
         downloadQueueDao = mockk(relaxed = true),
         discoveryQueueDao = mockk(relaxed = true),
-        blocklistGuard = mockk(relaxed = true),
+        blocklistGuard = blocklistGuard,
         trackMatcher = mockk(relaxed = true),
         stashMixRecipeDao = mockk(relaxed = true),
         downloadNetworkPreference = mockk(relaxed = true),
