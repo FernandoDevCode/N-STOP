@@ -3,7 +3,7 @@ package com.stash.core.media.actions
 import android.os.SystemClock
 import android.util.Log
 import androidx.media3.common.PlaybackException
-import com.stash.core.common.strictCanonical
+import com.stash.core.common.TrackCanonical
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.media.preview.PreviewPlayer
 import com.stash.core.media.preview.PreviewState
@@ -583,8 +583,8 @@ class TrackActionsDelegate @Inject constructor(
         }
         val existing = trackDao.findByYoutubeId(item.videoId)
             ?: trackDao.findByCanonicalIdentity(
-                title = strictCanonical(item.title),
-                artist = strictCanonical(item.artist),
+                title = TrackCanonical.title(item.title),
+                artist = TrackCanonical.artist(item.artist),
             )
         return existing?.id ?: trackDao.insert(
             com.stash.core.data.db.entity.TrackEntity(
@@ -593,8 +593,8 @@ class TrackActionsDelegate @Inject constructor(
                 album = item.album.orEmpty(),
                 albumArtist = item.albumArtist.orEmpty(),
                 youtubeId = item.videoId,
-                canonicalTitle = strictCanonical(item.title),
-                canonicalArtist = strictCanonical(item.artist),
+                canonicalTitle = TrackCanonical.title(item.title),
+                canonicalArtist = TrackCanonical.artist(item.artist),
                 durationMs = (item.durationSeconds * 1000).toLong(),
                 source = com.stash.core.model.MusicSource.YOUTUBE,
                 albumArtUrl = item.thumbnailUrl,

@@ -8,7 +8,7 @@ import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheKeyFactory
 import androidx.media3.datasource.cache.SimpleCache
-import com.stash.core.common.strictCanonical
+import com.stash.core.common.TrackCanonical
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.prefs.QualityPreference
 import com.stash.core.data.audio.AudioDurationExtractor
@@ -612,8 +612,8 @@ class SearchDownloadCoordinator @Inject constructor(
 
         val existing = trackDao.findByYoutubeId(track.videoId)
             ?: trackDao.findByCanonicalIdentity(
-                title = strictCanonical(track.title),
-                artist = strictCanonical(track.artist),
+                title = TrackCanonical.title(track.title),
+                artist = TrackCanonical.artist(track.artist),
             )
 
         val albumName = track.album.orEmpty()
@@ -635,8 +635,8 @@ class SearchDownloadCoordinator @Inject constructor(
                 // even when per-track artist credits vary.
                 albumArtist = albumArtistName,
                 youtubeId = track.videoId,
-                canonicalTitle = strictCanonical(track.title),
-                canonicalArtist = strictCanonical(track.artist),
+                canonicalTitle = TrackCanonical.title(track.title),
+                canonicalArtist = TrackCanonical.artist(track.artist),
                 // (durationSeconds * 1_000).toLong() preserves sub-second precision.
                 // Doing .toLong() first then * 1_000L would truncate 3.7s → 3_000ms.
                 durationMs = (track.durationSeconds * 1_000).toLong(),
@@ -765,8 +765,8 @@ class SearchDownloadCoordinator @Inject constructor(
         (
             trackDao.findByYoutubeId(track.videoId)
                 ?: trackDao.findByCanonicalIdentity(
-                    title = strictCanonical(track.title),
-                    artist = strictCanonical(track.artist),
+                    title = TrackCanonical.title(track.title),
+                    artist = TrackCanonical.artist(track.artist),
                 )
             )?.id
     } catch (e: CancellationException) {

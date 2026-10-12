@@ -10,7 +10,7 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.await
 import com.stash.core.common.matchesArtistCredits
-import com.stash.core.common.strictCanonical
+import com.stash.core.common.TrackCanonical
 import com.stash.core.data.db.dao.AlbumSummary
 import com.stash.core.data.db.dao.ArtistSummary
 import com.stash.core.data.db.dao.PlaylistDao
@@ -519,8 +519,8 @@ class MusicRepositoryImpl @Inject constructor(
                 return existing.id
             }
         }
-        val cTitle = strictCanonical(track.title)
-        val cArtist = strictCanonical(track.artist)
+        val cTitle = TrackCanonical.title(track.title)
+        val cArtist = TrackCanonical.artist(track.artist)
         if (cTitle.isNotBlank() && cArtist.isNotBlank()) {
             trackDao.findByCanonicalIdentity(cTitle, cArtist)?.let { existing ->
                 // Fuzzy title/artist match: could be a different recording (radio edit vs album),
@@ -580,8 +580,8 @@ class MusicRepositoryImpl @Inject constructor(
         return insertOrAdopt(
             incoming.toEntity().copy(
                 id = 0L,
-                canonicalTitle = strictCanonical(incoming.title),
-                canonicalArtist = strictCanonical(incoming.artist),
+                canonicalTitle = TrackCanonical.title(incoming.title),
+                canonicalArtist = TrackCanonical.artist(incoming.artist),
                 isStreamable = true,
             ),
         )
