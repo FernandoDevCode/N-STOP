@@ -109,11 +109,19 @@ class SearchDownloadCoordinatorReuseTest {
         coEvery { trackDao.findAllByCanonicalIdentity("song", "artist") } returns rows.toList()
     }
 
-    private fun row(id: Long, title: String, youtubeId: String? = null, spotifyUri: String? = null, file: String? = null) =
+    private fun row(
+        id: Long,
+        title: String,
+        youtubeId: String? = null,
+        spotifyUri: String? = null,
+        file: String? = null,
+        durationMs: Long = 0,
+    ) =
         TrackEntity(
             id = id, title = title, artist = "Artist", youtubeId = youtubeId, spotifyUri = spotifyUri,
             filePath = file, isDownloaded = file != null, canonicalTitle = "song", canonicalArtist = "artist",
             source = if (spotifyUri != null) MusicSource.SPOTIFY else MusicSource.YOUTUBE,
+            durationMs = durationMs,
         )
 
     private suspend fun download(item: TrackItem) {
@@ -199,9 +207,18 @@ class SearchDownloadCoordinatorReuseTest {
     }
 
     @Test
-    fun `another video of the song gets its own row`() = runTest {
-        // Its own file and a conflicting video id: kept apart, as likes and listens are.
-        rowsByWords(row(6L, "Song", youtubeId = "otherVideo1", file = "/library/Artist/Song.opus"))
+    fun `another upload of a song you already have is already in the library`() = runTest {
+        // A different video id, the same song and length: with lossless on, the audio comes by
+        // title and artist, so downloading it again only made a second copy of one recording.
+        rowsByWords(row(6L, "Song", youtubeId = "otherVideo1", file = "/library/Artist/Song.flac", durationMs = 201_000))
+
+        alreadyInLibrary(item("Song"))
+    }
+
+    @Test
+    fun `a same-titled track of a clearly different length is downloaded as its own song`() = runTest {
+        // Two "Interlude"s by one artist, or a music video with a long intro: another track.
+        rowsByWords(row(6L, "Song", youtubeId = "otherVideo1", file = "/library/Artist/Song.opus", durationMs = 320_000))
 
         download(item("Song"))
 
