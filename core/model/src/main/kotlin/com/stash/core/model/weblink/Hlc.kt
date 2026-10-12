@@ -41,6 +41,9 @@ object ClockOffset {
     /** How many of the newest samples count. */
     const val SAMPLES = 5
 
+    /** A new sample this far from the offset of the kept ones means this device's clock was set, not network noise. */
+    const val JUMP_MS = 5L * 60 * 1000
+
     /** One exchange: local clock when the request went out and when the answer came back, and the answer's `serverTime`. */
     data class Sample(val sent: Long, val received: Long, val serverTime: Long)
 
@@ -49,7 +52,21 @@ object ClockOffset {
      * (sorted ascending, element `(n − 1) / 2`). No samples: 0.
      */
     fun of(samples: List<Sample>): Long {
-        val xs = samples.takeLast(SAMPLES).map { it.serverTime - Math.floorDiv(it.sent + it.received, 2L) }.sorted()
+        val xs = samples.takeLast(SAMPLES).map(::offsetOf).sorted()
         return if (xs.isEmpty()) 0 else xs[(xs.size - 1) / 2]
+    }
+
+    private fun offsetOf(s: Sample): Long = s.serverTime - Math.floorDiv(s.sent + s.received, 2L)
+
+    /**
+     * The samples to keep once [next] is taken: the newest [SAMPLES], or [next] alone when its offset is more than [JUMP_MS] from
+     * the kept ones'. A clock set by hand or by network time moves every later sample's offset at once, and the lower median
+     * would follow only after three fresh samples; meanwhile `wall` is off by the jump, and a jump forward stamps ops from the
+     * future that every reader skips while this device's base still moves past them (audit A5). The offset rule ([of]) itself
+     * is unchanged; only which samples it sees.
+     */
+    fun keep(samples: List<Sample>, next: Sample): List<Sample> {
+        if (samples.isNotEmpty() && kotlin.math.abs(offsetOf(next) - of(samples)) > JUMP_MS) return listOf(next)
+        return (samples + next).takeLast(SAMPLES)
     }
 }

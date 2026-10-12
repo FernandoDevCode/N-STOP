@@ -64,10 +64,10 @@ class ListenBrainzApiClient @Inject constructor(
     sealed interface Response {
         data object Accepted : Response
 
-        /** 4xx — bad token or bad payload. Retrying unchanged will not help. */
+        /** 4xx other than 408/429 — bad token or bad payload. Retrying unchanged will not help. */
         data class Refused(val code: Int, val message: String?) : Response
 
-        /** 5xx, timeout, offline. The listens are fine; the service is not. */
+        /** 5xx, 408/429, timeout, offline. The listens are fine; the service is not. */
         data class Unavailable(val message: String?) : Response
     }
 
@@ -160,6 +160,13 @@ class ListenBrainzApiClient @Inject constructor(
                 okHttpClient.newCall(request).execute().use { response ->
                     when {
                         response.isSuccessful -> Response.Accepted
+                        // 429 (rate limited) and 408 (request timeout) are 4xx but say
+                        // nothing about the listens. As Refused they split a batch into
+                        // a burst of single POSTs at a service already throttling us,
+                        // each one costing a retry, until good listens hit the
+                        // attempt cap and were dropped for good.
+                        response.code == 429 || response.code == 408 ->
+                            Response.Unavailable("HTTP ${response.code}")
                         response.code in 400..499 -> Response.Refused(
                             response.code,
                             response.body?.string()?.take(200),

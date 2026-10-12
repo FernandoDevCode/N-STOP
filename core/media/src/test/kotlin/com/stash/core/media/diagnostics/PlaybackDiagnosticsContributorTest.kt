@@ -169,6 +169,14 @@ class PlaybackDiagnosticsContributorTest {
         assertThat(s).contains("track 4711 · qbdlx")
     }
 
+    @Test fun `a cancelled bundle job stays cancelled instead of becoming an unavailable line`() = runTest {
+        coEvery { eqStore.read() } throws kotlinx.coroutines.CancellationException("bundle cancelled")
+
+        val outcome = runCatching { contributor().section() }
+
+        assertThat(outcome.exceptionOrNull()).isInstanceOf(kotlinx.coroutines.CancellationException::class.java)
+    }
+
     private fun device(type: Int): AudioDeviceInfo = AudioDeviceInfoBuilder.newBuilder().setType(type).build()
 
     /** What ExoPlayer raises for a 403: the cause carries the stream URL (and with it the user's IP). */

@@ -14,6 +14,7 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.sync.TrackIdentityEvents
+import com.stash.core.media.service.StashPlaybackService
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_ID
 import com.stash.core.media.streaming.ConnectivityMonitor
 import com.stash.core.media.streaming.StreamSourceRegistry
@@ -169,6 +170,60 @@ class PlayerRepositoryShuffleQueueTest {
         shadowOf(Looper.getMainLooper()).idle()
 
         coVerify(exactly = 1) { playbackStateStore.saveQueue(listOf(1L, 2L, 3L, 4L), true, any(), any()) }
+    }
+
+    /**
+     * ExoPlayer drops an inserted item at a random point of the shuffle walk, so a "Play next"
+     * could land behind the current song and never play. The repository sends the walk with the
+     * new item where the user asked.
+     */
+    @Test
+    fun `Play next under shuffle places the song right after the current one in the walk`() = runTest {
+        repo.addNext(track(9))
+
+        // Walk 2 → 0 → 3 → 1, track 3 (slot 2) playing; the song goes in at slot 3, so the old
+        // slot 3 becomes 4 and the new one follows slot 2 in the walk.
+        verify(exactly = 1) {
+            controller.sendCustomCommand(
+                match { it.customAction == StashPlaybackService.COMMAND_SET_SHUFFLE_ORDER },
+                match { it.getIntArray(StashPlaybackService.EXTRA_SHUFFLE_ORDER)?.toList() == listOf(2, 3, 0, 4, 1) },
+            )
+        }
+    }
+
+    @Test
+    fun `Add to queue under shuffle places the song at the end of the walk`() = runTest {
+        repo.addToQueue(track(9))
+
+        verify(exactly = 1) {
+            controller.sendCustomCommand(
+                match { it.customAction == StashPlaybackService.COMMAND_SET_SHUFFLE_ORDER },
+                match { it.getIntArray(StashPlaybackService.EXTRA_SHUFFLE_ORDER)?.toList() == listOf(2, 0, 3, 1, 4) },
+            )
+        }
+    }
+
+    /**
+     * The queue sheet's Undo after a swipe under shuffle. The swipe left the unshuffled queue
+     * alone, so the song goes back into the timeline where it sits there, and onto the row of the
+     * walk it was swiped from (else ExoPlayer would drop it at a random point of the play order).
+     */
+    @Test
+    fun `Undo under shuffle puts the song back in its unshuffled place and on its row of the walk`() = runTest {
+        // Track 5 was swiped away: still in the unshuffled queue, between tracks 2 and 3.
+        repo.currentQueueTracks = listOf(track(1), track(2), track(5), track(3), track(4))
+        repo.updateState(controller)
+
+        assertThat(repo.insertInQueue(1, track(5))).isTrue()
+
+        // Timeline slot 2 (after tracks 1 and 2), so old slots 2+ move up; second row of the walk.
+        verify(exactly = 1) { controller.addMediaItem(2, any()) }
+        verify(exactly = 1) {
+            controller.sendCustomCommand(
+                match { it.customAction == StashPlaybackService.COMMAND_SET_SHUFFLE_ORDER },
+                match { it.getIntArray(StashPlaybackService.EXTRA_SHUFFLE_ORDER)?.toList() == listOf(3, 2, 0, 4, 1) },
+            )
+        }
     }
 
     @Test

@@ -64,7 +64,12 @@ class YTMusicApiClientTest {
         // tests with a count that moved around with execution order.
         // `anyOrNull()` for params: callers omit it, so it arrives as null, and
         // mockito-kotlin's typed `any()` does NOT match null.
-        runBlocking { whenever(inner.search(any(), anyOrNull())).thenReturn(parsed) }
+        runBlocking {
+            whenever(inner.search(any(), anyOrNull())).thenReturn(parsed)
+            // searchAll reads the status too, to tell "no results" from "no answer".
+            whenever(inner.searchWithStatus(any(), anyOrNull()))
+                .thenReturn(InnerTubeClient.RequestOutcome(parsed, 200))
+        }
         return YTMusicApiClient(inner)
     }
 

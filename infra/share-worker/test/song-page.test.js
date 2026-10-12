@@ -278,7 +278,7 @@ test("over ART_RL, a page skips the lookups (hqdefault instead) and doesn't reco
     const id = await share(e, song({ sp: SP, isrc: ISRC, yt: YT }));
     assert.equal(meta((await page(e, `/t/${id}`, { ip: "2001:db8::1" })).html, "og:image"), HQ);
     assert.deepEqual(calls, []);
-    assert.deepEqual(keys, [{ key: "2001:db8:0:0" }]);
+    assert.deepEqual(keys, [{ key: "2001:db8:0:0/56" }]);
     assert.equal(record(e, id).artTriedAt, undefined, "the next view may still look up");
     const legacy = await page(e, `/t?t=S&a=A&sp=${SP}&yt=${YT}`);
     assert.equal(meta(legacy.html, "og:image"), HQ);

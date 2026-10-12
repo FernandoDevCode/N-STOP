@@ -190,6 +190,40 @@ class MatchScorerTest {
         assertEquals("original", results.first().videoId)
     }
 
+    /** [title]'s score against [target], every other signal equal. */
+    private fun scoreOf(target: String, title: String): Float = scorer.scoreResults(
+        targetTitle = target,
+        targetArtist = "Michael Jackson",
+        targetDurationMs = 258_000,
+        results = listOf(candidate(id = "only", title = title)),
+    ).single().matchScore
+
+    @Test
+    fun `edit and live penalties match whole words only`() {
+        // "edit" inside "Edition" / "Credits" used to take the 0.2 tempo penalty;
+        // the parenthetical is canonicalised away, so the right score is the bare title's.
+        val bare = scoreOf("Bad", "Bad")
+        assertEquals(bare, scoreOf("Bad", "Bad (Deluxe Edition)"), 0.0001f)
+        assertEquals(bare, scoreOf("Bad", "Bad (Credits)"), 0.0001f)
+        // The real variants still are penalised.
+        assertTrue(scoreOf("Bad", "Bad (Radio Edit)") < bare)
+        assertTrue(scoreOf("Bad", "Bad (Live at Wembley)") < bare)
+    }
+
+    @Test
+    fun `a target containing live inside a word does not exempt live recordings`() {
+        // "Deliverance" and "Alive" contain "live", which exempted every live
+        // recording from the penalty for these targets.
+        assertTrue(scoreOf("Deliverance", "Deliverance (Live)") < scoreOf("Deliverance", "Deliverance"))
+        assertTrue(scoreOf("Alive", "Alive (Live)") < scoreOf("Alive", "Alive"))
+        // A target that asks for the live cut keeps its exemption.
+        assertEquals(
+            scoreOf("Alive (Live)", "Alive"),
+            scoreOf("Alive (Live)", "Alive (Live)"),
+            0.0001f,
+        )
+    }
+
     // ── Phase 3c: explicit-vs-title demotion ─────────────────────────────
 
     @Test

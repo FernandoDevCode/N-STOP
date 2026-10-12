@@ -64,6 +64,16 @@ class AlbumArtCacheTest {
         assertEquals(1024L, result!!.length())
     }
 
+    /** Written beside the cache file and renamed in, so no reader sees it half-written. */
+    @Test fun `a cached cover is written whole, leaving nothing else behind`() = runTest {
+        val body = ByteArray(4096) { it.toByte() }
+        stubHttp200(body)
+        val result = subject.resolveArt(stubTrack(albumArtUrl = "https://i.scdn.co/image/abc"))
+        assertNotNull(result)
+        assertTrue(body.contentEquals(result!!.readBytes()))
+        assertEquals(listOf(result.name), cacheDir.list()!!.toList())
+    }
+
     @Test fun `second call hits cache`() = runTest {
         val body = ByteArray(2048)
         stubHttp200(body)

@@ -6,6 +6,7 @@ package com.stash.data.ytmusic.potoken
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.os.Looper
 import android.util.Log
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
@@ -292,9 +293,19 @@ class BotGuardPoTokenMinter @Inject constructor(
 
         private val exceptionHandler = CoroutineExceptionHandler { _, t -> signalError(t) }
 
+        /**
+         * Callable from any thread. [onFatalError] arrives on the WebView's
+         * "JavaBridge" thread, where [close]'s WebView calls throw ("A WebView
+         * method was called on thread 'JavaBridge'"). Closing inline there
+         * threw before the waiting [create] was resumed, so it hung until the
+         * 45 s cold-start timeout, and the cancellation's posted [close] then
+         * saw `closed` already set and returned: the WebView and its renderer
+         * leaked, and the next play repeated it all. So the waiter is resumed
+         * first and the teardown always runs on the main thread.
+         */
         private fun signalError(error: Throwable) {
-            close()
             resumeReadyWithException(error)
+            if (Looper.myLooper() == Looper.getMainLooper()) close() else webView.post { close() }
         }
 
         private fun resumeReady(engine: BotGuardEngine) {

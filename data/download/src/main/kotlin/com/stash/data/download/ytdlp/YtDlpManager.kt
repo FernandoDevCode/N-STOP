@@ -2,6 +2,7 @@ package com.stash.data.download.ytdlp
 
 import android.content.Context
 import android.util.Log
+import com.stash.data.download.YtCookieFiles
 import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
@@ -93,6 +94,10 @@ class YtDlpManager @Inject constructor(
         initMutex.withLock {
             if (initialized) return
             withContext(Dispatchers.IO) {
+                // Cookie files left by runs that died mid-way (every caller
+                // awaits this init before writing its own, so none is in use).
+                val swept = YtCookieFiles.sweep(context.noBackupFilesDir)
+                if (swept > 0) Log.i(TAG, "removed $swept leftover yt-dlp cookie file(s)")
                 YoutubeDL.getInstance().init(context)
                 FFmpeg.getInstance().init(context)
                 Log.i(TAG, "yt-dlp initialized, version: ${getVersion()}")

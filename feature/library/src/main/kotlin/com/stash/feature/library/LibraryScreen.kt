@@ -34,12 +34,14 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material3.IconButton
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
@@ -59,12 +61,16 @@ import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -73,6 +79,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -98,6 +105,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -112,10 +121,14 @@ import com.stash.core.model.Playlist
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.Track
 import com.stash.core.ui.components.GlassCard
+import com.stash.core.ui.components.NowPlayingJumpChip
 import com.stash.core.ui.components.SourceIndicator
 import com.stash.core.ui.components.TrackListItem
 import com.stash.core.ui.components.VerticalScrollbar
+import com.stash.core.ui.selection.RemoveDownloadsConfirmDialog
+import com.stash.core.ui.components.fastScrollSectionLetter
 import com.stash.core.ui.selection.SelectionAction
+import com.stash.core.ui.selection.removeDownloadsNeedsConfirm
 import com.stash.core.ui.selection.SelectionScaffoldOverlay
 import com.stash.core.ui.selection.SelectionState
 import com.stash.core.ui.theme.StashTheme
@@ -141,6 +154,11 @@ fun LibraryScreen(
     onNavigateToAlbum: (albumId: String, name: String, artUrl: String?, artistName: String) -> Unit = { _, _, _, _ -> },
     onNavigateToRemoteAlbum: (albumId: String, name: String, artUrl: String?, artistName: String) -> Unit = { _, _, _, _ -> },
     onSelectionModeChanged: (Boolean) -> Unit = {},
+    // An empty library's ways in (see LibraryEmptyState): the Sync tab, the Search tab, and
+    // Settings › Accounts to connect a service.
+    onNavigateToSync: () -> Unit = {},
+    onNavigateToSearch: () -> Unit = {},
+    onNavigateToAccounts: () -> Unit = {},
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -187,6 +205,29 @@ fun LibraryScreen(
         viewModel.userMessages.collect { snackbarHostState.showSnackbar(it) }
     }
 
+    // A row's "Remove download" is staged in the ViewModel and deleted only when this Undo
+    // snackbar goes away without Undo (LibraryViewModel.removeDownloadWithUndo). The snackbar's
+    // own lifetime is the clock, so Undo is never offered for a file already gone: TalkBack
+    // lengthens a snackbar that has an action, and the delete waits for it.
+    val pendingRemoval by viewModel.pendingDownloadRemoval.collectAsStateWithLifecycle()
+    LaunchedEffect(pendingRemoval?.id) {
+        val track = pendingRemoval ?: return@LaunchedEffect
+        val result = snackbarHostState.showSnackbar(
+            message = "\"${track.title}\" removed from downloads",
+            actionLabel = "Undo",
+            duration = androidx.compose.material3.SnackbarDuration.Short,
+        )
+        if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+            viewModel.undoRemoveDownload(track.id)
+        } else {
+            viewModel.commitPendingDownloadRemoval(track.id)
+        }
+    }
+    // Leaving Library (another tab, a detail screen, Back) takes the Undo with it: delete now.
+    androidx.compose.runtime.DisposableEffect(viewModel) {
+        onDispose { viewModel.commitPendingDownloadRemoval() }
+    }
+
     LaunchedEffect(Unit) {
         viewModel.albumNavEvents.collect { a ->
             onNavigateToRemoteAlbum(a.albumId, a.name, a.artUrl, a.artistName)
@@ -195,6 +236,10 @@ fun LibraryScreen(
     
 
     val followedPlaylistIds by viewModel.followedPlaylistIds.collectAsStateWithLifecycle()
+    // Derived lists are remembered: this screen recomposes on every keystroke of the search.
+    val playlistInfos = remember(userPlaylists) {
+        userPlaylists.map { com.stash.core.ui.components.PlaylistInfo(it.id, it.name, it.trackCount) }
+    }
     Box(modifier = modifier.fillMaxSize()) {
         LibraryContent(
             state = state,
@@ -237,17 +282,21 @@ fun LibraryScreen(
             selection = selection,
             // Single-track sheet actions reuse the batch VM methods with
             // one-element lists — no separate single-track VM surface.
-            userPlaylists = userPlaylists.map { com.stash.core.ui.components.PlaylistInfo(it.id, it.name, it.trackCount) },
+            userPlaylists = playlistInfos,
             onSaveToPlaylist = { trackId, playlistId -> viewModel.saveSelectedToPlaylist(listOf(trackId), playlistId) },
             onCreatePlaylistWithTrack = { name, trackId -> viewModel.createPlaylistAndAddTracks(name, listOf(trackId)) },
             onDownloadTrack = { viewModel.downloadSelected(listOf(it)) },
-            onRemoveDownloadTrack = { viewModel.removeDownloadsForSelected(listOf(it)) },
+            // Staged with Undo (see the snackbar above); the batch path confirms instead.
+            onRemoveDownloadTrack = viewModel::removeDownloadWithUndo,
             likedTracks = likedTracks,
             likedFilter = likedFilter,
             likedSources = likedSources,
             onSelectLikedSource = viewModel::setLikedFilter,
             onPlayLikedTrack = viewModel::playLiked,
             deepLinkFocusTab = deepLinkFocusTab,
+            onOpenSync = onNavigateToSync,
+            onOpenSearch = onNavigateToSearch,
+            onOpenAccounts = onNavigateToAccounts,
         )
 
         // ── Selection chrome — meaningful on the Tracks and Liked tabs. Selection
@@ -261,6 +310,21 @@ fun LibraryScreen(
 
         // In a Listen Together session "Add to queue" hides; Play next says what it does there (as in TrackOptionsSheet).
         val listenRole = com.stash.core.ui.components.LocalListenTogetherRole.current
+        // Batch "Remove download" deletes files that can take hours to fetch again (a whole
+        // Select all, one mis-tap from the confirmed Delete): confirm it first (shared dialog).
+        var confirmRemoveDownloads by remember { mutableStateOf<List<Track>?>(null) }
+        confirmRemoveDownloads?.let { tracks ->
+            RemoveDownloadsConfirmDialog(
+                count = tracks.size,
+                totalBytes = tracks.sumOf { it.fileSizeBytes },
+                onConfirm = {
+                    viewModel.removeDownloadsForSelected(tracks.map { it.id })
+                    selection.clear()
+                    confirmRemoveDownloads = null
+                },
+                onDismiss = { confirmRemoveDownloads = null },
+            )
+        }
         val selectionActions = listOfNotNull(
             SelectionAction("add_queue", "Add to queue", Icons.Default.PlaylistAdd) {
                 viewModel.addSelectedToQueue(selectedTracks); selection.clear()
@@ -270,7 +334,11 @@ fun LibraryScreen(
             },
             if (allDownloaded) {
                 SelectionAction("remove_download", "Remove download", Icons.Default.DownloadDone) {
-                    viewModel.removeDownloadsForSelected(selectedIds); selection.clear()
+                    if (removeDownloadsNeedsConfirm(selectedTracks.size)) {
+                        confirmRemoveDownloads = selectedTracks
+                    } else {
+                        viewModel.removeDownloadsForSelected(selectedIds); selection.clear()
+                    }
                 }
             } else {
                 SelectionAction("download", "Download", Icons.Default.Download) {
@@ -292,7 +360,7 @@ fun LibraryScreen(
         if (state.activeTab == LibraryTab.TRACKS || state.activeTab == LibraryTab.LIKED) {
             SelectionScaffoldOverlay(
                 selection = selection,
-                allIds = activeSelectableTracks.map { it.id },
+                allIds = remember(activeSelectableTracks) { activeSelectableTracks.map { it.id } },
                 actions = selectionActions,
             )
         }
@@ -495,13 +563,16 @@ private fun LibraryContent(
     onSaveToPlaylist: (trackId: Long, playlistId: Long) -> Unit,
     onCreatePlaylistWithTrack: (name: String, trackId: Long) -> Unit,
     onDownloadTrack: (Long) -> Unit,
-    onRemoveDownloadTrack: (Long) -> Unit,
+    onRemoveDownloadTrack: (Track) -> Unit,
     likedTracks: List<Track>,
     likedFilter: LikedFilter,
     likedSources: Set<LikedFilter>,
     onSelectLikedSource: (LikedFilter) -> Unit,
     onPlayLikedTrack: (Track) -> Unit,
     deepLinkFocusTab: LibraryTab? = null,
+    onOpenSync: () -> Unit = {},
+    onOpenSearch: () -> Unit = {},
+    onOpenAccounts: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -520,7 +591,9 @@ private fun LibraryContent(
         ) { uris: List<Uri>? ->
             if (!uris.isNullOrEmpty()) onStartImport(uris)
         }
-        var searchOpen by remember { mutableStateOf(false) }
+        // Opens already showing a query the ViewModel kept (back on this tab, or after a
+        // rotation): a hidden field over a still-filtered list was a dead end.
+        var searchOpen by remember { mutableStateOf(searchQuery.isNotEmpty()) }
         var sortFilterOpen by remember { mutableStateOf(false) }
 
         // Recent-downloads rail — the scrolling leading content of the Songs
@@ -571,7 +644,12 @@ private fun LibraryContent(
             IconButton(onClick = { importPicker.launch(arrayOf("audio/*")) }) {
                 Icon(Icons.Filled.Add, contentDescription = "Import tracks")
             }
-            IconButton(onClick = { searchOpen = !searchOpen }) {
+            // Closing the search clears it: it used to only hide the field, leaving every tab
+            // silently filtered by a query the user could no longer see.
+            IconButton(onClick = {
+                if (searchOpen) onSearchQueryChanged("")
+                searchOpen = !searchOpen
+            }) {
                 Icon(Icons.Filled.Search, contentDescription = "Search library")
             }
             IconButton(onClick = { sortFilterOpen = true }) {
@@ -592,6 +670,37 @@ private fun LibraryContent(
                 query = searchQuery,
                 onQueryChange = onSearchQueryChanged,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+            )
+        }
+
+        // An empty tab's "Show everything" (see noMatchMessage). The source filter only narrows
+        // Songs, so only Songs clears it.
+        val clearSearch: () -> Unit = {
+            onSearchQueryChanged("")
+            searchOpen = false
+        }
+        val clearSearchAndFilter: () -> Unit = {
+            clearSearch()
+            onSourceFilterChanged(SourceFilter.ALL)
+        }
+
+        // -- Active source filter, on the tab it narrows. It's persisted and re-applied every
+        // launch, and since the chip rows moved into the sheet nothing on screen showed it: a
+        // FLAC filter from days ago left Songs at 40 of 5,000 with no hint why. Tap to clear.
+        val activeFilterLabel = sourceFilterLabel(state.sourceFilter)
+        if (activeFilterLabel != null && state.activeTab == LibraryTab.TRACKS) {
+            androidx.compose.material3.InputChip(
+                selected = true,
+                onClick = { onSourceFilterChanged(SourceFilter.ALL) },
+                label = { Text("Showing $activeFilterLabel only") },
+                trailingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Clear filter",
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
+                modifier = Modifier.padding(horizontal = 20.dp),
             )
         }
 
@@ -618,6 +727,8 @@ private fun LibraryContent(
                 sortOrder = state.sortOrder,
                 sourceFilter = state.sourceFilter,
                 showDuration = state.activeTab == LibraryTab.TRACKS,
+                // The source filter narrows Songs only; offered elsewhere it looked broken.
+                showSourceFilter = state.activeTab == LibraryTab.TRACKS,
                 onSortSelected = onSortOrderChanged,
                 onFilterSelected = onSourceFilterChanged,
                 onDismiss = { sortFilterOpen = false },
@@ -661,6 +772,8 @@ private fun LibraryContent(
                 val idx = chipTabs.indexOfFirst { it.second == deepLinkFocusTab }
                 if (idx >= 0) pagerState.scrollToPage(idx)
             }
+            // A–Z order: every page's scrollbar shows a letter bubble while it's dragged.
+            val alphabetical = state.sortOrder == SortOrder.ALPHABETICAL
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize(),
@@ -682,6 +795,9 @@ private fun LibraryContent(
                         onTogglePlaylistPinned = onTogglePlaylistPinned,
                         onTogglePlaylistOnHome = onTogglePlaylistOnHome,
                         header = {},
+                        noMatch = noMatchMessage("playlists", state.searchQuery),
+                        onClearFilters = clearSearch,
+                        alphabetical = alphabetical,
                     )
                     LibraryTab.TRACKS -> TracksTab(
                         tracks = state.tracks,
@@ -699,6 +815,13 @@ private fun LibraryContent(
                         onDownloadTrack = onDownloadTrack,
                         onRemoveDownloadTrack = onRemoveDownloadTrack,
                         header = libraryHeader,
+                        noMatch = noMatchMessage("songs", state.searchQuery, state.sourceFilter),
+                        onClearFilters = clearSearchAndFilter,
+                        alphabetical = alphabetical,
+                        onImport = { importPicker.launch(arrayOf("audio/*")) },
+                        onOpenSync = onOpenSync,
+                        onOpenSearch = onOpenSearch,
+                        onOpenAccounts = onOpenAccounts,
                     )
                     LibraryTab.LIKED -> LikedTab(
                         tracks = likedTracks,
@@ -716,6 +839,9 @@ private fun LibraryContent(
                         onCreatePlaylistWithTrack = onCreatePlaylistWithTrack,
                         onDownloadTrack = onDownloadTrack,
                         onRemoveDownloadTrack = onRemoveDownloadTrack,
+                        noMatch = noMatchMessage("liked songs", state.searchQuery),
+                        onClearFilters = clearSearch,
+                        alphabetical = alphabetical,
                     )
                     LibraryTab.ARTISTS -> ArtistsGrid(
                         artists = state.artists,
@@ -725,6 +851,9 @@ private fun LibraryContent(
                         onAddArtistToQueue = onAddArtistToQueue,
                         onDeleteArtist = onDeleteArtist,
                         header = {},
+                        noMatch = noMatchMessage("artists", state.searchQuery),
+                        onClearFilters = clearSearch,
+                        alphabetical = alphabetical,
                     )
                     LibraryTab.ALBUMS -> AlbumsGrid(
                         albums = state.albums,
@@ -734,6 +863,9 @@ private fun LibraryContent(
                         onAddAlbumToQueue = onAddAlbumToQueue,
                         onOpenAlbum = onOpenAlbum,
                         header = {},
+                        noMatch = noMatchMessage("albums", state.searchQuery),
+                        onClearFilters = clearSearch,
+                        alphabetical = alphabetical,
                     )
                 }
             }
@@ -792,7 +924,12 @@ private fun LikedTab(
     onSaveToPlaylist: (trackId: Long, playlistId: Long) -> Unit,
     onCreatePlaylistWithTrack: (name: String, trackId: Long) -> Unit,
     onDownloadTrack: (Long) -> Unit,
-    onRemoveDownloadTrack: (Long) -> Unit,
+    onRemoveDownloadTrack: (Track) -> Unit,
+    /** Empty-state line when the search emptied the list (see [noMatchMessage]). */
+    noMatch: String? = null,
+    onClearFilters: () -> Unit = {},
+    /** Sorted A–Z: the scrollbar shows a letter bubble while dragged. */
+    alphabetical: Boolean = false,
 ) {
     // Sift chips: "All" plus only the origins that actually have likes.
     val sift = buildList {
@@ -838,7 +975,13 @@ private fun LikedTab(
                     }
                 }
                 if (tracks.isEmpty()) {
-                    item { EmptyTabMessage("No liked songs yet — tap the heart on a track to like it") }
+                    item {
+                        EmptyTabMessage(
+                            noMatch = noMatch,
+                            fallback = "No liked songs yet — tap the heart on a track to like it",
+                            onClear = onClearFilters,
+                        )
+                    }
                 }
                 items(tracks, key = { it.id }) { track ->
                     TrackListItem(
@@ -856,7 +999,24 @@ private fun LikedTab(
                 }
             }
         }
-        VerticalScrollbar(state = listState)
+        VerticalScrollbar(
+            state = listState,
+            // The sift row (when shown) is the one item above the likes.
+            sectionLabel = if (alphabetical) {
+                alphabeticalSectionLabel(tracks, leadingItems = if (sift.size > 2) 1 else 0) { it.title }
+            } else {
+                null
+            },
+        )
+        // "Now playing ↑/↓" while the playing like is scrolled out of sight.
+        NowPlayingJumpChip(
+            listState = listState,
+            trackIndex = remember(tracks, currentlyPlayingTrackId) {
+                tracks.indexOfFirst { it.id == currentlyPlayingTrackId }
+            },
+            trackCount = tracks.size,
+            enabled = !selection.isActive,
+        )
     }
 
     // ── Context-menu bottom sheet (shared component) ────────────────────
@@ -875,7 +1035,7 @@ private fun LikedTab(
                 onDismiss = { selectedTrack = null },
                 onShare = { trackToShare = it; selectedTrack = null },
                 onDownload = { onDownloadTrack(it.id); selectedTrack = null },
-                onRemoveDownload = { onRemoveDownloadTrack(it.id); selectedTrack = null },
+                onRemoveDownload = { onRemoveDownloadTrack(it); selectedTrack = null },
                 onDelete = { trackToDelete = it; selectedTrack = null },
             )
         }
@@ -988,6 +1148,17 @@ private fun GlassSearchBar(
                     contentDescription = "Search",
                     tint = extendedColors.textTertiary,
                 )
+            },
+            trailingIcon = {
+                if (query.isNotEmpty()) {
+                    IconButton(onClick = { onQueryChange("") }) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Clear search",
+                            tint = extendedColors.textTertiary,
+                        )
+                    }
+                }
             },
             singleLine = true,
             colors = TextFieldDefaults.colors(
@@ -1123,6 +1294,11 @@ private fun PlaylistsGrid(
     onTogglePlaylistPinned: (Playlist) -> Unit,
     onTogglePlaylistOnHome: (Playlist) -> Unit,
     header: @Composable () -> Unit = {},
+    /** Empty-state line when the search emptied the grid (see [noMatchMessage]). */
+    noMatch: String? = null,
+    onClearFilters: () -> Unit = {},
+    /** Sorted A–Z: the scrollbar shows a letter bubble while dragged. */
+    alphabetical: Boolean = false,
 ) {
     // Playlist selected for the context-menu bottom sheet.
     var selectedPlaylist by remember { mutableStateOf<Playlist?>(null) }
@@ -1131,6 +1307,8 @@ private fun PlaylistsGrid(
     var sharePlaylistId by rememberSaveable { mutableStateOf<Long?>(null) }
     // Playlist pending delete confirmation.
     var playlistToDelete by remember { mutableStateOf<Playlist?>(null) }
+    // Playlist pending remove confirmation (the list goes; its songs stay).
+    var playlistToRemove by remember { mutableStateOf<Playlist?>(null) }
     // Playlist awaiting image picker result.
     var playlistForImagePick by remember { mutableStateOf<Playlist?>(null) }
 
@@ -1159,8 +1337,10 @@ private fun PlaylistsGrid(
             if (playlists.isEmpty()) {
                 item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
                     EmptyTabMessage(
-                        if (anyServiceConnected) "Sync your playlists to see them here"
+                        noMatch = noMatch,
+                        fallback = if (anyServiceConnected) "Sync your playlists to see them here"
                         else "Connect a service in Settings to see your playlists",
+                        onClear = onClearFilters,
                     )
                 }
             }
@@ -1223,8 +1403,10 @@ private fun PlaylistsGrid(
                                 )
                             }
                         }
-                    }
-                    if (playlist.pinned) {
+                        // Inside the artwork Box, so TopEnd is the card's corner. It used to sit
+                        // after the Box, straight in the grid item, where align() resolved to an
+                        // outer BoxScope, did nothing, and the pin landed at the cell's top-start.
+                        if (playlist.pinned) {
                             Icon(
                                 imageVector = Icons.Default.PushPin,
                                 contentDescription = "Pinned",
@@ -1235,6 +1417,7 @@ private fun PlaylistsGrid(
                                     .size(16.dp),
                             )
                         }
+                    }
                 } else {
                     // No artwork: keep the original GlassCard look
                     GlassCard(
@@ -1246,13 +1429,27 @@ private fun PlaylistsGrid(
                             ),
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(
-                                text = playlist.name,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onBackground,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                            // A pinned playlist without art showed no pin at all.
+                            Row(verticalAlignment = Alignment.Top) {
+                                Text(
+                                    text = playlist.name,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                if (playlist.pinned) {
+                                    Icon(
+                                        imageVector = Icons.Default.PushPin,
+                                        contentDescription = "Pinned",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier
+                                            .padding(start = 4.dp)
+                                            .size(16.dp),
+                                    )
+                                }
+                            }
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -1269,7 +1466,16 @@ private fun PlaylistsGrid(
                 }
             }
         }
-        VerticalScrollbar(state = gridState)
+        VerticalScrollbar(
+            state = gridState,
+            // Pinned playlists lead (A–Z among themselves), so the letters run A–Z twice:
+            // each bubble is still the letter of the playlist under it.
+            sectionLabel = if (alphabetical) {
+                alphabeticalSectionLabel(playlists, leadingItems = 1) { it.name }
+            } else {
+                null
+            },
+        )
     }
 
     // ── Context-menu bottom sheet ───────────────────────────────────────
@@ -1394,8 +1600,10 @@ private fun PlaylistsGrid(
                 BottomSheetActionRow(
                     icon = Icons.Default.RemoveCircleOutline,
                     label = "Remove Playlist",
+                    // Confirmed like its neighbours (Delete's dialog, Unfollow's second tap): a
+                    // removed custom playlist can't be brought back, and its shared link dies too.
                     onClick = {
-                        onRemovePlaylist(playlist)
+                        playlistToRemove = playlist
                         selectedPlaylist = null
                     },
                 )
@@ -1418,6 +1626,36 @@ private fun PlaylistsGrid(
         com.stash.feature.library.share.ShareMixSheet(it.id, it.name, it.trackCount, onDismiss = { sharePlaylistId = null })
     }
 
+    // ── Remove confirmation dialog ──────────────────────────────────────
+    playlistToRemove?.let { playlist ->
+        AlertDialog(
+            onDismissRequest = { playlistToRemove = null },
+            title = { Text("Remove \"${playlist.name}\"?") },
+            text = {
+                Text(
+                    "The playlist is removed from your library; its songs stay. " +
+                        "If you shared it, its link stops working for everyone who follows it. " +
+                        "This cannot be undone.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onRemovePlaylist(playlist)
+                        playlistToRemove = null
+                    },
+                ) {
+                    Text("Remove", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { playlistToRemove = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+
     // ── Delete confirmation dialog ──────────────────────────────────────
     playlistToDelete?.let { playlist ->
         var alsoBlacklist by remember(playlist.id) { mutableStateOf(false) }
@@ -1432,8 +1670,9 @@ private fun PlaylistsGrid(
             text = {
                 Column {
                     Text(
-                        "\"${playlist.name}\" and all its tracks will be removed from " +
-                            "your library and deleted from disk. This cannot be undone.",
+                        "\"${playlist.name}\" is removed, and its songs are deleted from your device, " +
+                            "except songs that are also in Liked Songs or another playlist. " +
+                            "This cannot be undone.",
                     )
                     if (mirrored && !offerEverywhere) {
                         Spacer(modifier = Modifier.height(12.dp))
@@ -1518,16 +1757,35 @@ private fun TracksTab(
     onSaveToPlaylist: (trackId: Long, playlistId: Long) -> Unit,
     onCreatePlaylistWithTrack: (name: String, trackId: Long) -> Unit,
     onDownloadTrack: (Long) -> Unit,
-    onRemoveDownloadTrack: (Long) -> Unit,
+    onRemoveDownloadTrack: (Track) -> Unit,
     header: @Composable () -> Unit = {},
+    /** Empty-state line when the search or source filter emptied the list (see [noMatchMessage]). */
+    noMatch: String? = null,
+    onClearFilters: () -> Unit = {},
+    /** Sorted A–Z: the scrollbar shows a letter bubble while dragged. */
+    alphabetical: Boolean = false,
+    // The empty library's ways in (see LibraryEmptyState).
+    onImport: () -> Unit = {},
+    onOpenSync: () -> Unit = {},
+    onOpenSearch: () -> Unit = {},
+    onOpenAccounts: () -> Unit = {},
 ) {
     if (tracks.isEmpty()) {
         Column {
             header()
-            EmptyTabMessage(
-                if (anyServiceConnected) "Sync your library to see tracks here"
-                else "Connect a service in Settings to see your tracks",
-            )
+            if (noMatch != null) {
+                // The listener's own search or filter emptied it: one tap undoes that.
+                EmptyTabMessage(noMatch, onClearFilters)
+            } else {
+                // Nothing narrows the list, so nothing is downloaded at all: say how music gets here.
+                LibraryEmptyState(
+                    anyServiceConnected = anyServiceConnected,
+                    onOpenSync = onOpenSync,
+                    onOpenAccounts = onOpenAccounts,
+                    onOpenSearch = onOpenSearch,
+                    onImport = onImport,
+                )
+            }
         }
         return
     }
@@ -1576,7 +1834,25 @@ private fun TracksTab(
                 }
             }
         }
-        VerticalScrollbar(state = listState)
+        VerticalScrollbar(
+            state = listState,
+            // Item 0 is the recently-downloaded header.
+            sectionLabel = if (alphabetical) {
+                alphabeticalSectionLabel(tracks, leadingItems = 1) { it.title }
+            } else {
+                null
+            },
+        )
+        // "Now playing ↑/↓" while the playing song is scrolled out of sight: one tap back
+        // to it from anywhere in a long library.
+        NowPlayingJumpChip(
+            listState = listState,
+            trackIndex = remember(tracks, currentlyPlayingTrackId) {
+                tracks.indexOfFirst { it.id == currentlyPlayingTrackId }
+            },
+            trackCount = tracks.size,
+            enabled = !selection.isActive,
+        )
     }
 
     // ── Context-menu bottom sheet (shared component) ────────────────────
@@ -1596,7 +1872,7 @@ private fun TracksTab(
                 onShare = { trackToShare = it; selectedTrack = null },
                 onViewAlbum = { onViewAlbum(it); selectedTrack = null },
                 onDownload = { onDownloadTrack(it.id); selectedTrack = null },
-                onRemoveDownload = { onRemoveDownloadTrack(it.id); selectedTrack = null },
+                onRemoveDownload = { onRemoveDownloadTrack(it); selectedTrack = null },
                 onDelete = { trackToDelete = it; selectedTrack = null },
             )
 
@@ -1728,13 +2004,20 @@ private fun ArtistsGrid(
     onAddArtistToQueue: (String) -> Unit,
     onDeleteArtist: (String) -> Unit,
     header: @Composable () -> Unit = {},
+    /** Empty-state line when the search emptied the grid (see [noMatchMessage]). */
+    noMatch: String? = null,
+    onClearFilters: () -> Unit = {},
+    /** Sorted A–Z: the scrollbar shows a letter bubble while dragged. */
+    alphabetical: Boolean = false,
 ) {
     if (artists.isEmpty() && singleTrackArtists.isEmpty()) {
         Column {
             header()
             EmptyTabMessage(
-                if (anyServiceConnected) "Sync your library to see artists here"
+                noMatch = noMatch,
+                fallback = if (anyServiceConnected) "Sync your library to see artists here"
                 else "Connect a service in Settings to see your artists",
+                onClear = onClearFilters,
             )
         }
         return
@@ -1827,7 +2110,15 @@ private fun ArtistsGrid(
                 }
             }
         }
-        VerticalScrollbar(state = gridState)
+        VerticalScrollbar(
+            state = gridState,
+            // Item 0 is the header; the "artists with 1 track" toggle after the grid shows no letter.
+            sectionLabel = if (alphabetical) {
+                alphabeticalSectionLabel(displayList, leadingItems = 1) { it.name }
+            } else {
+                null
+            },
+        )
     }
 
     // ── Context-menu bottom sheet ───────────────────────────────────────
@@ -1928,13 +2219,20 @@ private fun AlbumsGrid(
     onAddAlbumToQueue: (String, String) -> Unit,
     onOpenAlbum: (AlbumInfo) -> Unit,
     header: @Composable () -> Unit = {},
+    /** Empty-state line when the search emptied the grid (see [noMatchMessage]). */
+    noMatch: String? = null,
+    onClearFilters: () -> Unit = {},
+    /** Sorted A–Z: the scrollbar shows a letter bubble while dragged. */
+    alphabetical: Boolean = false,
 ) {
     if (albums.isEmpty() && singleTrackAlbums.isEmpty()) {
         Column {
             header()
             EmptyTabMessage(
-                if (anyServiceConnected) "Sync your library to see albums here"
+                noMatch = noMatch,
+                fallback = if (anyServiceConnected) "Sync your library to see albums here"
                 else "Connect a service in Settings to see your albums",
+                onClear = onClearFilters,
             )
         }
         return
@@ -2061,7 +2359,15 @@ private fun AlbumsGrid(
                 }
             }
         }
-        VerticalScrollbar(state = gridState)
+        VerticalScrollbar(
+            state = gridState,
+            // Item 0 is the header; the "albums with 1 track" toggle after the grid shows no letter.
+            sectionLabel = if (alphabetical) {
+                alphabeticalSectionLabel(displayList, leadingItems = 1) { it.name }
+            } else {
+                null
+            },
+        )
     }
 
     // ── Context-menu bottom sheet ───────────────────────────────────────
@@ -2251,18 +2557,127 @@ private fun ArtistInitialFallback(name: String, size: Dp) {
     }
 }
 
+// ── A–Z scrollbar bubble ─────────────────────────────────────────────────────
+
+/**
+ * The scrollbar bubble's letter for each lazy item of a Library list that shows [items] after
+ * [leadingItems] header items (the recently-downloaded rail, the Liked sift row). The letter is
+ * read from the item's [name], the very string the list was sorted by under [alphabeticalOrder],
+ * so the bubble's letters always run in the list's own order. A header borrows the first item's
+ * letter; an item past the end (the "with 1 track" toggle under a grid) has none.
+ */
+private fun <T> alphabeticalSectionLabel(
+    items: List<T>,
+    leadingItems: Int,
+    name: (T) -> String,
+): (Int) -> String? = { index ->
+    items.getOrNull((index - leadingItems).coerceAtLeast(0))
+        ?.let { fastScrollSectionLetter(name(it)) }
+}
+
 // ── Empty state placeholder ──────────────────────────────────────────────────
 
 @Composable
-private fun EmptyTabMessage(message: String) {
+private fun EmptyTabMessage(message: String, onClear: (() -> Unit)? = null) {
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = message,
-            style = MaterialTheme.typography.bodyLarge,
-            color = StashTheme.extendedColors.textTertiary,
-        )
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyLarge,
+                color = StashTheme.extendedColors.textTertiary,
+            )
+            // Emptied by the user's own search/filter (see noMatchMessage): one tap undoes it.
+            if (onClear != null) {
+                TextButton(onClick = onClear) { Text("Show everything") }
+            }
+        }
     }
+}
+
+/**
+ * The Songs tab with nothing downloaded at all (a first run, or every download removed). The
+ * library is downloads-only, so a bare "Sync your library" line left a new listener guessing; this
+ * names the three real ways music arrives and makes each one a button:
+ *
+ * - Sync: with a service connected, the Sync tab (Sync now, and what each playlist keeps); with
+ *   none, Settings › Accounts to connect Spotify or YouTube Music first. Leading with Sync when
+ *   nothing is connected would land on a Sync now that has nothing to fetch.
+ * - Search: find any song, stream it, download it.
+ * - Import: audio files already on this phone (the same picker as the header's + button).
+ *
+ * Scrolls when it doesn't fit (a small phone at a large font size) and pads its end clear of the
+ * glass mini player and tab bar.
+ */
+@Composable
+private fun LibraryEmptyState(
+    anyServiceConnected: Boolean,
+    onOpenSync: () -> Unit,
+    onOpenAccounts: () -> Unit,
+    onOpenSearch: () -> Unit,
+    onImport: () -> Unit,
+) {
+    val prompt = emptyLibraryPrompt(anyServiceConnected)
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(start = 32.dp, end = 32.dp, top = 48.dp, bottom = bottomChromePadding(24.dp)),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(
+            imageVector = Icons.Default.LibraryMusic,
+            contentDescription = null,
+            modifier = Modifier.size(72.dp),
+            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "Your library is empty",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onBackground,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.semantics { heading() },
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = prompt.body,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        Button(onClick = if (prompt.connectFirst) onOpenAccounts else onOpenSync) {
+            Icon(
+                imageVector = if (prompt.connectFirst) Icons.Default.Link else Icons.Default.Sync,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(prompt.primaryLabel)
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedButton(onClick = onOpenSearch) {
+            Icon(
+                imageVector = Icons.Default.Search,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Find songs in Search")
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        TextButton(onClick = onImport) {
+            Text("Import from this phone")
+        }
+    }
+}
+
+/** [EmptyTabMessage] for a tab: [noMatch] (with a Clear action) when set, else [fallback]. */
+@Composable
+private fun EmptyTabMessage(noMatch: String?, fallback: String, onClear: () -> Unit) {
+    if (noMatch != null) EmptyTabMessage(noMatch, onClear) else EmptyTabMessage(fallback)
 }

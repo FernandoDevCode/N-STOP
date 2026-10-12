@@ -13,7 +13,6 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -444,16 +443,21 @@ class StreamSourceRegistryTest {
         assertThat(log.recentResolves()).isEmpty()
     }
 
-    /** The deadline is the one cancellation that IS an outcome: the player only sees a generic IO error for it. */
+    /**
+     * The deadline is an outcome, not a cancellation: callers get null (a miss) and say
+     * "Couldn't find this track". A TimeoutCancellationException reached them as "a newer
+     * tap preempted us" and the 45 s wait ended in silence.
+     */
     @Test
-    fun `a resolve that hits its deadline is recorded as timed out`() = runTest {
+    fun `a resolve that hits its deadline is a recorded miss, not a cancellation`() = runTest {
         coEvery { streamingPreference.isForceYouTubeFallback() } returns false
         coEvery { qbdlx.resolve(any()) } coAnswers { delay(LazyResolvingDataSource.RESOLVE_DEADLINE_MS * 2); null }
         coEvery { youtube.resolve(any(), any()) } returns null
 
         val outcome = runCatching { registry(StandardTestDispatcher(testScheduler)).resolve(stubTrack()) }
 
-        assertThat(outcome.exceptionOrNull()).isInstanceOf(TimeoutCancellationException::class.java)
+        assertThat(outcome.exceptionOrNull()).isNull()
+        assertThat(outcome.getOrNull()).isNull()
         assertThat(log.recentResolves().single().servedBy).isEqualTo("none (timed out)")
     }
 }

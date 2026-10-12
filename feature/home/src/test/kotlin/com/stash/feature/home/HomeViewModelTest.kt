@@ -1,6 +1,7 @@
 package com.stash.feature.home
 
 import com.stash.core.data.db.dao.StashMixRecipeDao
+import com.stash.core.data.db.entity.StashMixRecipeEntity
 import com.stash.core.data.discovery.HomeDiscoveryRepository
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
@@ -83,6 +84,27 @@ class HomeViewModelTest {
         assertThat(hero.artUrl).isEqualTo("https://art/7")
         assertThat(hero.playlistId).isEqualTo(7L)
         assertThat(state.isColdStart).isFalse()
+        assertThat(state.heroBuilding).isFalse()
+    }
+
+    /**
+     * Fresh install: Home subscribes before the first mix refresh writes Daily
+     * Discover's playlist_id. The builtin ids were read once, so the hero never
+     * appeared and Daily Discover sat in "Your mixes" until the process restarted.
+     */
+    @Test
+    fun `hero appears when Daily Discover materializes after Home subscribed`() = runTest {
+        val daily = dailyDiscover(id = 7L, trackCount = 30)
+        val recipes = MutableStateFlow(listOf(builtinRecipe(id = 1L, playlistId = null)))
+        val vm = buildVm(playlists = listOf(daily), recipes = recipes)
+        val before = vm.uiState.first { !it.isLoading }
+        assertThat(before.hero).isNull()
+
+        recipes.value = listOf(builtinRecipe(id = 1L, playlistId = 7L))
+
+        val after = vm.uiState.first { it.hero != null }
+        assertThat(after.hero!!.playlistId).isEqualTo(7L)
+        assertThat(after.yourMixes.map { it.id }).doesNotContain(7L)
     }
 
     @Test
@@ -94,6 +116,46 @@ class HomeViewModelTest {
 
         assertThat(state.hero).isNull()
         assertThat(state.isColdStart).isTrue()
+        // Materialized, empty, and discovery owes it nothing: not "building".
+        assertThat(state.heroBuilding).isFalse()
+    }
+
+    /** First run: the hero slot says Daily Discover is coming instead of sitting empty. */
+    @Test
+    fun `hero slot is building before Daily Discover materializes`() = runTest {
+        val vm = buildVm(recipes = flowOf(listOf(builtinRecipe(id = 1L, playlistId = null))))
+
+        val state = vm.uiState.first { !it.isLoading }
+
+        assertThat(state.hero).isNull()
+        assertThat(state.heroBuilding).isTrue()
+    }
+
+    @Test
+    fun `hero slot is building while discovery still owes an empty Daily Discover tracks`() = runTest {
+        val vm = buildVm(
+            playlists = listOf(dailyDiscover(id = 7L, trackCount = 0)),
+            builtinIds = listOf(7L),
+            discoveryCounts = listOf(
+                com.stash.core.data.db.dao.DiscoveryQueueDao.RecipeDiscoveryCount(recipeId = 1L, count = 8),
+            ),
+        )
+
+        val state = vm.uiState.first { !it.isLoading }
+
+        assertThat(state.hero).isNull()
+        assertThat(state.heroBuilding).isTrue()
+    }
+
+    @Test
+    fun `hero slot is not building with Stash Mixes turned off`() = runTest {
+        val vm = buildVm(
+            recipes = flowOf(listOf(builtinRecipe(id = 1L, playlistId = null).copy(isActive = false))),
+        )
+
+        val state = vm.uiState.first { !it.isLoading }
+
+        assertThat(state.heroBuilding).isFalse()
     }
 
     // ------------------------------------------------------------------
@@ -290,6 +352,13 @@ class HomeViewModelTest {
         artUrl = artUrl,
     )
 
+    private fun builtinRecipe(id: Long, playlistId: Long?) = StashMixRecipeEntity(
+        id = id,
+        name = "Daily Discover",
+        isBuiltin = true,
+        playlistId = playlistId,
+    )
+
     private fun albumSummary(id: String) = AlbumSummary(
         id = id, title = "T", artist = "A", thumbnailUrl = null, year = null,
         source = AlbumSource.QOBUZ,
@@ -313,6 +382,10 @@ class HomeViewModelTest {
         anyUserOwned: Boolean = false,
         losslessOfflineDismissed: Boolean = false,
         losslessPrefs: LosslessSourcePreferences? = null,
+        /** Overrides the recipes otherwise built from [builtinIds]. */
+        recipes: kotlinx.coroutines.flow.Flow<List<StashMixRecipeEntity>>? = null,
+        /** Non-failed discovery rows per recipe (builtin recipes get ids 1, 2, … from [builtinIds]). */
+        discoveryCounts: List<com.stash.core.data.db.dao.DiscoveryQueueDao.RecipeDiscoveryCount> = emptyList(),
     ): HomeViewModel {
         val musicRepo = mock<MusicRepository> {
             on { getAllPlaylists() } doReturn flowOf(playlists)
@@ -325,10 +398,12 @@ class HomeViewModelTest {
                 flowOf(likedPlaylists.filter { it.type == PlaylistType.LIKED_SONGS })
         }
         val recipeDao = mock<StashMixRecipeDao> {
-            onBlocking { getBuiltinPlaylistIds() } doReturn builtinIds
             // Feeds the homePlaylistFlow combine — an unstubbed (null) flow
-            // NPEs the combine and uiState never emits (tests hang).
-            on { observeAll() } doReturn flowOf(emptyList())
+            // NPEs the combine and uiState never emits (tests hang). The builtin
+            // ids are derived from it.
+            on { observeAll() } doReturn (
+                recipes ?: flowOf(builtinIds.mapIndexed { i, id -> builtinRecipe(i + 1L, id) })
+            )
         }
         val streamingPreference = mock<StreamingPreference> {
             on { enabled } doReturn flowOf(streamingEnabled)
@@ -356,7 +431,7 @@ class HomeViewModelTest {
         }
         // Feeds the homePlaylistFlow combine — must emit or uiState never does.
         val discoveryQueueDao = mock<com.stash.core.data.db.dao.DiscoveryQueueDao> {
-            on { observeNonFailedCountsByRecipe() } doReturn flowOf(emptyList())
+            on { observeNonFailedCountsByRecipe() } doReturn flowOf(discoveryCounts)
         }
         // Same deal: the rail-recency source is the 5th arm of that combine, and
         // an unstubbed Flow returns null, so combine never emits and every test

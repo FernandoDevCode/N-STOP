@@ -14,6 +14,7 @@ import com.stash.core.media.equalizer.PresetCatalog
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 
 /**
@@ -52,8 +53,19 @@ class PlaybackDiagnosticsContributor @Inject constructor(
         append(block("cast") { castBlock() })
     }
 
+    /**
+     * One fault-isolated block. Not runCatching: [body] reads DataStore through suspend
+     * calls, and a cancelled bundle job would come back as "[settings unavailable: …]"
+     * while the section went on building.
+     */
     private inline fun block(name: String, body: () -> String): String =
-        runCatching(body).getOrElse { "[$name unavailable: ${it.message}]" }
+        try {
+            body()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            "[$name unavailable: ${e.message}]"
+        }
 
     private suspend fun settingsBlock(): String {
         val eq = eqStore.read()

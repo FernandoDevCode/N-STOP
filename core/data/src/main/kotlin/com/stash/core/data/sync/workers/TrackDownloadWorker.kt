@@ -71,6 +71,7 @@ class TrackDownloadWorker @AssistedInject constructor(
     private val syncLog: com.stash.core.data.sync.SyncLog,
     private val flacUpgradeSweeper: com.stash.core.data.lossless.FlacUpgradeSweeper,
     private val downloadJobs: DownloadJobRegistry,
+    private val fileReplacement: com.stash.core.data.files.TrackFileReplacement,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -100,15 +101,13 @@ class TrackDownloadWorker @AssistedInject constructor(
     }
 
     /**
-     * Called by WorkManager BEFORE [doWork] runs. Returning a [ForegroundInfo]
-     * here signals that this is a long-running worker that needs foreground
-     * service promotion, and WorkManager will start the foreground service
-     * itself before invoking [doWork]. This bypasses the Android 12+ restriction
-     * on starting foreground services from the background, because WorkManager
-     * is the one starting the service — not an already-backgrounded app.
-     *
-     * Without this override, the worker is treated as a regular background job
-     * and gets killed within ~10 minutes of the app being backgrounded.
+     * The initial foreground notification. Note what this does NOT do:
+     * WorkManager only calls it on its own for EXPEDITED work on Android 11
+     * and below, and the sync chain is not expedited, so overriding it never
+     * promotes the worker before [doWork]. Promotion happens only through the
+     * [safeSetForeground] call in [doWork], which Android 12+ refuses while the
+     * app is in the background — a scheduled run that starts backgrounded
+     * downloads as a regular job, subject to the ~10-minute job limit.
      */
     override suspend fun getForegroundInfo(): ForegroundInfo {
         return createForegroundInfo(
@@ -219,12 +218,17 @@ class TrackDownloadWorker @AssistedInject constructor(
                 )
             }
 
-            // The worker is already running as a foreground service because
-            // getForegroundInfo() was overridden and WorkManager promoted us
-            // before calling doWork(). This setForeground() call UPDATES the
-            // notification to show the real track count now that we know it.
+            // Promote to a foreground service with the real track count. This
+            // is the ONLY promotion: getForegroundInfo() alone does not run a
+            // non-expedited worker in the foreground. Best-effort — refused
+            // when the app is backgrounded (see safeSetForeground).
             syncStateManager.onDownloading(downloaded = 0, total = total)
             safeSetForeground(createForegroundInfo(downloaded = 0, total = total))
+            // Every per-track update reposts the progress notification under
+            // the same id, so it must carry the Cancel action too or the first
+            // update strips it from the foreground notification.
+            val progressCancelIntent = WorkManager.getInstance(applicationContext)
+                .createCancelPendingIntent(id)
 
             // ── Parallel download loop ──────────────────────────────────
             //
@@ -261,6 +265,11 @@ class TrackDownloadWorker @AssistedInject constructor(
                         if (downloadQueueDao.getStatusById(queueItem.id) == DownloadStatus.SKIPPED) {
                             return@launch
                         }
+                        // The track's file before this download, read before it
+                        // starts: a re-download deletes it once the row records the
+                        // new file, and one that fails for good restores it
+                        // (TrackFileReplacement).
+                        var keptPath: String? = null
                         try {
                             val trackEntity = trackDao.getById(queueItem.trackId)
                             if (trackEntity == null) {
@@ -310,6 +319,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                                 return@launch
                             }
 
+                            keptPath = trackEntity.filePath
                             val track = trackEntity.toDomain()
                             val outcome = trackDownloader.downloadTrack(
                                 track = track,
@@ -325,12 +335,18 @@ class TrackDownloadWorker @AssistedInject constructor(
                                     // the user said stop don't get to stay on disk.
                                     // NonCancellable because cancel() also cancels this
                                     // job — without it the status read throws instead of
-                                    // answering, and the file leaks.
+                                    // answering, and the file leaks. A new file that
+                                    // replaced the track's own in place is its only copy
+                                    // and stays (see discardCancelledDownload).
                                     val cancelledMidFlight = withContext(NonCancellable) {
                                         if (downloadQueueDao.getStatusById(queueItem.id) != DownloadStatus.SKIPPED) {
                                             false
                                         } else {
-                                            runCatching { File(outcome.filePath).delete() }
+                                            fileReplacement.discardCancelledDownload(
+                                                trackId = queueItem.trackId,
+                                                keptPath = trackEntity.filePath,
+                                                newPath = outcome.filePath,
+                                            )
                                             true
                                         }
                                     }
@@ -346,13 +362,23 @@ class TrackDownloadWorker @AssistedInject constructor(
                                     // is final, not a temp path.
                                     val meta = audioDurationExtractor.extract(outcome.filePath)
 
-                                    trackDao.markAsDownloaded(
+                                    val recorded = trackDao.markAsDownloaded(
                                         trackId = queueItem.trackId,
                                         filePath = outcome.filePath,
                                         fileSizeBytes = fileSize,
                                         sampleRateHz = meta?.sampleRateHz,
                                         bitsPerSample = meta?.bitsPerSample,
                                     )
+                                    // Only now that the row records the new file may the
+                                    // old one go: a cancel or a dead process before this
+                                    // write left the row on a deleted file.
+                                    if (recorded > 0) {
+                                        fileReplacement.deleteReplacedFile(
+                                            trackId = queueItem.trackId,
+                                            oldPath = trackEntity.filePath,
+                                            newPath = outcome.filePath,
+                                        )
+                                    }
 
                                     if (meta != null) {
                                         // Format: source-of-truth for Library Health.
@@ -428,6 +454,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                                         rejectedVideoId = outcome.rejectedVideoId,
                                         completedAt = System.currentTimeMillis(),
                                     )
+                                    fileReplacement.restoreKeptFile(queueItem.trackId, trackEntity.filePath)
                                     firstError.compareAndSet(null, err)
                                     failedCount.incrementAndGet()
                                 }
@@ -457,6 +484,9 @@ class TrackDownloadWorker @AssistedInject constructor(
                                             failureType = type,
                                             completedAt = System.currentTimeMillis(),
                                         )
+                                        // Failed for good: a file kept for this
+                                        // re-download is the track's download again.
+                                        fileReplacement.restoreKeptFile(queueItem.trackId, trackEntity.filePath)
                                         firstError.compareAndSet(null, truncated)
                                         failedCount.incrementAndGet()
                                     } else {
@@ -539,6 +569,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                                     failureType = type,
                                     completedAt = System.currentTimeMillis(),
                                 )
+                                fileReplacement.restoreKeptFile(queueItem.trackId, keptPath)
                                 failedCount.incrementAndGet()
                             } else {
                                 // Interruption — leave row at PENDING so next sync
@@ -577,6 +608,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                                 "Downloaded $completed of $total"
                             },
                             progress = 0.25f + 0.70f * (resolved.toFloat() / total),
+                            cancelIntent = progressCancelIntent,
                         )
 
                         // Flush sync history tallies every 10 tracks for crash resilience.
@@ -660,16 +692,28 @@ class TrackDownloadWorker @AssistedInject constructor(
             // IN_PROGRESS queue rows will be reset to PENDING by the next
             // run's resetStaleInProgress() sweep.
             Log.i(TAG, "Sync cancelled by user or system")
-            syncHistoryDao.updateStatus(
-                id = syncId,
-                status = SyncState.CANCELLED,
-                completedAt = System.currentTimeMillis(),
-                errorMessage = "Cancelled",
-            )
+            // NonCancellable: this coroutine is already cancelled, so a plain
+            // suspend DAO call throws on entry and the row stayed DOWNLOADING
+            // ("Running") until the next startup flipped it to Interrupted.
+            withContext(NonCancellable) {
+                syncHistoryDao.updateStatus(
+                    id = syncId,
+                    status = SyncState.CANCELLED,
+                    completedAt = System.currentTimeMillis(),
+                    errorMessage = "Cancelled",
+                )
+            }
             syncStateManager.reset()
+            // Only SyncFinalizeWorker dismissed the progress notification, and a
+            // stopped chain never reaches it. When the run was not foreground
+            // (a scheduled sync with the app in the background) the per-track
+            // updates had posted a plain ongoing notification, so "Downloaded
+            // 37 of 120" stuck around, undismissable, until a later sync ended.
+            syncNotificationManager.cancelProgress()
             throw ce
         } catch (e: Exception) {
             Log.e(TAG, "Download worker failed", e)
+            syncNotificationManager.cancelProgress()
             syncHistoryDao.updateStatus(
                 id = syncId,
                 status = SyncState.FAILED,
@@ -813,6 +857,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                 failureType = type,
                 completedAt = System.currentTimeMillis(),
             )
+            fileReplacement.restoreKeptFile(entry.trackId, track.filePath)
             // Catastrophe is handled; don't ask WorkManager to retry this row.
             return Result.success()
         }
@@ -825,7 +870,11 @@ class TrackDownloadWorker @AssistedInject constructor(
                     if (downloadQueueDao.getStatusById(entry.id) != DownloadStatus.SKIPPED) {
                         false
                     } else {
-                        runCatching { File(outcome.filePath).delete() }
+                        fileReplacement.discardCancelledDownload(
+                            trackId = entry.trackId,
+                            keptPath = track.filePath,
+                            newPath = outcome.filePath,
+                        )
                         true
                     }
                 }
@@ -839,13 +888,17 @@ class TrackDownloadWorker @AssistedInject constructor(
                 // disk. (Pre-v0.9.63 single-track mode skipped this entirely.)
                 val fileSize = try { File(outcome.filePath).length() } catch (_: Exception) { 0L }
                 val meta = audioDurationExtractor.extract(outcome.filePath)
-                trackDao.markAsDownloaded(
+                val recorded = trackDao.markAsDownloaded(
                     trackId = entry.trackId,
                     filePath = outcome.filePath,
                     fileSizeBytes = fileSize,
                     sampleRateHz = meta?.sampleRateHz,
                     bitsPerSample = meta?.bitsPerSample,
                 )
+                // The old file goes only once the row records the new one.
+                if (recorded > 0) {
+                    fileReplacement.deleteReplacedFile(entry.trackId, track.filePath, outcome.filePath)
+                }
                 if (meta != null && meta.format != "unknown") {
                     runCatching {
                         trackDao.setFormatAndQuality(
@@ -877,6 +930,8 @@ class TrackDownloadWorker @AssistedInject constructor(
                     failureType = type,
                     completedAt = System.currentTimeMillis(),
                 )
+                // Failed for good: a kept file is the track's download again.
+                fileReplacement.restoreKeptFile(entry.trackId, track.filePath)
                 Log.w(
                     TAG,
                     "Single-track mode: Failed for queue ${entry.id} (type=$type): ${truncated.take(120)}",
@@ -891,6 +946,7 @@ class TrackDownloadWorker @AssistedInject constructor(
                     failureType = DownloadFailureType.NO_MATCH,
                     rejectedVideoId = outcome.rejectedVideoId,
                 )
+                fileReplacement.restoreKeptFile(entry.trackId, track.filePath)
                 Log.w(TAG, "Single-track mode: Unmatched for queue ${entry.id}")
             }
             is TrackDownloadOutcome.Deferred -> {

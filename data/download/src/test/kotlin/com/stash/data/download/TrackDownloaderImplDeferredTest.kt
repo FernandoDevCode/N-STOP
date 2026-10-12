@@ -38,6 +38,7 @@ class TrackDownloaderImplDeferredTest {
         downloadManager = downloadManager,
         downloadQueueDao = downloadQueueDao,
         localFileOps = localFileOps,
+        fileReplacement = mockk(relaxed = true),
     )
 
     @Test

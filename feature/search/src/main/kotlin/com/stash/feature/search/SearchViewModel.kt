@@ -2,6 +2,7 @@ package com.stash.feature.search
 
 import android.os.SystemClock
 import android.util.Log
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.common.perf.PerfLog
@@ -17,7 +18,6 @@ import com.stash.data.ytmusic.model.SearchResultSection
 import com.stash.data.ytmusic.model.TopResultItem
 import com.stash.data.ytmusic.model.TrackSummary
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
@@ -61,6 +62,14 @@ class SearchViewModel @Inject constructor(
     private val playerRepository: PlayerRepository,
     private val streamingPreference: StreamingPreference,
     private val recentSearchesStore: RecentSearchesStore,
+    /**
+     * Holds the typed query across process death. The Search tab's ViewModel
+     * already survives tab switches (its back-stack entry is saved, not
+     * cleared), but when Android reclaims the app in the background the
+     * restored tab used to come back blank; now it comes back with the query
+     * in the field and its results searched again.
+     */
+    private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
     companion object {
@@ -74,9 +83,15 @@ class SearchViewModel @Inject constructor(
 
         /** Max number of tracks to pre-warm URLs for on a fresh results page. */
         private const val PREFETCH_TOP_N = 6
+
+        /** [SavedStateHandle] key of the typed query. */
+        internal const val KEY_QUERY = "search_query"
     }
 
-    private val _uiState = MutableStateFlow(SearchUiState())
+    // Starts from the saved query (empty on a fresh open); see [savedStateHandle].
+    private val _uiState = MutableStateFlow(
+        SearchUiState(query = savedStateHandle.get<String>(KEY_QUERY).orEmpty()),
+    )
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 
     /**
@@ -154,6 +169,9 @@ class SearchViewModel @Inject constructor(
      * every keystroke (that would save every prefix: "bea", "beat", "beatl"…).
      */
     fun onSearchCommitted() {
+        // The keyboard Search key on a failed search re-runs it: retyping the
+        // same text could not, the pipeline drops a repeated query.
+        if (_uiState.value.status is SearchStatus.Error) retry()
         val q = _uiState.value.query.trim()
         if (q.isNotEmpty()) {
             viewModelScope.launch {
@@ -206,15 +224,31 @@ class SearchViewModel @Inject constructor(
     }
 
     fun removeRecentSearch(entry: RecentSearch) {
-        viewModelScope.launch { recentSearchesStore.remove(entry.text) }
+        viewModelScope.launch { recentSearchesStore.remove(entry) }
     }
 
     fun clearRecentSearches() {
         viewModelScope.launch { recentSearchesStore.clear() }
     }
 
-    /** Drives [flatMapLatest] — every keystroke replaces the value. */
-    private val queryFlow = MutableStateFlow("")
+    /**
+     * Drives [flatMapLatest] — every keystroke replaces the value. Seeded with
+     * the restored query, so the pipeline searches it again on its own (the
+     * results themselves are not saved: they are large and would be stale).
+     */
+    private val queryFlow = MutableStateFlow(_uiState.value.query)
+
+    /**
+     * Re-runs the current query. A failed search used to be a dead end: no
+     * Retry, and typing the same text again was swallowed by the pipeline's
+     * `distinctUntilChanged`, so the user had to change the query to retry.
+     */
+    private val retryRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
+    /** Runs the current query again (the error screen's Retry). */
+    fun retry() {
+        retryRequests.tryEmit(Unit)
+    }
 
     init {
         // Must happen before any downloadTrack/previewTrack call — the delegate
@@ -223,9 +257,10 @@ class SearchViewModel @Inject constructor(
 
         // Search pipeline — keystrokes → debounce → searchAll → status.
         viewModelScope.launch {
-            queryFlow
-                .debounce(DEBOUNCE_MS)
-                .distinctUntilChanged()
+            merge(
+                queryFlow.debounce(DEBOUNCE_MS).distinctUntilChanged(),
+                retryRequests.map { queryFlow.value },
+            )
                 .flatMapLatest { q -> runSearch(q) }
                 .collect { status -> _uiState.update { it.copy(status = status) } }
         }
@@ -268,10 +303,12 @@ class SearchViewModel @Inject constructor(
                 refreshDownloadedIds(sections)
             }
         } catch (t: Throwable) {
-            if (t is CancellationException) throw t
+            // Null for a cancellation (a newer keystroke): rethrown, never shown.
+            val message = searchErrorMessage(t) ?: throw t
             Log.e(TAG, "search failed for '$query'", t)
-            _userMessages.emit("Search failed — please try again.")
-            emit(SearchStatus.Error(t.message ?: "Search failed"))
+            // The error screen (plain words + Retry) is the whole report; the
+            // "Search failed" snackbar that used to fire with it said it twice.
+            emit(SearchStatus.Error(message))
         }
     }
 
@@ -279,6 +316,7 @@ class SearchViewModel @Inject constructor(
     fun onQueryChanged(query: String) {
         _uiState.update { it.copy(query = query) }
         queryFlow.value = query
+        savedStateHandle[KEY_QUERY] = query
     }
 
     /**

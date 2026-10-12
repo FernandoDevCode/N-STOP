@@ -55,6 +55,29 @@ test("PUT with an oversized content-length is 413", async () => {
     assert.equal(r.status, 413);
 });
 
+/** A chunked body with no Content-Length that never ends: 64 KB chunks forever, counting what was pulled. */
+function endlessBody() {
+    const seen = { bytes: 0, cancelled: false };
+    const stream = new ReadableStream({
+        pull(c) { seen.bytes += 65_536; c.enqueue(new Uint8Array(65_536)); },
+        cancel() { seen.cancelled = true; },
+    });
+    return { stream, seen };
+}
+
+test("a body without Content-Length is read only until it passes the cap, then 413", async () => {
+    for (const path of ["/v1/mixes", "/v1/rooms", "/v1/tracks", "/v1/community/posts"]) {
+        const { stream, seen } = endlessBody();
+        const r = await handle(new Request(`${BASE}${path}`, {
+            method: "POST", body: stream, duplex: "half",
+            headers: { "CF-Connecting-IP": "203.0.113.9", "X-Stash-Community-Key": KEY },
+        }), env());
+        assert.equal(r.status, 413, path);
+        assert.ok(seen.cancelled, `${path}: the rest of the stream is cancelled`);
+        assert.ok(seen.bytes <= 1024 * 1024 + 4 * 65_536, `${path}: stopped near the cap, read ${seen.bytes}`);
+    }
+});
+
 test("only known fields are stored; server fields win", async () => {
     const e = env();
     const id = await created(e, doc({ id: "evil", version: 999, extra: "x", tracks: [{ t: "T", a: "A", junk: 1, yt: "abc" }] }));

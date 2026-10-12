@@ -144,3 +144,20 @@ internal fun autoTileArtUri(url: String?): Uri? {
     if ('|' in url) return url.toUri()
     return (ArtUrlSizer.forSizeGuaranteed(url, AUTO_TILE_PX) ?: url).toUri()
 }
+
+/**
+ * An FTS4 MATCH expression for a car search: every word a quoted prefix match
+ * (`"word*"`), all of them required. Null when nothing searchable is left.
+ *
+ * The raw text used to go in with `*` appended: a double quote or an
+ * unbalanced parenthesis made "malformed MATCH expression" (an
+ * SQLiteException, so the car showed a search error), and a word like `OR`,
+ * `NOT` or `NEAR` became an operator and changed what matched. Everything but
+ * letters and digits now splits words, as the tokenizer splits them anyway,
+ * and quoting makes each word literal.
+ */
+internal fun autoSearchMatchQuery(query: String): String? =
+    query.split(Regex("[^\\p{L}\\p{N}]+"))
+        .filter { it.isNotEmpty() }
+        .takeIf { it.isNotEmpty() }
+        ?.joinToString(" ") { "\"$it*\"" }

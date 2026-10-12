@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -124,6 +125,15 @@ class PlaylistDetailViewModel @Inject constructor(
     /** Holds the one-shot playlist metadata fetched in [init]. */
     private val _playlist = MutableStateFlow<Playlist?>(null)
 
+    /**
+     * This playlist's tracks, observed ONCE and shared by [downloadButton], [uiState] and
+     * [buildState]. Each used to subscribe on its own: three Room observers, and three full
+     * entity-to-Track conversions of a 5K-song Liked playlist on every `tracks` write (each
+     * finished download while it downloads).
+     */
+    private val playlistTracks = musicRepository.getTracksByPlaylist(playlistId)
+        .shareIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), replay = 1)
+
     /** Non-null when this playlist is a followed mix (spec §6). */
     data class FollowUi(val readOnly: Boolean, val sharedBy: String?)
 
@@ -149,7 +159,7 @@ class PlaylistDetailViewModel @Inject constructor(
         _playlist,
         streamingPreference.enabled,
         sharedMixRepository.observe(playlistId),
-        musicRepository.getTracksByPlaylist(playlistId),
+        playlistTracks,
         downloadQueueDao.observeGivenUpTrackIds(playlistId),
     ) { playlist, streamOnly, shared, tracks, givenUpIds ->
         val followed = shared?.role == com.stash.core.data.db.entity.SharedMixEntity.ROLE_FOLLOWER &&
@@ -223,7 +233,7 @@ class PlaylistDetailViewModel @Inject constructor(
      */
     val uiState: StateFlow<PlaylistDetailUiState> = combine(
         _playlist,
-        musicRepository.getTracksByPlaylist(playlistId).withSearchFilter(_searchQuery),
+        playlistTracks.withSearchFilter(_searchQuery),
         playerRepository.playerState,
         _searchQuery,
         _showSearch,
@@ -250,7 +260,7 @@ class PlaylistDetailViewModel @Inject constructor(
     val buildState: StateFlow<MixBuildState> = combine(
         recipeDao.observeAll(),
         discoveryQueueDao.observeNonFailedCountsByRecipe(),
-        musicRepository.getTracksByPlaylist(playlistId),
+        playlistTracks,
     ) { recipes, counts, tracks ->
         val recipe = recipes.firstOrNull { it.playlistId == playlistId }
             ?: return@combine MixBuildState.READY

@@ -160,4 +160,95 @@ class QueueDisplayTest {
     )
     assertThat(target).isEqualTo(2)
   }
+
+  // ---- the same song queued twice ----
+
+  @Test
+  fun `while the second copy plays, the current index is that copy`() {
+    // [A, B, C, A] with the second A playing: the first match highlighted row 0 and listed
+    // B and C, already played, as "Up next".
+    val result = QueueDisplay.compute(
+      timelineQueue = listOf(t1, t2, t3, t1),
+      timelineIndex = 3,
+      logicalQueue = listOf(t1, t2, t3, t1),
+      currentTrackId = 1L,
+    )
+    assertThat(result.currentIndex).isEqualTo(3)
+  }
+
+  @Test
+  fun `the first copy playing stays on the first copy`() {
+    val result = QueueDisplay.compute(
+      timelineQueue = listOf(t1, t2, t3, t1),
+      timelineIndex = 0,
+      logicalQueue = listOf(t1, t2, t3, t1),
+      currentTrackId = 1L,
+    )
+    assertThat(result.currentIndex).isEqualTo(0)
+  }
+
+  @Test
+  fun `copyOrdinal and indexOfCopy find a row again by its copy`() {
+    val queue = listOf(t1, t2, t1, t3, t1)
+    assertThat(QueueDisplay.copyOrdinal(queue, 0)).isEqualTo(0)
+    assertThat(QueueDisplay.copyOrdinal(queue, 4)).isEqualTo(2)
+    assertThat(QueueDisplay.indexOfCopy(queue, 1L, 1)).isEqualTo(2)
+    assertThat(QueueDisplay.indexOfCopy(queue, 1L, 3)).isEqualTo(-1)
+  }
+
+  @Test
+  fun `move counts only the copies of a repeated song that sit before the target`() {
+    // [A, B, C, B]: move A to logical position 2 -> newLogical [B, C, A, B]. Timeline without
+    // the moved item: [B, C, B]. Only the FIRST B and C precede position 2 -> insert at 2.
+    // An id set counted both Bs and answered 3.
+    val target = QueueDisplay.moveTimelineTarget(
+      newLogical = listOf(t2, t3, t1, t2),
+      toIndex = 2,
+      timelineIdsWithoutMoved = listOf(2L, 3L, 2L),
+    )
+    assertThat(target).isEqualTo(2)
+  }
+
+  // ---- walkWithInserted ----
+
+  @Test
+  fun `Play next lands right after the current song in the walk`() {
+    // Walk 2 -> 0 -> 3 -> 1, slot 2 playing, one song inserted at slot 3.
+    assertThat(QueueDisplay.walkWithInserted(listOf(2, 0, 3, 1), at = 3, count = 1, currentIndex = 2, afterCurrent = true))
+      .containsExactly(2, 3, 0, 4, 1).inOrder()
+  }
+
+  @Test
+  fun `Add to queue lands at the end of the walk, in tap order`() {
+    assertThat(QueueDisplay.walkWithInserted(listOf(2, 0, 3, 1), at = 4, count = 2, currentIndex = 2, afterCurrent = false))
+      .containsExactly(2, 0, 3, 1, 4, 5).inOrder()
+  }
+
+  @Test
+  fun `an unshuffled walk is a masking timeline, not a shuffle - nothing is sent`() {
+    assertThat(QueueDisplay.walkWithInserted(listOf(0, 1, 2, 3), at = 2, count = 1, currentIndex = 1, afterCurrent = true))
+      .isNull()
+  }
+
+  // ---- walkWithInsertedAt (the queue sheet's Undo) ----
+
+  @Test
+  fun `Undo puts the song back on the row of the walk it left`() {
+    // Walk 2 -> 0 -> 3 -> 1; the song goes back in at slot 1 (shifting slots 1+ up) as row 2.
+    assertThat(QueueDisplay.walkWithInsertedAt(listOf(2, 0, 3, 1), at = 1, count = 1, position = 2))
+      .containsExactly(3, 0, 1, 4, 2).inOrder()
+  }
+
+  @Test
+  fun `Undo past the end of the walk appends, and a negative row goes first`() {
+    assertThat(QueueDisplay.walkWithInsertedAt(listOf(2, 0, 3, 1), at = 4, count = 1, position = 9))
+      .containsExactly(2, 0, 3, 1, 4).inOrder()
+    assertThat(QueueDisplay.walkWithInsertedAt(listOf(2, 0, 3, 1), at = 4, count = 1, position = -1))
+      .containsExactly(4, 2, 0, 3, 1).inOrder()
+  }
+
+  @Test
+  fun `Undo on an unshuffled walk sends nothing either`() {
+    assertThat(QueueDisplay.walkWithInsertedAt(listOf(0, 1, 2), at = 1, count = 1, position = 1)).isNull()
+  }
 }

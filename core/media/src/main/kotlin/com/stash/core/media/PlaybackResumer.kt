@@ -55,14 +55,21 @@ class PlaybackResumer @Inject constructor(
 
         // Prefer locating the saved current track by id (robust to dropped
         // rows shifting positions); fall back to the saved index clamped
-        // into range if that track is gone.
-        val startIndex = ordered.indexOfFirst { it.id == saved.trackId }
-            .let { if (it >= 0) it else saved.queueIndex.coerceIn(0, ordered.size - 1) }
+        // into range if that track is gone. The saved index wins when it
+        // still holds that track: with the song queued twice, the first
+        // match resumed at the EARLIER copy and replayed everything between.
+        val startIndex = saved.queueIndex.takeIf { ordered.getOrNull(it)?.id == saved.trackId }
+            ?: ordered.indexOfFirst { it.id == saved.trackId }
+                .let { if (it >= 0) it else saved.queueIndex.coerceIn(0, ordered.size - 1) }
 
         return ResumePlan(
             tracks = ordered,
             startIndex = startIndex,
-            positionMs = saved.positionMs.coerceAtLeast(0),
+            // The saved position belongs to the saved track. When that track is
+            // gone the start is whatever now sits at its index (under shuffle a
+            // walk index, so possibly anything): starting THAT song 3:40 in, or
+            // auto-advancing past it when it is shorter, was the old result.
+            positionMs = if (ordered[startIndex].id == saved.trackId) saved.positionMs.coerceAtLeast(0) else 0L,
             isShuffled = saved.isShuffled,
             repeatMode = saved.repeatMode,
             source = saved.source,

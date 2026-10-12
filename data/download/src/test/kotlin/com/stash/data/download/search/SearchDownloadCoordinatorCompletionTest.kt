@@ -375,6 +375,32 @@ class SearchDownloadCoordinatorCompletionTest {
         coVerify(exactly = 0) { musicRepository.linkTrackToDownloadsMix(any()) }
     }
 
+    /** Checked before the commit, so a junk body never takes a library file's place. */
+    @Test
+    fun `a junk download is refused before it is committed`() = runTest {
+        arrangeFinalizedYtDlpDownload()
+        every { localFileOps.acceptDownloadOrDelete(match { it.contains("search_yt") }) } returns false
+
+        val statuses = newSubject().download(track()).toList()
+
+        assertFailedNeverCompleted(statuses)
+        coVerify(exactly = 0) { trackFinalizer.finalizeFile(any(), any(), any(), any()) }
+    }
+
+    /** The upsert's check alone ran after the whole file was fetched and committed. */
+    @Test
+    fun `a blocked song is refused before anything is fetched`() = runTest {
+        arrangeFinalizedYtDlpDownload()
+        coEvery { blocklistGuard.isBlocked(any(), any(), any(), any()) } returns true
+
+        val statuses = newSubject().download(track()).toList()
+
+        assertFailedNeverCompleted(statuses)
+        coVerify(exactly = 0) { jioSaavnResolver.resolve(any(), any()) }
+        coVerify(exactly = 0) { downloadExecutor.download(any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { trackFinalizer.finalizeFile(any(), any(), any(), any()) }
+    }
+
     @Test
     fun `markAsDownloaded failure fails instead of completing`() = runTest {
         arrangeFinalizedYtDlpDownload()

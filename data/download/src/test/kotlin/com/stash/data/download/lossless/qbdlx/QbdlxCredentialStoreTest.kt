@@ -5,6 +5,8 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
+import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
@@ -155,6 +157,40 @@ class QbdlxCredentialStoreTest {
         s.setPastedToken("late-paste")
         assertThat(s.loginCredential()?.token).isEqualTo("late-paste")
         assertThat(s.loginLive()).isTrue()
+    }
+
+    /**
+     * The first [QbdlxCredentialStore.loginCredential] of a process often runs in a
+     * cancellable coroutine (a search-row prefetch, a stream resolve a skip cuts
+     * short). Its load is cached for the life of the process, so a read that failed
+     * must not be cached as "no account": that hid a paid account until restart.
+     */
+    @Test
+    fun `a failed first read is not cached as no account`() = runTest {
+        store().setUserCredential("tok", "798273057", "sec", email = "me@x")
+        val s = store()
+        val realRead = s.readCredentials
+        s.readCredentials = { throw IOException("transient DataStore read failure") }
+
+        assertThat(s.loginCredential()).isNull()
+
+        s.readCredentials = realRead
+        assertThat(s.loginCredential()).isEqualTo(QbdlxLoginCredential("tok", "798273057", "sec"))
+        assertThat(s.loginLive()).isTrue()
+    }
+
+    @Test
+    fun `a cancelled first read propagates and is not cached as no account`() = runTest {
+        store().setUserCredential("tok", "798273057", "sec", email = "me@x")
+        val s = store()
+        val realRead = s.readCredentials
+        s.readCredentials = { throw CancellationException("prefetch dropped") }
+
+        val thrown = runCatching { s.loginCredential() }.exceptionOrNull()
+        assertThat(thrown).isInstanceOf(CancellationException::class.java)
+
+        s.readCredentials = realRead
+        assertThat(s.loginCredential()).isEqualTo(QbdlxLoginCredential("tok", "798273057", "sec"))
     }
 
     @Test

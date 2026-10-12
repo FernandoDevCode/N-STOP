@@ -1,5 +1,7 @@
 package com.stash.core.ui.components
 
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -53,6 +55,9 @@ fun CrispChipRow(
             val isActive = chip == selected
             Surface(
                 onClick = { onSelect(chip) },
+                // The active chip was shown by colour alone: TalkBack read every chip as just
+                // "Songs, button". Exposing selected makes it say which one is on.
+                modifier = Modifier.semantics { this.selected = isActive },
                 shape = RoundedCornerShape(16.dp),
                 color = if (isActive) {
                     MaterialTheme.colorScheme.primary

@@ -18,6 +18,7 @@ import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.files.TrackFileReplacement
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.core.data.sync.DownloadJobRegistry
@@ -72,6 +73,7 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
     private val blocklistGuard: BlocklistGuard,
     private val syncNotificationManager: SyncNotificationManager,
     private val downloadJobs: DownloadJobRegistry,
+    private val fileReplacement: TrackFileReplacement,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -225,11 +227,17 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
                 is TrackDownloadOutcome.Success -> {
                     // NonCancellable: cancel() cancels this child, so an unwrapped
                     // read would throw and strand the file that just landed.
+                    // A new file that replaced the track's own in place is its
+                    // only copy and stays (see discardCancelledDownload).
                     val cancelledMidFlight = withContext(NonCancellable) {
                         if (downloadQueueDao.getStatusById(queueItem.id) != DownloadStatus.SKIPPED) {
                             false
                         } else {
-                            runCatching { File(outcome.filePath).delete() }
+                            fileReplacement.discardCancelledDownload(
+                                trackId = trackEntity.id,
+                                keptPath = trackEntity.filePath,
+                                newPath = outcome.filePath,
+                            )
                             true
                         }
                     }
@@ -242,10 +250,14 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
                 }
                 is TrackDownloadOutcome.Unmatched -> {
                     handleUnmatched(queueItem, track, outcome)
+                    // The row is FAILED: a file kept for this re-download
+                    // (TrackDao.markForReplacement) is the track's download again.
+                    fileReplacement.restoreKeptFile(trackEntity.id, trackEntity.filePath)
                     false
                 }
                 is TrackDownloadOutcome.Failed -> {
                     handleFailed(queueItem, track, outcome)
+                    fileReplacement.restoreKeptFile(trackEntity.id, trackEntity.filePath)
                     false
                 }
                 is TrackDownloadOutcome.Deferred -> false
@@ -262,13 +274,19 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
         val fileSize = try { File(outcome.filePath).length() } catch (_: Exception) { 0L }
         val meta = audioDurationExtractor.extract(outcome.filePath)
 
-        trackDao.markAsDownloaded(
+        val recorded = trackDao.markAsDownloaded(
             trackId = trackEntity.id,
             filePath = outcome.filePath,
             fileSizeBytes = fileSize,
             sampleRateHz = meta?.sampleRateHz,
             bitsPerSample = meta?.bitsPerSample,
         )
+        // The track's previous file goes only once the row records the new
+        // one: deleted any earlier, a cancel or a dead process in between left
+        // the row on a deleted file.
+        if (recorded > 0) {
+            fileReplacement.deleteReplacedFile(trackEntity.id, trackEntity.filePath, outcome.filePath)
+        }
 
         if (meta != null && meta.format != "unknown") {
             runCatching {

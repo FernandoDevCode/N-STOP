@@ -8,6 +8,8 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.ListeningEventEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.prefs.YouTubeHistoryPreference
+import com.stash.data.ytmusic.CanonicalLookup
+import com.stash.data.ytmusic.CanonicalMatch
 import com.stash.data.ytmusic.InnerTubeClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
@@ -17,6 +19,7 @@ import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
+import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 
@@ -40,7 +43,8 @@ class YouTubeHistoryScrobblerTest {
 
     // Controllable PingSubmitter: tests set this to return their desired HTTP code.
     private var pingStatusCode = 200
-    private val fakePingSubmitter: PingSubmitter = PingSubmitter { _, _, _ -> pingStatusCode }
+    private var pings = 0
+    private val fakePingSubmitter: PingSubmitter = PingSubmitter { _, _, _ -> pings++; pingStatusCode }
 
     // Version code provider — default: same version (no update)
     private var fakeVersionCode = 1
@@ -65,7 +69,8 @@ class YouTubeHistoryScrobblerTest {
         whenever(tokenManager.getYouTubeCookie()).thenReturn("SAPISID=abc; LOGIN_INFO=xyz")
         whenever(cookieHelper.extractSapiSid(any())).thenReturn("abc")
         whenever(cookieHelper.generateAuthHeader(any())).thenReturn("SAPISIDHASH 1234_hash")
-        whenever(resolver.resolve(any())).thenReturn("vid123")
+        whenever(resolver.resolve(any()))
+            .thenReturn(CanonicalLookup.Found(CanonicalMatch("vid123", thumbnailUrl = null)))
         whenever(innerTubeClient.getPlaybackTracking(any()))
             .thenReturn("https://tracking.youtube.com/ptracking")
 
@@ -219,5 +224,121 @@ class YouTubeHistoryScrobblerTest {
 
         verify(state, never()).setDisabledReason(any())
         verify(state, never()).resetConsecutiveFailures()
+    }
+
+    // ── Drain pass: the opt-in cutoff, failures that end it, opt-out mid-pass ─
+
+    private suspend fun stubPending(vararg events: ListeningEventEntity) {
+        whenever(preference.sendPlaysSinceMs(any())).thenReturn(CUTOFF)
+        whenever(listeningEventDao.pendingYtScrobbles(CUTOFF, 50)).thenReturn(events.toList())
+        whenever(trackDao.getById(10L)).thenReturn(track())
+    }
+
+    @Test
+    fun `drain asks only for plays since the opt-in instant`() = runTest {
+        stubPending(event(1L))
+
+        scrobbler.drainQueue()
+
+        // Every play ever recorded has yt_scrobbled = 0; without the cutoff,
+        // turning the feature on sent the user's whole history.
+        verify(listeningEventDao).pendingYtScrobbles(sinceMs = CUTOFF, limit = 50)
+        verify(listeningEventDao).markYtScrobbled(1L)
+    }
+
+    @Test
+    fun `drain sends nothing when there is no cutoff`() = runTest {
+        whenever(preference.sendPlaysSinceMs(any())).thenReturn(null)
+
+        scrobbler.drainQueue()
+
+        verify(listeningEventDao, never()).pendingYtScrobbles(any(), any())
+        assertEquals(0, pings)
+    }
+
+    @Test
+    fun `a failed search keeps the play queued and ends the pass`() = runTest {
+        stubPending(event(1L), event(2L), event(3L))
+        whenever(resolver.resolve(any())).thenReturn(CanonicalLookup.Failed)
+
+        scrobbler.drainQueue()
+
+        verify(listeningEventDao, never()).markYtScrobbled(any())
+        verify(resolver, times(1)).resolve(any())
+        assertEquals(YouTubeScrobblerHealth.OFFLINE, scrobbler.health.value)
+    }
+
+    @Test
+    fun `no canonical match drops only that play and the pass goes on`() = runTest {
+        stubPending(event(1L), event(2L))
+        whenever(resolver.resolve(any())).thenReturn(CanonicalLookup.NoMatch)
+
+        scrobbler.drainQueue()
+
+        verify(listeningEventDao).markYtScrobbled(1L)
+        verify(listeningEventDao).markYtScrobbled(2L)
+        assertEquals(0, pings)
+    }
+
+    @Test
+    fun `an auth failure ends the pass after one ping`() = runTest {
+        stubPending(event(1L), event(2L), event(3L))
+        pingStatusCode = 401
+
+        scrobbler.drainQueue()
+
+        assertEquals(1, pings)
+        assertEquals(YouTubeScrobblerHealth.AUTH_FAILED, scrobbler.health.value)
+    }
+
+    @Test
+    fun `the kill-switch tripping mid-pass ends it`() = runTest {
+        stubPending(event(1L), event(2L), event(3L))
+        pingStatusCode = 500
+        whenever(state.incrementConsecutiveFailures()).thenReturn(5)
+
+        scrobbler.drainQueue()
+
+        assertEquals(1, pings)
+        verify(state).setDisabledReason("protocol_errors")
+    }
+
+    @Test
+    fun `an already-tripped kill-switch sends nothing`() = runTest {
+        stubPending(event(1L), event(2L))
+        whenever(state.currentDisabledReason()).thenReturn("protocol_errors")
+
+        scrobbler.drainQueue()
+
+        assertEquals(0, pings)
+    }
+
+    @Test
+    fun `turning the feature off mid-pass stops the next ping`() = runTest {
+        stubPending(event(1L), event(2L), event(3L))
+        // Read once for the batch, once before event 1, then the user turns it off.
+        whenever(preference.sendPlaysSinceMs(any())).thenReturn(CUTOFF, CUTOFF, null)
+
+        scrobbler.drainQueue()
+
+        assertEquals(1, pings)
+        verify(listeningEventDao).markYtScrobbled(1L)
+        verify(listeningEventDao, never()).markYtScrobbled(2L)
+    }
+
+    @Test
+    fun `turning it off and on again mid-pass skips plays from before the new opt-in`() = runTest {
+        stubPending(event(1L), event(2L))
+        whenever(preference.sendPlaysSinceMs(any())).thenReturn(CUTOFF, CUTOFF, 2_000L)
+
+        scrobbler.drainQueue()
+
+        assertEquals(1, pings)
+        verify(listeningEventDao, never()).markYtScrobbled(2L)
+    }
+
+    private companion object {
+        /** Before [event]'s startedAt (1000), so its plays are eligible. */
+        const val CUTOFF = 500L
     }
 }

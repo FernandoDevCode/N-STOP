@@ -7,9 +7,11 @@ import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
+import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.Arrangement
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -100,6 +102,42 @@ private const val TOKEN_EXTRACT_JS = """
     })();
 """
 
+/**
+ * A blank page that runs AT the discord.com origin (loaded with that base URL),
+ * empties its `localStorage` — where Discord keeps the account token — and then
+ * moves on to the login page. Without it, the token of an earlier session
+ * (including one the user disconnected) was still there, and
+ * [TOKEN_EXTRACT_JS] handed it straight back the moment `/channels/@me`
+ * loaded, so Connect silently re-used the old account. `location.replace`
+ * keeps this page out of the back history.
+ */
+private const val FRESH_SESSION_HTML =
+    "<html><body><script>" +
+        "try { window.localStorage.clear(); } catch (e) {}" +
+        "location.replace('$LOGIN_URL');" +
+        "</script></body></html>"
+
+/**
+ * Removes the Discord session from the shared WebView profile on Disconnect:
+ * discord.com's cookies, and its origin storage as far as
+ * [WebStorage.deleteOrigin] reaches. The token in `localStorage` is
+ * additionally wiped by [FRESH_SESSION_HTML] whenever the sign-in opens.
+ * Best-effort: a device without a working WebView throws here.
+ */
+internal fun clearDiscordWebSession() {
+    runCatching {
+        CookieManager.getInstance().apply {
+            WebSessionCookies.names(getCookie(DISCORD_ORIGIN)).forEach { name ->
+                WebSessionCookies.expiryHeaders(name, ".discord.com").forEach { setCookie(DISCORD_ORIGIN, it) }
+            }
+            flush()
+        }
+        WebStorage.getInstance().deleteOrigin(DISCORD_ORIGIN)
+    }.onFailure { Log.w(TAG, "clearing the Discord web session failed", it) }
+}
+
+private const val DISCORD_ORIGIN = "https://discord.com"
+
 @SuppressLint("SetJavaScriptEnabled")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -111,6 +149,16 @@ fun DiscordLoginWebView(
 ) {
     var isLoading by remember { mutableStateOf(true) }
     var tokenFound by remember { mutableStateOf(false) }
+    var webViewRef by remember { mutableStateOf<WebView?>(null) }
+
+    // System Back steps back through the sign-in pages, then closes the
+    // sign-in. Without this, Back popped the whole Accounts screen while the
+    // ViewModel's "show sign-in" flag stayed set, so the next visit to
+    // Accounts & Sync reopened this sign-in instead of the accounts page.
+    BackHandler {
+        val wv = webViewRef
+        if (wv != null && wv.canGoBack()) wv.goBack() else onDismiss()
+    }
 
     Column(modifier = modifier.fillMaxSize()) {
         TopAppBar(
@@ -229,8 +277,15 @@ fun DiscordLoginWebView(
                             ): Boolean = false
                         }
 
-                        loadUrl(LOGIN_URL)
-                    }
+                        // Start from an empty discord.com localStorage, then the login page.
+                        loadDataWithBaseURL(
+                            "$DISCORD_ORIGIN/",
+                            FRESH_SESSION_HTML,
+                            "text/html",
+                            "utf-8",
+                            null,
+                        )
+                    }.also { webViewRef = it }
                 },
                 modifier = Modifier.fillMaxSize(),
             )

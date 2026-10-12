@@ -100,16 +100,21 @@ interface ListeningEventDao {
      * recommender graph. Same shape as [pendingScrobbles] but gated on
      * `yt_scrobbled` instead of `scrobbled`. Oldest first so submissions
      * chronologically mirror actual listening order.
+     *
+     * [sinceMs] is the opt-in instant
+     * ([com.stash.core.data.prefs.YouTubeHistoryPreference.sendPlaysSince]):
+     * every play ever recorded has `yt_scrobbled = 0`, so without it turning
+     * the feature on sent the whole listening history.
      */
     @Query(
         """
         SELECT * FROM listening_events
-        WHERE yt_scrobbled = 0 AND origin_device IS NULL
+        WHERE yt_scrobbled = 0 AND origin_device IS NULL AND started_at >= :sinceMs
         ORDER BY started_at ASC
         LIMIT :limit
         """
     )
-    suspend fun pendingYtScrobbles(limit: Int = 100): List<ListeningEventEntity>
+    suspend fun pendingYtScrobbles(sinceMs: Long, limit: Int = 100): List<ListeningEventEntity>
 
     @Query(
         """
@@ -170,9 +175,17 @@ interface ListeningEventDao {
     """)
     suspend fun findByCompletedAt(completedAtMs: Long): ListeningEventEntity?
 
-    /** Count of unscrobbled-to-YT events. Drives the Settings health badge. */
-    @Query("SELECT COUNT(*) FROM listening_events WHERE yt_scrobbled = 0 AND origin_device IS NULL")
-    fun pendingYtScrobbleCount(): Flow<Int>
+    /**
+     * Count of unscrobbled-to-YT events since the opt-in instant [sinceMs] (see
+     * [pendingYtScrobbles]). Drives the Settings health badge.
+     */
+    @Query(
+        """
+        SELECT COUNT(*) FROM listening_events
+        WHERE yt_scrobbled = 0 AND origin_device IS NULL AND started_at >= :sinceMs
+        """
+    )
+    fun pendingYtScrobbleCount(sinceMs: Long): Flow<Int>
 
     /**
      * Per-track play counts in a recency window, used by the (future)

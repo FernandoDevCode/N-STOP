@@ -9,7 +9,9 @@ import com.stash.core.data.weblink.PairingState
 import com.stash.core.data.weblink.SyncErrorCode
 import com.stash.core.data.weblink.SyncResult
 import com.stash.core.data.weblink.WebLinkRepository
+import com.stash.core.data.weblink.merge.PlVersion
 import com.stash.core.data.weblink.merge.PlayRec
+import com.stash.core.data.weblink.merge.PlaylistMerge
 import com.stash.core.data.weblink.merge.SyncHashes
 import com.stash.core.model.weblink.Hlc
 import kotlinx.coroutines.test.runTest
@@ -601,6 +603,77 @@ class MirrorEngineTest {
         assertThat(pushed.items!!.map { it.title }).containsExactly("1", "X", "2").inOrder()
     }
 
+    /**
+     * Audit A5: the phone and the browser edit one playlist from the same version and both push before reading the other's. The
+     * phone's base is then its own edit, so "unchanged since the base, take the remote" dropped that edit here while the browser
+     * dropped its own the same way. The phone now merges against the version both started from and pushes the merge, which the
+     * browser (today's rules, replayed with [PlaylistMerge]) takes: both end with both edits.
+     */
+    @Test fun `concurrent edits from the same version converge on both edits, whichever push landed first`() {
+        for (phoneFirst in listOf(true, false)) runTest {
+            val server = FakeSyncServer()
+            val store = InMemoryWebLinkStore()
+            val repo = WebLinkRepository(server, store)
+            val session = PairingSession(server, store, repo, phoneName = { "Pixel 5" }, now = { clock }, sleep = { clock += it })
+            val lib = FakeMirrorLibrary()
+            val engine = MirrorEngine(server, store, repo, InMemoryMirrorStore(), lib, { clock }, { "m_Phone%011d".format(++minted) })
+            val b = FakeBrowser(server, name = "Chrome on Windows")
+            val code = b.openCode()
+            server.onAnswered = { slot ->
+                b.readAnswer(slot)
+                b.reply()
+            }
+            session.open(code)
+            session.confirm()
+            repo.refresh()
+            val web = WebSide(server, b)
+            val me = store.id!!.deviceId
+
+            val drive = lib.addPlaylist("Night drive", listOf(song("1"), song("2"), song("3"), song("4")))
+            engine.configure(MirrorChange(dirs = mapOf(Kind.PLAYLISTS to Dir.BOTH), add = listOf(drive)))
+            clock += 1_000
+            val mid = web.config()!!.ids.single()
+            val v0 = web.ops(me).filterIsInstance<MirrorOp.Pl>().single()
+            val h0 = MirrorView.hashOf(v0)
+
+            // The phone removes 2 and adds P; the browser, still at V0, adds W after 1.
+            val webEdit = MirrorOp.Pl(mid, web.at(), h0, "Night drive", listOf(song("1"), song("W"), song("2"), song("3"), song("4")))
+            lib.playlists.getValue(drive).items = listOf(song("1"), song("3"), song("4"), song("P"))
+            // The phone pulls (nothing new), then the browser's batch lands just before or just after the phone's own.
+            if (!phoneFirst) server.beforeNextPost = { web.post(webEdit) }
+            engine.sync()
+            clock += 1_000
+            if (phoneFirst) web.post(webEdit)
+            val phoneEdit = web.ops(me).filterIsInstance<MirrorOp.Pl>().last()
+            assertThat(phoneEdit.parent).isEqualTo(h0)
+
+            engine.sync()
+            clock += 1_000
+            val merged = listOf("1", "W", "3", "4", "P")
+            assertThat(lib.playlists.getValue(drive).items.map { it.title }).containsExactly(*merged.toTypedArray()).inOrder()
+            val pushed = web.ops(me).filterIsInstance<MirrorOp.Pl>().last()
+            assertThat(pushed.items!!.map { it.title }).containsExactly(*merged.toTypedArray()).inOrder()
+            assertThat(pushed.parent).isEqualTo(MirrorView.hashOf(webEdit))
+
+            // Today's browser: its base is its own edit, so it takes the phone's concurrent edit, then the phone's merge on top.
+            var base = PlVersion(webEdit.name, webEdit.items, webEdit.at)
+            var local = base
+            for (op in web.ops(me).filterIsInstance<MirrorOp.Pl>().filter { it.at > v0.at }) {
+                val res = PlaylistMerge.merge(
+                    phone = false, base = base, local = local, localHash = SyncHashes.playlistHash(local.name, local.items, null),
+                    remote = PlVersion(op.name, op.items, op.at), parent = op.parent, fromPhone = true,
+                )
+                if (res.action != PlaylistMerge.Action.KEEP) local = res.local!!
+                base = res.base!!
+            }
+            assertThat(local.items!!.map { it.title }).containsExactly(*merged.toTypedArray()).inOrder()
+            // Nothing left to send.
+            val sent = web.ops(me).filterIsInstance<MirrorOp.Pl>().size
+            engine.sync()
+            assertThat(web.ops(me).filterIsInstance<MirrorOp.Pl>()).hasSize(sent)
+        }
+    }
+
     @Test fun `a playlist from the web becomes a playlist here, a delete everywhere removes it, a stale delete loses to an edit`() = runTest {
         link()
         web.configure(playlists = Dir.BOTH, ids = listOf("m_WebPlaylist00001"))
@@ -684,6 +757,48 @@ class MirrorEngineTest {
         assertThat(chrome.deviceId).isEqualTo(web.id)
     }
 
+    @Test fun `two key changes before a run - the browser's batches under the first key are still read, and the log compacts`() = runTest {
+        link()
+        likesMirroring()
+        // The browser unlikes A at epoch 1 while the phone's mirror is idle; then the phone removes two devices (two rotations).
+        web.wall = server.serverNow + 60_000
+        web.post(MirrorOp.Like(song("A"), false, web.at()))
+        val space = server.spaces.getValue(web.spaceId)
+        for (gone in listOf("d_gone00000000001", "d_gone00000000002")) {
+            space.devices[gone] = FakeSyncServer.Dev(gone, "web", "x", "y", null)
+            repo.remove(gone)
+        }
+        assertThat(space.epoch).isEqualTo(3)
+        // The epoch-1 batch is read with the key kept from two rotations back: no gap, so the log compacts and unfreezes (A5).
+        assertThat(run()).isEqualTo(MirrorRun.Done)
+        assertThat(records.record!!.gaps).isEmpty()
+        assertThat(lib.likedTitles()).doesNotContain("A")
+        assertThat(space.compactDue).isFalse()
+    }
+
+    @Test fun `a clock set forward, or an HLC left in the future, never stamps the phone's ops from the future`() = runTest {
+        link()
+        likesMirroring()
+        // The phone's clock runs 2 h slow for five runs, then automatic time sets it right.
+        server.serverNow = 100_000_000_000L
+        clock = server.serverNow - 2 * 3_600_000L
+        repeat(5) { run() }
+        clock += 2 * 3_600_000L
+        lib.like(song("Z"))
+        run()
+        val z = likeOps(me).last { it.s.title == "Z" }
+        assertThat(Hlc.fromTheFuture(z.at, server.serverNow)).isFalse()
+        assertThat(lib.likedTitles()).contains("Z")
+
+        // An HLC already stamped in the future (before this fix, or a clock that ran ahead): back to the server's time.
+        records.record!!.last = Hlc(server.serverNow + 2 * 3_600_000L, 3, me)
+        lib.like(song("Y"))
+        run()
+        val y = likeOps(me).last { it.s.title == "Y" }
+        assertThat(Hlc.fromTheFuture(y.at, server.serverNow)).isFalse()
+        assertThat(records.record!!.last!!.wall).isAtMost(server.serverNow + Hlc.MAX_FUTURE_MS)
+    }
+
     @Test fun `a log entry under a key the phone never had is a gap, it never compacts over it`() = runTest {
         link()
         likesMirroring()
@@ -693,6 +808,20 @@ class MirrorEngineTest {
         server.logLimit = space.head.toInt()
         lib.like(song("G"))
         assertThat(run()).isEqualTo(MirrorRun.Failed(MirrorEngine.CANT_COMPACT))
+        assertThat(space.snapshot).isEmpty()
+    }
+
+    @Test fun `a batch that opens under the space key but this app can't read is a gap, it never compacts over it`() = runTest {
+        link()
+        likesMirroring()
+        // A browser's batch this reader is stricter about than the writer (here: `ops` isn't a list).
+        web.postRaw("""{"kind":"stash-mirror-ops","v":1,"device":"${web.id}","ops":{"t":"like"}}""")
+        val space = server.spaces.getValue(web.spaceId)
+        val unreadable = space.head
+        server.logLimit = space.head.toInt()
+        lib.like(song("G"))
+        assertThat(run()).isEqualTo(MirrorRun.Failed(MirrorEngine.CANT_COMPACT))
+        assertThat(records.record!!.gaps).contains(unreadable)
         assertThat(space.snapshot).isEmpty()
     }
 

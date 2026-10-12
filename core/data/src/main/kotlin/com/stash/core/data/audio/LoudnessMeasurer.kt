@@ -2,6 +2,7 @@ package com.stash.core.data.audio
 
 import android.util.Log
 import com.stash.core.data.db.dao.TrackDao
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,7 +24,7 @@ import javax.inject.Singleton
  * EBU R128 loudness is the only standardised way to compare playback level
  * across tracks of mixed mastering era / genre. We measure once per track at
  * download/import time, persist the LUFS value, and apply per-track makeup
- * gain at playback (see [LoudnessGainProcessor]). This wrapper isolates the
+ * gain at playback (see core/media's FloatDspChain). This wrapper isolates the
  * ffmpeg invocation behind a coroutine-suspending API so the backfill worker
  * and the import pipeline can treat measurement as just another I/O call.
  *
@@ -46,7 +47,7 @@ import javax.inject.Singleton
  * parser regexes pull `I:` (integrated loudness in LUFS) and `Peak:` (true
  * peak in dBFS). `-inf LUFS` is treated as a failure — it usually means the
  * track was shorter than the integration window (~3s) or all-silence, and
- * a Float infinity would otherwise propagate into [LoudnessGainProcessor]
+ * a Float infinity would otherwise propagate into the playback gain stage
  * with disastrous results.
  *
  * ## Concurrency
@@ -98,12 +99,18 @@ class LoudnessMeasurer @Inject constructor(
                 "-af", "ebur128=peak=true",
                 "-f", "null", "-",
             )
-            val stderr = runCatching { bridge.runWithStderrCapture(args) }
-                .getOrElse {
-                    return@withContext Result.Failed(
-                        "ffmpeg invocation failed: ${it.message}",
-                    )
-                }
+            val stderr = try {
+                bridge.runWithStderrCapture(args)
+            } catch (e: CancellationException) {
+                // A cancelled measurement (the backfill worker stopped when
+                // the charger was unplugged) is not a broken file. Reported as
+                // Failed it would be persisted as one and never retried.
+                throw e
+            } catch (e: Exception) {
+                return@withContext Result.Failed(
+                    "ffmpeg invocation failed: ${e.message}",
+                )
+            }
             parseSummary(stderr)
         }
     }

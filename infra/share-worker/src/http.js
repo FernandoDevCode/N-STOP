@@ -14,7 +14,11 @@ export function limitKey(addr) {
     return groups.slice(0, 4).join(":");
 }
 
-export const ip = (request) => limitKey(request.headers.get("CF-Connecting-IP") || "?");
+/**
+ * The per-minute limits' key: the client's network (networkOf below: an IPv4 address, or an IPv6 /56), as Community's
+ * limits use. A /64 key let one host with a routed /48 (common on VPSes and tunnel brokers) spread over 65,536 buckets.
+ */
+export const ip = (request) => networkOf(request.headers.get("CF-Connecting-IP") || "?");
 
 /**
  * Community's "network" (spec 2026-09-26 §2): an IPv4 address as is, an IPv6 address by its /56.
@@ -27,4 +31,33 @@ export function networkOf(addr) {
     if (!key.includes(":") || key.includes(".")) return key;
     const g = key.split(":").map((x) => parseInt(x || "0", 16) || 0);
     return `${g[0].toString(16)}:${g[1].toString(16)}:${g[2].toString(16)}:${(g[3] >> 8).toString(16)}/56`;
+}
+
+/**
+ * The body, read only until it passes [max] bytes; null past it. A chunked or HTTP/2 body has no Content-Length
+ * to check first, and `arrayBuffer()` would buffer all of it (Cloudflare accepts up to 100 MB) into the isolate
+ * before any size check, so a few such requests could push it over its memory limit and reset other requests.
+ */
+export async function readCapped(request, max) {
+    if (!request.body) return new Uint8Array(0);
+    const reader = request.body.getReader();
+    const parts = [];
+    let size = 0;
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > max) {
+            await reader.cancel().catch(() => {});
+            return null;
+        }
+        parts.push(value);
+    }
+    const out = new Uint8Array(size);
+    let at = 0;
+    for (const p of parts) {
+        out.set(p, at);
+        at += p.byteLength;
+    }
+    return out;
 }

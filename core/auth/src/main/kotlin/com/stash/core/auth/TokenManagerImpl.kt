@@ -16,7 +16,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -34,7 +37,14 @@ class TokenManagerImpl @Inject constructor(
     private val youTubeCookieHelper: YouTubeCookieHelper,
 ) : TokenManager {
 
-    /** Dedicated scope for collecting store flows; survives until the process dies. */
+    /**
+     * Dedicated scope for collecting store flows; survives until the process dies.
+     * Main only for publishing the states: the store's `map { decrypt }` runs in
+     * the collector's context, so each observer applies `flowOn(Default)`.
+     * Without it the first emission built the Tink keyset (a SharedPreferences
+     * read plus Keystore binder calls) on Main during startup, and every auth
+     * write (each Spotify refresh) re-ran six decrypts + JSON parses there.
+     */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     // -- Spotify state --------------------------------------------------------
@@ -68,23 +78,35 @@ class TokenManagerImpl @Inject constructor(
      */
     override suspend fun getSpotifyAccessToken(): String? {
         val token = tokenStore.spotifyToken.first() ?: return null
-        val spDcCookie = token.refreshToken
 
         // If the token is still fresh, return it immediately
         if (!token.isExpired && !token.isExpiringSoon) {
             return token.accessToken
         }
 
-        // Token is expired or expiring soon -- refresh using the sp_dc cookie
-        if (spDcCookie.isEmpty()) return null
-        val refreshed = spotifyAuthManager.refreshAccessToken(spDcCookie) ?: return null
+        // Token is expired or expiring soon -- refresh using the sp_dc cookie.
+        // One refresh at a time: a sync, the auto-save scrobbler and like
+        // mirroring all ask at once near expiry, and each used to hit the
+        // (TOTP-guarded, rate-limited) token endpoint and rewrite the store.
+        // Whoever waited re-reads, and uses the token the first caller saved.
+        return spotifyRefreshLock.withLock {
+            val current = tokenStore.spotifyToken.first() ?: return@withLock null
+            if (!current.isExpired && !current.isExpiringSoon) return@withLock current.accessToken
 
-        // Preserve the existing user info when saving the refreshed token.
-        // Without this, the user gets cleared and the UI shows "Not Connected".
-        val existingUser = tokenStore.spotifyUser.first()
-        tokenStore.saveSpotifyToken(refreshed, existingUser)
-        return refreshed.accessToken
+            val spDcCookie = current.refreshToken
+            if (spDcCookie.isEmpty()) return@withLock null
+            val refreshed = spotifyAuthManager.refreshAccessToken(spDcCookie) ?: return@withLock null
+
+            // Preserve the existing user info when saving the refreshed token.
+            // Without this, the user gets cleared and the UI shows "Not Connected".
+            val existingUser = tokenStore.spotifyUser.first()
+            tokenStore.saveSpotifyToken(refreshed, existingUser)
+            refreshed.accessToken
+        }
     }
+
+    /** Serializes Spotify token refreshes; see [getSpotifyAccessToken]. */
+    private val spotifyRefreshLock = Mutex()
 
     /**
      * Returns the stored Spotify username/user ID.
@@ -137,15 +159,15 @@ class TokenManagerImpl @Inject constructor(
      * This obtains a completely new access token from the sp_dc cookie,
      * which should have a fresh rate-limit window on the Spotify side.
      */
-    override suspend fun forceRefreshSpotifyAccessToken(): String? {
-        val token = tokenStore.spotifyToken.first() ?: return null
+    override suspend fun forceRefreshSpotifyAccessToken(): String? = spotifyRefreshLock.withLock {
+        val token = tokenStore.spotifyToken.first() ?: return@withLock null
         val spDcCookie = token.refreshToken
-        if (spDcCookie.isEmpty()) return null
+        if (spDcCookie.isEmpty()) return@withLock null
 
-        val refreshed = spotifyAuthManager.refreshAccessToken(spDcCookie) ?: return null
+        val refreshed = spotifyAuthManager.refreshAccessToken(spDcCookie) ?: return@withLock null
         val existingUser = tokenStore.spotifyUser.first()
         tokenStore.saveSpotifyToken(refreshed, existingUser)
-        return refreshed.accessToken
+        refreshed.accessToken
     }
 
     /**
@@ -254,6 +276,7 @@ class TokenManagerImpl @Inject constructor(
         scope.launch {
             tokenStore.discordToken
                 .combine(tokenStore.discordUser) { token, user -> token to user }
+                .flowOn(Dispatchers.Default)
                 .collect { (token, user) ->
                     _discordAuthState.value = when {
                         token != null && user != null -> AuthState.Connected(user)
@@ -312,6 +335,7 @@ class TokenManagerImpl @Inject constructor(
         scope.launch {
             tokenStore.spotifyToken
                 .combine(tokenStore.spotifyUser) { token, user -> token to user }
+                .flowOn(Dispatchers.Default)
                 .collect { (token, user) ->
                     _spotifyAuthState.value = when {
                         token != null && user != null -> AuthState.Connected(user)
@@ -326,6 +350,7 @@ class TokenManagerImpl @Inject constructor(
         scope.launch {
             tokenStore.youTubeToken
                 .combine(tokenStore.youTubeUser) { token, user -> token to user }
+                .flowOn(Dispatchers.Default)
                 .collect { (token, user) ->
                     _youTubeAuthState.value = when {
                         token != null && user != null -> AuthState.Connected(user)

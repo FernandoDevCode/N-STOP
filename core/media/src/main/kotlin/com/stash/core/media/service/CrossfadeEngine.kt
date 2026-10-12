@@ -4,6 +4,8 @@ import android.content.Context
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import androidx.annotation.OptIn
+import androidx.annotation.VisibleForTesting
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -69,10 +71,17 @@ class CrossfadeEngine(
     var onFocusPause: (() -> Unit)? = null
     var onFocusResume: (() -> Unit)? = null
 
-    private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
+    /** Internal for tests: [AudioFocusRequest]'s listener getter is hidden API. */
+    @VisibleForTesting
+    internal val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
         when (change) {
             AudioManager.AUDIOFOCUS_LOSS -> {
                 pausedForFocusLoss = false
+                // Another app took over for good: end a running fade here. Its
+                // wall-clock ramp would otherwise run on to the swap, whose
+                // focus request took focus straight back and paused the app
+                // the user had just switched to, leaving both silent.
+                if (transitioning) cancelTransition()
                 playerA.playWhenReady = false
                 playerB.playWhenReady = false
                 abandonFocus()
@@ -104,9 +113,29 @@ class CrossfadeEngine(
         }
     }
 
-    /** Requests focus when the master starts; abandons when it stops. */
+    /**
+     * Requests focus when the master starts; abandons when it stops. Also hands
+     * a running fade back to the outgoing master when the user pauses or seeks
+     * it (see below). Registered before the service's own listener, so a
+     * cancelled fade is already over when that listener re-reads idleness.
+     */
     private val masterFocusListener = object : Player.Listener {
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            // A pause mid-fade (app, notification, headset, the sleep timer's
+            // final pause) lands only on this OUTGOING master, the session's
+            // player. The spare isn't wired to the session, so it played on,
+            // ramped up and was promoted at the swap with playWhenReady = true:
+            // the pause turned into "skip to the next song", and a sleep timer
+            // expiring inside a fade left the music on all night. Abort the
+            // fade so the pause holds. A transient focus loss sets
+            // pausedForFocusLoss first and keeps the fade (both players resume
+            // on gain); pauseAtEndOfMediaItems' own hold reports
+            // END_OF_MEDIA_ITEM, not USER_REQUEST.
+            if (!playWhenReady && transitioning && !pausedForFocusLoss &&
+                reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST
+            ) {
+                cancelTransition()
+            }
             // During a fade this listener still sits on the OUTGOING player,
             // whose pauseAtEndOfMediaItems fires playWhenReady=false if it
             // runs out mid-ramp (streaming durations drift). The incoming is
@@ -114,6 +143,18 @@ class CrossfadeEngine(
             // focus stack while music keeps playing (#251 car-route ghost).
             if (playWhenReady) requestFocus()
             else if (!pausedForFocusLoss && !transitioning) abandonFocus()
+        }
+
+        override fun onPositionDiscontinuity(
+            oldPosition: Player.PositionInfo,
+            newPosition: Player.PositionInfo,
+            reason: Int,
+        ) {
+            // A seek inside the outgoing song mid-fade ("Previous" more than 3 s
+            // in, scrubbing back) raises no media-item transition, so the
+            // service's cancel never ran: the fade went on and the song the
+            // user just restarted was cut off at the swap.
+            if (transitioning && reason == Player.DISCONTINUITY_REASON_SEEK) handBackToOutgoing()
         }
     }
 
@@ -216,6 +257,12 @@ class CrossfadeEngine(
 
             var elapsed = 0L
             while (elapsed < fadeMs) {
+                // The queue moved under the fade (see incomingIndexIn): hand back
+                // now, while the outgoing is still audible, not at the swap.
+                if (incomingIndexIn(outgoing, incoming) == null) {
+                    handBackToOutgoing()
+                    return@launch
+                }
                 val (out, inc) = equalPowerVolumes(elapsed.toFloat() / fadeMs)
                 outgoing.volume = out
                 incoming.volume = inc
@@ -246,13 +293,22 @@ class CrossfadeEngine(
             if (!isActive) return@launch
 
             // Late swap: give the incoming the outgoing's queue, then promote it.
-            transferQueue(from = outgoing, to = incoming)
+            // Re-checked here: nothing suspends from this point on, so no edit can
+            // slip in between the check and the transfer.
+            val incomingIndex = incomingIndexIn(outgoing, incoming)
+            if (incomingIndex == null) {
+                handBackToOutgoing()
+                return@launch
+            }
+            transferQueue(from = outgoing, to = incoming, incomingIndex = incomingIndex)
             outgoing.removeListener(masterFocusListener)
             incoming.addListener(masterFocusListener)
             incoming.pauseAtEndOfMediaItems = false
             playerA = incoming
             playerB = outgoing
-            requestFocus()
+            // Only a player that is meant to play takes focus: requesting it for
+            // a paused one would pause whatever app holds focus now, for nothing.
+            if (incoming.playWhenReady) requestFocus()
             onSwap(playerA)
 
             outgoing.pauseAtEndOfMediaItems = false
@@ -265,15 +321,39 @@ class CrossfadeEngine(
     }
 
     /**
+     * [outgoing]'s timeline index of the song [incoming] is playing, or null
+     * when that song is no longer the outgoing's NEXT one.
+     *
+     * Edits land on the outgoing (the session's player) and raise no item
+     * transition, so the fade used to run on regardless: the upcoming song
+     * swiped away or evicted mid-fade made the old by-mediaId lookup miss, the
+     * transfer returned early, and the swap promoted a ONE-item player whose
+     * timeline the repository then persisted over the user's whole queue. A
+     * "Play next" inserted mid-fade sits at outgoing + 1 and ended up in the
+     * new master's history, never played. Shuffle or repeat changed mid-fade
+     * moves "next" the same way. And with duplicates (`[A, B, C, A, D]`,
+     * fading C into the second A) the first-match lookup put the new master
+     * on the FIRST A, replaying B and C. Reading the outgoing's own next index
+     * answers both: it is where the incoming must sit, and if it no longer
+     * holds the incoming's song the fade is handed back.
+     */
+    private fun incomingIndexIn(outgoing: ExoPlayer, incoming: ExoPlayer): Int? {
+        val next = outgoing.nextMediaItemIndex
+        if (next == C.INDEX_UNSET) return null
+        val id = incoming.currentMediaItem?.mediaId ?: return null
+        return next.takeIf { outgoing.getMediaItemAt(next).mediaId == id }
+    }
+
+    /**
      * Copies [from]'s queue around [to]'s current item so the promoted player
      * has the full timeline (history + future) with the same current index and
-     * the position it has been playing. Matches by mediaId so it is shuffle- and
-     * repeat-order safe.
+     * the position it has been playing, and the same shuffle (play) order.
+     * [incomingIndex] is [to]'s song's index in [from] (see [incomingIndexIn]),
+     * so it is shuffle-, repeat- and duplicate-safe.
      */
-    private fun transferQueue(from: ExoPlayer, to: ExoPlayer) {
-        val currentId = to.currentMediaItem?.mediaId ?: return
+    private fun transferQueue(from: ExoPlayer, to: ExoPlayer, incomingIndex: Int) {
         val count = from.mediaItemCount
-        val idx = (0 until count).firstOrNull { from.getMediaItemAt(it).mediaId == currentId } ?: return
+        val idx = incomingIndex
         val history = (0 until idx).map { from.getMediaItemAt(it) }
         val future = ((idx + 1) until count).map { from.getMediaItemAt(it) }
         to.repeatMode = from.repeatMode
@@ -281,6 +361,31 @@ class CrossfadeEngine(
         to.playbackParameters = from.playbackParameters
         if (history.isNotEmpty()) to.addMediaItems(0, history) // shifts `to`'s current index up
         if (future.isNotEmpty()) to.addMediaItems(future)
+        // Carry the PLAY order over too. Each addMediaItems above lands the inserted indexes at
+        // random points of `to`'s fresh one-item shuffle order (DefaultShuffleOrder.cloneAndInsert),
+        // so under shuffle the current track sat at a random spot of a brand-new walk after every
+        // fade: songs already heard came back, and with repeat off about half the playlist ended up
+        // "behind" the current one and never played. A browser handoff's custom order
+        // (COMMAND_SET_SHUFFLE_ORDER) was lost at the first fade the same way. The timeline is now
+        // index-for-index the outgoing's, so its (immutable) order applies as is; the count check
+        // only keeps setShuffleOrder's length precondition from throwing should they ever differ.
+        if (to.mediaItemCount == from.mediaItemCount) to.shuffleOrder = from.shuffleOrder
+    }
+
+    /**
+     * Aborts the fade for a reason that is not a pause (a seek on the outgoing,
+     * a queue edit that moved its next song; see [incomingIndexIn]),
+     * leaving the outgoing master playing. If the outgoing already reached its
+     * end, pauseAtEndOfMediaItems is holding it there paused, and a plain
+     * [cancelTransition] would leave silence. A user pause or a focus loss
+     * mid-fade cancels the fade itself (or sets [pausedForFocusLoss]), so a
+     * paused outgoing here is exactly that hold, and it plays on.
+     */
+    private fun handBackToOutgoing() {
+        val outgoing = playerA
+        val heldAtEnd = !outgoing.playWhenReady && !pausedForFocusLoss
+        cancelTransition()
+        if (heldAtEnd) outgoing.play()
     }
 
     /** Abort a pending/in-flight fade and restore the master; spare is reset. */

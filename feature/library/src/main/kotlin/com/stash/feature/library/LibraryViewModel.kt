@@ -20,6 +20,8 @@ import com.stash.core.model.Playlist
 import com.stash.core.model.Track
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -34,6 +36,10 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -49,6 +55,16 @@ import javax.inject.Inject
  * for a string set.
  */
 private val LOSSLESS_CODECS = setOf("flac", "alac", "wav", "ape", "tta", "wv", "aiff")
+
+/**
+ * The order every Library list takes under [SortOrder.ALPHABETICAL] (songs and likes by title;
+ * playlists, artists and albums by name): case-insensitive, character by character, nothing
+ * folded or stripped ("The Beatles" files under T, "Édith Piaf" after Z). The fast-scroll letter
+ * bubble ([com.stash.core.ui.components.fastScrollSectionLetter]) reads the first letter of the
+ * same name the same way, so its letters run in the list's own order. Change the two together:
+ * if this ever folds accents or skips a leading "The", the bubble must too.
+ */
+internal val alphabeticalOrder: Comparator<String> = String.CASE_INSENSITIVE_ORDER
 
 /** Shared track search predicate — every Library list matches title/artist/album. */
 private fun Track.matchesQuery(query: String): Boolean =
@@ -202,6 +218,73 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
+    // ── Single-song "Remove download", with Undo ─────────────────────────
+
+    /**
+     * The ⋮ sheet's "Remove download" on a Songs or Liked row: staged, not done, so the screen
+     * can offer Undo while the song has already left the downloads lists (see
+     * [UndoableDownloadRemoval]). The batch Remove download keeps its confirm dialog instead.
+     *
+     * Its own app-lifetime scope, not viewModelScope: [onCleared] commits a staged removal when
+     * viewModelScope is already cancelled, and a delete cut off between the file and its row
+     * would leave the row pointing at a missing file. Instantiated inline like LikeCoordinator's
+     * (no ApplicationScope qualifier exists in this codebase). If the process dies inside the
+     * Undo window nothing is deleted, which is the safe way to fail.
+     */
+    private val downloadRemoval = UndoableDownloadRemoval(
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+        remove = { track ->
+            try {
+                musicRepository.removeDownload(track.id)
+                true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("LibraryVM", "removeDownload ${track.id} failed", e)
+                _userMessages.tryEmit("Couldn't remove the download for \"${track.title}\".")
+                false
+            }
+        },
+    )
+
+    /** The staged removal the screen's Undo snackbar is for, or null. */
+    val pendingDownloadRemoval: StateFlow<Track?> = downloadRemoval.pending
+
+    /** "Remove download" from a row's ⋮ sheet: the song leaves the lists now, its file goes on [commitPendingDownloadRemoval]. */
+    fun removeDownloadWithUndo(track: Track) {
+        downloadRemoval.stage(track)
+    }
+
+    /** Undo: [trackId]'s file stays and the song is back in the lists. */
+    fun undoRemoveDownload(trackId: Long) {
+        downloadRemoval.undo(trackId)
+    }
+
+    /**
+     * The Undo is gone (its snackbar timed out or was swiped, or the listener left Library):
+     * delete now. A [trackId] commits only that song, so an outdated snackbar can't commit a newer one.
+     */
+    fun commitPendingDownloadRemoval(trackId: Long? = null) {
+        downloadRemoval.commit(trackId)
+    }
+
+    override fun onCleared() {
+        // Gone for good with an Undo still showing: the removal the listener asked for happens
+        // now, in downloadRemoval's own scope.
+        downloadRemoval.commit()
+        super.onCleared()
+    }
+
+    /**
+     * The downloaded songs, minus any whose removal is staged or still landing: they leave
+     * Songs and [LibraryUiState.librarySongCount] the moment Remove download is tapped, not
+     * when the file goes.
+     */
+    private val downloadedTracks: Flow<List<Track>> =
+        combine(musicRepository.getAllTracks(), downloadRemoval.hiddenIds) { tracks, hidden ->
+            if (hidden.isEmpty()) tracks else tracks.filterNot { it.id in hidden }
+        }
+
     /**
      * Derives a pair of (spotifyConnected, youTubeConnected) from TokenManager.
      */
@@ -224,16 +307,36 @@ class LibraryViewModel @Inject constructor(
         // even in Online mode. Recently-added STREAMABLE tracks belong on Home,
         // which is the streaming/discovery surface.
         musicRepository.getRecentlyAdded(20),
-    ) { playlists, recentlyAdded ->
-        LibraryData(playlists = playlists, recentlyAdded = recentlyAdded)
+        // A song whose download removal is staged leaves the recent rail too.
+        downloadRemoval.hiddenIds,
+    ) { playlists, recentlyAdded, hidden ->
+        LibraryData(
+            playlists = playlists,
+            recentlyAdded = if (hidden.isEmpty()) recentlyAdded else recentlyAdded.filterNot { it.id in hidden },
+        )
     }
+
+    /**
+     * [_controls] as the list pipeline sees them: a typed query waits [SEARCH_SETTLE_MS] for the
+     * next keystroke (clearing it applies at once), while tab, sort and filter changes pass straight
+     * through. Unsettled, "beatles" re-ran the whole regroup/filter/sort over the library seven
+     * times, and combine can't cancel a run already started, so the work queued up behind the
+     * typing. The field itself never waits: it binds [searchQuery].
+     */
+    @OptIn(FlowPreview::class)
+    private val pipelineControls: Flow<ControlState> = combine(
+        _controls.map { it.copy(searchQuery = "") }.distinctUntilChanged(),
+        _controls.map { it.searchQuery }
+            .distinctUntilChanged()
+            .debounce { query -> if (query.isEmpty()) 0L else SEARCH_SETTLE_MS },
+    ) { controls, query -> controls.copy(searchQuery = query) }
 
     /**
      * Combined UI state that reacts to both data changes and user interactions.
      */
     val uiState: StateFlow<LibraryUiState> = combine(
-        _controls,
-        musicRepository.getAllTracks(),
+        pipelineControls,
+        downloadedTracks,
         libraryDataFlow,
         musicRepository.getAllArtists(),
         musicRepository.getAllAlbums(),
@@ -311,7 +414,7 @@ class LibraryViewModel @Inject constructor(
         // -- Apply sort order --
         val sortedTracks = when (controls.sortOrder) {
             SortOrder.RECENT -> filteredTracks.sortedByDescending { it.dateAdded }
-            SortOrder.ALPHABETICAL -> filteredTracks.sortedBy { it.title.lowercase() }
+            SortOrder.ALPHABETICAL -> filteredTracks.sortedWith(compareBy(alphabeticalOrder) { it.title })
             SortOrder.MOST_PLAYED -> filteredTracks.sortedByDescending { it.playCount }
             SortOrder.DURATION -> filteredTracks.sortedByDescending { it.durationMs }
         }
@@ -320,7 +423,7 @@ class LibraryViewModel @Inject constructor(
             // — the latter reshuffles the list every sync run. See
             // PlaylistEntity.dateAdded + migration v12→v13 (issue #13).
             SortOrder.RECENT -> filteredPlaylists.sortedByDescending { it.dateAdded }
-            SortOrder.ALPHABETICAL -> filteredPlaylists.sortedBy { it.name.lowercase() }
+            SortOrder.ALPHABETICAL -> filteredPlaylists.sortedWith(compareBy(alphabeticalOrder) { it.name })
             // Playlists don't track a per-playlist play_count; use
             // trackCount as the most-relevant "size" signal so this
             // chip produces a visible ordering change instead of a
@@ -335,13 +438,13 @@ class LibraryViewModel @Inject constructor(
         // Sort artists/albums — default by track count descending (most tracks first)
         val sortedArtists = when (controls.sortOrder) {
             SortOrder.RECENT -> filteredArtists.sortedByDescending { it.trackCount }
-            SortOrder.ALPHABETICAL -> filteredArtists.sortedBy { it.name.lowercase() }
+            SortOrder.ALPHABETICAL -> filteredArtists.sortedWith(compareBy(alphabeticalOrder) { it.name })
             SortOrder.MOST_PLAYED -> filteredArtists.sortedByDescending { it.trackCount }
             SortOrder.DURATION -> filteredArtists.sortedByDescending { it.totalDurationMs }
         }
         val sortedAlbums = when (controls.sortOrder) {
             SortOrder.RECENT -> filteredAlbums.sortedByDescending { it.trackCount }
-            SortOrder.ALPHABETICAL -> filteredAlbums.sortedBy { it.name.lowercase() }
+            SortOrder.ALPHABETICAL -> filteredAlbums.sortedWith(compareBy(alphabeticalOrder) { it.name })
             SortOrder.MOST_PLAYED -> filteredAlbums.sortedByDescending { it.trackCount }
             // Albums carry no duration projection — fall back to track count.
             SortOrder.DURATION -> filteredAlbums.sortedByDescending { it.trackCount }
@@ -798,10 +901,12 @@ class LibraryViewModel @Inject constructor(
             // "Only here": it stops mirroring first, so its copies elsewhere stay; "Everywhere": the next mirror run deletes them.
             mirror?.beforeDelete(playlist.id, everywhere)
             playlistImageHelper.deletePlaylistCoverFile(playlist.id)
-            musicRepository.deletePlaylistWithCascade(
+            val summary = musicRepository.deletePlaylistWithCascade(
                 playlistId = playlist.id,
                 alsoBlacklist = alsoBlacklist,
             )
+            // Say what really happened: songs that are also in Liked or another playlist stay.
+            _userMessages.tryEmit(cascadeSummaryMessage(summary))
         }
     }
 
@@ -872,15 +977,6 @@ class LibraryViewModel @Inject constructor(
         )
     }
 
-    private val _lastCascadeSummary =
-        kotlinx.coroutines.flow.MutableSharedFlow<com.stash.core.data.repository.MusicRepository.CascadeRemovalSummary>(
-            extraBufferCapacity = 1,
-            onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST,
-        )
-    /** One-shot cascade summaries for the delete Snackbar. */
-    val lastCascadeSummary: kotlinx.coroutines.flow.SharedFlow<com.stash.core.data.repository.MusicRepository.CascadeRemovalSummary> =
-        _lastCascadeSummary.asSharedFlow()
-
     /** Preview counts shown in the playlist-delete confirmation dialog. */
     data class DeletePreview(
         val totalTracks: Int,
@@ -932,11 +1028,28 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
-    /** Delete all downloaded tracks by [artistName] from disk and DB. */
+    /**
+     * Delete the downloaded songs on [artistName]'s card from disk and DB — exactly the
+     * [ArtistInfo.trackCount] songs the confirm dialog names (see [artistCardTracks]).
+     *
+     * [MusicRepository.getTracksByArtist] is a credit search (any credit, album artist too,
+     * downloaded or not): deleting all of it also took "Future, Drake" songs from Future's card,
+     * compilations whose album artist is Drake, and every streamable synced row crediting him,
+     * cascading them out of playlists and Liked for good. Per-item failures are isolated;
+     * emits one roll-up message.
+     */
     fun deleteArtist(artistName: String) {
         viewModelScope.launch {
-            val tracks = musicRepository.getTracksByArtist(artistName).first()
-            tracks.forEach { musicRepository.deleteTrack(it) }
+            val tracks = artistCardTracks(musicRepository.getTracksByArtist(artistName).first(), artistName)
+            var deleted = 0
+            tracks.forEach { track ->
+                runCatching { musicRepository.deleteTrack(track) }
+                    .onSuccess { if (it) deleted++ }
+                    .onFailure { e -> if (e is CancellationException) throw e }
+            }
+            if (deleted > 0) {
+                _userMessages.tryEmit("Deleted $deleted ${songs(deleted)}.")
+            }
         }
     }
 
@@ -1057,13 +1170,16 @@ internal fun sortLikedTracks(tracks: List<Track>, order: SortOrder): List<Track>
         val (stamped, synced) = tracks.partition { it.likedAtOrNull() != null }
         stamped.sortedByDescending { it.likedAtOrNull() } + synced
     }
-    SortOrder.ALPHABETICAL -> tracks.sortedBy { it.title.lowercase() }
+    SortOrder.ALPHABETICAL -> tracks.sortedWith(compareBy(alphabeticalOrder) { it.title })
     SortOrder.MOST_PLAYED -> tracks.sortedByDescending { it.playCount }
     SortOrder.DURATION -> tracks.sortedByDescending { it.durationMs }
 }
 
 private fun Track.likedAtOrNull(): Long? =
     listOfNotNull(stashLikedAt, spotifySavedAt, ytMusicSavedAt, lastFmLovedAt).maxOrNull()
+
+/** How long a typed Library query must sit still before the list pipeline re-runs on it. */
+private const val SEARCH_SETTLE_MS = 150L
 
 private data class ControlState(
     val activeTab: LibraryTab = LibraryTab.TRACKS,
@@ -1094,3 +1210,29 @@ private data class LibraryData(
     val playlists: List<Playlist>,
     val recentlyAdded: List<Track>,
 )
+
+/**
+ * The songs an Artists-tab card counts: DOWNLOADED rows whose credit's primary act is
+ * [artistName]. Mirrors how the card is built (`getAllArtists` counts `is_downloaded` rows per
+ * exact credit, then the tab regroups credits by [primaryArtist]), so a destructive action on
+ * the card touches exactly the songs its count, and its confirm dialog, promise.
+ */
+internal fun artistCardTracks(candidates: List<Track>, artistName: String): List<Track> =
+    candidates.filter { it.isDownloaded && it.artist.primaryArtist() == artistName }
+
+/**
+ * The snackbar after "Delete Playlist & Songs". The cascade keeps every song that is also in
+ * Liked Songs or another playlist, so "deleted N" alone (or the dialog's old "all its tracks will
+ * be removed") overstated what went.
+ */
+internal fun cascadeSummaryMessage(summary: com.stash.core.data.repository.MusicRepository.CascadeRemovalSummary): String {
+    val deleted = summary.deleted
+    val kept = summary.keptProtected + summary.keptElsewhere
+    fun songs(n: Int) = if (n == 1) "1 song" else "$n songs"
+    return when {
+        deleted > 0 && kept > 0 -> "Deleted ${songs(deleted)}. Kept ${songs(kept)} that are in Liked Songs or other playlists."
+        deleted > 0 -> "Deleted ${songs(deleted)}."
+        kept > 0 -> "Playlist deleted. Its ${songs(kept)} stay: they're in Liked Songs or other playlists."
+        else -> "Playlist deleted."
+    }
+}

@@ -21,7 +21,12 @@ import com.stash.core.model.Track
 import com.stash.data.lyrics.LyricsRepository
 import com.stash.data.lyrics.sidecar.LyricsSidecarWriter
 import com.stash.data.lyrics.source.LyricsQuery
+import com.stash.feature.nowplaying.ui.LyricsOutputOffset
 import com.stash.feature.nowplaying.ui.LyricsViewState
+import com.stash.feature.nowplaying.ui.clampOutputOffsetMs
+import com.stash.feature.nowplaying.ui.effectiveLyricsOffsetMs
+import com.stash.feature.nowplaying.ui.lyricsPositionMs
+import com.stash.feature.nowplaying.ui.lyricsSeekTargetMs
 import com.stash.feature.nowplaying.ui.lyricsViewStateFor
 import com.stash.feature.nowplaying.ui.lyricsViewStateForResult
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -96,7 +101,22 @@ class NowPlayingViewModel @Inject constructor(
     // Gates the lyrics prefetch to the foreground. Hilt binds the process lifecycle
     // (ProcessForeground); tests leave the default, which never prefetches.
     private val appForeground: AppForeground = AppForeground.Never,
+    // Runs user-asked writes past this screen's lifetime (see [launchUserAction]). Hilt binds the
+    // process-wide scope; tests leave the default, which runs on their Main test dispatcher.
+    private val userActionScope: UserActionScope = UserActionScope.OnMain,
+    // The output lyrics are heard through and its own lyrics offset (Bluetooth latency). Hilt
+    // binds the routed output; tests leave the default, which knows no output.
+    private val lyricsOutputOffsets: LyricsOutputOffsets = LyricsOutputOffsets.None,
 ) : ViewModel() {
+
+    /**
+     * Launches work the user asked for that must finish even if they leave Now Playing (this
+     * ViewModel is scoped to its back-stack entry, and leaving cancelled viewModelScope mid-job).
+     * Its messages still go to [userMessages]; once the screen is gone nobody shows them, but the
+     * work itself completes.
+     */
+    private fun launchUserAction(block: suspend kotlinx.coroutines.CoroutineScope.() -> Unit) =
+        userActionScope.scope.launch(block = block)
 
     // ── Share (fork issue ParaliyzedEvo/Stash#40) ──
     // The player-state Track is a slim media-session reconstruction with
@@ -637,7 +657,8 @@ class NowPlayingViewModel @Inject constructor(
     /**
      * Raw per-track sync offset (signed ms; positive delays lyrics), for the lyrics menu's Offset dialog
      * to show the current value. Null when there's nothing to store an offset on — a streaming
-     * track (id == 0L) or a track with no lyrics row yet — so the lyrics menu hides its Offset item.
+     * track (id == 0L) or a track with no lyrics row yet — so the sync dialog offers no song offset
+     * (only the output's, [lyricsOutputOffset], when that's known; else the menu hides the item).
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     val lyricsSyncOffsetMs: StateFlow<Long?> = lyricsTargets
@@ -647,36 +668,61 @@ class NowPlayingViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), null)
 
     /**
-     * Position fed to the lyrics view + live bar, with [lyricsSyncOffsetMs] baked in. Everything
-     * else (the progress bar, `onSeekTo`, etc.) keeps using the player's raw position untouched.
+     * The output playing now and the lyrics offset set for it (the sync dialog's "Apply to all
+     * songs on <device>"), or null while the output isn't known (nothing has played yet). It adds
+     * to the song's own [lyricsSyncOffsetMs] for every song on that output, streams included.
+     * Declared before [currentPositionMs], which combines it.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val lyricsOutputOffset: StateFlow<LyricsOutputOffset?> = lyricsOutputOffsets.output
+        .flatMapLatest { output ->
+            if (output == null) {
+                flowOf<LyricsOutputOffset?>(null)
+            } else {
+                lyricsOutputOffsets.offsetMs(output).map { LyricsOutputOffset(output, it) }
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), null)
+
+    /**
+     * Position fed to the lyrics view + live bar, with the effective lyrics offset baked in: the
+     * song's [lyricsSyncOffsetMs] plus the output's [lyricsOutputOffset]
+     * ([effectiveLyricsOffsetMs]). Everything else (the progress bar, `onSeekTo`, etc.) keeps
+     * using the player's raw position untouched.
      */
     val currentPositionMs: StateFlow<Long> = combine(
         playerRepository.currentPosition,
         lyricsSyncOffsetMs,
-    ) { pos, offsetMs -> (pos - (offsetMs ?: 0L)).coerceAtLeast(0L) }
+        lyricsOutputOffset,
+    ) { pos, songOffsetMs, output ->
+        lyricsPositionMs(pos, effectiveLyricsOffsetMs(songOffsetMs, output?.offsetMs))
+    }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000L),
             initialValue = 0L,
         )
 
+    /**
+     * The player's raw position (no lyrics offset), for the progress bar, the elapsed/remaining
+     * times and the MiniPlayer's progress line. Its own StateFlow, not a [uiState] field: it ticks
+     * every 250ms while playing, and readers should read it as late as possible (in draw, or in a
+     * small child composable) so only they redraw per tick.
+     */
+    val positionMs: StateFlow<Long> = playerRepository.currentPosition
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000L),
+            initialValue = 0L,
+        )
+
+    // Player-level notices (PlayerRepository.userMessages, streamingHaltedEvents) and like-mirror
+    // failures are NOT forwarded here: MainActivity shows them on every screen. Forwarded into
+    // this flow they reached the user only while Now Playing or the queue sheet collected it.
     init {
         observePlayerStateLive()
         prefetchLyricsWhileForeground()
         observeUserPlaylists()
-        observeStreamingHaltedEvents()
-        observePlayerUserMessages()
-        collectMirrorFailures()
-    }
-
-    /**
-     * v0.9.52: best-effort mirror sync failures surface as one subtle
-     * snackbar per session (LikeCoordinator gates the frequency).
-     */
-    private fun collectMirrorFailures() {
-        viewModelScope.launch {
-            likeCoordinator.mirrorFailures.collect { _userMessages.tryEmit(it) }
-        }
     }
 
     // ------------------------------------------------------------------
@@ -734,12 +780,13 @@ class NowPlayingViewModel @Inject constructor(
                 }
             }
 
+        // The 250ms position tick is NOT combined in here (see [positionMs]): it made uiState,
+        // and so every reader of it, re-emit four times a second.
         combine(
             playerRepository.playerState,
-            playerRepository.currentPosition,
             liveTrackFlow,
             optimisticLikeState,
-        ) { state, positionMs, live, optimistic ->
+        ) { state, live, optimistic ->
             val (liveKey, liveTrack) = live
             // Room answers a moment after the player moves on: until it has answered for THIS
             // track, whether the track is in the library is unknown (null), not "no".
@@ -785,7 +832,6 @@ class NowPlayingViewModel @Inject constructor(
                     currentTrack = finalTrack,
                     currentTrackStored = if (liveResolved) liveTrack != null else null,
                     isPlaying = state.isPlaying,
-                    currentPositionMs = positionMs,
                     durationMs = state.durationMs,
                     shuffleEnabled = state.isShuffleEnabled,
                     repeatMode = state.repeatMode,
@@ -794,6 +840,7 @@ class NowPlayingViewModel @Inject constructor(
                     queue = state.queue,
                     isStreaming = state.isStreaming,
                     isBuffering = state.isBuffering,
+                    playWhenReady = state.playWhenReady,
                     source = state.source,
                 )
             }
@@ -826,43 +873,6 @@ class NowPlayingViewModel @Inject constructor(
             .launchIn(viewModelScope)
     }
 
-    /**
-     * Subscribes to [PlayerRepository.streamingHaltedEvents] and surfaces
-     * each halt as a Toast via [_userMessages]. The cascade-guard in
-     * PlayerRepositoryImpl already paused the player by the time this
-     * fires — the Toast is purely informational so the user understands
-     * why playback stopped.
-     *
-     * Toast (not Snackbar) matches the existing NowPlayingScreen
-     * convention — see the comment near the `userMessages` collector in
-     * NowPlayingScreen.kt for why we don't wrap this screen in a
-     * Scaffold.
-     */
-    private fun observeStreamingHaltedEvents() {
-        playerRepository.streamingHaltedEvents
-            .onEach {
-                _userMessages.emit(
-                    "Streaming is failing \u2014 try a downloaded track or check your connection"
-                )
-            }
-            .launchIn(viewModelScope)
-    }
-
-    /**
-     * Forwards [PlayerRepository.userMessages] emissions into the screen's
-     * Toast channel. Source examples:
-     *  - "Couldn't play this track right now." (setQueue tap failure)
-     *  - "End of offline Mix" (v0.9.37 auto-advance silent-skip exhausted
-     *    the queue while offline)
-     * The player layer already paused playback when relevant; this
-     * observer is purely informational.
-     */
-    private fun observePlayerUserMessages() {
-        playerRepository.userMessages
-            .onEach { msg -> _userMessages.emit(msg) }
-            .launchIn(viewModelScope)
-    }
-
     // observeLikeStateForCurrentTrack removed in v0.9.13 — subsumed by
     // observePlayerStateLive's Room-bound currentTrack flow above.
 
@@ -870,10 +880,15 @@ class NowPlayingViewModel @Inject constructor(
     // User Actions
     // ------------------------------------------------------------------
 
-    /** Toggle between play and pause. */
+    /**
+     * Toggle between play and pause, on the player's *intent* ([NowPlayingUiState.playWhenReady]),
+     * not on [NowPlayingUiState.isPlaying]: while a stream buffers isPlaying is false, and a tap
+     * then went to play(), a no-op, so the user couldn't pause a stalled stream at all.
+     */
     fun onPlayPauseClick() {
+        val state = _uiState.value
         viewModelScope.launch {
-            if (_uiState.value.isPlaying) {
+            if (state.playWhenReady || state.isPlaying) {
                 playerRepository.pause()
             } else {
                 playerRepository.play()
@@ -921,6 +936,29 @@ class NowPlayingViewModel @Inject constructor(
     }
 
     /**
+     * The queue sheet's Undo: put [track], swiped away from row [index], back on that row. Never
+     * at or before the playing song (the song may have moved on during the snackbar): there it
+     * goes back to the top of Up next instead.
+     *
+     * The sheet's rows are the player's slim copies of the songs (no file path), which would come
+     * back as streams; the library row brings back the downloaded file. A transient stream id can
+     * equal an unrelated row's id, so a row with another YouTube id isn't taken for it. Runs past
+     * this screen (see [launchUserAction]): an Undo tapped as the screen closes still lands.
+     */
+    fun onRestoreToQueue(index: Int, track: Track) {
+        launchUserAction {
+            val row = musicRepository.observeTrackById(track.id).firstOrNull()?.takeIf { row ->
+                track.youtubeId.isNullOrBlank() || row.youtubeId.isNullOrBlank() || row.youtubeId == track.youtubeId
+            }
+            val state = _uiState.value
+            val at = index.coerceAtLeast(state.currentIndex + 1).coerceAtMost(state.queue.size)
+            if (!playerRepository.insertInQueue(at, row ?: track)) {
+                _userMessages.tryEmit("Couldn't put that song back in the queue.")
+            }
+        }
+    }
+
+    /**
      * Move a track within the queue from position [from] to position [to].
      */
     fun onMoveInQueue(from: Int, to: Int) {
@@ -939,26 +977,57 @@ class NowPlayingViewModel @Inject constructor(
     // ------------------------------------------------------------------
 
     /**
-     * Add the currently-playing track to an existing playlist.
+     * Add [track] (the playing track, or a queue row) to an existing playlist, then say so.
      *
-     * @param trackId    ID of the track to save.
-     * @param playlistId ID of the target playlist.
+     * The track is persisted first ([MusicRepository.ensureTrackPersisted], as [onLikeTap] and
+     * [toggleDownload] do): a radio/search/queue stream plays under a transient
+     * `videoId.hashCode()` id with no row until a listen persists it, and the add then found no
+     * row, logged, and returned. The sheet closed as if it had worked and nothing was added.
      */
-    fun saveTrackToPlaylist(trackId: Long, playlistId: Long) {
-        viewModelScope.launch { musicRepository.addTrackToPlaylist(trackId, playlistId) }
+    fun saveTrackToPlaylist(track: Track, playlistId: Long) {
+        launchUserAction {
+            val trackId = persistOrNull(track) ?: run {
+                _userMessages.tryEmit("Couldn't save to playlist.")
+                return@launchUserAction
+            }
+            musicRepository.addTrackToPlaylist(trackId, playlistId)
+            val name = _uiState.value.userPlaylists.firstOrNull { it.id == playlistId }?.name
+            _userMessages.tryEmit(if (name != null) "Saved to $name." else "Saved to playlist.")
+        }
     }
 
     /**
-     * Create a new playlist and immediately add the given track to it.
+     * Create a new playlist and immediately add [track] to it. Persists the track first, before
+     * the playlist exists, so a transient stream id can't leave an empty new playlist behind
+     * (see [saveTrackToPlaylist]).
      *
-     * @param name    Name for the new playlist.
-     * @param trackId ID of the track to save into the newly created playlist.
+     * @param name  Name for the new playlist.
+     * @param track The track to save into the newly created playlist.
      */
-    fun createPlaylistAndAddTrack(name: String, trackId: Long) {
-        viewModelScope.launch {
+    fun createPlaylistAndAddTrack(name: String, track: Track) {
+        launchUserAction {
+            val trackId = persistOrNull(track) ?: run {
+                _userMessages.tryEmit("Couldn't create the playlist.")
+                return@launchUserAction
+            }
             val playlistId = musicRepository.createPlaylist(name)
             musicRepository.addTrackToPlaylist(trackId, playlistId)
+            _userMessages.tryEmit("Saved to $name.")
         }
+    }
+
+    /**
+     * [track]'s real library id, writing a stream-only row for a transient stream id; null (logged)
+     * when that write fails. Every id-keyed write from Now Playing goes through this, because a
+     * write against a transient id silently does nothing.
+     */
+    private suspend fun persistOrNull(track: Track): Long? = try {
+        musicRepository.ensureTrackPersisted(track)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        android.util.Log.w("NowPlayingViewModel", "ensureTrackPersisted failed", e)
+        null
     }
 
     // ------------------------------------------------------------------
@@ -973,8 +1042,13 @@ class NowPlayingViewModel @Inject constructor(
      */
     fun flagCurrentTrackAsWrongMatch() {
         val track = _uiState.value.currentTrack ?: return
-        viewModelScope.launch {
-            musicRepository.setMatchFlagged(track.id, true)
+        launchUserAction {
+            // Persisted first: flagging a stream's transient id flagged no row, yet said "Flagged".
+            val trackId = persistOrNull(track) ?: run {
+                _userMessages.tryEmit("Couldn't flag this song.")
+                return@launchUserAction
+            }
+            musicRepository.setMatchFlagged(trackId, true)
             _userMessages.tryEmit("Flagged. Find it in Sync \u2192 Failed Matches to pick a replacement.")
         }
     }
@@ -1035,7 +1109,7 @@ class NowPlayingViewModel @Inject constructor(
 
     /** Download or remove-download for any [track] (current track or a queue row). */
     fun toggleDownload(track: Track) {
-        viewModelScope.launch {
+        launchUserAction {
             if (track.isDownloaded) {
                 musicRepository.removeDownload(track.id)
                 _userMessages.tryEmit("Download removed.")
@@ -1045,19 +1119,18 @@ class NowPlayingViewModel @Inject constructor(
                 // Resolve a synthetic streaming-engine id to a real DB row
                 // before queuing — otherwise `getById` returns null and the
                 // queue insert silently no-ops while the toast still fires
-                // (issue #105).
-                val realId = runCatching { musicRepository.ensureTrackPersisted(track) }
-                    .getOrElse { e ->
-                        android.util.Log.w("NowPlayingViewModel", "ensureTrackPersisted failed", e)
-                        _downloadingKeys.update { it - key }
-                        _userMessages.tryEmit("Couldn't queue download.")
-                        return@launch
-                    }
+                // (issue #105). persistOrNull rethrows cancellation (runCatching
+                // reported it as a failed download).
+                val realId = persistOrNull(track) ?: run {
+                    _downloadingKeys.update { it - key }
+                    _userMessages.tryEmit("Couldn't queue download.")
+                    return@launchUserAction
+                }
                 val queued = musicRepository.queueDownload(realId)
                 if (!queued) {
                     _downloadingKeys.update { it - key }
                     _userMessages.tryEmit("Couldn't queue download.")
-                    return@launch
+                    return@launchUserAction
                 }
                 _userMessages.tryEmit("Downloading…")
                 // Watchdog: drop the spinner once the row lands on disk, or
@@ -1075,7 +1148,7 @@ class NowPlayingViewModel @Inject constructor(
     fun findInFlacForCurrentTrack() {
         val track = _uiState.value.currentTrack ?: return
         if (track.isFlac) return
-        viewModelScope.launch {
+        launchUserAction {
             _userMessages.tryEmit("Looking for FLAC\u2026")
             val result = losslessUpgrader.upgradeToLossless(track)
             _userMessages.tryEmit(snackbarCopyFor(result))
@@ -1093,15 +1166,31 @@ class NowPlayingViewModel @Inject constructor(
      * naturally — cleaner than racing the delete.
      */
     fun deleteCurrentTrack(alsoBlock: Boolean) {
-        val track = _uiState.value.currentTrack ?: return
-        viewModelScope.launch {
-            playerRepository.skipNext()
+        val state = _uiState.value
+        val track = state.currentTrack ?: return
+        // A stream with no library row (transient id): both deletes were no-ops that still
+        // toasted "Deleted…". Block persists it first so the block has an identity to keep;
+        // a plain delete has nothing to remove, so it says so and leaves playback alone.
+        val notInLibrary = state.currentTrackStored == false
+        if (!alsoBlock && notInLibrary) {
+            _userMessages.tryEmit("This song isn't in your library, so there's nothing to delete.")
+            return
+        }
+        launchUserAction {
             if (alsoBlock) {
-                musicRepository.blacklistTrack(track.id)
-                _userMessages.tryEmit("Deleted and blocked from future syncs.")
+                val trackId = persistOrNull(track) ?: run {
+                    _userMessages.tryEmit("Couldn't block this song.")
+                    return@launchUserAction
+                }
+                playerRepository.skipNext()
+                musicRepository.blacklistTrack(trackId)
+                _userMessages.tryEmit(
+                    if (notInLibrary) "Blocked from future syncs." else "Deleted and blocked from future syncs.",
+                )
             } else {
-                musicRepository.deleteTrack(track)
-                _userMessages.tryEmit("Deleted from your device.")
+                playerRepository.skipNext()
+                val deleted = musicRepository.deleteTrack(track)
+                _userMessages.tryEmit(if (deleted) "Deleted from your device." else "Couldn't delete this song.")
             }
         }
     }
@@ -1228,16 +1317,28 @@ class NowPlayingViewModel @Inject constructor(
     }
 
     /**
+     * Adjust sync for every song on the output playing now ("Apply to all songs on <device>"),
+     * held within [com.stash.feature.nowplaying.ui.OUTPUT_OFFSET_CAP_MS]. No-op while the output
+     * isn't known — see [lyricsOutputOffset].
+     */
+    fun setLyricsOutputOffsetMs(offsetMs: Long) {
+        val output = lyricsOutputOffset.value?.output ?: return
+        viewModelScope.launch { lyricsOutputOffsets.setOffsetMs(output, clampOutputOffsetMs(offsetMs)) }
+    }
+
+    /**
      * Tap-to-seek on a synced lyric line. Routed through the same
      * player-controller seek path that the progress bar uses
      * ([onSeekTo]) so the seek is bounded by the current duration.
      */
     fun onLyricsLineSeek(timestampMs: Long) {
         // currentPositionMs (what a tapped line's timestamp is measured against) is the raw player
-        // position MINUS the sync offset — undo that here so seeking lands the DISPLAYED position,
-        // not the raw one, on the tapped line. With a non-zero offset, seeking to the raw timestamp
-        // alone lights up the wrong line.
-        onSeekTo(timestampMs + (lyricsSyncOffsetMs.value ?: 0L))
+        // position MINUS the effective offset (the song's plus the output's) — undo that here so
+        // seeking lands the DISPLAYED position, not the raw one, on the tapped line. With a
+        // non-zero offset, seeking to the raw timestamp alone lights up the wrong line, and on
+        // Bluetooth starts the song ahead of or behind the words.
+        val offsetMs = effectiveLyricsOffsetMs(lyricsSyncOffsetMs.value, lyricsOutputOffset.value?.offsetMs)
+        onSeekTo(lyricsSeekTargetMs(timestampMs, offsetMs))
     }
 
     /**
@@ -1314,8 +1415,10 @@ class NowPlayingViewModel @Inject constructor(
         val trackKey = if (track.id == 0L) track.youtubeId.hashCode().toLong() else track.id
         optimisticLikeState.update { it + (trackKey to !wasLiked) }
 
-        viewModelScope.launch {
-            runCatching {
+        launchUserAction {
+            // try/catch, not runCatching: a cancellation must propagate, not read as a failed
+            // like that rolls the heart back and toasts "Couldn't add to Liked Songs".
+            try {
                 // Handles all three id shapes: real Room PK, search-preview
                 // id=0 (legacy), and v0.9.30 streaming-engine synthetic
                 // `videoId.hashCode().toLong()`. Without this, streaming-only
@@ -1331,7 +1434,9 @@ class NowPlayingViewModel @Inject constructor(
                 // Once the DB write is confirmed, we can clear the optimistic
                 // override; Room's own emission will carry the truth.
                 optimisticLikeState.update { it - trackKey }
-            }.onFailure { e ->
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
                 android.util.Log.w("NowPlayingViewModel", "stash like toggle failed", e)
                 _userMessages.tryEmit(
                     if (wasLiked) "Couldn't remove from Liked Songs"

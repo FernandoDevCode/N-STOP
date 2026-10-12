@@ -188,6 +188,34 @@ class PairingSessionTest {
         assertThat(store.roster()).isEmpty()
     }
 
+    @Test fun `a create that fails after the space was made keeps the link, and the next refresh settles it`() = runTest {
+        val browser = FakeBrowser(server)
+        val link = browser.openCode()
+        browser.confirmsOnAnswer()
+        // The Worker committed the space, then its alarm or the RPC back failed: 503, or an edge error page (`http`).
+        server.failAfterNext("create", SyncResult.Error(503, SyncErrorCode.HTTP))
+        session.open(link)
+        assertThat(session.confirm()).isInstanceOf(PairingState.Failed::class.java)
+        assertThat(store.identity()).isNotNull()
+        assertThat(store.space()).isNotNull()
+        assertThat(store.roster().map { it.deviceId }).containsExactly(browser.deviceId)
+        // The space is there: the next refresh finds the link instead of an orphaned phone row on the server.
+        assertThat(repo.refresh()).isEqualTo(WebLinkResult.Ok)
+        assertThat(store.space()?.spaceId).isEqualTo(server.spaces.keys.single())
+    }
+
+    @Test fun `a create that fails with a 5xx before the space was made is cleared by the next refresh`() = runTest {
+        val browser = FakeBrowser(server)
+        val link = browser.openCode()
+        browser.confirmsOnAnswer()
+        server.failNext("create", SyncResult.Error(503, SyncErrorCode.UNAVAILABLE))
+        session.open(link)
+        assertThat(session.confirm()).isInstanceOf(PairingState.Failed::class.java)
+        assertThat(store.space()).isNotNull()
+        repo.refresh() // no such space: `401 revoked` forgets the link
+        assertThat(store.space()).isNull()
+    }
+
     @Test fun `a linked phone adds a second browser to its space, label under the data key`() = runTest {
         linkFirstBrowser()
         val sp = store.space()!!

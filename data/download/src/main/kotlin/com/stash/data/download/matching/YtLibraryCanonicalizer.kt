@@ -124,7 +124,21 @@ class YtLibraryCanonicalizer @Inject constructor(
         // subsequent download fails, next resolveUrl will short-circuit
         // on the new (correct) videoId and try again without re-running
         // canonicalization — strictly better than the pre-persist state.
-        trackDao.updateYoutubeId(track.id, best.videoId)
+        //
+        // tracks.youtube_id is UNIQUE. When another row already owns the ATV
+        // id (the library holds both the MV and the studio audio, e.g. one in
+        // Liked and one in a playlist), a plain UPDATE threw
+        // SQLiteConstraintException up through resolveUrl on every sync, so
+        // this track never downloaded at all. The guarded write skips instead,
+        // and the track keeps (and downloads) its own original video.
+        if (trackDao.updateYoutubeIdIfUnclaimed(track.id, best.videoId) == 0) {
+            Log.i(
+                TAG,
+                "canonicalize: ${best.videoId} already belongs to another track; " +
+                    "keeping track ${track.id}'s original $originalVideoId",
+            )
+            return originalUrl
+        }
         // Evict any StreamUrl cached under the OLD (OMV) videoId — otherwise
         // the "next resolveUrl short-circuits on the new videoId" promise
         // above is broken: PlayerRepositoryImpl.buildMediaItemForTrack checks

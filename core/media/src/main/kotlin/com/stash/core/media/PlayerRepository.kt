@@ -72,7 +72,7 @@ interface PlayerRepository {
     /**
      * Hot SharedFlow of cascade-halt events. Emitted at most once per
      * outage (resets after successful playback or user transport).
-     * UI surface: in-app Snackbar in NowPlaying.
+     * UI surface: a Toast from MainActivity, on whichever screen is showing.
      */
     val streamingHaltedEvents: kotlinx.coroutines.flow.SharedFlow<StreamingHaltedEvent>
 
@@ -85,10 +85,10 @@ interface PlayerRepository {
      *  - "End of offline Mix" — auto-advance silent-skip exhausted the
      *    queue trying to find a playable item while offline (v0.9.37).
      *
-     * Collected by NowPlayingViewModel and forwarded into its own
-     * `userMessages` SharedFlow so the Snackbar/Toast surfaces while the
-     * user is on Now Playing or anywhere else the global player UI is
-     * visible.
+     * Collected once by MainActivity and toasted on whichever screen is
+     * showing. (It used to be forwarded into NowPlayingViewModel's own
+     * flow, which nothing collected off Now Playing, so a SharedFlow with
+     * no subscriber dropped these everywhere else.)
      */
     val userMessages: kotlinx.coroutines.flow.SharedFlow<String>
 
@@ -235,6 +235,17 @@ interface PlayerRepository {
      * Silently ignored if the index is out of bounds.
      */
     suspend fun removeFromQueue(index: Int)
+
+    /**
+     * Put [track] into the queue so it shows at row [index] of the queue the UI displays (the
+     * same index space as [removeFromQueue], [moveInQueue] and [skipToQueueIndex]): the queue
+     * sheet's Undo after a swipe-remove. Playback continues uninterrupted. [index] is clamped to
+     * the queue. Returns false when nothing was inserted (no player, an empty queue, a Listen
+     * Together session, which owns the queue).
+     *
+     * Defaults to false so a stand-in repository needs nothing for a sheet it never shows.
+     */
+    suspend fun insertInQueue(index: Int, track: Track): Boolean = false
 
     /**
      * Move the track at position [from] to position [to] within the playback queue.

@@ -12,7 +12,9 @@ import com.yausername.youtubedl_android.YoutubeDLRequest
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.net.URI
 import javax.inject.Inject
@@ -56,6 +58,16 @@ class DownloadExecutor @Inject constructor(
     companion object {
         private const val TAG = "StashDL"
 
+        /**
+         * Longest one yt-dlp download attempt may run. An audio download takes
+         * seconds to a few minutes; past this the run is stuck, and it would
+         * otherwise hold one of the download slots indefinitely.
+         */
+        private const val YTDLP_DOWNLOAD_TIMEOUT_MS = 10 * 60_000L
+
+        /** yt-dlp's own per-connection inactivity timeout. */
+        private const val YTDLP_SOCKET_TIMEOUT_SEC = 30
+
         /** Longest base name accepted: a short prefix, a track id and a video id fit well inside. */
         private const val MAX_FILENAME_LENGTH = 100
 
@@ -82,6 +94,19 @@ class DownloadExecutor @Inject constructor(
             val dir = runCatching { outputDir.canonicalFile }.getOrNull() ?: return null
             val resolved = runCatching { template.canonicalFile }.getOrNull() ?: return null
             return template.absolutePath.takeIf { resolved.parentFile == dir }
+        }
+
+        /**
+         * Deletes what an earlier run left at [filename] in [outputDir]
+         * (`<filename>.<ext>`, `.part`, `.ytdl`): a run that was cancelled,
+         * crashed, or whose commit threw. None of it is this run's, but yt-dlp
+         * skipped a finished one as "already downloaded" (after a re-pick in
+         * Failed Matches, the old wrong video's audio), resumed a stale
+         * `.part`, and with another extension the output listing could pick
+         * the stale file over the fresh one.
+         */
+        internal fun deleteStaleOutputs(outputDir: File, filename: String) {
+            outputDir.listFiles { file -> file.name.startsWith("$filename.") }?.forEach { it.delete() }
         }
 
         /** True when [url] is an https URL with a host. */
@@ -120,6 +145,7 @@ class DownloadExecutor @Inject constructor(
             Log.e(TAG, "download: refused an unsafe output name or URL (name ok=${outputTemplate != null})")
             return@withContext DownloadResult.Error("Refused an unsafe download name or URL")
         }
+        deleteStaleOutputs(outputDir, filename)
 
         // Gate on a freshened (latest-nightly) yt-dlp + warmed EJS solver
         // before the first download in a session. YouTube's signature /
@@ -131,21 +157,24 @@ class DownloadExecutor @Inject constructor(
         // LOGIN_INFO, etc.). It is written only for the duration of the yt-dlp call and
         // deleted in the finally block. File permissions are restricted to owner-only
         // read/write to prevent other apps on rooted devices from reading it.
-        val cookieFile = File(context.noBackupFilesDir, "yt_cookies_${System.nanoTime()}.txt")
+        // A run cut short by process death skips the finally; YtCookieFiles.sweep
+        // removes those leftovers at the next yt-dlp initialisation.
+        val cookieFile = YtCookieFiles.newFile(context.noBackupFilesDir, YtCookieFiles.DOWNLOAD_PREFIX)
         val cookie = tokenManager.getYouTubeCookie()
-        if (cookie != null) {
-            CookieFileWriter.write(cookie, cookieFile)
-            cookieFile.setReadable(false, false)
-            cookieFile.setReadable(true, true)
-            cookieFile.setWritable(false, false)
-            cookieFile.setWritable(true, true)
-            Log.i(TAG, "download: cookies attached (len=${cookie.length})")
-        } else {
-            Log.w(TAG, "download: NO COOKIE attached — yt-dlp will run anonymously")
-        }
-        val cookiePath = if (cookie != null) cookieFile.absolutePath else null
-
         try {
+            // Written inside the try, so a write that fails part-way is deleted too.
+            if (cookie != null) {
+                CookieFileWriter.write(cookie, cookieFile)
+                cookieFile.setReadable(false, false)
+                cookieFile.setReadable(true, true)
+                cookieFile.setWritable(false, false)
+                cookieFile.setWritable(true, true)
+                Log.i(TAG, "download: cookies attached (len=${cookie.length})")
+            } else {
+                Log.w(TAG, "download: NO COOKIE attached — yt-dlp will run anonymously")
+            }
+            val cookiePath = if (cookie != null) cookieFile.absolutePath else null
+
             // Fast path: pin a single client — a direct download format with no
             // player-JS fetch, no QuickJS n-sig/JS challenge solve and no m3u8
             // probe, ~8s vs ~30s for the default multi-client path under 8-way
@@ -199,6 +228,8 @@ class DownloadExecutor @Inject constructor(
                 qualityArgs.forEach { addOption(it) }
                 addOption("-o", outputTemplate)
                 addOption("--no-playlist")
+                // A stalled connection fails the attempt instead of hanging on it.
+                addOption("--socket-timeout", YTDLP_SOCKET_TIMEOUT_SEC.toString())
                 playerClient?.let { addOption("--extractor-args", "youtube:player_client=$it") }
 
                 // Tell yt-dlp to use QuickJS for YouTube's JS signature challenges.
@@ -235,10 +266,23 @@ class DownloadExecutor @Inject constructor(
             // processId must be null, not `url`: youtubedl-android throws
             // "Process ID already exists" if two execute() calls share a
             // non-null id, and a preview prefetch + this download routinely
-            // hit the same video at once. Nothing cancels by id (no
-            // destroyProcessById caller), so the handle was unused anyway. (#210)
-            val response = YoutubeDL.getInstance().execute(request, null) { progress, _, _ ->
-                onProgress((progress / 100f).coerceIn(0f, 1f))
+            // hit the same video at once. (#210)
+            //
+            // Interruptible: execute() blocks this thread until yt-dlp exits, so
+            // cancelling the download (the user's Stop, or WorkManager stopping
+            // the worker when its Wi-Fi constraint is lost) did nothing and every
+            // running yt-dlp carried on to the end, over cellular. Cancellation
+            // now interrupts the thread, and youtubedl-android destroys the
+            // process on that interrupt. The timeout ends a run that has stalled.
+            val response = withTimeoutOrNull(YTDLP_DOWNLOAD_TIMEOUT_MS) {
+                runInterruptible {
+                    YoutubeDL.getInstance().execute(request, null) { progress, _, _ ->
+                        onProgress((progress / 100f).coerceIn(0f, 1f))
+                    }
+                }
+            } ?: run {
+                Log.w(TAG, "download: yt-dlp timed out after ${YTDLP_DOWNLOAD_TIMEOUT_MS / 1000}s client=${playerClient ?: "default"}")
+                return DownloadResult.Error("yt-dlp timed out")
             }
 
             val stdout = response.out.orEmpty()

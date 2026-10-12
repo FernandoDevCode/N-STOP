@@ -38,7 +38,12 @@ import com.stash.core.ui.theme.StashTheme
 import com.stash.data.download.files.LocalImportCoordinator
 import com.stash.data.download.lossless.squid.CaptchaExpiredNotifier
 import dagger.hilt.android.AndroidEntryPoint
+import com.stash.core.data.social.LikeCoordinator
+import com.stash.core.media.PlayerRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -59,6 +64,11 @@ class MainActivity : ComponentActivity() {
 
         /** A pairing link is about 160 characters; anything far longer isn't one. */
         private const val MAX_WEB_LINK = 512
+
+        /** Last theme the app rendered, read synchronously for the first frame; see [onCreate]. */
+        private const val THEME_SNAPSHOT_PREFS = "theme_snapshot"
+        private const val KEY_THEME_MODE = "theme_mode"
+        private const val KEY_AMOLED_DARK = "amoled_dark"
     }
 
     @Inject
@@ -75,6 +85,12 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var shareApiClient: ShareApiClient
+
+    @Inject
+    lateinit var playerRepository: PlayerRepository
+
+    @Inject
+    lateinit var likeCoordinator: LikeCoordinator
 
     /**
      * What every song Share sheet's "Stash link" uses to make a short link (via [LocalCreateTrackLink]). Null on any
@@ -101,9 +117,26 @@ class MainActivity : ComponentActivity() {
 
         val themeModeFlow: Flow<ThemeMode> = themePreference.themeMode
 
+        // The theme's first frames used to render with SYSTEM / not-AMOLED until
+        // the DataStore read landed (~0.4 s measured on a Pixel 5), so a
+        // light-theme user on a dark-mode phone saw dark flash to light, and an
+        // AMOLED user grey to black, on every cold start. Start from the last
+        // theme rendered, kept in plain SharedPreferences like the start tab.
+        val themeSnapshot = getSharedPreferences(THEME_SNAPSHOT_PREFS, MODE_PRIVATE)
+        val initialThemeMode = themeSnapshot.getString(KEY_THEME_MODE, null)
+            ?.let { name -> ThemeMode.entries.firstOrNull { it.name == name } }
+            ?: ThemeMode.SYSTEM
+        val initialAmoledDark = themeSnapshot.getBoolean(KEY_AMOLED_DARK, false)
+
         setContent {
-            val themeMode by themeModeFlow.collectAsState(initial = ThemeMode.SYSTEM)
-            val amoledDark by themePreference.amoledDark.collectAsState(initial = false)
+            val themeMode by themeModeFlow.collectAsState(initial = initialThemeMode)
+            val amoledDark by themePreference.amoledDark.collectAsState(initial = initialAmoledDark)
+            LaunchedEffect(themeMode, amoledDark) {
+                themeSnapshot.edit()
+                    .putString(KEY_THEME_MODE, themeMode.name)
+                    .putBoolean(KEY_AMOLED_DARK, amoledDark)
+                    .apply()
+            }
             val systemDark = isSystemInDarkTheme()
             val darkTheme = when (themeMode) {
                 ThemeMode.LIGHT -> false
@@ -121,6 +154,24 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(lifecycleOwner) {
                 lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                     listenTogether.messages.collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+                }
+            }
+            // Player-level notices, on whichever screen is showing. They used to be forwarded
+            // into each NowPlayingViewModel's own message flow, which only Now Playing or the
+            // open queue sheet collected: a SharedFlow with no subscriber drops what it emits,
+            // so a song tapped offline from Library ("Couldn't play this track right now."),
+            // "End of offline Mix" and the streaming halt did nothing visible anywhere else.
+            LaunchedEffect(lifecycleOwner) {
+                lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    // The halt flow replays its last event (replay = 1): skip that one, or every
+                    // return to the app would re-announce an outage that is long over.
+                    val halts = playerRepository.streamingHaltedEvents
+                    merge(
+                        playerRepository.userMessages,
+                        halts.drop(halts.replayCache.size)
+                            .map { "Streaming is failing — try a downloaded track or check your connection" },
+                        likeCoordinator.mirrorFailures,
+                    ).collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
                 }
             }
             // Open Stash on (#428): the tab the NavHost starts on. Saved across recreation so a
@@ -203,7 +254,12 @@ class MainActivity : ComponentActivity() {
 
         val target = intent.getStringExtra(CaptchaExpiredNotifier.INTENT_EXTRA_NAV_TARGET)
             ?: return
-        pendingDeepLink.value = target
+        // Only the one target Stash's own notification sends. This activity is
+        // exported, so any app can set the extra: passed through as-is, a
+        // "weblink:"/"listen:"/"shared_track:" value skipped every check the VIEW
+        // path above applies (the feature switch, the link prefix, the length
+        // cap, the room-code shape) on its way to the confirm screens.
+        if (target == CaptchaExpiredNotifier.DEEP_LINK_TARGET) pendingDeepLink.value = target
         // Clear the extra so a config change doesn't re-trigger the
         // navigate. setIntent() above already replaces the activity's
         // intent reference; this just guards against the same Intent

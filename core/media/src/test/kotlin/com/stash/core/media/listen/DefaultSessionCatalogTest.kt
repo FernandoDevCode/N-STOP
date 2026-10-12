@@ -62,6 +62,14 @@ class DefaultSessionCatalogTest {
         assertThat(uri.getQueryParameter("yt")).isEqualTo("yt1")
         assertThat(uri.getQueryParameter("isrc")).isEqualTo("HOSTISRC")
         assertThat(uri.getQueryParameter("d")).isEqualTo("260000")
+        // Without the override flag the resolver reads row 7's own ids, since the row exists.
+        assertThat(uri.getQueryParameter("pin")).isEqualTo("1")
+    }
+
+    @Test fun `a stream of this phone's own recording keeps the ordinary placeholder`() = runTest {
+        coEvery { musicRepository.ensureExactTrackPersisted(descriptor) } returns 7
+        coEvery { trackDao.getById(7) } returns TrackEntity(id = 7, title = "Avril 14th", artist = "Aphex Twin", youtubeId = "yt1")
+        assertThat(catalog.mediaItemFor(descriptor)!!.localConfiguration!!.uri.getQueryParameter("pin")).isNull()
     }
 
     @Test fun `a download plays locally when the host's length is unknown`() = runTest {

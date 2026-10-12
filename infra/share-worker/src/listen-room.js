@@ -46,7 +46,9 @@ export class ListenRoom {
         if (url.pathname === "/preview") return state ? Response.json(preview(state)) : new Response(null, { status: 404 });
         if (url.pathname === "/ws") {
             if (!state) return new Response(null, { status: 404 });
-            if (request.headers.get("Upgrade") !== "websocket") return new Response(null, { status: 426 });
+            // Case-insensitive like the Worker's check (RFC 6455): a strict match 426'd `Upgrade: WebSocket` here after
+            // the Worker had passed it and charged a JOIN_RL token, so such a client could never connect.
+            if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") return new Response(null, { status: 426 });
             // `r=1` = "I have a resume token": a returning member may rejoin a full room; hello checks the token.
             if (state.members.length >= MAX_MEMBERS && url.searchParams.get("r") !== "1") return new Response(null, { status: 409 });
             // Sockets that never send hello hold no member slot; this cap stops `?r=1` ones piling up.

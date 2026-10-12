@@ -103,6 +103,22 @@ class DownloadExecutorOutputNameTest {
         assertTrue(DownloadExecutor.outputTemplateFor(tmp.root, "sub/dl_42") == null)
     }
 
+    /**
+     * What an earlier run left at the name goes before yt-dlp runs: it skipped
+     * a finished one as "already downloaded", resumed a stale `.part`, and the
+     * output listing could pick a stale file of another extension.
+     */
+    @Test
+    fun `an earlier run's files at the name are deleted, others kept`() {
+        val stale = listOf("dl_42.opus", "dl_42.m4a", "dl_42.webm.part", "dl_42.ytdl").map { tmp.newFile(it) }
+        val others = listOf("dl_420.opus", "dl_42_1a2b3c4d.opus", "search_dl_42.opus").map { tmp.newFile(it) }
+
+        DownloadExecutor.deleteStaleOutputs(tmp.root, "dl_42")
+
+        stale.forEach { assertTrue("${it.name} should be gone", !it.exists()) }
+        others.forEach { assertTrue("${it.name} should stay", it.exists()) }
+    }
+
     @Test
     fun `only https URLs are accepted`() {
         assertTrue(DownloadExecutor.isAcceptedUrl("https://www.youtube.com/watch?v=dQw4w9WgXcQ"))
@@ -122,7 +138,7 @@ class DownloadExecutorOutputNameTest {
     fun `the names callers build still reach yt-dlp`() = runTest {
         coEvery { ytDlpManager.ensureFreshened() } throws ReachedYtDlp()
 
-        listOf("dl_42", "search_dQw4w9WgXcQ", "swap_7_dQw4w9WgXcQ", "approve_a-b_C9d").forEach { name ->
+        listOf("dl_42", "dl_42_1a2b3c4d", "search_dQw4w9WgXcQ", "swap_7_dQw4w9WgXcQ", "approve_a-b_C9d").forEach { name ->
             val thrown = runCatching {
                 executor().download(url = url, outputDir = tmp.root, filename = name, qualityArgs = emptyList())
             }.exceptionOrNull()

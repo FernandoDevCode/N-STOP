@@ -36,6 +36,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -63,6 +68,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -73,6 +79,9 @@ import coil3.compose.AsyncImage
 import com.stash.core.common.primaryArtist
 import com.stash.core.model.PlaybackSource
 import com.stash.core.model.Track
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import java.util.Collections
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -98,8 +107,15 @@ fun QueueBottomSheet(
     onSaveToPlaylist: ((Track) -> Unit)? = null,
     onShare: ((Track) -> Unit)? = null,
     onToggleDownload: ((Track) -> Unit)? = null,
+    /**
+     * Puts a song swiped out of Up next back at its row ([index] as [onRemoveTrack] took it): the
+     * Undo on the "Removed <title>" snackbar each removal shows. Null = no snackbar.
+     */
+    onRestoreTrack: ((index: Int, track: Track) -> Unit)? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // The sheet is its own window, so its snackbar lives in it (see the host at the bottom).
+    val snackbarHostState = remember { SnackbarHostState() }
 
     // The upcoming track whose ⋮ menu is open (null = closed). Opens a nested
     // TrackOptionsSheet over the queue sheet.
@@ -186,6 +202,24 @@ fun QueueBottomSheet(
             var autoScrollJob by remember { mutableStateOf<Job?>(null) }
             var settleJob by remember { mutableStateOf<Job?>(null) }
 
+            // "Removed <title> · Undo" after a swipe or TalkBack's Remove. The removal has already
+            // happened (the next song can't play a song you just took out while a snackbar waits);
+            // Undo puts it back on its row. One offer at a time: a new removal replaces the last.
+            val offerUndo: (Int, Track) -> Unit = { index, track ->
+                val restore = onRestoreTrack
+                if (restore != null) {
+                    scope.launch {
+                        snackbarHostState.currentSnackbarData?.dismiss()
+                        val result = snackbarHostState.showSnackbar(
+                            message = "Removed ${track.title}",
+                            actionLabel = "Undo",
+                            duration = SnackbarDuration.Long,
+                        )
+                        if (result == SnackbarResult.ActionPerformed) restore(index, track)
+                    }
+                }
+            }
+
             // One swap of the dragged row with its neighbour ([dir] = -1 up, +1 down).
             // LazyColumn keeps the first visible row's key pinned when rows move, so a
             // swap at the top would scroll the list under the finger; re-requesting the
@@ -264,6 +298,30 @@ fun QueueBottomSheet(
                     var swipeX by remember { mutableFloatStateOf(0f) }
                     var rowWidthPx by remember { mutableIntStateOf(0) }
 
+                    // Remove and reorder as accessibility actions: the swipe and the handle
+                    // drag are touch gestures only, so TalkBack and switch-access users could
+                    // neither take a song out of Up Next nor move it. Both look the row up by
+                    // uid at the moment of the action, as the swipe does.
+                    val removeEntry: () -> Boolean = {
+                        val i = localQueue.indexOfFirst { it.uid == entry.uid }
+                        if (i >= 0) {
+                            localQueue.removeAt(i)
+                            onRemoveTrack(liveCurrentIndex + 1 + i)
+                            offerUndo(liveCurrentIndex + 1 + i, entry.track)
+                        }
+                        i >= 0
+                    }
+                    val moveEntry: (Int) -> Boolean = { dir ->
+                        val i = localQueue.indexOfFirst { it.uid == entry.uid }
+                        val j = i + dir
+                        val canMove = i >= 0 && j in localQueue.indices && draggedIdx < 0
+                        if (canMove) {
+                            Collections.swap(localQueue, i, j)
+                            onMoveTrack(liveCurrentIndex + 1 + i, liveCurrentIndex + 1 + j)
+                        }
+                        canMove
+                    }
+
                     Box(
                         // The held row follows the finger through its offset, so it must not
                         // also get animateItem's slide: that tugged it back a row on every swap.
@@ -297,6 +355,7 @@ fun QueueBottomSheet(
                                             if (i >= 0) {
                                                 localQueue.removeAt(i)
                                                 onRemoveTrack(liveCurrentIndex + 1 + i)
+                                                offerUndo(liveCurrentIndex + 1 + i, entry.track)
                                             }
                                         } else {
                                             animate(swipeX, 0f) { v, _ -> swipeX = v }
@@ -310,6 +369,16 @@ fun QueueBottomSheet(
                                 )
                                 .clickable {
                                     onTrackClick(queueIndex)
+                                }
+                                .semantics {
+                                    customActions = buildList {
+                                        add(CustomAccessibilityAction("Remove from queue") { removeEntry() })
+                                        // No reordering under shuffle (#468), as for the drag handle.
+                                        if (!isShuffleEnabled) {
+                                            add(CustomAccessibilityAction("Move up") { moveEntry(-1) })
+                                            add(CustomAccessibilityAction("Move down") { moveEntry(1) })
+                                        }
+                                    }
                                 }
                                 .padding(start = 20.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -457,6 +526,18 @@ fun QueueBottomSheet(
             }
 
             Spacer(Modifier.height(16.dp))
+
+            // The Undo snackbar, floating over the bottom of the list: laid out with no height
+            // and drawn upward from the sheet's bottom, so it never pushes the rows around.
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.layout { measurable, constraints ->
+                    val bar = measurable.measure(constraints.copy(minHeight = 0))
+                    layout(bar.width, 0) { bar.place(0, -bar.height) }
+                },
+            ) { data ->
+                Snackbar(snackbarData = data, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+            }
         }
     }
 

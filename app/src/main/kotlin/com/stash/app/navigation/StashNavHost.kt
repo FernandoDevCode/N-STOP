@@ -247,6 +247,18 @@ private fun StashNavGraph(
                     )
                 },
                 onSelectionModeChanged = onSelectionModeChanged,
+                // The empty library's buttons: real tab switches (Back and the tab bar behave
+                // as if tapped), and Accounts the way Sync's Re-authenticate opens it.
+                onNavigateToSync = { onNavigateToTab(TopLevelDestination.SYNC) },
+                onNavigateToSearch = { onNavigateToTab(TopLevelDestination.SEARCH) },
+                onNavigateToAccounts = {
+                    navController.navigate(SettingsRoute) {
+                        launchSingleTop = true
+                    }
+                    navController.navigate(SettingsAccountsRoute) {
+                        launchSingleTop = true
+                    }
+                },
             )
         }
         composable<SearchRoute> {
@@ -282,8 +294,17 @@ private fun StashNavGraph(
                 onNavigateToDownloads = {
                     navController.navigate(DownloadManagementRoute)
                 },
-                onNavigateToSettings = {
+                // "Re-authenticate" opens Accounts itself, where the expired card
+                // leads with Reconnect, instead of the Settings hub one tap short.
+                // Settings goes under it first: Accounts shares the ViewModel
+                // scoped to the SettingsRoute entry (getBackStackEntry throws
+                // without it), as the captcha deep link does. Back from Accounts
+                // lands on Settings, then Sync.
+                onNavigateToAccounts = {
                     navController.navigate(SettingsRoute) {
+                        launchSingleTop = true
+                    }
+                    navController.navigate(SettingsAccountsRoute) {
                         launchSingleTop = true
                     }
                 },

@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -297,6 +298,30 @@ class NowPlayingViewModelFindInFlacTest {
             yield()
             result
         }
+    }
+
+    @Test fun `Find in FLAC finishes after the user leaves Now Playing`() = runTest(dispatcher) {
+        // Leaving Now Playing clears its entry-scoped ViewModel; the upgrade (resolve + download,
+        // inline) used to run in viewModelScope and was cancelled mid-download.
+        val gate = CompletableDeferred<Unit>()
+        var finished = false
+        coEvery { upgrader.upgradeToLossless(any()) } coAnswers {
+            gate.await()
+            finished = true
+            UpgradeResult.Upgraded
+        }
+        playerStateFlow.value = playerStateFlow.value.copy(currentTrack = nonFlacTrack)
+        val store = androidx.lifecycle.ViewModelStore()
+        val vm = newViewModel()
+        store.put("now-playing", vm)
+        advanceUntilIdle()
+
+        vm.findInFlacForCurrentTrack()
+        store.clear() // swipe Now Playing away mid-upgrade
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(true, finished)
     }
 
     @Test fun `findInFlacForCurrentTrack happy path emits looking then upgraded`() = runTest(dispatcher) {
@@ -658,5 +683,335 @@ class NowPlayingViewModelRadioTest {
 
         assertEquals(false, vm.radioTuning.value)
         coVerify(exactly = 1) { playerRepository.startRadio(any(), any()) }
+    }
+}
+
+/**
+ * Play/pause keys on the player's intent (playWhenReady), not isPlaying: while a stream buffers
+ * Media3 reports isPlaying=false with playWhenReady=true, and a toggle on isPlaying sent the tap
+ * to play() — a no-op — so a stalled stream could not be paused.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+class NowPlayingViewModelPlayPauseTest {
+
+    private val dispatcher = UnconfinedTestDispatcher()
+
+    @Before fun setUp() { Dispatchers.setMain(dispatcher) }
+    @After fun tearDown() { Dispatchers.resetMain() }
+
+    private val playerStateFlow = MutableStateFlow(PlayerState())
+
+    private val playerRepository: PlayerRepository = mockk(relaxed = true) {
+        every { playerState } returns playerStateFlow
+        every { currentPosition } returns MutableStateFlow(0L)
+    }
+    private val musicRepository: MusicRepository = mockk(relaxed = true) {
+        every { observeTrackById(any()) } returns flowOf(null)
+        every { observeTrackByYoutubeId(any()) } returns flowOf(null)
+    }
+
+    private fun newViewModel(): NowPlayingViewModel = NowPlayingViewModel(
+        playerRepository = playerRepository,
+        musicRepository = musicRepository,
+        likeCoordinator = mockk(relaxed = true) { every { mirrorFailures } returns MutableSharedFlow() },
+        losslessUpgrader = mockk(relaxed = true),
+        lyricsRepository = mockk(relaxed = true),
+        lyricsPreference = mockk(relaxed = true),
+        nowPlayingPreference = mockk(relaxed = true),
+        lyricsSidecarWriter = mockk(relaxed = true),
+        appContext = mockk(relaxed = true),
+        sleepTimerController = mockk(relaxed = true),
+        ytMusicApiClient = mockk(relaxed = true),
+    )
+
+    private val track = Track(id = 7L, title = "song", artist = "artist")
+
+    @Test fun `a tap while buffering pauses`() = runTest(dispatcher) {
+        playerStateFlow.value = PlayerState(
+            currentTrack = track, isPlaying = false, isBuffering = true, playWhenReady = true,
+        )
+        val vm = newViewModel()
+        advanceUntilIdle()
+
+        vm.onPlayPauseClick()
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { playerRepository.pause() }
+        coVerify(exactly = 0) { playerRepository.play() }
+    }
+
+    @Test fun `a tap while paused plays`() = runTest(dispatcher) {
+        playerStateFlow.value = PlayerState(currentTrack = track, isPlaying = false, playWhenReady = false)
+        val vm = newViewModel()
+        advanceUntilIdle()
+
+        vm.onPlayPauseClick()
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { playerRepository.play() }
+        coVerify(exactly = 0) { playerRepository.pause() }
+    }
+}
+
+/**
+ * A radio/search/queue stream plays under a transient `videoId.hashCode()` id with no library
+ * row. Save to Playlist, Flag and Delete used that raw id: the writes found no row and silently
+ * did nothing, while Flag and Delete still toasted success. They now persist first (as Like and
+ * Download do), and a delete with nothing to delete says so.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+class NowPlayingViewModelTransientTrackTest {
+
+    private val dispatcher = UnconfinedTestDispatcher()
+
+    @Before fun setUp() { Dispatchers.setMain(dispatcher) }
+    @After fun tearDown() { Dispatchers.resetMain() }
+
+    private val stream = Track(id = "vid42".hashCode().toLong(), title = "song", artist = "artist", youtubeId = "vid42")
+    private val playerStateFlow = MutableStateFlow(PlayerState(currentTrack = stream))
+
+    private val playerRepository: PlayerRepository = mockk(relaxed = true) {
+        every { playerState } returns playerStateFlow
+        every { currentPosition } returns MutableStateFlow(0L)
+    }
+    private val musicRepository: MusicRepository = mockk(relaxed = true) {
+        // No row by id or by YouTube id: a stream not in the library.
+        every { observeTrackById(any()) } returns flowOf(null)
+        every { observeTrackByYoutubeId(any()) } returns flowOf(null)
+        coEvery { ensureTrackPersisted(any()) } returns 900L
+        coEvery { createPlaylist(any()) } returns 55L
+    }
+
+    private fun newViewModel(): NowPlayingViewModel = NowPlayingViewModel(
+        playerRepository = playerRepository,
+        musicRepository = musicRepository,
+        likeCoordinator = mockk(relaxed = true) { every { mirrorFailures } returns MutableSharedFlow() },
+        losslessUpgrader = mockk(relaxed = true),
+        lyricsRepository = mockk(relaxed = true),
+        lyricsPreference = mockk(relaxed = true),
+        nowPlayingPreference = mockk(relaxed = true),
+        lyricsSidecarWriter = mockk(relaxed = true),
+        appContext = mockk(relaxed = true),
+        sleepTimerController = mockk(relaxed = true),
+        ytMusicApiClient = mockk(relaxed = true),
+    )
+
+    @Test fun `save to playlist persists the stream and adds its real id`() = runTest(dispatcher) {
+        val vm = newViewModel()
+        advanceUntilIdle()
+
+        vm.userMessages.test {
+            vm.saveTrackToPlaylist(stream, playlistId = 7L)
+            advanceUntilIdle()
+            assertEquals("Saved to playlist.", awaitItem())
+        }
+        coVerify { musicRepository.addTrackToPlaylist(900L, 7L) }
+        coVerify(exactly = 0) { musicRepository.addTrackToPlaylist(stream.id, any()) }
+    }
+
+    @Test fun `new playlist gets the persisted id, not an empty list`() = runTest(dispatcher) {
+        val vm = newViewModel()
+        advanceUntilIdle()
+
+        vm.createPlaylistAndAddTrack("Road trip", stream)
+        advanceUntilIdle()
+
+        coVerify { musicRepository.addTrackToPlaylist(900L, 55L) }
+    }
+
+    @Test fun `a failed persist says so and creates nothing`() = runTest(dispatcher) {
+        coEvery { musicRepository.ensureTrackPersisted(any()) } throws IllegalStateException("db")
+        val vm = newViewModel()
+        advanceUntilIdle()
+
+        vm.userMessages.test {
+            vm.createPlaylistAndAddTrack("Road trip", stream)
+            advanceUntilIdle()
+            assertEquals("Couldn't create the playlist.", awaitItem())
+        }
+        coVerify(exactly = 0) { musicRepository.createPlaylist(any()) }
+    }
+
+    @Test fun `flag targets the persisted row`() = runTest(dispatcher) {
+        val vm = newViewModel()
+        advanceUntilIdle()
+
+        vm.flagCurrentTrackAsWrongMatch()
+        advanceUntilIdle()
+
+        coVerify { musicRepository.setMatchFlagged(900L, true) }
+    }
+
+    @Test fun `delete of a stream not in the library does nothing and says so`() = runTest(dispatcher) {
+        val vm = newViewModel()
+        advanceUntilIdle()
+
+        vm.userMessages.test {
+            vm.deleteCurrentTrack(alsoBlock = false)
+            advanceUntilIdle()
+            assertEquals("This song isn't in your library, so there's nothing to delete.", awaitItem())
+        }
+        coVerify(exactly = 0) { playerRepository.skipNext() }
+        coVerify(exactly = 0) { musicRepository.deleteTrack(any()) }
+    }
+
+    @Test fun `block persists the stream so the block has an identity`() = runTest(dispatcher) {
+        val vm = newViewModel()
+        advanceUntilIdle()
+
+        vm.userMessages.test {
+            vm.deleteCurrentTrack(alsoBlock = true)
+            advanceUntilIdle()
+            assertEquals("Blocked from future syncs.", awaitItem())
+        }
+        coVerify { musicRepository.blacklistTrack(900L) }
+    }
+}
+
+/**
+ * The 250ms position tick lives in its own StateFlow, not in [NowPlayingUiState]: as a uiState
+ * field it re-ran all of Now Playing and the app-wide MiniPlayer four times a second.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+class NowPlayingViewModelPositionTest {
+
+    private val dispatcher = UnconfinedTestDispatcher()
+
+    @Before fun setUp() { Dispatchers.setMain(dispatcher) }
+    @After fun tearDown() { Dispatchers.resetMain() }
+
+    private val positionFlow = MutableStateFlow(0L)
+    private val playerRepository: PlayerRepository = mockk(relaxed = true) {
+        every { playerState } returns MutableStateFlow(
+            PlayerState(currentTrack = Track(id = 7L, title = "song", artist = "artist"), isPlaying = true, durationMs = 200_000L),
+        )
+        every { currentPosition } returns positionFlow
+    }
+
+    private fun newViewModel(): NowPlayingViewModel = NowPlayingViewModel(
+        playerRepository = playerRepository,
+        musicRepository = mockk(relaxed = true) {
+            every { observeTrackById(any()) } returns flowOf(null)
+            every { observeTrackByYoutubeId(any()) } returns flowOf(null)
+        },
+        likeCoordinator = mockk(relaxed = true) { every { mirrorFailures } returns MutableSharedFlow() },
+        losslessUpgrader = mockk(relaxed = true),
+        lyricsRepository = mockk(relaxed = true),
+        lyricsPreference = mockk(relaxed = true),
+        nowPlayingPreference = mockk(relaxed = true),
+        lyricsSidecarWriter = mockk(relaxed = true),
+        appContext = mockk(relaxed = true),
+        sleepTimerController = mockk(relaxed = true),
+        ytMusicApiClient = mockk(relaxed = true),
+    )
+
+    @Test fun `position ticks move positionMs without re-emitting uiState`() = runTest(dispatcher) {
+        val vm = newViewModel()
+        advanceUntilIdle()
+        val positions = mutableListOf<Long>()
+        backgroundScope.launch { vm.positionMs.collect { positions += it } }
+        advanceUntilIdle()
+
+        vm.uiState.test {
+            awaitItem() // the settled state
+            positionFlow.value = 250L
+            positionFlow.value = 500L
+            advanceUntilIdle()
+            expectNoEvents()
+        }
+        assertEquals(500L, positions.last())
+        assertEquals(0.0025f, progressFraction(500L, 200_000L), 0.00001f)
+        assertEquals(0f, progressFraction(500L, 0L), 0f)
+    }
+}
+
+/**
+ * The queue sheet's Undo after a swipe-remove: the song goes back on the row it left, as its
+ * library row (the sheet's rows are the player's slim copies, with no file path, which would come
+ * back as streams), and never at or before the song that is playing.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+class NowPlayingViewModelQueueUndoTest {
+
+    private val dispatcher = UnconfinedTestDispatcher()
+
+    @Before fun setUp() { Dispatchers.setMain(dispatcher) }
+    @After fun tearDown() { Dispatchers.resetMain() }
+
+    // dateAdded pinned: it defaults to the current time, so two track(7) calls a millisecond
+    // apart were different songs to an equality check.
+    private fun track(id: Long) = Track(id = id, title = "T$id", artist = "A", dateAdded = 0L)
+    private val queue = (1L..5L).map(::track)
+    private val downloaded = Track(id = 4L, title = "T4", artist = "A", isDownloaded = true, filePath = "/music/4.flac")
+    private val playerStateFlow = MutableStateFlow(PlayerState(currentTrack = queue[1], queue = queue, currentIndex = 1))
+
+    private val playerRepository: PlayerRepository = mockk(relaxed = true) {
+        every { playerState } returns playerStateFlow
+        every { currentPosition } returns MutableStateFlow(0L)
+        coEvery { insertInQueue(any(), any()) } returns true
+    }
+    private val musicRepository: MusicRepository = mockk(relaxed = true) {
+        every { observeTrackById(any()) } returns flowOf(null)
+        every { observeTrackById(4L) } returns flowOf(downloaded)
+        every { observeTrackByYoutubeId(any()) } returns flowOf(null)
+    }
+
+    private fun newViewModel(): NowPlayingViewModel = NowPlayingViewModel(
+        playerRepository = playerRepository,
+        musicRepository = musicRepository,
+        likeCoordinator = mockk(relaxed = true) { every { mirrorFailures } returns MutableSharedFlow() },
+        losslessUpgrader = mockk(relaxed = true),
+        lyricsRepository = mockk(relaxed = true),
+        lyricsPreference = mockk(relaxed = true),
+        nowPlayingPreference = mockk(relaxed = true),
+        lyricsSidecarWriter = mockk(relaxed = true),
+        appContext = mockk(relaxed = true),
+        sleepTimerController = mockk(relaxed = true),
+        ytMusicApiClient = mockk(relaxed = true),
+    )
+
+    @Test fun `undo puts the library row back on the row it left`() = runTest(dispatcher) {
+        val vm = newViewModel()
+        advanceUntilIdle()
+
+        vm.onRestoreToQueue(3, track(4))
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { playerRepository.insertInQueue(3, downloaded) }
+    }
+
+    @Test fun `a song not in the library goes back as it was`() = runTest(dispatcher) {
+        val vm = newViewModel()
+        advanceUntilIdle()
+
+        val song = track(7)
+        vm.onRestoreToQueue(2, song)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { playerRepository.insertInQueue(2, song) }
+    }
+
+    @Test fun `undo after playback moved past the row puts the song next`() = runTest(dispatcher) {
+        val vm = newViewModel()
+        advanceUntilIdle()
+        playerStateFlow.value = playerStateFlow.value.copy(currentTrack = queue[3], currentIndex = 3)
+        advanceUntilIdle()
+
+        val song = track(7)
+        vm.onRestoreToQueue(2, song)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { playerRepository.insertInQueue(4, song) }
+    }
+
+    @Test fun `a refused undo says so`() = runTest(dispatcher) {
+        coEvery { playerRepository.insertInQueue(any(), any()) } returns false
+        val vm = newViewModel()
+        advanceUntilIdle()
+
+        vm.userMessages.test {
+            vm.onRestoreToQueue(3, track(7))
+            assertEquals("Couldn't put that song back in the queue.", awaitItem())
+        }
     }
 }

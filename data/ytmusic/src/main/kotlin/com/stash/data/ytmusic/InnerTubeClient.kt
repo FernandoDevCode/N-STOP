@@ -189,6 +189,17 @@ enum class InnerTubeVariant(
  */
 data class CanonicalMatch(val videoId: String, val thumbnailUrl: String?)
 
+/** What [InnerTubeClient.searchCanonicalLookup] learned. */
+sealed interface CanonicalLookup {
+    data class Found(val match: CanonicalMatch) : CanonicalLookup
+
+    /** The search answered, and nothing on it is an ATV/OMV song. */
+    data object NoMatch : CanonicalLookup
+
+    /** The search did not answer (network, 4xx/5xx): nothing is known yet. */
+    data object Failed : CanonicalLookup
+}
+
 /**
  * A stream the caller's judge accepted: the URL it found playable, the
  * player response it came from, and the client that served it.
@@ -695,9 +706,20 @@ class InnerTubeClient @Inject constructor(
      * `mqdefault` video frame; this gives them a crisp, no-bars cover.
      */
     suspend fun searchCanonicalMatch(artist: String, title: String): CanonicalMatch? =
+        (searchCanonicalLookup(artist, title) as? CanonicalLookup.Found)?.match
+
+    /**
+     * [searchCanonicalMatch] that keeps "the search did not answer" (offline,
+     * 429, 5xx: [CanonicalLookup.Failed]) apart from "it answered without an
+     * ATV/OMV result" ([CanonicalLookup.NoMatch]). The YouTube history
+     * scrobbler drops a play on NoMatch, so reading a failure as one silently
+     * lost every play made offline or during a rate-limit storm.
+     */
+    suspend fun searchCanonicalLookup(artist: String, title: String): CanonicalLookup =
         withContext(Dispatchers.IO) {
             val query = "$artist $title"
-            val response = search(query, params = songsFilterParams) ?: return@withContext null
+            val response = searchWithStatus(query, params = songsFilterParams).body
+                ?: return@withContext CanonicalLookup.Failed
 
             // Walk the Songs shelf(ves) inside the search response. Each row is a
             // musicResponsiveListItemRenderer; we extract videoId and musicVideoType
@@ -710,7 +732,7 @@ class InnerTubeClient @Inject constructor(
                 ?.jsonObject?.get("content")
                 ?.jsonObject?.get("sectionListRenderer")
                 ?.jsonObject?.get("contents")
-                ?.jsonArray ?: return@withContext null
+                ?.jsonArray ?: return@withContext CanonicalLookup.NoMatch
 
             // Collect (videoId, musicVideoType, thumbnail) from Songs shelves only.
             data class Candidate(val videoId: String, val type: MusicVideoType?, val thumbnailUrl: String?)
@@ -780,7 +802,8 @@ class InnerTubeClient @Inject constructor(
             } else {
                 Log.d(TAG, "searchCanonical('$query'): resolved → ${best.videoId} (${best.type})")
             }
-            best?.let { CanonicalMatch(it.videoId, it.thumbnailUrl) }
+            best?.let { CanonicalLookup.Found(CanonicalMatch(it.videoId, it.thumbnailUrl)) }
+                ?: CanonicalLookup.NoMatch
         }
 
     /**

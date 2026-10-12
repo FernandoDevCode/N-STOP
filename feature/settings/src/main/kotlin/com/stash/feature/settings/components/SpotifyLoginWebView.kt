@@ -9,6 +9,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.Arrangement
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -98,6 +99,16 @@ fun SpotifyLoginWebView(
 ) {
     var isLoading by remember { mutableStateOf(true) }
     var cookieFound by remember { mutableStateOf(false) }
+    var webViewRef by remember { mutableStateOf<WebView?>(null) }
+
+    // System Back steps back through the sign-in pages, then closes the
+    // sign-in. Without this, Back popped the whole Accounts screen while the
+    // ViewModel's "show sign-in" flag stayed set, so the next visit to
+    // Accounts & Sync reopened this sign-in instead of the accounts page.
+    BackHandler {
+        val wv = webViewRef
+        if (wv != null && wv.canGoBack()) wv.goBack() else onDismiss()
+    }
 
     Column(modifier = modifier.fillMaxSize()) {
         TopAppBar(
@@ -144,17 +155,7 @@ fun SpotifyLoginWebView(
                     // particular Google's `_GRECAPTCHA` reputation cookie, which
                     // the old `removeAllCookies` wiped on every launch, hurting
                     // the invisible reCAPTCHA v3 score (issue #231).
-                    CookieManager.getInstance().apply {
-                        SPOTIFY_COOKIE_DOMAINS.forEach { domain ->
-                            SPOTIFY_SESSION_COOKIES.forEach { name ->
-                                setCookie(
-                                    domain,
-                                    "$name=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/",
-                                )
-                            }
-                        }
-                        flush()
-                    }
+                    clearSpotifyWebSession()
 
                     WebView(context).apply {
                         layoutParams = ViewGroup.LayoutParams(
@@ -215,7 +216,7 @@ fun SpotifyLoginWebView(
                         }
 
                         loadUrl(LOGIN_URL)
-                    }
+                    }.also { webViewRef = it }
                 },
                 modifier = Modifier.fillMaxSize(),
             )
@@ -247,6 +248,31 @@ fun SpotifyLoginWebView(
             }
         }
     }
+}
+
+/**
+ * Expires Spotify's session cookies (the account's `sp_dc` among them) in the
+ * shared WebView cookie jar, leaving every other cookie alone. Runs when the
+ * sign-in opens, so it starts from a fresh login form instead of re-submitting
+ * an old (possibly revoked) `sp_dc`, and on Disconnect, so the credential does
+ * not stay on disk in the WebView profile.
+ *
+ * Expires both the host-only and the `Domain=.spotify.com` form (see
+ * [WebSessionCookies.expiryHeaders]); the old host-only-only expiry never
+ * matched the real `sp_dc`. Best-effort: a device without a working WebView
+ * throws from [CookieManager.getInstance].
+ */
+internal fun clearSpotifyWebSession() {
+    runCatching {
+        CookieManager.getInstance().apply {
+            SPOTIFY_COOKIE_DOMAINS.forEach { url ->
+                SPOTIFY_SESSION_COOKIES.forEach { name ->
+                    WebSessionCookies.expiryHeaders(name, ".spotify.com").forEach { setCookie(url, it) }
+                }
+            }
+            flush()
+        }
+    }.onFailure { Log.w(TAG, "clearing the Spotify web session failed", it) }
 }
 
 /**

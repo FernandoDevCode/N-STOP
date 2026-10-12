@@ -45,8 +45,8 @@ class LazyResolvingDataSourceTest {
         resolveDeadlineMs = deadlineMs,
     )
 
-    private fun placeholderSpec(trackId: Long) =
-        DataSpec.Builder().setUri(Uri.parse("$STASH_RESOLVE_SCHEME://track/$trackId")).build()
+    private fun placeholderSpec(trackId: Long, position: Long = 0L) =
+        DataSpec.Builder().setUri(Uri.parse("$STASH_RESOLVE_SCHEME://track/$trackId")).setPosition(position).build()
 
     private fun stream(url: String, origin: String) = StreamUrl(
         url = url,
@@ -117,6 +117,30 @@ class LazyResolvingDataSourceTest {
     }
 
     @Test
+    fun `an override item resolves the ids it carries, not its row's, and stays out of the url cache`() {
+        // Listen Together: the listener's row 7 is another edit of the host's song.
+        coEvery { trackDao.getById(7L) } returns TrackEntity(
+            id = 7L, title = "Song", artist = "Artist", youtubeId = "mine", isrc = "MYISRC", durationMs = 200_000L,
+        )
+        val entity = slot<TrackEntity>()
+        coEvery { resolver.resolve(capture(entity), any(), any()) } returns stream("https://yt/host.webm", "youtube")
+        every { httpSource.open(any()) } returns 100L
+
+        val uri = stashResolveUri(
+            trackId = 7L, youtubeId = "host", title = "Song", artist = "Artist",
+            durationMs = 260_000L, isrc = "HOSTISRC",
+        ).withRowOverride()
+        source().open(DataSpec.Builder().setUri(uri).build())
+
+        assertThat(entity.captured.youtubeId).isEqualTo("host")
+        assertThat(entity.captured.isrc).isEqualTo("HOSTISRC")
+        assertThat(entity.captured.durationMs).isEqualTo(260_000L)
+        // The row's own cached URL is the wrong edit; the host's must not become it.
+        verify(exactly = 0) { urlCache.get(any()) }
+        verify(exactly = 0) { urlCache.put(any(), any()) }
+    }
+
+    @Test
     fun `failed resolve throws IOException so the cascade guard owns the failure`() {
         every { urlCache.get(42L) } returns null
         coEvery { trackDao.getById(42L) } returns null
@@ -142,6 +166,60 @@ class LazyResolvingDataSourceTest {
 
         verify { httpSource.open(spec) }
         verify(exactly = 0) { urlCache.get(any()) }
+    }
+
+    @Test
+    fun `a re-open at an offset reuses the pinned stream after the url cache was cleared`() {
+        // A tier change clears StreamUrlCache; the seek that follows must not
+        // re-resolve to the new tier's file and splice it into the old extractor.
+        every { urlCache.get(42L) } returns stream("https://cdn/hires.flac", "qbdlx") andThen null
+        val specs = mutableListOf<DataSpec>()
+        // The whole 10 000-byte file, then its last 5 000 bytes.
+        every { httpSource.open(capture(specs)) } returnsMany listOf(10_000L, 5_000L)
+
+        val s = source()
+        s.open(placeholderSpec(42L))
+        s.close()
+        s.open(placeholderSpec(42L, position = 5_000L))
+
+        assertThat(specs.map { it.uri.toString() })
+            .containsExactly("https://cdn/hires.flac", "https://cdn/hires.flac")
+        coVerify(exactly = 0) { resolver.resolve(any(), any(), any()) }
+    }
+
+    @Test
+    fun `a re-resolve that lands on another source or tier fails instead of splicing`() {
+        // The pinned URL lapsed during a long pause; the re-resolve now serves the
+        // YouTube rung. Its bytes from offset N must never reach the FLAC extractor.
+        val expired = stream("https://cdn/hires.flac", "qbdlx").copy(expiresAtMs = System.currentTimeMillis() - 1)
+        every { urlCache.get(42L) } returns expired andThen null
+        coEvery { trackDao.getById(42L) } returns TrackEntity(id = 42L, title = "t", artist = "a")
+        coEvery { resolver.resolve(any(), any(), any()) } returns stream("https://yt/v.webm", "youtube")
+        every { httpSource.open(any()) } returns 100L
+
+        val s = source()
+        s.open(placeholderSpec(42L))
+        s.close()
+
+        assertThrows(IOException::class.java) { s.open(placeholderSpec(42L, position = 5_000L)) }
+        verify(exactly = 0) { httpSource.open(match { it.uri.toString() == "https://yt/v.webm" }) }
+    }
+
+    @Test
+    fun `a re-resolve to the same file is accepted, and a file of another length is not`() {
+        val expired = stream("https://cdn/a.flac?v=1", "qbdlx").copy(expiresAtMs = System.currentTimeMillis() - 1)
+        every { urlCache.get(42L) } returns expired andThen
+            expired.copy(url = "https://cdn/a.flac?v=2") andThen
+            expired.copy(url = "https://cdn/a.flac?v=3")
+        // 1000 bytes from 0; the same 1000 from 400; then a 2000-byte file.
+        every { httpSource.open(any()) } returnsMany listOf(1_000L, 600L, 1_600L)
+
+        val s = source()
+        s.open(placeholderSpec(42L))
+        s.close()
+        assertThat(s.open(placeholderSpec(42L, position = 400L))).isEqualTo(600L)
+        s.close()
+        assertThrows(IOException::class.java) { s.open(placeholderSpec(42L, position = 400L)) }
     }
 
     @Test

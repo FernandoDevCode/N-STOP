@@ -3,6 +3,7 @@ package com.stash.data.download
 import android.util.Log
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.files.LocalFileOps
+import com.stash.core.data.files.TrackFileReplacement
 import com.stash.core.data.sync.TrackDownloadOutcome
 import com.stash.core.data.sync.TrackDownloader
 import com.stash.core.model.Track
@@ -21,6 +22,7 @@ class TrackDownloaderImpl @Inject constructor(
     private val downloadManager: DownloadManager,
     private val downloadQueueDao: DownloadQueueDao,
     private val localFileOps: LocalFileOps,
+    private val fileReplacement: TrackFileReplacement,
 ) : TrackDownloader {
 
     override suspend fun downloadTrack(track: Track, preResolvedUrl: String?): TrackDownloadOutcome {
@@ -34,6 +36,9 @@ class TrackDownloaderImpl @Inject constructor(
                 // acceptDownloadOrDelete deletes the junk + returns false, so the
                 // track stays not-downloaded (and therefore streamable); the
                 // worker routes Failed through its normal bounded-retry handling.
+                // The track's previous file is NOT deleted here: the worker
+                // deletes it once the row records the new one (see
+                // TrackFileReplacement.deleteReplacedFile).
                 if (localFileOps.acceptDownloadOrDelete(result.filePath)) {
                     TrackDownloadOutcome.Success(result.filePath)
                 } else {
@@ -50,11 +55,16 @@ class TrackDownloaderImpl @Inject constructor(
             // [TrackDownloadOutcome.Deferred] outcome tells [TrackDownloadWorker]
             // not to increment retries, not to mark FAILED, and not to fail
             // the worker chain.
+            //
+            // A track handed back for a better copy with its file kept
+            // (TrackDao.markForReplacement) gets that file back as its download
+            // meanwhile, or it would vanish from the Library while it waits.
             TrackDownloadResult.Deferred -> {
                 val queueEntry = downloadQueueDao.getByTrackId(track.id)
                 queueEntry?.let {
                     downloadQueueDao.deferIfInProgress(it.id)
                 }
+                fileReplacement.restoreKeptFile(track.id, track.filePath)
                 TrackDownloadOutcome.Deferred
             }
         }

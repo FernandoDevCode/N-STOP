@@ -23,6 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,6 +48,10 @@ import com.stash.core.ui.theme.StashTheme
  * @param onConnect     Callback invoked when the user taps "Connect".
  * @param onDisconnect  Callback invoked when the user taps "Disconnect".
  * @param modifier      Optional [Modifier] for the root layout.
+ * @param expired       True when the last sync found this connected account's
+ *   session expired. The card then says so and leads with a "Reconnect" button
+ *   (the same sign-in as [onConnect]), keeping Disconnect as a secondary text
+ *   button. Ignored unless [authState] is Connected; see [accountStatus].
  * @param extraContent  Optional per-service sub-settings rendered inside the
  *   same card, below a subtle divider. Used by e.g. YouTube Music to nest the
  *   "Send plays to YouTube Music" toggle directly under its connect row so
@@ -66,9 +71,11 @@ fun AccountConnectionCard(
     needsAction: Boolean = false,
     needsActionLabel: String = "Finish connecting",
     onNeedsAction: (() -> Unit)? = null,
+    expired: Boolean = false,
     extraContent: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     val extendedColors = StashTheme.extendedColors
+    val status = accountStatus(authState, expired)
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -102,17 +109,13 @@ fun AccountConnectionCard(
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = when (authState) {
-                        is AuthState.Connected -> "Connected as ${authState.user.displayName}"
-                        is AuthState.Connecting -> "Connecting..."
-                        is AuthState.Error -> authState.message
-                        AuthState.NotConnected -> "Not connected"
-                    },
+                    text = status.text,
                     style = MaterialTheme.typography.bodySmall,
-                    color = when (authState) {
-                        is AuthState.Connected -> extendedColors.success
-                        is AuthState.Error -> MaterialTheme.colorScheme.error
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    color = when (status.tone) {
+                        AccountStatusTone.CONNECTED -> extendedColors.success
+                        AccountStatusTone.EXPIRED -> extendedColors.warning
+                        AccountStatusTone.ERROR -> MaterialTheme.colorScheme.error
+                        AccountStatusTone.NEUTRAL -> MaterialTheme.colorScheme.onSurfaceVariant
                     },
                 )
             }
@@ -137,7 +140,30 @@ fun AccountConnectionCard(
             ) {
                 when (authState) {
                     is AuthState.Connected -> {
-                        if (needsAction && onNeedsAction != null) {
+                        if (status.offerReconnect) {
+                            // Expired session: signing in again is the next
+                            // step, so it leads; Disconnect stays reachable
+                            // underneath, quieter, for someone done with it.
+                            Column(horizontalAlignment = Alignment.End) {
+                                Button(
+                                    onClick = onConnect,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = accentColor,
+                                        contentColor = Color.White,
+                                    ),
+                                ) {
+                                    Text("Reconnect")
+                                }
+                                TextButton(
+                                    onClick = onDisconnect,
+                                    colors = ButtonDefaults.textButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.error,
+                                    ),
+                                ) {
+                                    Text("Disconnect")
+                                }
+                            }
+                        } else if (needsAction && onNeedsAction != null) {
                             Button(
                                 onClick = onNeedsAction,
                                 colors = ButtonDefaults.buttonColors(

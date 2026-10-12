@@ -101,6 +101,20 @@ class PlayerRepositoryIdleResumeTest {
     }
 
     @Test
+    fun `play on an empty timeline while a tapped queue is still building does not resume the old one`() = runTest {
+        every { controller.mediaItemCount } returns 0
+        // A setQueue is mid-build (its MediaItems aren't on the controller yet); it ends in
+        // prepare() + play() by itself.
+        repo.queueBuildsInFlight.set(1)
+
+        repo.play()
+        shadowOf(Looper.getMainLooper()).idle()
+
+        // Resuming here put the previous persisted session back over the song just tapped.
+        coVerify(exactly = 0) { playbackResumer.buildResumePlan() }
+    }
+
+    @Test
     fun `play with a loaded timeline plays without touching the resume path`() = runTest {
         every { controller.mediaItemCount } returns 12
 

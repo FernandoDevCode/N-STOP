@@ -44,6 +44,20 @@ fun SettingsAccountsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val extendedColors = com.stash.core.ui.theme.StashTheme.extendedColors
+    // The last sync's verdict on each stored sign-in: an expired card leads with
+    // Reconnect (the Sync tab's "Re-authenticate" lands here).
+    val authExpiry by viewModel.authExpiry.collectAsStateWithLifecycle()
+
+    // The sign-in flags live in the Settings-wide ViewModel, which outlives this
+    // screen: leaving Accounts with a sign-in open (any route Back doesn't
+    // cover, e.g. switching tabs) would otherwise reopen it on the next visit.
+    // Not on rotation, which disposes this too but should keep the sign-in up.
+    val activity = androidx.activity.compose.LocalActivity.current
+    androidx.compose.runtime.DisposableEffect(viewModel) {
+        onDispose {
+            if (activity?.isChangingConfigurations != true) viewModel.onWebLoginsClosed()
+        }
+    }
 
     // Spotify WebView login (full-screen overlay). Replaces the screen content
     // while active — the connect flow on the Spotify card flips this flag.
@@ -148,13 +162,44 @@ fun SettingsAccountsScreen(
 
         SettingsSectionLabel("Connections")
 
+        // Disconnecting a source also drops its queued downloads, so each asks
+        // first (as Discord's connect does). Saveable, like showDiscordRisk, so
+        // a rotation keeps the question up.
+        var confirmSpotifyDisconnect by rememberSaveable { mutableStateOf(false) }
+        var confirmYouTubeDisconnect by rememberSaveable { mutableStateOf(false) }
+        if (confirmSpotifyDisconnect) {
+            com.stash.feature.settings.components.DisconnectAccountDialog(
+                serviceName = "Spotify",
+                onConfirm = {
+                    confirmSpotifyDisconnect = false
+                    // Also sign the WebView out, or the next Connect re-submits the old sp_dc.
+                    com.stash.feature.settings.components.clearSpotifyWebSession()
+                    viewModel.onDisconnectSpotify()
+                },
+                onDismiss = { confirmSpotifyDisconnect = false },
+            )
+        }
+        if (confirmYouTubeDisconnect) {
+            com.stash.feature.settings.components.DisconnectAccountDialog(
+                serviceName = "YouTube Music",
+                onConfirm = {
+                    confirmYouTubeDisconnect = false
+                    // Also sign the WebView out of Google, so the account isn't left behind in it.
+                    com.stash.feature.settings.components.clearYouTubeWebSession()
+                    viewModel.onDisconnectYouTube()
+                },
+                onDismiss = { confirmYouTubeDisconnect = false },
+            )
+        }
+
         AccountConnectionCard(
             serviceName = "Spotify",
             icon = Icons.Rounded.MusicNote,
             accentColor = extendedColors.spotifyGreen,
             authState = uiState.spotifyAuthState,
+            expired = authExpiry.spotifyExpired,
             onConnect = viewModel::onConnectSpotify,
-            onDisconnect = viewModel::onDisconnectSpotify,
+            onDisconnect = { confirmSpotifyDisconnect = true },
             extraContent = {
                 com.stash.feature.settings.components.SpotifyAutoSaveSection(
                     enabled = uiState.autoSaveEnabled,
@@ -173,8 +218,9 @@ fun SettingsAccountsScreen(
             icon = Icons.Rounded.PlayCircle,
             accentColor = extendedColors.youtubeRed,
             authState = uiState.youTubeAuthState,
+            expired = authExpiry.youtubeExpired,
             onConnect = viewModel::onConnectYouTube,
-            onDisconnect = viewModel::onDisconnectYouTube,
+            onDisconnect = { confirmYouTubeDisconnect = true },
             extraContent = {
                 com.stash.feature.settings.components.YouTubeHistorySyncSection(
                     enabled = uiState.ytHistoryEnabled,
@@ -236,7 +282,11 @@ fun SettingsAccountsScreen(
             accentColor = androidx.compose.ui.graphics.Color(0xFF5865F2), // Discord blurple
             authState = uiState.discordAuthState,
             onConnect = { showDiscordRisk = true },
-            onDisconnect = viewModel::onDisconnectDiscord,
+            onDisconnect = {
+                // Also sign the WebView out (the token otherwise stays in its storage).
+                com.stash.feature.settings.components.clearDiscordWebSession()
+                viewModel.onDisconnectDiscord()
+            },
             needsAction = discordNeedsConsent,
             needsActionLabel = "Finish connecting",
             onNeedsAction = {
@@ -270,6 +320,8 @@ fun SettingsAccountsScreen(
                 Text(
                     text = when {
                         !result.sessionPresent -> "Connect Last.fm first."
+                        result.held && result.submitted == 0 ->
+                            "Couldn't reach Last.fm. Your plays stay queued and will be sent later."
                         result.submitted == 0 -> "No new scrobbles to send."
                         else -> "Sent ${result.submitted} scrobble${if (result.submitted == 1) "" else "s"} to Last.fm."
                     },

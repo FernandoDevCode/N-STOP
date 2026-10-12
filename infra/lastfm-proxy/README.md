@@ -25,7 +25,13 @@ Example:
 /lastfm?method=tag.gettoptracks&tag=shoegaze&limit=50
 ```
 Returns the raw Last.fm JSON. `X-Stash-Cache: HIT|MISS|BYPASS` header shows cache
-status. `429` (with `Retry-After`) if upstream is rate-limited.
+status. `429` (with `Retry-After`) if upstream is rate-limited, or if the caller's
+network (IPv4 address, IPv6 /48) is over `LOOKUP_RL` cache misses per minute.
+
+Only each method's known lookup params (`tag`, `artist`, `track`, `autocorrect=1`,
+`limit` clamped to 1..100, see `METHOD_PARAMS`) reach Last.fm or the cache key;
+anything else is dropped, so extra params can't turn a cached lookup into a fresh
+call on the server key.
 
 ## Deploy
 

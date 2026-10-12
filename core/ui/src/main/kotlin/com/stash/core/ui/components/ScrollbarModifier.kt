@@ -21,8 +21,10 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -35,6 +37,12 @@ import androidx.compose.ui.node.DelegatingNode
 import androidx.compose.ui.node.ModifierNodeElement
 import androidx.compose.ui.node.PointerInputModifierNode
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import com.stash.core.ui.theme.StashTheme
@@ -49,8 +57,14 @@ private class ScrollbarTrackInfo {
     var thumbFraction by mutableStateOf(1f)
 }
 
-/** Fader-cap palette, resolved from the active theme's own chrome tokens. */
-private class FaderColors(val body: Color, val border: Color, val groove: Color)
+/** Fader-cap palette (and the A–Z bubble's), resolved from the active theme's own chrome tokens. */
+private class FaderColors(
+    val body: Color,
+    val border: Color,
+    val groove: Color,
+    val bubble: Color,
+    val onBubble: Color,
+)
 
 /**
  * The cap dresses like the rest of the app's chrome — chip surface body,
@@ -63,6 +77,8 @@ private fun faderColors(): FaderColors = FaderColors(
     body = MaterialTheme.colorScheme.surfaceVariant,
     border = StashTheme.extendedColors.glassBorderBright,
     groove = MaterialTheme.colorScheme.primary,
+    bubble = MaterialTheme.colorScheme.primary,
+    onBubble = MaterialTheme.colorScheme.onPrimary,
 )
 
 /** The thumb never shrinks below this — a scrubbable cap, not a sliver. */
@@ -70,6 +86,15 @@ private val MIN_THUMB_HEIGHT = 48.dp
 
 /** Extra vertical slack around the cap that still counts as grabbing it. */
 private val GRAB_TOLERANCE = 32.dp
+
+/** The A–Z bubble: big enough to read past the thumb that's dragging the cap. */
+private val BUBBLE_SIZE = 64.dp
+
+/** Gap between the bubble's tip and the fader cap. */
+private val BUBBLE_GAP = 12.dp
+
+/** The bubble's fade in and out: quicker than the cap's, it follows the finger. */
+private const val BUBBLE_FADE_MS = 150
 
 /** Clamp the raw viewport fraction so the drawn cap keeps its minimum size. */
 private fun DrawScope.clampedThumbFraction(rawFraction: Float): Float =
@@ -130,6 +155,59 @@ private fun DrawScope.drawFaderCap(
         end = Offset(gx + grooveWidth, cy),
         strokeWidth = 2.dp.toPx(),
         cap = StrokeCap.Round,
+    )
+}
+
+/**
+ * Draws the A–Z bubble beside the cap while it's dragged: the Contacts-style teardrop, three
+ * round corners and one sharp one whose tip sits on the cap's centre line, pointing at it, with
+ * the section [letter] centred inside. Pinned inside the track at either end.
+ *
+ * Drawn in the same pass as the cap so the two can never be a frame apart. It carries no
+ * semantics on purpose: it only echoes, for the eye, the first letter of the rows the drag
+ * is passing, and TalkBack reads those rows themselves.
+ */
+private fun DrawScope.drawSectionBubble(
+    info: ScrollbarTrackInfo,
+    colors: FaderColors,
+    alpha: Float,
+    capWidthPx: Float,
+    thumbHeightOffset: Float,
+    letter: TextLayoutResult,
+) {
+    if (alpha <= 0.001f) return
+    val trackHeight = size.height
+    val thumbHeight = (trackHeight * info.thumbFraction) + thumbHeightOffset
+    val thumbCenterY = info.progress * (trackHeight - thumbHeight) + thumbHeight / 2f
+    val bubble = BUBBLE_SIZE.toPx()
+    val right = size.width - capWidthPx - 3.dp.toPx() - BUBBLE_GAP.toPx()
+    val left = right - bubble
+    val top = (thumbCenterY - bubble).coerceIn(0f, (trackHeight - bubble).coerceAtLeast(0f))
+    val round = CornerRadius(bubble / 2f, bubble / 2f)
+    val tip = CornerRadius(bubble / 10f, bubble / 10f)
+    val teardrop = Path().apply {
+        addRoundRect(
+            RoundRect(
+                left = left,
+                top = top,
+                right = right,
+                bottom = top + bubble,
+                topLeftCornerRadius = round,
+                topRightCornerRadius = round,
+                bottomRightCornerRadius = tip,
+                bottomLeftCornerRadius = round,
+            ),
+        )
+    }
+    drawPath(teardrop, color = colors.bubble.copy(alpha = colors.bubble.alpha * alpha))
+    drawText(
+        letter,
+        color = colors.onBubble,
+        topLeft = Offset(
+            x = left + (bubble - letter.size.width) / 2f,
+            y = top + (bubble - letter.size.height) / 2f,
+        ),
+        alpha = alpha,
     )
 }
 
@@ -197,6 +275,7 @@ private fun Modifier.faderScrubber(
     thumbHeightOffset: Float,
     onWake: () -> Unit,
     onScrub: (Float) -> Unit,
+    onRelease: () -> Unit,
 ): Modifier = this.then(SharedPointerInputElement(stateKey) {
     val grabTolerance = GRAB_TOLERANCE.toPx()
     awaitEachGesture {
@@ -211,15 +290,21 @@ private fun Modifier.faderScrubber(
         onWake()
         var dragProgress = info.progress
         val maxOffset = trackHeight - thumbHeight
-        verticalDrag(down.id) { change ->
-            // Read the delta BEFORE consuming — a consumed change reports a
-            // zero positionChange, which would freeze the scrub in place.
-            val deltaY = change.positionChange().y
-            change.consume()
-            if (maxOffset > 0f) {
-                dragProgress = (dragProgress + deltaY / maxOffset).coerceIn(0f, 1f)
-                onScrub(dragProgress)
+        // finally: a lifted finger, a cancelled gesture (another node took the pointer) and
+        // a reset handler all end the scrub, so the A–Z bubble never sticks on screen.
+        try {
+            verticalDrag(down.id) { change ->
+                // Read the delta BEFORE consuming — a consumed change reports a
+                // zero positionChange, which would freeze the scrub in place.
+                val deltaY = change.positionChange().y
+                change.consume()
+                if (maxOffset > 0f) {
+                    dragProgress = (dragProgress + deltaY / maxOffset).coerceIn(0f, 1f)
+                    onScrub(dragProgress)
+                }
             }
+        } finally {
+            onRelease()
         }
     }
 })
@@ -247,6 +332,76 @@ private fun Modifier.thumbGestureExclusion(
     )
 }
 
+/**
+ * Where the A–Z bubble's drag is: whether the cap is held, and the lazy item the scrub has
+ * reached. Remembered once per scrollbar, because the gesture handler that writes it is
+ * created once (see [SharedPointerInputElement]) and must keep writing the same object.
+ */
+private class SectionBubbleDrag {
+    var dragging by mutableStateOf(false)
+        private set
+
+    /** Lazy item index at the top of the scrub target: where the drag has taken the list. */
+    var scrubIndex by mutableIntStateOf(0)
+
+    /** The cap was grabbed with [firstVisibleIndex] at the top: show its letter until it moves. */
+    fun grab(firstVisibleIndex: Int) {
+        scrubIndex = firstVisibleIndex
+        dragging = true
+    }
+
+    fun release() {
+        dragging = false
+    }
+}
+
+/**
+ * What the draw phase needs to paint the bubble. Rebuilt every composition (it only holds
+ * references), so a new [label] (the list changed) reaches the next frame with no extra state.
+ */
+private class SectionBubble(
+    private val drag: SectionBubbleDrag,
+    private val label: ((index: Int) -> String?)?,
+    private val alpha: State<Float>,
+    private val measurer: TextMeasurer,
+    private val style: TextStyle,
+) {
+    /** Paints the bubble when there's one to show. Reads the fade and the scrub index here, in draw. */
+    fun draw(scope: DrawScope, info: ScrollbarTrackInfo, colors: FaderColors, capWidthPx: Float, thumbHeightOffset: Float) {
+        val a = alpha.value
+        if (a <= 0.001f) return
+        val letter = label?.invoke(drag.scrubIndex) ?: return
+        val layout = measurer.measure(text = letter, style = style, maxLines = 1)
+        scope.drawSectionBubble(info, colors, a, capWidthPx, thumbHeightOffset, layout)
+    }
+}
+
+/** The bubble for this composition: fades in while [drag] holds the cap on a list with a [sectionLabel]. */
+@Composable
+private fun sectionBubble(drag: SectionBubbleDrag, sectionLabel: ((index: Int) -> String?)?): SectionBubble {
+    val alpha = animateFloatAsState(
+        targetValue = if (drag.dragging && sectionLabel != null) 1f else 0f,
+        animationSpec = tween(BUBBLE_FADE_MS),
+        label = "scrollbarBubbleAlpha",
+    )
+    return SectionBubble(
+        drag = drag,
+        label = sectionLabel,
+        alpha = alpha,
+        measurer = rememberTextMeasurer(),
+        style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.SemiBold),
+    )
+}
+
+/**
+ * The fader scrollbar for a lazy list (see the grid overload for a lazy grid).
+ *
+ * @param sectionLabel For a list sorted A–Z: the section letter of lazy item `index`
+ *   (usually [fastScrollSectionLetter] of the item's sort key), or null for an item with none
+ *   (a footer). While the cap is dragged, a big bubble beside it shows the letter of the row
+ *   the drag has reached, so "jump to the Ms" is one drag rather than a guess. Pass null (the
+ *   default) for any other order: a "D" bubble over a most-played list would mean nothing.
+ */
 @Composable
 fun BoxScope.VerticalScrollbar(
     state: LazyListState,
@@ -254,6 +409,7 @@ fun BoxScope.VerticalScrollbar(
     idleDelayMs: Long = 1500L,
     thumbHeightOffset: Float = 0f,
     hitZoneWidth: Dp = 24.dp,
+    sectionLabel: ((index: Int) -> String?)? = null,
 ) {
     val info = remember { ScrollbarTrackInfo() }
     val colors = faderColors()
@@ -261,9 +417,13 @@ fun BoxScope.VerticalScrollbar(
     var alpha by remember { mutableStateOf(0f) }
     val animatedAlpha by animateFloatAsState(alpha, tween(200), label = "scrollbarAlpha")
     val scope = rememberCoroutineScope()
+    val bubbleDrag = remember { SectionBubbleDrag() }
+    val bubble = sectionBubble(bubbleDrag, sectionLabel)
 
-    LaunchedEffect(state.isScrollInProgress) {
-        if (state.isScrollInProgress) alpha = 1f else { delay(idleDelayMs); alpha = 0f }
+    // A cap held still under the finger (dragging, but no scroll this instant) stays lit:
+    // it used to fade out mid-scrub after idleDelayMs, leaving the bubble pointing at nothing.
+    LaunchedEffect(state.isScrollInProgress, bubbleDrag.dragging) {
+        if (state.isScrollInProgress || bubbleDrag.dragging) alpha = 1f else { delay(idleDelayMs); alpha = 0f }
     }
 
     // Draw-only layer — fillMaxSize but NO pointerInput, so it never blocks touches.
@@ -283,6 +443,7 @@ fun BoxScope.VerticalScrollbar(
             info.thumbFraction = clampedThumbFraction(layout.viewportEndOffset / estimatedTotalHeight)
             info.progress = (scrolledPx / maxScrollPx).coerceIn(0f, 1f)
             drawFaderCap(info, colors, animatedAlpha, width.toPx(), thumbHeightOffset)
+            bubble.draw(this, info, colors, width.toPx(), thumbHeightOffset)
         },
     )
 
@@ -302,7 +463,11 @@ fun BoxScope.VerticalScrollbar(
                 info = info,
                 animatedAlpha = { animatedAlpha },
                 thumbHeightOffset = thumbHeightOffset,
-                onWake = { alpha = 1f },
+                onWake = {
+                    alpha = 1f
+                    bubbleDrag.grab(state.firstVisibleItemIndex)
+                },
+                onRelease = bubbleDrag::release,
                 onScrub = { progress ->
                     // Pixel-granular target: index + intra-item offset. Snapping
                     // to whole items reads as comically jumpy on tall rows.
@@ -316,6 +481,7 @@ fun BoxScope.VerticalScrollbar(
                         val targetPx = progress * maxScrollPx
                         val index = (targetPx / avgItemSize).toInt().coerceIn(0, total - 1)
                         val offsetPx = (targetPx - index * avgItemSize).roundToInt()
+                        bubbleDrag.scrubIndex = index
                         scope.launch { state.scrollToItem(index, offsetPx) }
                     }
                 },
@@ -323,6 +489,10 @@ fun BoxScope.VerticalScrollbar(
     )
 }
 
+/**
+ * The fader scrollbar for a lazy grid. [sectionLabel] is as for the list overload; the index
+ * it gets is the first item of the row the drag has reached.
+ */
 @Composable
 fun BoxScope.VerticalScrollbar(
     state: LazyGridState,
@@ -330,6 +500,7 @@ fun BoxScope.VerticalScrollbar(
     idleDelayMs: Long = 1500L,
     thumbHeightOffset: Float = 0f,
     hitZoneWidth: Dp = 24.dp,
+    sectionLabel: ((index: Int) -> String?)? = null,
 ) {
     val info = remember { ScrollbarTrackInfo() }
     val colors = faderColors()
@@ -337,9 +508,13 @@ fun BoxScope.VerticalScrollbar(
     var alpha by remember { mutableStateOf(0f) }
     val animatedAlpha by animateFloatAsState(alpha, tween(200), label = "scrollbarAlpha")
     val scope = rememberCoroutineScope()
+    val bubbleDrag = remember { SectionBubbleDrag() }
+    val bubble = sectionBubble(bubbleDrag, sectionLabel)
 
-    LaunchedEffect(state.isScrollInProgress) {
-        if (state.isScrollInProgress) alpha = 1f else { delay(idleDelayMs); alpha = 0f }
+    // A cap held still under the finger (dragging, but no scroll this instant) stays lit:
+    // it used to fade out mid-scrub after idleDelayMs, leaving the bubble pointing at nothing.
+    LaunchedEffect(state.isScrollInProgress, bubbleDrag.dragging) {
+        if (state.isScrollInProgress || bubbleDrag.dragging) alpha = 1f else { delay(idleDelayMs); alpha = 0f }
     }
 
     Box(
@@ -361,6 +536,7 @@ fun BoxScope.VerticalScrollbar(
             info.thumbFraction = clampedThumbFraction(layout.viewportEndOffset / estimatedTotalHeight)
             info.progress = (scrolledPx / maxScrollPx).coerceIn(0f, 1f)
             drawFaderCap(info, colors, animatedAlpha, width.toPx(), thumbHeightOffset)
+            bubble.draw(this, info, colors, width.toPx(), thumbHeightOffset)
         },
     )
 
@@ -375,7 +551,11 @@ fun BoxScope.VerticalScrollbar(
                 info = info,
                 animatedAlpha = { animatedAlpha },
                 thumbHeightOffset = thumbHeightOffset,
-                onWake = { alpha = 1f },
+                onWake = {
+                    alpha = 1f
+                    bubbleDrag.grab(state.firstVisibleItemIndex)
+                },
+                onRelease = bubbleDrag::release,
                 onScrub = { progress ->
                     // Pixel-granular target: row + intra-row offset (see list overload).
                     val layout = state.layoutInfo
@@ -393,6 +573,7 @@ fun BoxScope.VerticalScrollbar(
                         val targetRow = (targetPx / avgRowHeight).toInt().coerceAtLeast(0)
                         val index = (targetRow * columns).coerceIn(0, totalItems - 1)
                         val offsetPx = (targetPx - targetRow * avgRowHeight).roundToInt()
+                        bubbleDrag.scrubIndex = index
                         scope.launch { state.scrollToItem(index, offsetPx) }
                     }
                 },

@@ -4,7 +4,9 @@ import com.stash.data.download.ytdlp.YtDlpManager
 import com.stash.data.download.ytdlp.YtDlpSearchResult
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 import android.util.Log
 import kotlinx.serialization.json.Json
@@ -54,7 +56,9 @@ class YouTubeSearchExecutor @Inject constructor(
                 request.addOption("--no-download")
                 request.addOption("--flat-playlist")  // Required: without this, yt-dlp fetches full metadata per result (~15s vs ~3s)
 
-                val response = YoutubeDL.getInstance().execute(request)
+                // Interruptible: a cancelled match (download stopped) kills the
+                // yt-dlp process instead of leaving it to run to the end.
+                val response = runInterruptible { YoutubeDL.getInstance().execute(request) }
                 val output = response.out
 
                 if (output.isNullOrBlank()) {
@@ -73,6 +77,8 @@ class YouTubeSearchExecutor @Inject constructor(
                             null
                         }
                     }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "YouTube search failed for query: $query", e)
                 emptyList()

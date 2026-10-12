@@ -86,11 +86,38 @@ class QbdlxQobuzSource @Inject constructor(
     }
 
     /** Tokenless catalog search + match. Null when nothing crosses threshold or the catalog rejects us. */
-    private suspend fun search(query: TrackQuery, bypassRateLimit: Boolean): Pair<QbdlxTrack, Float>? = supervisorScope {
+    private suspend fun search(query: TrackQuery, bypassRateLimit: Boolean): Pair<QbdlxTrack, Float>? {
+        val terms = query.searchTerms()
+        // The ISRC (first when present) is asked on its own: a hit, the common
+        // case, costs one rate-limited catalog call. Only a miss (Qobuz filing the
+        // recording under a regional or reissue ISRC) asks the artist/title terms.
+        val waves = if (terms.size > 1 && !query.isrc.isNullOrBlank()) {
+            listOf(terms.take(1), terms.drop(1))
+        } else {
+            listOf(terms)
+        }
+        return try {
+            for (wave in waves) {
+                searchAtOnce(query, wave, bypassRateLimit)?.let { return it }
+            }
+            null
+        } catch (e: QbdlxAuthException) {
+            // Catalog 401 after the client's own self-heal: nothing to rotate to.
+            Log.w(TAG, "catalog auth-failed (${e.status}) even under the web app_id")
+            null
+        }
+    }
+
+    /** Best match over [terms]; [QbdlxAuthException] propagates to [search]. */
+    private suspend fun searchAtOnce(
+        query: TrackQuery,
+        terms: List<String>,
+        bypassRateLimit: Boolean,
+    ): Pair<QbdlxTrack, Float>? = supervisorScope {
         // Every term is asked at once; answers are read in priority order, so the
         // first term still outranks the second. A miss costs the slowest search,
         // not the sum (2026-09-06: 1.1 s + 0.9 s sequential on every catalog gap).
-        val answers = query.searchTerms().map { term ->
+        val answers = terms.map { term ->
             async { runCatching { callLimited(bypassRateLimit) { apiClient.search(term) } } }
         }
         try {
@@ -102,10 +129,6 @@ class QbdlxQobuzSource @Inject constructor(
                     .maxByOrNull { it.second }
                 if (match != null) return@supervisorScope match
             }
-            null
-        } catch (e: QbdlxAuthException) {
-            // Catalog 401 after the client's own self-heal: nothing to rotate to.
-            Log.w(TAG, "catalog auth-failed (${e.status}) even under the web app_id")
             null
         } finally {
             answers.forEach { it.cancel() }

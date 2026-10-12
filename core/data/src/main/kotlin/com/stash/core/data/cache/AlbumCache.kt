@@ -29,20 +29,42 @@ open class AlbumCache @Inject constructor(
 ) {
     private data class Entry(val detail: AlbumDetail, val fetchedAt: Long)
 
-    private val entries = ConcurrentHashMap<String, Entry>()
+    /**
+     * Access-order LRU of at most [MAX_ENTRIES], guarded by `synchronized`.
+     * Unbounded, every album and Qobuz playlist opened stayed in memory for
+     * the life of the process, TTL or not, and a media app's process lives
+     * for days. Same shape as [ArtistCache]'s memory tier.
+     */
+    private val entries = object : LinkedHashMap<String, Entry>(16, 0.75f, /* accessOrder = */ true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Entry>?): Boolean =
+            size > MAX_ENTRIES
+    }
     private val keyLocks = ConcurrentHashMap<String, Mutex>()
+
+    private fun cached(key: String): Entry? = synchronized(entries) { entries[key] }
 
     suspend fun get(id: String, source: AlbumSource = AlbumSource.YOUTUBE): AlbumDetail {
         val key = cacheKey(id, source)
-        val cached = entries[key]
+        val cached = cached(key)
         if (cached != null && !isStale(cached)) return cached.detail
 
         // Serialize per-key fetches so concurrent gets for the same album
         // result in exactly one network call.
         val lock = keyLocks.computeIfAbsent(key) { Mutex() }
-        return lock.withLock {
+        try {
+            return fetchLocked(lock, key, id, source)
+        } finally {
+            // Drop the lock once nobody holds or awaits it, so the lock map
+            // does not grow with every album ever opened. A get racing this
+            // removal at worst fetches once more; it never sees a wrong album.
+            if (!lock.isLocked) keyLocks.remove(key, lock)
+        }
+    }
+
+    private suspend fun fetchLocked(lock: Mutex, key: String, id: String, source: AlbumSource): AlbumDetail =
+        lock.withLock {
             // Re-check after acquiring the lock — maybe someone else filled it.
-            val afterLock = entries[key]
+            val afterLock = cached(key)
             if (afterLock != null && !isStale(afterLock)) return@withLock afterLock.detail
 
             val fresh = when (source) {
@@ -57,13 +79,12 @@ open class AlbumCache @Inject constructor(
                     }
                 }
             }
-            entries[key] = Entry(fresh, now())
+            synchronized(entries) { entries[key] = Entry(fresh, now()) }
             fresh
         }
-    }
 
     fun invalidate(id: String, source: AlbumSource = AlbumSource.YOUTUBE) {
-        entries.remove(cacheKey(id, source))
+        synchronized(entries) { entries.remove(cacheKey(id, source)) }
     }
 
     private fun cacheKey(id: String, source: AlbumSource) = "$source:$id"
@@ -75,5 +96,8 @@ open class AlbumCache @Inject constructor(
 
     companion object {
         internal const val TTL_MS = 30 * 60_000L
+
+        /** Albums kept in memory; well past a browsing session's back stack. */
+        internal const val MAX_ENTRIES = 50
     }
 }
