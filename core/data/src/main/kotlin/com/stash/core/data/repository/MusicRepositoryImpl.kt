@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
@@ -459,6 +460,9 @@ class MusicRepositoryImpl @Inject constructor(
 
     override fun observeTrackByYoutubeId(youtubeId: String): Flow<Track?> =
         trackDao.observeByYoutubeId(youtubeId).map { it?.toDomain() }
+
+    override fun observeDownloadStatus(trackId: Long): Flow<com.stash.core.model.DownloadStatus?> =
+        downloadQueueDao.observeStatusForTrack(trackId).distinctUntilChanged()
 
     override fun observePlaylist(id: Long): Flow<Playlist?> =
         playlistDao.getByIdFlow(id).map { it?.toDomain() }
