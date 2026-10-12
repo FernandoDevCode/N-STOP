@@ -1044,27 +1044,30 @@ class StashApplication : Application(), Configuration.Provider {
     }
 
     /**
-     * Word-synced (TTML) lyrics upgrade for lyrics already stored on this device. Once per
-     * versionCode via [BackfillVersionTracker] (disjoint key from the metadata backfill), so each
-     * release re-offers it. The worker only touches rows still pending (no TTML, never definitively
-     * missed), so a re-run after a clean finish is an instant no-op. The manual retag path needs
-     * nothing here: MetadataBackfillWorker chains into the same trigger when it finishes.
-     */
-    /**
      * Schema 55: rows that songs saved from Search, a stream, a like or a hand-off wrote in the
      * old strict words get the one loose rule's canonical words, so lookups find them
      * ([com.stash.core.data.sync.workers.CanonicalRecomputeWorker]; no row is merged or deleted).
      * Enqueued on every start until it finishes once (a restored older backup re-arms it), then
-     * this is a single DataStore read.
+     * this is a single DataStore read. A sync that gets there first runs it inline.
      */
     private suspend fun maybeEnqueueCanonicalRecompute() {
         runCatching {
             if (com.stash.core.data.sync.workers.CanonicalRecomputeWorker.enqueueIfPending(this, canonicalRecomputeState)) {
                 Log.i("StashMigration", "maybeEnqueueCanonicalRecompute: enqueued the one-time canonical re-key")
             }
-        }.onFailure { Log.w("StashMigration", "canonical re-key enqueue failed", it) }
+        }.onFailure {
+            if (it is kotlinx.coroutines.CancellationException) throw it
+            Log.w("StashMigration", "canonical re-key enqueue failed", it)
+        }
     }
 
+    /**
+     * Word-synced (TTML) lyrics upgrade for lyrics already stored on this device. Once per
+     * versionCode via [BackfillVersionTracker] (disjoint key from the metadata backfill), so each
+     * release re-offers it. The worker only touches rows still pending (no TTML, never definitively
+     * missed), so a re-run after a clean finish is an instant no-op. The manual retag path needs
+     * nothing here: MetadataBackfillWorker chains into the same trigger when it finishes.
+     */
     private suspend fun maybeEnqueueLyricsTtmlUpgrade() {
         runCatching {
             if (backfillVersionTracker.shouldRunForCurrentVersion(LYRICS_TTML_UPGRADE_KEY)) {

@@ -194,6 +194,8 @@ class DiffWorkerMixNoDownloadTest {
                 // the real DAO from the in-memory DB keeps it honest.
                 syncUndoDao = db.syncUndoDao(),
                 syncLog = com.stash.core.data.sync.SyncLog(),
+                // Done already: these tests are about the diff, not the one-time re-key.
+                canonicalRecompute = io.mockk.mockk(relaxed = true),
             )
         })
         .build()

@@ -17,16 +17,22 @@ import com.stash.core.common.strictCanonical
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.library.CanonicalRecompute
+import com.stash.core.data.library.CanonicalRecomputeRunner
 import com.stash.core.data.library.CanonicalRecomputeState
+import io.mockk.coEvery
+import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -37,8 +43,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * [CanonicalRecomputeWorker] and its gate [CanonicalRecomputeState]: the re-key runs once per
- * install, resumes where a stopped run left off, and is re-armed by a restored backup.
+ * [CanonicalRecomputeWorker], its runner [CanonicalRecomputeRunner] and its gate
+ * [CanonicalRecomputeState]: the re-key runs once per install, one run at a time, resumes where a
+ * stopped run left off, and is re-armed by a restored backup without a re-arm ever being lost.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [33])
@@ -67,7 +74,7 @@ class CanonicalRecomputeWorkerTest {
     private fun worker() = TestListenableWorkerBuilder<CanonicalRecomputeWorker>(context)
         .setWorkerFactory(object : WorkerFactory() {
             override fun createWorker(appContext: Context, workerClassName: String, workerParameters: WorkerParameters) =
-                CanonicalRecomputeWorker(appContext, workerParameters, CanonicalRecompute(db), state)
+                CanonicalRecomputeWorker(appContext, workerParameters, CanonicalRecomputeRunner(CanonicalRecompute(db), state))
         })
         .build()
 
@@ -84,12 +91,12 @@ class CanonicalRecomputeWorkerTest {
         assertTrue(worker().doWork() is ListenableWorker.Result.Success)
 
         assertTrue(state.isDone())
-        assertEquals("the cursor is cleared once done", 0L, state.cursor())
+        assertNull("nothing left to run", state.pendingPass())
         ids.forEachIndexed { i, id -> assertEquals("song ${i + 1}" to "a, b", words(id)) }
     }
 
     @Test fun `once done it never runs again`() = runBlocking {
-        state.markDone()
+        state.markDone(state.pendingPass()!!)
         val id = strictRows(1).single()
 
         assertTrue(worker().doWork() is ListenableWorker.Result.Success)
@@ -100,7 +107,7 @@ class CanonicalRecomputeWorkerTest {
     @Test fun `a stopped run resumes after the saved cursor`() = runBlocking {
         val ids = strictRows(4)
         // A previous run committed the first two rows' batch, then the process died.
-        state.saveCursor(ids[1])
+        state.saveCursor(state.pendingPass()!!, ids[1])
 
         assertTrue(worker().doWork() is ListenableWorker.Result.Success)
 
@@ -111,13 +118,71 @@ class CanonicalRecomputeWorkerTest {
     }
 
     @Test fun `a restored backup re-arms it from the first row`() = runBlocking {
-        state.saveCursor(42L)
-        state.markDone()
+        val pass = state.pendingPass()!!
+        state.saveCursor(pass, 42L)
+        state.markDone(pass)
 
         state.rearm()
 
         assertFalse(state.isDone())
-        assertEquals(0L, state.cursor())
+        assertEquals(0L, state.pendingPass()!!.cursor)
+    }
+
+    @Test fun `a re-arm after a run's last read is not lost`() = runBlocking {
+        // A run read its last batch; a merged backup re-arms before the run marks it done.
+        val pass = state.pendingPass()!!
+        state.saveCursor(pass, 42L)
+        state.rearm()
+
+        assertFalse("the run that began before the re-arm can't mark it done", state.markDone(pass))
+        assertFalse(state.isDone())
+        assertEquals("the restart from the first row stands", 0L, state.pendingPass()!!.cursor)
+
+        state.saveCursor(pass, 99L)
+        assertEquals("the old run's cursor can't overwrite it either", 0L, state.pendingPass()!!.cursor)
+
+        assertTrue("the next run, under the new generation, can", state.markDone(state.pendingPass()!!))
+        assertTrue(state.isDone())
+    }
+
+    @Test fun `a re-arm during a run makes it run again from the first row`() = runBlocking {
+        val recompute = mockk<CanonicalRecompute>()
+        val startedAfter = mutableListOf<Long>()
+        coEvery { recompute.run(any(), any(), any()) } coAnswers {
+            val afterId = firstArg<Long>()
+            startedAfter += afterId
+            // A backup merges while the first run is under way.
+            if (startedAfter.size == 1) state.rearm()
+            CanonicalRecompute.Outcome(scanned = 0, rekeyed = 0, keptBlocked = 0, lastId = afterId)
+        }
+        // The first run resumes one that stopped after row 7.
+        state.saveCursor(state.pendingPass()!!, 7L)
+
+        assertTrue(CanonicalRecomputeRunner(recompute, state).runIfPending())
+
+        assertEquals("resumed, then again from the first row", listOf(7L, 0L), startedAfter)
+        assertTrue(state.isDone())
+    }
+
+    @Test fun `the worker and the sync never run it at once, and the second finds it done`() = runBlocking {
+        val recompute = mockk<CanonicalRecompute>()
+        val release = CompletableDeferred<Unit>()
+        var runs = 0
+        coEvery { recompute.run(any(), any(), any()) } coAnswers {
+            runs++
+            release.await()
+            CanonicalRecompute.Outcome(scanned = 0, rekeyed = 0, keptBlocked = 0, lastId = 0L)
+        }
+        val runner = CanonicalRecomputeRunner(recompute, state)
+
+        val worker = async { runner.runIfPending() }
+        val sync = async { runner.runIfPending() }
+        yield()
+        release.complete(Unit)
+
+        assertEquals("exactly one of them ran it", 1, listOf(worker.await(), sync.await()).count { it })
+        assertEquals(1, runs)
+        assertTrue(state.isDone())
     }
 
     /**
@@ -148,10 +213,41 @@ class CanonicalRecomputeWorkerTest {
                 workManager.getWorkInfosForUniqueWork(CanonicalRecomputeWorker.WORK_NAME).get().size,
             )
 
-            state.markDone()
+            state.markDone(state.pendingPass()!!)
             assertFalse(CanonicalRecomputeWorker.enqueueIfPending(context, state))
         } finally {
             // Stop the stand-in and close this WorkManager's database while both are alive.
+            workManager.cancelAllWork().result.get()
+            WorkManagerTestInitHelper.closeWorkDatabase()
+        }
+    }
+
+    @Test fun `a merge's re-arm queues a run after the one under way, never drops it`() = runBlocking {
+        // A stand-in still RUNNING, like a recompute past its last look at the state.
+        val neverFinishes = object : WorkerFactory() {
+            override fun createWorker(appContext: Context, workerClassName: String, workerParameters: WorkerParameters): ListenableWorker =
+                object : CoroutineWorker(appContext, workerParameters) {
+                    override suspend fun doWork(): ListenableWorker.Result = neverDone.await()
+                }
+        }
+        WorkManagerTestInitHelper.initializeTestWorkManager(
+            context,
+            Configuration.Builder().setExecutor(SynchronousExecutor()).setWorkerFactory(neverFinishes).build(),
+        )
+        val workManager = WorkManager.getInstance(context)
+        try {
+            assertTrue(CanonicalRecomputeWorker.enqueueIfPending(context, state))
+
+            CanonicalRecomputeWorker.enqueueAfterRearm(context)
+
+            val runs = workManager.getWorkInfosForUniqueWork(CanonicalRecomputeWorker.WORK_NAME).get()
+            assertEquals("the re-arm's run is kept, not dropped", 2, runs.size)
+            assertEquals(
+                "and waits for the one under way",
+                1,
+                runs.count { it.state == androidx.work.WorkInfo.State.BLOCKED },
+            )
+        } finally {
             workManager.cancelAllWork().result.get()
             WorkManagerTestInitHelper.closeWorkDatabase()
         }

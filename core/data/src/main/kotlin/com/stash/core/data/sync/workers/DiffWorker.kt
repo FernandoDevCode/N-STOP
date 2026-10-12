@@ -166,6 +166,7 @@ class DiffWorker @AssistedInject constructor(
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
     private val syncUndoDao: com.stash.core.data.db.dao.SyncUndoDao,
     private val syncLog: com.stash.core.data.sync.SyncLog,
+    private val canonicalRecompute: com.stash.core.data.library.CanonicalRecomputeRunner,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -216,6 +217,12 @@ class DiffWorker @AssistedInject constructor(
         try {
             syncStateManager.onDiffing()
             syncHistoryDao.updateStatus(syncId, SyncState.DIFFING)
+
+            // Before anything is looked up by its words: rows saved before
+            // schema 55 hold the old strict words, which this diff can't find.
+            // A sync that ran ahead of the one-time re-key filed a permanent
+            // duplicate of each, so it runs here first when it hasn't finished.
+            reKeyOldCanonicalWords()
 
             // Restore point for "Undo last sync", captured BEFORE anything
             // destructive: everything above this line only reads or writes
@@ -445,6 +452,24 @@ class DiffWorker @AssistedInject constructor(
             )
             syncStateManager.onError("Diff failed: ${e.message}", e)
             return Result.failure(workDataOf(KEY_SYNC_ID to syncId))
+        }
+    }
+
+    /**
+     * Runs the one-time canonical re-key ([com.stash.core.data.library.CanonicalRecomputeRunner])
+     * when it hasn't finished: a few seconds of short transactions, once, and a single DataStore
+     * read on every sync after. Never fatal: a sync that can't re-key first works as it did before
+     * the re-key existed, and the startup worker retries it.
+     */
+    private suspend fun reKeyOldCanonicalWords() {
+        try {
+            if (canonicalRecompute.runIfPending()) {
+                Log.i(TAG, "re-keyed rows saved before schema 55 before diffing")
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "canonical re-key before the diff failed; diffing anyway", e)
         }
     }
 

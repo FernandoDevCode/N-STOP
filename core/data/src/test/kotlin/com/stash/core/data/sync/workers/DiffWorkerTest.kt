@@ -1,12 +1,14 @@
 package com.stash.core.data.sync.workers
 
 import android.content.Context
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.workDataOf
+import com.stash.core.common.strictCanonical
 import com.stash.core.data.blocklist.BlocklistGuard
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.dao.DownloadQueueDao
@@ -17,6 +19,9 @@ import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.RemotePlaylistSnapshotEntity
 import com.stash.core.data.db.entity.RemoteTrackSnapshotEntity
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.library.CanonicalRecompute
+import com.stash.core.data.library.CanonicalRecomputeRunner
+import com.stash.core.data.library.CanonicalRecomputeState
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.sync.SyncPreferencesManager
@@ -30,6 +35,10 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -37,10 +46,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.io.File
 import java.time.Instant
 
 /**
@@ -52,6 +64,8 @@ import java.time.Instant
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [33])
 class DiffWorkerTest {
+
+    @get:Rule val tmp = TemporaryFolder()
 
     private val context: Context = ApplicationProvider.getApplicationContext()
     private lateinit var db: StashDatabase
@@ -450,6 +464,53 @@ class DiffWorkerTest {
         assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
 
         assertEquals(setOf(stub, twin), db.playlistDao().getCrossRefsForPlaylist(playlistId).map { it.trackId }.toSet())
+    }
+
+    @Test
+    fun `a sync that runs before the one-time re-key still finds songs saved before it`() = runBlocking {
+        val playlistId = seedAccumulatePlaylist()
+        // Saved from Search before schema 55: the strict words, which the diff's lookups can't find.
+        val saved = db.trackDao().insert(
+            TrackEntity(
+                title = "Don't Stop", artist = "B & A", youtubeId = "video000021", source = MusicSource.YOUTUBE,
+                canonicalTitle = strictCanonical("Don't Stop"), canonicalArtist = strictCanonical("B & A"),
+                isDownloaded = true, filePath = "/music/video000021.opus",
+            )
+        )
+        val storeScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        try {
+            val state = CanonicalRecomputeState(
+                PreferenceDataStoreFactory.create(scope = storeScope) { File(tmp.root, "canonical_recompute.preferences_pb") },
+            )
+            stubGrowingSnapshot(
+                RemoteTrackSnapshotEntity(
+                    syncId = 1L, snapshotPlaylistId = 21L,
+                    title = "Don't Stop (feat. C)", artist = "A & B",
+                    spotifyUri = "spotify:track:dontstop", position = 0,
+                )
+            )
+
+            val result = buildWorker(CanonicalRecomputeRunner(CanonicalRecompute(db), state)).doWork()
+
+            assertTrue(result is androidx.work.ListenableWorker.Result.Success)
+            assertTrue("the re-key ran first", state.isDone())
+            assertEquals("no duplicate is filed", listOf(saved), db.trackDao().getAllForIntegrityScan().map { it.id })
+            assertEquals(listOf(saved), db.playlistDao().getCrossRefsForPlaylist(playlistId).map { it.trackId })
+        } finally {
+            storeScope.cancel()
+        }
+    }
+
+    @Test
+    fun `a re-key that fails never fails the sync`() = runBlocking {
+        val playlistId = seedAccumulatePlaylist()
+        stubGrowingSnapshot(remoteTrack("Song", "spotify:track:song", 0))
+        val failing = mockk<CanonicalRecomputeRunner>()
+        coEvery { failing.runIfPending() } throws IllegalStateException("disk full")
+
+        assertTrue(buildWorker(failing).doWork() is androidx.work.ListenableWorker.Result.Success)
+
+        assertEquals(1, db.playlistDao().getCrossRefsForPlaylist(playlistId).size)
     }
 
     @Test
@@ -1262,7 +1323,10 @@ class DiffWorkerTest {
         assertEquals("mix_number must survive", 1, row.mixNumber)
     }
 
-    private fun buildWorker(): DiffWorker = TestListenableWorkerBuilder<DiffWorker>(context)
+    /** [canonicalRecompute]: done already by default; these tests are about the diff, not the one-time re-key. */
+    private fun buildWorker(
+        canonicalRecompute: CanonicalRecomputeRunner = mockk(relaxed = true),
+    ): DiffWorker = TestListenableWorkerBuilder<DiffWorker>(context)
         .setInputData(workDataOf(PlaylistFetchWorker.KEY_SYNC_ID to 1L))
         .setWorkerFactory(object : WorkerFactory() {
             override fun createWorker(
@@ -1287,6 +1351,7 @@ class DiffWorkerTest {
                 // the real DAO from the in-memory DB keeps it honest.
                 syncUndoDao = db.syncUndoDao(),
                 syncLog = com.stash.core.data.sync.SyncLog(),
+                canonicalRecompute = canonicalRecompute,
             )
         })
         .build()

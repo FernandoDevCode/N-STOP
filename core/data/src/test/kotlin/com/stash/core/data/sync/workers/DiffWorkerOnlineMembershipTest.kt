@@ -201,6 +201,8 @@ class DiffWorkerOnlineMembershipTest {
                 streamingPreference = streamingPreference,
                 syncUndoDao = db.syncUndoDao(),
                 syncLog = com.stash.core.data.sync.SyncLog(),
+                // Done already: these tests are about the diff, not the one-time re-key.
+                canonicalRecompute = io.mockk.mockk(relaxed = true),
             )
         })
         .build()

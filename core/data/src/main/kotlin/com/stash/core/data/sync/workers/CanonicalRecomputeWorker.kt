@@ -9,6 +9,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.stash.core.data.library.CanonicalRecompute
+import com.stash.core.data.library.CanonicalRecomputeRunner
 import com.stash.core.data.library.CanonicalRecomputeState
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -24,36 +25,24 @@ import kotlinx.coroutines.CancellationException
  * is stopped (cancelled, the process killed, an error) resumes after the last batch it committed;
  * an error retries with WorkManager's backoff, and after [MAX_ATTEMPTS] the next app start enqueues
  * a fresh run. No constraints: it is local, a few seconds of short transactions, and lookups find
- * the old rows only once it has run.
+ * the old rows only once it has run. The sync runs it too, inline, if it gets there first; both go
+ * through [CanonicalRecomputeRunner], one run at a time.
  */
 @HiltWorker
 class CanonicalRecomputeWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted params: WorkerParameters,
-    private val recompute: CanonicalRecompute,
-    private val state: CanonicalRecomputeState,
+    private val runner: CanonicalRecomputeRunner,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result = try {
-        if (!state.isDone()) recomputeRemaining()
+        runner.runIfPending()
         Result.success()
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
         Log.w(TAG, "stopped by an error; the next attempt resumes after the last batch", e)
         if (runAttemptCount + 1 < MAX_ATTEMPTS) Result.retry() else Result.failure()
-    }
-
-    /** Re-keys from the saved cursor to the last row, saving the cursor after every batch, then marks it done. */
-    private suspend fun recomputeRemaining() {
-        val from = state.cursor()
-        val outcome = recompute.run(afterId = from) { lastId -> state.saveCursor(lastId) }
-        state.markDone()
-        Log.i(
-            TAG,
-            "re-keyed ${outcome.rekeyed} of ${outcome.scanned} rows after id $from; " +
-                "${outcome.keptBlocked} kept their words (blocked song)",
-        )
     }
 
     companion object {
@@ -66,18 +55,33 @@ class CanonicalRecomputeWorker @AssistedInject constructor(
         private const val MAX_ATTEMPTS = 5
 
         /**
-         * Enqueues the recompute unless it already finished on this install.
+         * Startup: enqueues the recompute unless it already finished on this install. `KEEP`, so a
+         * relaunch while it runs never starts a second copy.
          *
          * @return true when the work was enqueued (or was already pending).
          */
         suspend fun enqueueIfPending(context: Context, state: CanonicalRecomputeState): Boolean {
             if (state.isDone()) return false
+            enqueue(context, ExistingWorkPolicy.KEEP)
+            return true
+        }
+
+        /**
+         * Right after a re-arm (a merged backup, which restarts nothing): runs the recompute now, or
+         * after the run already under way. `KEEP` would drop this request while a run is finishing,
+         * past its last look at the state but not yet succeeded, and leave the merged rows in their
+         * old words until the next app start.
+         */
+        fun enqueueAfterRearm(context: Context) {
+            enqueue(context, ExistingWorkPolicy.APPEND_OR_REPLACE)
+        }
+
+        private fun enqueue(context: Context, policy: ExistingWorkPolicy) {
             WorkManager.getInstance(context).enqueueUniqueWork(
                 WORK_NAME,
-                ExistingWorkPolicy.KEEP,
+                policy,
                 OneTimeWorkRequestBuilder<CanonicalRecomputeWorker>().build(),
             )
-            return true
         }
     }
 }

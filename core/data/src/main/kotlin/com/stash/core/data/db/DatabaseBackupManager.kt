@@ -728,15 +728,16 @@ class DatabaseBackupManager @Inject constructor(
      * in the old strict form, which lookups by words can't find. Re-arming makes the next app start
      * run the one-time re-key ([com.stash.core.data.library.CanonicalRecompute]) again; on rows it
      * already re-keyed it changes nothing. [runNow] also enqueues it at once (a merge keeps the live
-     * database open); a swap leaves it to the restart, since the old database is closed. Best-effort:
-     * the import has already succeeded, and a missed re-arm only leaves those rows as they were
-     * before this version.
+     * database open), after any run already under way; a swap leaves it to the restart, since the
+     * old database is closed. A run that is past its last read when the re-arm lands can't mark it
+     * done (each re-arm is a new generation). Best-effort: the import has already succeeded, and a
+     * missed re-arm only leaves those rows as they were before this version.
      */
     private suspend fun rearmCanonicalRecompute(runNow: Boolean) {
         try {
             val state = com.stash.core.data.library.CanonicalRecomputeState.forContext(context)
             state.rearm()
-            if (runNow) com.stash.core.data.sync.workers.CanonicalRecomputeWorker.enqueueIfPending(context, state)
+            if (runNow) com.stash.core.data.sync.workers.CanonicalRecomputeWorker.enqueueAfterRearm(context)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
