@@ -70,6 +70,7 @@ class MusicRepositoryExactPersistTest {
             assertThat(canonicalTitle).isEqualTo("avril 14th")
         }
         coVerify(exactly = 0) { trackDao.findByCanonicalIdentity(any(), any()) }
+        coVerify(exactly = 0) { trackDao.findAllByCanonicalIdentity(any(), any()) }
     }
 
     @Test fun `blank ids are neither looked up nor stored`() = runTest {
