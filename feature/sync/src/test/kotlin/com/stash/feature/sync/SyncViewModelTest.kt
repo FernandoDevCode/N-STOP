@@ -196,7 +196,7 @@ class SyncViewModelTest {
     @Test
     fun `Stop cancels the running sync but keeps the daily schedule`() {
         newVm().onStopSync()
-        verify { syncScheduler.cancelSync() }
+        coVerify { syncScheduler.cancelSync() }
         coVerify(exactly = 0) { syncScheduler.cancelDailySync() }
     }
 

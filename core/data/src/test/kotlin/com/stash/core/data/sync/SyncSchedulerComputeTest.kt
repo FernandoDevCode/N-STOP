@@ -21,6 +21,7 @@ class SyncSchedulerComputeTest {
     private val scheduler = SyncScheduler(
         context = org.mockito.kotlin.mock(),
         syncStateManager = org.mockito.kotlin.mock(),
+        syncHistoryDao = org.mockito.kotlin.mock(),
     )
 
     @Test fun `daily mask, current is Mon 10am, target 6am — schedules Tue 6am`() {

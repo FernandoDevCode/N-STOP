@@ -9,11 +9,14 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.Operation
 import androidx.work.PeriodicWorkRequest
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import androidx.work.await
 import androidx.work.workDataOf
+import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.sync.workers.DailySyncTriggerWorker
 import com.stash.core.data.sync.workers.DiffWorker
 import com.stash.core.data.sync.workers.PlaylistFetchWorker
@@ -21,7 +24,10 @@ import com.stash.core.data.sync.workers.SyncFinalizeWorker
 import com.stash.core.data.sync.workers.TrackDownloadWorker
 import com.stash.core.model.SyncTrigger
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -43,6 +49,7 @@ import javax.inject.Singleton
 class SyncScheduler @Inject constructor(
     @ApplicationContext private val context: Context,
     private val syncStateManager: SyncStateManager,
+    private val syncHistoryDao: SyncHistoryDao,
 ) {
 
     companion object {
@@ -276,11 +283,13 @@ class SyncScheduler @Inject constructor(
     /**
      * Cancels the sync chain, running or waiting: the Sync tab's Stop. The
      * daily schedule ([TRIGGER_WORK_NAME]) stays, so the next scheduled sync
-     * still runs.
+     * still runs. The stopped run's history row is closed as cancelled
+     * ([closeStoppedRun]).
      */
-    fun cancelSync() {
-        workManager.cancelUniqueWork(UNIQUE_WORK_NAME)
+    suspend fun cancelSync() {
+        val cancel = workManager.cancelUniqueWork(UNIQUE_WORK_NAME)
         syncStateManager.reset()
+        closeStoppedRun(cancel)
     }
 
     /**
@@ -294,9 +303,37 @@ class SyncScheduler @Inject constructor(
         val chain = chainInfos()
         if (chain.all { it.state.isFinished } || chain.any { it.state == WorkInfo.State.RUNNING }) return false
         Log.i(TAG, "Cancelling a sync that hadn't finished starting (Undo last sync)")
-        workManager.cancelUniqueWork(UNIQUE_WORK_NAME)
+        val cancel = workManager.cancelUniqueWork(UNIQUE_WORK_NAME)
         syncStateManager.reset()
+        // A chain paused between steps has an open row too.
+        closeStoppedRun(cancel)
         return true
+    }
+
+    /**
+     * Closes the history row of the chain [cancel] stopped as CANCELLED, so the
+     * Sync tab's status card says "Cancelled" instead of "Syncing...". Only the
+     * download step closed its own row when stopped: a chain stopped while
+     * fetching, diffing or paused between steps left it open, the card read it
+     * as running beside an idle Sync button, and the next sync or launch then
+     * called a run the user stopped "Interrupted".
+     *
+     * Waits for WorkManager to have stopped the chain first, so a running step
+     * is already cancelled and can't write its in-progress status after this.
+     * NonCancellable: the Stop still lands if the screen that sent it closes.
+     */
+    private suspend fun closeStoppedRun(cancel: Operation) {
+        withContext(NonCancellable) {
+            try {
+                cancel.await()
+                syncHistoryDao.cancelOpenSyncs()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // The chain is stopped either way; the next sync or launch closes the row as interrupted.
+                Log.w(TAG, "Stopped the sync but couldn't mark its history row cancelled", e)
+            }
+        }
     }
 
     /**

@@ -148,6 +148,29 @@ interface SyncHistoryDao {
     suspend fun resetStaleSyncs(completedAt: Long = System.currentTimeMillis()): Int
 
     /**
+     * Stop: closes the sync run still open (same non-terminal states as
+     * [resetStaleSyncs]) as CANCELLED, which the Sync tab's status card shows
+     * as "Cancelled". Only one sync runs at a time, so the open row is the
+     * stopped chain's own. Without this a chain stopped while fetching,
+     * diffing or paused between steps left its row open: the card kept saying
+     * "Syncing..." beside an idle Sync button, until the next sync or launch
+     * closed it as "Interrupted".
+     *
+     * @param completedAt The timestamp to set on the closed record.
+     * @return Number of rows closed.
+     */
+    @Query(
+        """
+        UPDATE sync_history
+        SET status = 'CANCELLED',
+            completed_at = :completedAt,
+            error_message = 'Cancelled'
+        WHERE status IN ('AUTHENTICATING', 'FETCHING_PLAYLISTS', 'DIFFING', 'DOWNLOADING', 'FINALIZING')
+        """
+    )
+    suspend fun cancelOpenSyncs(completedAt: Long = System.currentTimeMillis()): Int
+
+    /**
      * Update the final result of a sync run in a single statement,
      * setting status, completion timestamp, error message, and all tallies.
      */

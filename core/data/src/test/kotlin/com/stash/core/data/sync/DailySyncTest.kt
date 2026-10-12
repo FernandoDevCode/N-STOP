@@ -1,6 +1,7 @@
 package com.stash.core.data.sync
 
 import android.content.Context
+import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.Configuration
 import androidx.work.CoroutineWorker
@@ -15,8 +16,12 @@ import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.WorkManagerTestInitHelper
+import com.stash.core.data.db.StashDatabase
+import com.stash.core.data.db.entity.SyncHistoryEntity
 import com.stash.core.data.sync.workers.DailySyncTriggerWorker
 import com.stash.core.data.sync.workers.PlaylistFetchWorker
+import com.stash.core.model.SyncDisplayStatus
+import com.stash.core.model.SyncState
 import com.stash.core.model.SyncTrigger
 import io.mockk.coEvery
 import io.mockk.every
@@ -37,6 +42,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.time.Clock
 import java.time.DayOfWeek
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -50,7 +56,8 @@ import kotlin.math.abs
  * Runs WorkManager's real scheduling through its test driver. The sync chain's
  * steps are stand-ins that finish once [stepGate] completes, so a test can hold
  * a step RUNNING. A step whose constraints the driver hasn't met stays waiting,
- * as it would for its network.
+ * as it would for its network. The sync history is a real in-memory database,
+ * so a test can check what the Sync tab's status card would read after Stop.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [33])
@@ -61,6 +68,7 @@ class DailySyncTest {
     private val prefsManager = mockk<SyncPreferencesManager> { every { preferences } returns prefs }
     private lateinit var scheduler: SyncScheduler
     private lateinit var workManager: WorkManager
+    private lateinit var db: StashDatabase
 
     /** Chain steps finish when this completes; already complete = at once. */
     private var stepGate = CompletableDeferred(Unit)
@@ -96,7 +104,10 @@ class DailySyncTest {
                 .build(),
         )
         workManager = WorkManager.getInstance(context)
-        scheduler = SyncScheduler(context, SyncStateManager())
+        db = Room.inMemoryDatabaseBuilder(context, StashDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        scheduler = SyncScheduler(context, SyncStateManager(), db.syncHistoryDao())
         // Online, as the phone is for every case here; the offline "Sync now" is SyncSchedulerManualSyncTest's.
         scheduler.networkAvailable = { true }
     }
@@ -104,6 +115,7 @@ class DailySyncTest {
     @After fun tearDown() {
         stepGate.complete(Unit) // lets a held step finish
         WorkManagerTestInitHelper.closeWorkDatabase()
+        db.close()
     }
 
     // -- "Sync now" ---------------------------------------------------------------
@@ -197,7 +209,7 @@ class DailySyncTest {
         assertEquals(NetworkType.UNMETERED, fetch.constraints.requiredNetworkType)
         assertTrue(fetch.constraints.requiresBatteryNotLow())
 
-        scheduler.cancelSync()
+        stop()
         prefs.value = prefs.value.copy(wifiOnly = false)
         fireTrigger()
 
@@ -328,7 +340,7 @@ class DailySyncTest {
         driver.setAllConstraintsMet(step().id)
         assertEquals(SyncTrigger.SCHEDULED.name, fetchTrigger())
 
-        scheduler.cancelSync()
+        stop()
         syncNow()
         driver.setAllConstraintsMet(step().id)
         assertEquals(SyncTrigger.MANUAL.name, fetchTrigger())
@@ -340,10 +352,58 @@ class DailySyncTest {
         scheduler.scheduleDailySync(6, 0)
         holdSyncRunning()
 
-        scheduler.cancelSync()
+        stop()
 
         assertEquals(WorkInfo.State.CANCELLED, step().state)
         assertNotNull(trigger())
+    }
+
+    /**
+     * The status card at the top of the Sync tab reads the latest history row. Only
+     * the download step closed its own row when stopped, so Stop mid-fetch left the
+     * card on "Syncing..." beside an idle Sync button.
+     */
+    @Test fun `Stop mid-fetch closes the run as cancelled, so the status card stops saying Syncing`() {
+        val earlier = recordRun(SyncState.COMPLETED, startedAt = Instant.now().minusSeconds(86_400))
+        holdSyncRunning()
+        val run = recordRun(SyncState.FETCHING_PLAYLISTS) // what the fetch step writes
+        assertEquals(SyncDisplayStatus.Running, latestRun().toDisplayStatus())
+
+        stop()
+
+        val latest = latestRun()
+        assertEquals(run, latest.id)
+        assertEquals(SyncState.CANCELLED, latest.status)
+        assertEquals(SyncDisplayStatus.Cancelled, latest.toDisplayStatus())
+        assertNotNull(latest.completedAt)
+        // A finished run keeps its own result.
+        assertEquals(SyncState.COMPLETED, runBlocking { db.syncHistoryDao().getById(earlier) }!!.status)
+    }
+
+    /** Fetched, then waiting for Wi-Fi: no step runs, so none would ever close the row. */
+    @Test fun `Stop on a sync paused between steps closes its run too`() {
+        fireTrigger()
+        driver.setAllConstraintsMet(step().id) // fetch runs and finishes
+        assertEquals(WorkInfo.State.ENQUEUED, step("sync_diff").state)
+        recordRun(SyncState.DIFFING)
+
+        stop()
+
+        assertEquals(WorkInfo.State.CANCELLED, step("sync_diff").state)
+        assertEquals(SyncDisplayStatus.Cancelled, latestRun().toDisplayStatus())
+    }
+
+    @Test fun `Undo closes the run of the sync it drops, and leaves a running one's open`() = runBlocking {
+        fireTrigger()
+        driver.setAllConstraintsMet(step().id) // paused before the diff
+        recordRun(SyncState.DIFFING)
+        assertTrue(scheduler.cancelPendingSync())
+        assertEquals(SyncState.CANCELLED, latestRun().status)
+
+        holdSyncRunning()
+        recordRun(SyncState.FETCHING_PLAYLISTS)
+        assertEquals(false, scheduler.cancelPendingSync())
+        assertEquals(SyncState.FETCHING_PLAYLISTS, latestRun().status)
     }
 
     @Test fun `turning Auto-sync off cancels the trigger and a scheduled sync not yet started`() = runBlocking {
@@ -406,6 +466,17 @@ class DailySyncTest {
     // -- Helpers ------------------------------------------------------------------------------
 
     private val driver get() = WorkManagerTestInitHelper.getTestDriver(context)!!
+
+    /** The Sync tab's Stop. */
+    private fun stop() = runBlocking { scheduler.cancelSync() }
+
+    /** A sync history row as the chain's steps write it; returns its id. */
+    private fun recordRun(status: SyncState, startedAt: Instant = Instant.now()): Long = runBlocking {
+        db.syncHistoryDao().insert(SyncHistoryEntity(status = status, startedAt = startedAt))
+    }
+
+    /** The row the Sync tab's status card shows. */
+    private fun latestRun(): SyncHistoryEntity = runBlocking { db.syncHistoryDao().getLatest() }!!
 
     /** The Sync tab's "Sync now" (with Wi-Fi only on, the default). */
     private fun syncNow() = runBlocking { scheduler.triggerManualSync(wifiOnly = true) }
