@@ -1569,6 +1569,19 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /** App-wide UI scale (Settings > Appearance > Display size). */
+    val uiScale: StateFlow<Float> = themePreference.uiScale.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        1f,
+    )
+
+    fun onUiScaleChanged(scale: Float) {
+        // Snap to 0.05 so float drift from the slider never lands in the pref.
+        val snapped = Math.round(scale.coerceIn(0.85f, 1.30f) * 20) / 20f
+        viewModelScope.launch { themePreference.setUiScale(snapped) }
+    }
+
     /**
      * Persists a new download-network mode AND re-schedules the two
      * workers that depend on it ([StashDiscoveryWorker],

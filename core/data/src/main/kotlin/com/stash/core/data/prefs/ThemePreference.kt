@@ -26,4 +26,10 @@ interface ThemePreference {
 
     /** Persists the pure-black dark preference. */
     suspend fun setAmoledDark(enabled: Boolean)
+
+    /** App-wide UI scale multiplier (0.85–1.30, default 1.0). */
+    val uiScale: Flow<Float>
+
+    /** Persists the UI scale (clamped + snapped to 0.05 by the implementation). */
+    suspend fun setUiScale(scale: Float)
 }
