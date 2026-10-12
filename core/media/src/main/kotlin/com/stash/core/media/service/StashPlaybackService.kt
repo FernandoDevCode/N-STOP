@@ -2375,12 +2375,14 @@ class StashPlaybackService : MediaLibraryService() {
                         val count = master.mediaItemCount
                         val timeline = master.currentTimeline
                         // The real play order BEFORE the insert (null when shuffle is off).
-                        val walk = if (master.shuffleModeEnabled && !timeline.isEmpty) buildList {
+                        val walk: List<Int>? = if (master.shuffleModeEnabled && !timeline.isEmpty) {
+                            val out = ArrayList<Int>(count)
                             var i = timeline.getFirstWindowIndex(true)
-                            while (i != C.INDEX_UNSET && size < count) {
-                                add(i)
+                            while (i != C.INDEX_UNSET && out.size < count) {
+                                out.add(i)
                                 i = timeline.getNextWindowIndex(i, Player.REPEAT_MODE_OFF, true)
                             }
+                            out
                         } else null
 
                         val at = if (walk != null) cur + 1 else (cur + 1 + ahead).coerceAtMost(count)
