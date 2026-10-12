@@ -183,11 +183,22 @@ class BlocklistGuardTest {
      * ones those are isn't known here: a playlist unchanged since its last sync
      * would otherwise be skipped (SpotifyMirrorStamp) and never get it back.
      */
+    /** Holds the transaction's body without running it, so a test can see what runs inside. */
+    private fun captureTransaction(): io.mockk.CapturingSlot<suspend () -> Any> {
+        val body = slot<suspend () -> Any>()
+        coEvery { database.withTransaction(capture(body)) } returns Unit
+        return body
+    }
+
     @Test
-    fun `unblock makes the next sync read every Spotify playlist again, in the unblock's transaction`() = runTest {
+    fun `unblock forgets every Spotify playlist's stamp inside the unblock's transaction`() = runTest {
+        val body = captureTransaction()
+
         guard.unblock("arctic monkeys|505")
+        coVerify(exactly = 0) { playlistDao.forgetSpotifyMirrorStamps() }
+
+        body.captured.invoke()
         coVerifyOrder {
-            database.withTransaction(any<suspend () -> Any>())
             blocklistDao.deleteByKey("arctic monkeys|505")
             playlistDao.forgetSpotifyMirrorStamps()
         }
@@ -199,14 +210,19 @@ class BlocklistGuardTest {
      * stamp would still match and a skip would keep the twin.
      */
     @Test
-    fun `block makes the next sync read every Spotify playlist again`() = runTest {
+    fun `block forgets every Spotify playlist's stamp inside the block's transaction`() = runTest {
         val track = TrackEntity(
             id = 7, title = "505", artist = "Arctic Monkeys",
             source = MusicSource.SPOTIFY, spotifyUri = "spotify:track:single",
         )
+        val body = slot<suspend () -> Any>()
+        // The block reads the transaction's result (the playlists that held the song).
+        coEvery { database.withTransaction(capture(body)) } coAnswers { emptyList<Long>() }
 
         guard.block(track, BlockSource.CONTEXT_MENU)
+        coVerify(exactly = 0) { playlistDao.forgetSpotifyMirrorStamps() }
 
+        body.captured.invoke()
         coVerify(exactly = 1) { playlistDao.forgetSpotifyMirrorStamps() }
     }
 }
