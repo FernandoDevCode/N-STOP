@@ -1,6 +1,7 @@
 package com.stash.core.data.sync.workers
 
 import android.content.Context
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.work.ListenableWorker
 import androidx.work.WorkerParameters
 import com.stash.core.data.db.dao.TrackDao
@@ -9,6 +10,7 @@ import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.lastfm.LastFmApiException
 import com.stash.core.data.lastfm.LastFmCredentials
+import com.stash.core.data.lastfm.LastFmEnrichmentBackoff
 import com.stash.core.data.lastfm.LastFmSession
 import com.stash.core.data.lastfm.LastFmSessionPreference
 import com.stash.core.data.lastfm.LastFmTag
@@ -20,7 +22,10 @@ import io.mockk.mockk
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import java.io.File
 import java.io.IOException
 
 /**
@@ -31,6 +36,8 @@ import java.io.IOException
  * real answer (empty, or Last.fm's "not found") may produce the sentinel now.
  */
 class EnrichmentWorkerTransientFailureTest {
+
+    @get:Rule val tmp = TemporaryFolder()
 
     private val appContext: Context = mockk(relaxed = true)
     private val workerParams: WorkerParameters = mockk(relaxed = true)
@@ -44,13 +51,17 @@ class EnrichmentWorkerTransientFailureTest {
 
     private val notFound = LastFmApiException(LastFmApiException.NOT_FOUND, "Track not found")
 
+    private val backoff by lazy {
+        LastFmEnrichmentBackoff(PreferenceDataStoreFactory.create { File(tmp.root, "backoff.preferences_pb") })
+    }
+
     private fun seedTrack(id: Long) {
         coEvery { trackDao.getById(id) } returns TrackEntity(id = id, title = "Song $id", artist = "Artist $id")
     }
 
     // ── TagEnrichmentWorker ──────────────────────────────────────────────
 
-    private fun tagWorker() = TagEnrichmentWorker(appContext, workerParams, trackDao, trackTagDao, apiClient, credentials)
+    private fun tagWorker() = TagEnrichmentWorker(appContext, workerParams, trackDao, trackTagDao, apiClient, credentials, backoff)
 
     @Test fun `tags - a transient failure writes no sentinel`() = runTest {
         coEvery { trackTagDao.findUntaggedDownloadedTrackIds(any()) } returns listOf(1L)
@@ -115,7 +126,7 @@ class EnrichmentWorkerTransientFailureTest {
 
     // ── TrackInfoEnrichmentWorker ────────────────────────────────────────
 
-    private fun infoWorker() = TrackInfoEnrichmentWorker(appContext, workerParams, trackDao, apiClient, credentials, sessionPreference)
+    private fun infoWorker() = TrackInfoEnrichmentWorker(appContext, workerParams, trackDao, apiClient, credentials, sessionPreference, backoff)
 
     @Test fun `track info - a transient failure writes no sentinel`() = runTest {
         coEvery { trackDao.findTracksNeedingLastfmEnrichment(any()) } returns listOf(1L)

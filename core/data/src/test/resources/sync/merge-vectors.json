@@ -1,7 +1,7 @@
 {
 	"kind": "stash-sync-merge-vectors",
 	"v": 1,
-	"note": "Mirror merge rules of sync-v1 (docs/sync-v1.md \"Merge rules\"). Songs are named by the keys of \"songs\"; HLCs are [wallMs, counter, deviceId]. Frozen: see \"Test vectors\".",
+	"note": "Mirror merge rules of sync-v1 (docs/sync-v1.md \"Merge rules\"). Songs are named by the keys of \"songs\"; HLCs are [wallMs, counter, deviceId]. Frozen: see \"Test vectors\". A playlists.merge case with \"baseHash\" (the hash of its \"base\") runs §7.3 step 4, with its \"ancestor\" (the version the remote's \"parent\" names, as this device kept it) or none; a case without \"baseHash\" runs the rules without step 4, as a device that doesn't keep it.",
 	"songs": {
 		"pink": {
 			"title": "Pink + White",
@@ -3338,6 +3338,843 @@
 						],
 						"at": [
 							30,
+							0,
+							"d_phone"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "concurrent (§7.3 step 4): the base is this device's own pushed edit; a remote edit from the version before it is merged against that version, so both edits stay",
+				"phone": false,
+				"baseHash": "h_mine",
+				"ancestor": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"nights",
+						"solo"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					],
+					"hash": "h_v0"
+				},
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"nights",
+						"solo",
+						"godspeed"
+					],
+					"at": [
+						20,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"nights",
+						"solo",
+						"godspeed"
+					],
+					"at": [
+						20,
+						0,
+						"d_web"
+					],
+					"hash": "h_mine"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"halo",
+						"pink",
+						"nights",
+						"solo"
+					],
+					"at": [
+						21,
+						0,
+						"d_phone"
+					],
+					"parent": "h_v0",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "merge",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"ivy",
+							"halo",
+							"nights",
+							"solo",
+							"godspeed"
+						],
+						"at": [
+							21,
+							0,
+							"d_phone"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "concurrent, on the phone: a browser's edit from the version before the phone's own pushed edit; both edits stay",
+				"phone": true,
+				"baseHash": "h_mine",
+				"ancestor": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"nights"
+					],
+					"at": [
+						5,
+						0,
+						"d_phone"
+					],
+					"hash": "h_v0"
+				},
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"nights",
+						"solo"
+					],
+					"at": [
+						30,
+						0,
+						"d_phone"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"nights",
+						"solo"
+					],
+					"at": [
+						30,
+						0,
+						"d_phone"
+					],
+					"hash": "h_mine"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"pink",
+						"nights"
+					],
+					"at": [
+						25,
+						0,
+						"d_web"
+					],
+					"parent": "h_v0",
+					"fromPhone": false
+				},
+				"expect": {
+					"action": "merge",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"pink",
+							"nights",
+							"solo"
+						],
+						"at": [
+							30,
+							0,
+							"d_phone"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "concurrent: the base is another browser's rename this device took; the phone's edit from the version before it keeps the rename",
+				"phone": false,
+				"baseHash": "h_theirs",
+				"ancestor": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						5,
+						0,
+						"d_phone"
+					],
+					"hash": "h_v0"
+				},
+				"base": {
+					"name": "Late drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						20,
+						0,
+						"d_web2"
+					]
+				},
+				"local": {
+					"name": "Late drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						20,
+						0,
+						"d_web2"
+					],
+					"hash": "h_theirs"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"solo"
+					],
+					"at": [
+						30,
+						0,
+						"d_phone"
+					],
+					"parent": "h_v0",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "merge",
+					"local": {
+						"name": "Late drive",
+						"items": [
+							"ivy",
+							"pink",
+							"solo"
+						],
+						"at": [
+							30,
+							0,
+							"d_phone"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "concurrent, with an unsent edit on top of the base: merged against the version the remote started from, so a song this device removed stays removed",
+				"phone": false,
+				"baseHash": "h_mine",
+				"ancestor": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"nights"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					],
+					"hash": "h_v0"
+				},
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"nights"
+					],
+					"at": [
+						20,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"nights",
+						"solo"
+					],
+					"at": [
+						25,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"nights",
+						"halo"
+					],
+					"at": [
+						22,
+						0,
+						"d_phone"
+					],
+					"parent": "h_v0",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "merge",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"ivy",
+							"nights",
+							"halo",
+							"solo"
+						],
+						"at": [
+							25,
+							0,
+							"d_web"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "concurrent: the remote is the very version its parent names (a snapshot's record) and this device moved on from it: keep this device's",
+				"phone": false,
+				"baseHash": "h_mine",
+				"ancestor": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						5,
+						0,
+						"d_phone"
+					],
+					"hash": "h_snap"
+				},
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"solo"
+					],
+					"at": [
+						20,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"solo"
+					],
+					"at": [
+						20,
+						0,
+						"d_web"
+					],
+					"hash": "h_mine"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						5,
+						0,
+						"d_phone"
+					],
+					"parent": "h_snap",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "keep",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"ivy",
+							"pink",
+							"solo"
+						],
+						"at": [
+							20,
+							0,
+							"d_web"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "step 3 comes before step 4: the remote edit started from exactly this device's current version (not its base): take",
+				"phone": false,
+				"baseHash": "h_base",
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						8,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"nights"
+					],
+					"at": [
+						10,
+						0,
+						"d_phone"
+					],
+					"parent": "h_local",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "take",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"ivy",
+							"pink",
+							"nights"
+						],
+						"at": [
+							10,
+							0,
+							"d_phone"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "no ancestor kept (a stale op: its parent is older than this device's kept bases), local unchanged since the base: the newer `at` wins; here this device's, which goes back over the remote",
+				"phone": false,
+				"baseHash": "h_base",
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"solo"
+					],
+					"at": [
+						40,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"solo"
+					],
+					"at": [
+						40,
+						0,
+						"d_web"
+					],
+					"hash": "h_base"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"nikes"
+					],
+					"at": [
+						30,
+						0,
+						"d_phone"
+					],
+					"parent": "h_gone",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "keep",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"ivy",
+							"pink",
+							"solo"
+						],
+						"at": [
+							40,
+							0,
+							"d_web"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "no ancestor kept, local unchanged since the base, the remote newer: take",
+				"phone": false,
+				"baseHash": "h_base",
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"solo"
+					],
+					"at": [
+						40,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"solo"
+					],
+					"at": [
+						40,
+						0,
+						"d_web"
+					],
+					"hash": "h_base"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"nikes"
+					],
+					"at": [
+						50,
+						0,
+						"d_phone"
+					],
+					"parent": "h_gone",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "take",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"ivy",
+							"nikes"
+						],
+						"at": [
+							50,
+							0,
+							"d_phone"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "no ancestor kept, local changed since the base: merged against the base, as without step 4",
+				"phone": false,
+				"baseHash": "h_base",
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						40,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"solo"
+					],
+					"at": [
+						45,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"halo"
+					],
+					"at": [
+						50,
+						0,
+						"d_phone"
+					],
+					"parent": "h_gone",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "merge",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"ivy",
+							"pink",
+							"solo",
+							"halo"
+						],
+						"at": [
+							50,
+							0,
+							"d_phone"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "no ancestor kept: a stale delete older than this device's unchanged version loses (the playlist goes back everywhere)",
+				"phone": false,
+				"baseHash": "h_base",
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						40,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						40,
+						0,
+						"d_web"
+					],
+					"hash": "h_base"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": null,
+					"at": [
+						30,
+						0,
+						"d_phone"
+					],
+					"parent": "h_gone",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "keep",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"ivy",
+							"pink"
+						],
+						"at": [
+							40,
+							0,
+							"d_web"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "with the base's hash, an ordinary edit (parent = the base's hash) is merged against the base; an ancestor, if given, is not used",
+				"phone": false,
+				"baseHash": "h_base",
+				"ancestor": {
+					"name": "Night drive",
+					"items": [
+						"solo"
+					],
+					"at": [
+						1,
+						0,
+						"d_web"
+					],
+					"hash": "h_older"
+				},
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"nights"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink",
+						"nights",
+						"solo"
+					],
+					"at": [
+						20,
+						0,
+						"d_web"
+					],
+					"hash": "h_local"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"nights"
+					],
+					"at": [
+						30,
+						0,
+						"d_phone"
+					],
+					"parent": "h_base",
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "merge",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"ivy",
+							"nights",
+							"solo"
+						],
+						"at": [
+							30,
+							0,
+							"d_phone"
+						]
+					},
+					"base": "remote"
+				}
+			},
+			{
+				"name": "with the base's hash, an op with no parent (a playlist sent again as new) is never concurrent: local unchanged since the base, take, even when older",
+				"phone": false,
+				"baseHash": "h_base",
+				"base": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					]
+				},
+				"local": {
+					"name": "Night drive",
+					"items": [
+						"ivy",
+						"pink"
+					],
+					"at": [
+						5,
+						0,
+						"d_web"
+					],
+					"hash": "h_base"
+				},
+				"remote": {
+					"name": "Night drive",
+					"items": [
+						"pink",
+						"solo"
+					],
+					"at": [
+						3,
+						0,
+						"d_phone"
+					],
+					"parent": null,
+					"fromPhone": true
+				},
+				"expect": {
+					"action": "take",
+					"local": {
+						"name": "Night drive",
+						"items": [
+							"pink",
+							"solo"
+						],
+						"at": [
+							3,
 							0,
 							"d_phone"
 						]

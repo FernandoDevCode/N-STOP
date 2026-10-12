@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.LaunchedEffect
@@ -91,7 +92,7 @@ fun SyncScreen(
     val failedDownloadsCount by viewModel.failedDownloadsCount.collectAsStateWithLifecycle()
     val syncLogLines by viewModel.syncLogLines.collectAsStateWithLifecycle()
     val clipboard = LocalClipboardManager.current
-    val undoPoint by viewModel.undoPoint.collectAsStateWithLifecycle()
+    val undoCard by viewModel.undoCard.collectAsStateWithLifecycle()
     val undoInProgress by viewModel.undoInProgress.collectAsStateWithLifecycle()
     val undoResult by viewModel.undoResult.collectAsStateWithLifecycle()
     var confirmUndo by remember { mutableStateOf(false) }
@@ -167,6 +168,11 @@ fun SyncScreen(
             )
         }
 
+        // "Undo last sync" paused Auto-sync; the Sync button above is how it resumes.
+        if (uiState.syncPreferences.autoSyncEnabled && uiState.syncPreferences.autoSyncPausedAfterUndo) {
+            item(key = "auto_sync_paused") { AutoSyncPausedNote() }
+        }
+
         item(key = "download_management") {
             DownloadManagementCard(onClick = onNavigateToDownloads)
         }
@@ -217,13 +223,13 @@ fun SyncScreen(
         }
 
         // -- Undo last sync ---------------------------------------------------
-        // Only present when a restore point exists. Sits directly under the sync
-        // status so the fix is next to the thing that broke.
-        undoPoint?.let { point ->
+        // Only present when the last sync changed something and none is running.
+        // Sits directly under the sync status so the fix is next to the thing that broke.
+        undoCard?.let { card ->
             item(key = "undo_sync") {
                 UndoSyncCard(
-                    playlistCount = point.playlistCount,
-                    capturedAtEpochMs = point.createdAtEpochMs,
+                    playlistCount = card.changedPlaylists,
+                    capturedAtEpochMs = card.createdAtEpochMs,
                     inProgress = undoInProgress,
                     onUndo = { confirmUndo = true },
                 )
@@ -438,18 +444,20 @@ fun SyncScreen(
     // library state, so it asks first — and says plainly what it will and won't
     // put back, since "undo" invites the assumption that it reverses everything.
     if (confirmUndo) {
-        val point = undoPoint
+        val card = undoCard
         AlertDialog(
             onDismissRequest = { confirmUndo = false },
             title = { Text("Undo last sync?") },
             text = {
                 Text(
                     "Your library goes back to how it was before the last sync: " +
-                        "playlists it hid come back, and playlists it emptied are refilled " +
-                        "in their original order" +
-                        (point?.let { " (${it.playlistCount} playlists)." } ?: ".") +
-                        "\n\nTracks you added yourself are kept. Downloaded files that were " +
-                        "already deleted can't be brought back."
+                        "playlists it hid come back, playlists it added are hidden, and " +
+                        "playlists it emptied are refilled in their original order" +
+                        (card?.let { " (${playlistsWord(it.changedPlaylists)})." } ?: ".") +
+                        "\n\nTracks you added or removed yourself, and Download switches you " +
+                        "changed, are kept. Downloaded files that were already deleted can't " +
+                        "be brought back." +
+                        "\n\nAuto-sync then pauses until you tap Sync, so it doesn't redo it."
                 )
             },
             confirmButton = {
@@ -916,9 +924,38 @@ private fun SyncTerminalCard(
     }
 }
 
+/** "1 playlist" / "3 playlists". */
+private fun playlistsWord(n: Int): String = if (n == 1) "1 playlist" else "$n playlists"
+
+/**
+ * The plain note under the Sync button while "Undo last sync" has Auto-sync
+ * paused: without it the next morning's missing sync would look like a fault.
+ */
+@Composable
+private fun AutoSyncPausedNote(modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier.fillMaxWidth().padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(
+            imageVector = Icons.Filled.PauseCircle,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp),
+        )
+        Text(
+            text = "Auto-sync paused after Undo. Tap Sync to resume.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
 /**
  * "Undo last sync" — puts the library back to the moment before the last sync
- * ran: playlists it hid return, playlists it emptied are refilled.
+ * ran: playlists it hid return, ones it added are hidden, ones it emptied are
+ * refilled. [playlistCount] is how many playlists that sync changed.
  *
  * Only rendered when a restore point exists, so the control never sits there
  * unable to do anything. Deliberately understated (no alarm colour): it's a
@@ -968,7 +1005,7 @@ private fun UndoSyncCard(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "Restores $playlistCount playlists to how they were $when_",
+                    text = "Puts back the ${playlistsWord(playlistCount)} it changed, as they were $when_",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

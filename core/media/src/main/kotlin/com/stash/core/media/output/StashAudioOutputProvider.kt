@@ -17,9 +17,9 @@ import com.stash.core.media.equalizer.dsp.FloatDspChain
  * `DefaultAudioSink` keeps believing the AudioTrack takes the format *it*
  * produced (float, or 16-bit when a decoder ignores the float request): the
  * [OutputConfig] it holds is untouched, and only the config used to open the
- * real AudioTrack carries the planned encoding — with the buffer resized so it
- * holds the same number of frames. Offload, passthrough and tunneling are not
- * PCM and pass straight through.
+ * real AudioTrack carries the planned encoding and the buffer for the player's
+ * speed ([trackConfig]). Offload, passthrough and tunneling are not PCM and
+ * pass straight through.
  */
 @OptIn(UnstableApi::class)
 class StashAudioOutputProvider(
@@ -40,9 +40,11 @@ class StashAudioOutputProvider(
             return super.getAudioOutput(config)
         }
         val attributes = config.audioAttributes.platformAudioAttributes
-        var plan = controller.prepare(config.sampleRate, channels, session.speed, attributes)
+        // The plan and the buffer both follow the player's speed right now.
+        val tier = TrackBufferSizing.tierFor(session.speed)
+        var plan = controller.prepare(config.sampleRate, channels, session, attributes)
         val inner = try {
-            super.getAudioOutput(configFor(config, inFormat, plan.trackFormat))
+            super.getAudioOutput(trackConfig(config, inFormat, plan.trackFormat, channels, tier))
         } catch (e: AudioOutputProvider.InitializationException) {
             if (plan.trackFormat == SampleFormat.FLOAT) throw e
             // A device that lists a bit-perfect format but won't open an
@@ -52,7 +54,7 @@ class StashAudioOutputProvider(
             Log.w(TAG, "AudioTrack in ${plan.trackFormat} refused; falling back to float", e)
             controller.onTrackRefused(plan)
             plan = plan.rejected(SampleFormat.FLOAT)
-            super.getAudioOutput(configFor(config, inFormat, SampleFormat.FLOAT))
+            super.getAudioOutput(trackConfig(config, inFormat, SampleFormat.FLOAT, channels, tier))
         }
         return StashAudioOutput(
             inner = inner,
@@ -65,27 +67,43 @@ class StashAudioOutputProvider(
             controller = controller,
             session = session,
             platformAttributes = attributes,
+            bufferTier = tier,
         )
-    }
-
-    private fun configFor(config: OutputConfig, inFormat: SampleFormat, trackFormat: SampleFormat): OutputConfig {
-        if (trackFormat == inFormat) return config
-        // Same number of samples (and so frames) in the new encoding.
-        val samples = config.bufferSize / inFormat.bytesPerSample
-        return config.buildUpon()
-            .setEncoding(trackFormat.toMedia3Encoding())
-            .setBufferSize(samples * trackFormat.bytesPerSample)
-            .build()
     }
 
     private companion object {
         const val TAG = "StashAudioOutput"
-
-        fun SampleFormat.toMedia3Encoding(): Int = when (this) {
-            SampleFormat.INT16 -> C.ENCODING_PCM_16BIT
-            SampleFormat.INT24 -> C.ENCODING_PCM_24BIT
-            SampleFormat.INT32 -> C.ENCODING_PCM_32BIT
-            SampleFormat.FLOAT -> C.ENCODING_PCM_FLOAT
-        }
     }
+}
+
+/**
+ * The config the AudioTrack is really opened with: [trackFormat]'s encoding,
+ * and [tier] times the frames `DefaultAudioSink` sized at 1x (see
+ * [TrackBufferSizing]). The sink keeps [config] as it is: it compares configs,
+ * buffer size included, to decide whether the next song can keep the track,
+ * so a size that moved with the speed would open a new track at a gapless
+ * seam.
+ */
+@OptIn(UnstableApi::class)
+internal fun trackConfig(
+    config: OutputConfig,
+    inFormat: SampleFormat,
+    trackFormat: SampleFormat,
+    channels: Int,
+    tier: Int,
+): OutputConfig {
+    if (trackFormat == inFormat && tier == 1) return config
+    // Same number of frames (times the tier) in the track's encoding.
+    val frames = config.bufferSize / inFormat.frameSize(channels)
+    return config.buildUpon()
+        .setEncoding(trackFormat.toMedia3Encoding())
+        .setBufferSize(frames * tier * trackFormat.frameSize(channels))
+        .build()
+}
+
+private fun SampleFormat.toMedia3Encoding(): Int = when (this) {
+    SampleFormat.INT16 -> C.ENCODING_PCM_16BIT
+    SampleFormat.INT24 -> C.ENCODING_PCM_24BIT
+    SampleFormat.INT32 -> C.ENCODING_PCM_32BIT
+    SampleFormat.FLOAT -> C.ENCODING_PCM_FLOAT
 }

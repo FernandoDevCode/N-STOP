@@ -25,6 +25,7 @@ import androidx.media3.common.MediaMetadata
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.stash.core.common.strictCanonical
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.prefs.CrossfadePreference
@@ -1023,7 +1024,9 @@ class StashPlaybackService : MediaLibraryService() {
                 /* bufferForPlaybackAfterRebufferMs = */ 2_000,
             )
             .build()
-        val renderersFactory = StashRenderersFactory(this, eqController, loudnessController, hiResOutputController)
+        val renderersFactory = StashRenderersFactory(
+            this, eqController, loudnessController, hiResOutputController, mainPlayback = true,
+        )
         val player = ExoPlayer.Builder(this)
             .setRenderersFactory(renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
@@ -1627,8 +1630,13 @@ class StashPlaybackService : MediaLibraryService() {
         crossfadePollJob?.cancel()
         sleepTimerNotificationJob?.cancel()
         cancelSleepTimerNotification()
-        // Hand the USB DAC back to Android's defaults when Stash stops playing.
-        if (::hiResOutputController.isInitialized) hiResOutputController.releaseAll()
+        if (::hiResOutputController.isInitialized) {
+            // The controller outlives this service: never leave a session's bit-perfect hold behind
+            // (shutdown() above normally clears it through exitSession).
+            hiResOutputController.setBitPerfectHeld(false)
+            // Hand the USB DAC back to Android's defaults when Stash stops playing.
+            hiResOutputController.releaseAll()
+        }
         listenedPlayer?.removeListener(playerListener)
         listenedPlayer = null
         // The speaker would play out its one song and stop; end the cast cleanly instead.
@@ -1674,8 +1682,8 @@ class StashPlaybackService : MediaLibraryService() {
         val artist = metadata.artist?.toString().orEmpty()
         val album = metadata.albumTitle?.toString().orEmpty()
         val albumArtist = metadata.albumArtist?.toString().orEmpty()
-        val cTitle = canonicalizeIdentity(title)
-        val cArtist = canonicalizeIdentity(artist)
+        val cTitle = strictCanonical(title)
+        val cArtist = strictCanonical(artist)
 
         if (cTitle.isNotBlank() && cArtist.isNotBlank()) {
             trackDao.findByCanonicalIdentity(cTitle, cArtist)?.let { return it.id }
@@ -1700,12 +1708,6 @@ class StashPlaybackService : MediaLibraryService() {
             )
         )
     }
-
-    private fun canonicalizeIdentity(s: String): String =
-        s.lowercase()
-            .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
 
     private val sessionPlayer = ServiceSessionPlayer()
 
@@ -1748,6 +1750,9 @@ class StashPlaybackService : MediaLibraryService() {
                 castDevices.disconnect()
             }
             setCrossfadeSuspended(true)
+            // Drift correction nudges the speed all session long, and bit-perfect only holds at 1x:
+            // each nudge would rebuild the stream (see HiResOutputController.setBitPerfectHeld).
+            hiResOutputController.setBitPerfectHeld(true)
             val m = master
             // The session player holds one song, and the room decides what comes next (spec §4).
             m.repeatMode = Player.REPEAT_MODE_OFF
@@ -1811,6 +1816,7 @@ class StashPlaybackService : MediaLibraryService() {
             m.clearMediaItems() // PlayerRepositoryImpl puts the user's own queue back on sessionEnds
             mediaSession?.player = m
             setCrossfadeSuspended(false)
+            hiResOutputController.setBitPerfectHeld(false)
             setShowNotificationForIdlePlayer(androidx.media3.session.MediaSessionService.SHOW_NOTIFICATION_FOR_IDLE_PLAYER_AFTER_STOP_OR_ERROR)
             updateCustomLayout()
             triggerNotificationUpdate()
@@ -2301,6 +2307,21 @@ class StashPlaybackService : MediaLibraryService() {
                 val items = tracks.map { it.toAutoMediaItem(tileArt = true) }
                 LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
             }
+        }
+
+        /**
+         * A controller played or paused: the app, the notification, a headset or car, the sleep
+         * timer (through PlayerRepositoryImpl's controller). The one place a pause on an already
+         * paused player is seen at all, which is what a call's transient focus loss leaves; see
+         * [CrossfadeEngine.onPlayPauseRequested]. Main thread, after the command ran.
+         */
+        @OptIn(UnstableApi::class)
+        override fun onPlayerInteractionFinished(
+            session: MediaSession,
+            controllerInfo: MediaSession.ControllerInfo,
+            playerCommands: Player.Commands,
+        ) {
+            if (playerCommands.contains(Player.COMMAND_PLAY_PAUSE)) crossfadeEngine?.onPlayPauseRequested()
         }
 
         @OptIn(UnstableApi::class)

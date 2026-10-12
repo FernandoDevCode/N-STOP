@@ -88,7 +88,9 @@ class CrossfadeEngine(
                 onFocusPause?.invoke()
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                pausedForFocusLoss = true
+                // Only what this loss pauses comes back when it ends: a song
+                // that was already paused stays paused.
+                pausedForFocusLoss = playerA.playWhenReady || (transitioning && playerB.playWhenReady)
                 playerA.playWhenReady = false
                 playerB.playWhenReady = false
                 onFocusPause?.invoke()
@@ -108,9 +110,32 @@ class CrossfadeEngine(
                     // prompt during a fade → silence at the seam, #251).
                     if (transitioning) playerB.playWhenReady = true
                     onFocusResume?.invoke()
+                } else if (!transitioning && !playerA.playWhenReady) {
+                    // Paused during the loss, and the pause stuck (see
+                    // onPlayPauseRequested). A paused Stash holds no focus, or
+                    // the next transient loss (an assistant, a nav prompt)
+                    // would end in a resume nobody asked for.
+                    abandonFocus()
                 }
             }
         }
+    }
+
+    /**
+     * A controller played or paused: the app, the notification, a headset or
+     * car, the sleep timer. During a transient focus loss (a call) the player
+     * is already paused, so a pause changes nothing ExoPlayer would report, and
+     * the resume when the call ended undid it: the music came back by itself
+     * after the sleep timer had stopped it mid-call. Either command means the
+     * listener has taken over, so the loss's own resume is dropped, inside a
+     * fade or not. Mid-fade the command lands only on the outgoing master (the
+     * session's player), so the fade is handed back to it rather than
+     * promoting the paused incoming. Main thread (the session callback).
+     */
+    fun onPlayPauseRequested() {
+        if (!pausedForFocusLoss) return
+        pausedForFocusLoss = false
+        if (transitioning) cancelTransition()
     }
 
     /**

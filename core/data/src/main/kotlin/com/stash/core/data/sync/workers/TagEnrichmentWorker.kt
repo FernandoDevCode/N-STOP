@@ -13,12 +13,15 @@ import com.stash.core.data.db.dao.TrackTagDao
 import com.stash.core.data.db.entity.TrackTagEntity
 import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.lastfm.LastFmCredentials
+import com.stash.core.data.lastfm.LastFmEnrichmentBackoff
 import com.stash.core.data.lastfm.isTransientLastFmFailure
 import com.stash.core.data.sync.enqueueUniquePeriodicWorkReviving
 import com.stash.core.model.DownloadNetworkMode
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 
 /**
@@ -48,6 +51,7 @@ class TagEnrichmentWorker @AssistedInject constructor(
     private val trackTagDao: TrackTagDao,
     private val lastFmApiClient: LastFmApiClient,
     private val credentials: LastFmCredentials,
+    private val backoff: LastFmEnrichmentBackoff,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -86,15 +90,38 @@ class TagEnrichmentWorker @AssistedInject constructor(
             return Result.success()
         }
 
-        val candidates = trackTagDao.findUntaggedDownloadedTrackIds(BATCH_SIZE)
+        // Tracks a recent run failed on wait their turn (LastFmEnrichmentBackoff):
+        // taken newest first, the same failing tracks headed every run and
+        // ended it, so no older track was ever tagged.
+        val startedAt = System.currentTimeMillis()
+        val candidates = backoff.candidates(LastFmEnrichmentBackoff.Pass.TAGS, BATCH_SIZE, startedAt) { limit ->
+            trackTagDao.findUntaggedDownloadedTrackIds(limit)
+        }
         if (candidates.isEmpty()) {
             Log.d(TAG, "no untagged tracks — nothing to do")
             return Result.success()
         }
         Log.i(TAG, "enriching ${candidates.size} tracks")
 
+        val failed = mutableListOf<Long>()
+        val processed = try {
+            enrich(candidates, failed)
+        } finally {
+            // Also when the run is stopped: the failures so far still count.
+            withContext(NonCancellable) {
+                backoff.recordFailures(LastFmEnrichmentBackoff.Pass.TAGS, failed, startedAt)
+            }
+        }
+        Log.i(TAG, "done: processed=$processed errors=${failed.size}")
+        return Result.success()
+    }
+
+    /**
+     * Tags each of [candidates], adding the ones Last.fm couldn't be asked
+     * about to [failed]. Returns how many were settled (tags or sentinel).
+     */
+    private suspend fun enrich(candidates: List<Long>, failed: MutableList<Long>): Int {
         var processed = 0
-        var errors = 0
         var consecutiveErrors = 0
         for (trackId in candidates) {
             val track = trackDao.getById(trackId) ?: continue
@@ -103,10 +130,11 @@ class TagEnrichmentWorker @AssistedInject constructor(
             val tags = fetchTagsWithFallback(track.artist, track.title)
             if (tags == null) {
                 // Last.fm couldn't be asked (network drop, 5xx, 429, all keys
-                // throttled). Write NOTHING: the sentinel below is permanent,
-                // and stamping it here used to poison every track a short
-                // outage touched. The track stays untagged for the next pass.
-                errors++
+                // throttled), or keeps failing on this track. Write NOTHING: the
+                // sentinel below is permanent, and stamping it here used to
+                // poison every track a short outage touched. The track stays
+                // untagged, and backs off so the next run starts elsewhere.
+                failed += trackId
                 if (++consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
                     // The rest of the batch would fail the same way; stop
                     // spending requests and let the next periodic run resume.
@@ -151,8 +179,7 @@ class TagEnrichmentWorker @AssistedInject constructor(
             // fallback in aggregate.
             delay(REQUEST_INTERVAL_MS)
         }
-        Log.i(TAG, "done: processed=$processed errors=$errors")
-        return Result.success()
+        return processed
     }
 
     private data class TaggedResult(val tag: String, val weight: Float, val source: String)

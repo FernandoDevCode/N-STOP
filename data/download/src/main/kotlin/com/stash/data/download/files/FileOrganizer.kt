@@ -1,7 +1,9 @@
 package com.stash.data.download.files
 
 import android.content.Context
+import android.database.Cursor
 import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.prefs.LibraryLayout
@@ -431,7 +433,7 @@ class FileOrganizer @Inject constructor(
      * based on the user's [StoragePreference]:
      *  - Internal mode (default): walks `filesDir/music`
      *  - SAF mode (user picked an external folder): walks the persisted
-     *    tree URI via [DocumentFile.fromTreeUri]
+     *    tree URI, one provider query per folder ([sumDocumentTree])
      *
      * Returns the sum of every file under that root regardless of DB state.
      * Used by Home to display Storage truthfully on legacy libraries where
@@ -466,34 +468,35 @@ class FileOrganizer @Inject constructor(
     }
 
     /**
-     * Walks a SAF tree URI counting/sizing every file recursively. SAF
-     * is slower than `File.walkTopDown` because every node is a
-     * ContentResolver query — we go through DocumentFile to keep the
-     * path-tolerant API. Suspended + IO-dispatched at the call-site
-     * (HomeViewModel) so the cost stays off the main thread.
+     * Walks a SAF tree URI counting/sizing every file recursively, with ONE
+     * provider query per folder: its children, projected to id, MIME type,
+     * size and name ([sumDocumentTree]).
+     *
+     * This used to go through DocumentFile, which costs about four provider
+     * round-trips per FILE (the folder listing, then `isDirectory`, `isFile`,
+     * `length` and `name` each query again): 1-2 minutes per 3,000 files on
+     * an SD card, every time Home or Settings showed the size. A library has
+     * a folder per album at most, so this is a small fraction of the queries.
+     * Suspended + IO-dispatched at the call-site ([LibrarySizeHolder]) so the
+     * cost stays off the main thread.
      */
     private fun walkSafTree(treeUri: Uri): LibrarySizeBreakdown {
-        var total = 0L
-        var lossless = 0L
-        var losslessCount = 0
-        val root = DocumentFile.fromTreeUri(context, treeUri) ?: return LibrarySizeBreakdown(0, 0, 0)
-        val stack = ArrayDeque<DocumentFile>().apply { addLast(root) }
-        while (stack.isNotEmpty()) {
-            val node = stack.removeLast()
-            if (node.isDirectory) {
-                node.listFiles().forEach { stack.addLast(it) }
-            } else if (node.isFile) {
-                val size = node.length()
-                total += size
-                val name = node.name?.lowercase().orEmpty()
-                val ext = name.substringAfterLast('.', "")
-                if (ext in LOSSLESS_EXTENSIONS) {
-                    lossless += size
-                    losslessCount++
-                }
-            }
+        val resolver = context.contentResolver
+        // The folder the user picked, read the way DocumentFile.fromTreeUri reads it.
+        val rootId = if (DocumentsContract.isDocumentUri(context, treeUri)) {
+            DocumentsContract.getDocumentId(treeUri)
+        } else {
+            DocumentsContract.getTreeDocumentId(treeUri)
         }
-        return LibrarySizeBreakdown(total, lossless, losslessCount)
+        return sumDocumentTree(rootId) { folderId ->
+            resolver.query(
+                DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, folderId),
+                SAF_CHILD_PROJECTION,
+                null,
+                null,
+                null,
+            )
+        }
     }
 
     /**
@@ -521,6 +524,61 @@ class FileOrganizer @Inject constructor(
         private val LOSSLESS_EXTENSIONS = setOf(
             "flac", "alac", "wav", "ape", "tta", "wv", "aiff",
         )
+
+        /** The four columns the SAF size walk reads from each folder's children. */
+        private val SAF_CHILD_PROJECTION = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_MIME_TYPE,
+            DocumentsContract.Document.COLUMN_SIZE,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+        )
+
+        /**
+         * Sums every file under the folder [rootId], calling [queryChildren]
+         * exactly once per folder for a cursor over its children (the four
+         * [SAF_CHILD_PROJECTION] columns, in any order) and descending into
+         * each child whose MIME type is a folder.
+         *
+         * Counts what DocumentFile counted: a child with no MIME type is
+         * neither a file nor a folder, and a file whose provider reports no
+         * size adds 0. A folder whose query comes back null (the card was
+         * pulled mid-walk) adds nothing; what was summed so far stands. A
+         * folder seen twice is walked once, so a provider that lists a parent
+         * under its own child can't loop the walk forever.
+         */
+        internal fun sumDocumentTree(
+            rootId: String,
+            queryChildren: (folderId: String) -> Cursor?,
+        ): LibrarySizeBreakdown {
+            var total = 0L
+            var lossless = 0L
+            var losslessCount = 0
+            val folders = ArrayDeque<String>().apply { addLast(rootId) }
+            val seen = hashSetOf(rootId)
+            while (folders.isNotEmpty()) {
+                queryChildren(folders.removeLast())?.use { c ->
+                    val idCol = c.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                    val mimeCol = c.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                    val sizeCol = c.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_SIZE)
+                    val nameCol = c.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                    while (c.moveToNext()) {
+                        val mime = c.getString(mimeCol)
+                        if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                            c.getString(idCol)?.let { if (seen.add(it)) folders.addLast(it) }
+                        } else if (!mime.isNullOrEmpty()) {
+                            val size = if (c.isNull(sizeCol)) 0L else c.getLong(sizeCol)
+                            total += size
+                            val ext = c.getString(nameCol)?.lowercase().orEmpty().substringAfterLast('.', "")
+                            if (ext in LOSSLESS_EXTENSIONS) {
+                                lossless += size
+                                losslessCount++
+                            }
+                        }
+                    }
+                }
+            }
+            return LibrarySizeBreakdown(total, lossless, losslessCount)
+        }
         // Mirrors the format switch in mimeTypeFor(). Used by
         // resolveInIndex's extension-probe when the caller doesn't
         // know the track's format ahead of time.

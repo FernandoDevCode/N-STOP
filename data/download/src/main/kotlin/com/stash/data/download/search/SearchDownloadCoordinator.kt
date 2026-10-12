@@ -8,6 +8,7 @@ import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheKeyFactory
 import androidx.media3.datasource.cache.SimpleCache
+import com.stash.core.common.strictCanonical
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.prefs.QualityPreference
 import com.stash.core.data.audio.AudioDurationExtractor
@@ -611,8 +612,8 @@ class SearchDownloadCoordinator @Inject constructor(
 
         val existing = trackDao.findByYoutubeId(track.videoId)
             ?: trackDao.findByCanonicalIdentity(
-                title = canonicalize(track.title),
-                artist = canonicalize(track.artist),
+                title = strictCanonical(track.title),
+                artist = strictCanonical(track.artist),
             )
 
         val albumName = track.album.orEmpty()
@@ -634,8 +635,8 @@ class SearchDownloadCoordinator @Inject constructor(
                 // even when per-track artist credits vary.
                 albumArtist = albumArtistName,
                 youtubeId = track.videoId,
-                canonicalTitle = canonicalize(track.title),
-                canonicalArtist = canonicalize(track.artist),
+                canonicalTitle = strictCanonical(track.title),
+                canonicalArtist = strictCanonical(track.artist),
                 // (durationSeconds * 1_000).toLong() preserves sub-second precision.
                 // Doing .toLong() first then * 1_000L would truncate 3.7s → 3_000ms.
                 durationMs = (track.durationSeconds * 1_000).toLong(),
@@ -718,17 +719,6 @@ class SearchDownloadCoordinator @Inject constructor(
     // Helpers
     // -------------------------------------------------------------------------
 
-    /**
-     * Normalises a string for database identity matching.
-     * Lowercased, non-alphanumeric chars replaced with spaces, runs of
-     * spaces collapsed, leading/trailing whitespace stripped.
-     */
-    private fun canonicalize(s: String): String =
-        s.lowercase()
-            .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
-
     /** Converts a [TrackItem] to a [TrackQuery] for the lossless registry.
      *  Passes [TrackItem.album] through so lossless matching can use it as
      *  a tie-breaker on releases with the same track title across albums. */
@@ -775,8 +765,8 @@ class SearchDownloadCoordinator @Inject constructor(
         (
             trackDao.findByYoutubeId(track.videoId)
                 ?: trackDao.findByCanonicalIdentity(
-                    title = canonicalize(track.title),
-                    artist = canonicalize(track.artist),
+                    title = strictCanonical(track.title),
+                    artist = strictCanonical(track.artist),
                 )
             )?.id
     } catch (e: CancellationException) {

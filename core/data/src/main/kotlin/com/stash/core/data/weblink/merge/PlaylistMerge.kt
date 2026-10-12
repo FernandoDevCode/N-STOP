@@ -140,7 +140,8 @@ object PlaylistMerge {
      * [ancestor], the version [parent] names when this device kept it, never [base]. The base can be this device's own pushed
      * edit: "unchanged since the base, take the remote" would drop that edit here while the other side drops the remote one the
      * same way, and neither pushes again (audit A5). With no [ancestor] kept, an unchanged playlist keeps the newer `at`, and a
-     * kept one is pushed back over the remote. Without [baseHash] (the shared vectors) the rules are sync-v1's as written.
+     * kept one is pushed back over the remote. Without [baseHash] (the shared vector cases that carry none) the rules are
+     * sync-v1's without step 4.
      */
     fun <S : SongIdentity> merge(
         phone: Boolean,

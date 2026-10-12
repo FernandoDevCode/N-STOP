@@ -79,6 +79,9 @@ class YtLibraryBackfillWorkerSharedFileTest {
                 syncNotificationManager = mockk(relaxed = true),
                 syncScheduler = mockk(relaxed = true),
                 canonicalizer = mockk(relaxed = true),
+                syncPreferencesManager = mockk(relaxed = true) {
+                    every { preferences } returns kotlinx.coroutines.flow.flowOf(com.stash.core.data.sync.SyncPreferences())
+                },
             ),
             recordPrivateCalls = true,
         )

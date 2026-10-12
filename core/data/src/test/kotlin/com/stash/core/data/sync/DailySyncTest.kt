@@ -97,6 +97,8 @@ class DailySyncTest {
         )
         workManager = WorkManager.getInstance(context)
         scheduler = SyncScheduler(context, SyncStateManager())
+        // Online, as the phone is for every case here; the offline "Sync now" is SyncSchedulerManualSyncTest's.
+        scheduler.networkAvailable = { true }
     }
 
     @After fun tearDown() {
@@ -110,7 +112,7 @@ class DailySyncTest {
     @Test fun `Sync now starts a sync while Auto-sync is on`() {
         scheduler.scheduleDailySync(6, 0)
 
-        scheduler.triggerManualSync()
+        syncNow()
 
         val fetch = step()
         assertEquals(0L, fetch.initialDelayMillis)
@@ -123,7 +125,7 @@ class DailySyncTest {
         val scheduled = chainIds()
         assertEquals(NetworkType.UNMETERED, step().constraints.requiredNetworkType)
 
-        scheduler.triggerManualSync()
+        syncNow()
 
         assertTrue(chainIds().none { it in scheduled })
         assertEquals(NetworkType.CONNECTED, step().constraints.requiredNetworkType)
@@ -133,7 +135,7 @@ class DailySyncTest {
         holdSyncRunning()
         val running = chainIds()
 
-        scheduler.triggerManualSync()
+        syncNow()
 
         assertEquals(running, chainIds())
         assertEquals(WorkInfo.State.RUNNING, step().state)
@@ -146,7 +148,7 @@ class DailySyncTest {
         assertEquals(WorkInfo.State.ENQUEUED, step("sync_diff").state) // waits for Wi-Fi
         val paused = chainIds()
 
-        scheduler.triggerManualSync()
+        syncNow()
 
         assertTrue(chainIds().none { it in paused })
         assertEquals(NetworkType.CONNECTED, step().constraints.requiredNetworkType)
@@ -159,7 +161,7 @@ class DailySyncTest {
         fireTrigger()
         assertEquals(setOf(legacy), chainIds()) // the trigger left it alone
 
-        scheduler.triggerManualSync()
+        syncNow()
         assertEquals(0L, step().initialDelayMillis) // Sync now replaced it
     }
 
@@ -210,6 +212,32 @@ class DailySyncTest {
         assertTrue(chain().isEmpty())
     }
 
+    /** "Undo last sync": the next scheduled run would redo what the user just undid. */
+    @Test fun `the trigger does nothing while Auto-sync is paused after an undo, and keeps its time`() {
+        val at = LocalDateTime.now().plusHours(3)
+        prefs.value = SyncPreferences(
+            autoSyncEnabled = true, syncHour = at.hour, syncMinute = at.minute, autoSyncPausedAfterUndo = true,
+        )
+
+        fireTrigger(at.hour, at.minute)
+
+        assertTrue(chain().isEmpty())
+        // The schedule itself stays, so the next "Sync now" resumes it as it was.
+        val expected = System.currentTimeMillis() + scheduler.computeDelayToNextSync(at.hour, at.minute)!!
+        assertAbout(expected, trigger()!!.nextScheduleTimeMillis)
+    }
+
+    @Test fun `Undo drops a scheduled sync still waiting for Wi-Fi, but not a running one`() = runBlocking {
+        fireTrigger() // waits for Wi-Fi
+        assertTrue(scheduler.cancelPendingSync())
+        assertEquals(WorkInfo.State.CANCELLED, step().state)
+
+        scheduler.cancelSync()
+        holdSyncRunning()
+        assertEquals(false, scheduler.cancelPendingSync())
+        assertEquals(WorkInfo.State.RUNNING, step().state)
+    }
+
     @Test fun `the trigger does nothing when today isn't a sync day`() {
         // Only the day after tomorrow: neither today nor the day an early-morning run counts for.
         val notToday = DayOfWeekSet.NONE.with(LocalDate.now().dayOfWeek.plus(2), true)
@@ -247,7 +275,7 @@ class DailySyncTest {
     }
 
     @Test fun `a queued Sync now is never turned into a Wi-Fi-only sync`() = runBlocking {
-        scheduler.triggerManualSync() // waits for a network
+        syncNow() // waits for a network
         val queued = chainIds()
 
         fireTrigger()
@@ -301,7 +329,7 @@ class DailySyncTest {
         assertEquals(SyncTrigger.SCHEDULED.name, fetchTrigger())
 
         scheduler.cancelSync()
-        scheduler.triggerManualSync()
+        syncNow()
         driver.setAllConstraintsMet(step().id)
         assertEquals(SyncTrigger.MANUAL.name, fetchTrigger())
     }
@@ -336,7 +364,7 @@ class DailySyncTest {
     }
 
     @Test fun `turning Auto-sync off leaves a queued Sync now alone`() = runBlocking {
-        scheduler.triggerManualSync() // waits for a network
+        syncNow() // waits for a network
 
         scheduler.cancelDailySync()
 
@@ -379,6 +407,9 @@ class DailySyncTest {
 
     private val driver get() = WorkManagerTestInitHelper.getTestDriver(context)!!
 
+    /** The Sync tab's "Sync now" (with Wi-Fi only on, the default). */
+    private fun syncNow() = runBlocking { scheduler.triggerManualSync(wifiOnly = true) }
+
     private fun chain(): List<WorkInfo> =
         workManager.getWorkInfosForUniqueWork(SyncScheduler.UNIQUE_WORK_NAME).get()
 
@@ -404,7 +435,7 @@ class DailySyncTest {
     /** A manual sync held with its fetch step RUNNING. */
     private fun holdSyncRunning() {
         stepGate = CompletableDeferred()
-        scheduler.triggerManualSync()
+        syncNow()
         driver.setAllConstraintsMet(step().id)
         assertEquals(WorkInfo.State.RUNNING, step().state)
     }

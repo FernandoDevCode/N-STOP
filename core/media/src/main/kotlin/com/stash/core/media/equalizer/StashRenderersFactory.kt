@@ -40,6 +40,9 @@ import com.stash.core.media.output.StashAudioOutputProvider
  *
  * One factory per player; [outputSession] carries that player's source format
  * and speed to its output stage.
+ *
+ * @param mainPlayback true for the playback service's players, false for any
+ *   other (the search preview): see [OutputSession.mainPlayback].
  */
 @OptIn(UnstableApi::class)
 class StashRenderersFactory(
@@ -47,10 +50,11 @@ class StashRenderersFactory(
     private val eqController: EqController,
     private val loudnessController: LoudnessController,
     private val hiResOutputController: HiResOutputController,
+    mainPlayback: Boolean,
 ) : DefaultRenderersFactory(context) {
 
     /** This factory's player's facts for its output stage (fed by the service's analytics listener). */
-    val outputSession = OutputSession()
+    val outputSession = OutputSession(mainPlayback)
 
     override fun buildAudioSink(
         context: Context,
@@ -58,7 +62,7 @@ class StashRenderersFactory(
         enableAudioTrackPlaybackParams: Boolean,
     ): AudioSink {
         val audioTrackProvider = AudioTrackAudioOutputProvider.Builder(context)
-            .setAudioTrackBufferSizeProvider(SpeedCappedBufferSizeProvider)
+            .setAudioTrackBufferSizeProvider(OneXBufferSizeProvider)
             .build()
         return DefaultAudioSink.Builder(context)
             .setEnableFloatOutput(true)
@@ -78,16 +82,16 @@ class StashRenderersFactory(
     }
 
     /**
-     * Media3 sizes an AudioTrack that does its own time-stretching for 8x
-     * speed: 8x the usual buffer, ~2 s of audio. The DSP runs *before* that
-     * buffer, so an EQ slider would take seconds to be heard. Stash's speeds
-     * are 0.1–4x and almost always ≤ 2x; sizing for 2x keeps EQ changes and
-     * loudness switches within ~0.5 s while leaving AudioFlinger enough frames
-     * to time-stretch.
+     * Media3's 1x buffer size (250–750 ms for PCM), whatever top speed it asks
+     * for. Media3 asks for 8x once the AudioTrack time-stretches, and the DSP
+     * runs *before* that buffer, so an EQ slider would take seconds to be
+     * heard. The output stage doubles the real AudioTrack's buffer above 2x
+     * ([com.stash.core.media.output.TrackBufferSizing]); this size stays put,
+     * because `DefaultAudioSink` compares configs (buffer size included) to
+     * decide whether the next song can keep the track, and one that moved with
+     * Listen Together's speed nudges would open a new track at a gapless seam.
      */
-    private object SpeedCappedBufferSizeProvider : AudioTrackBufferSizeProvider {
-        private const val MAX_SIZED_SPEED = 2.0
-
+    private object OneXBufferSizeProvider : AudioTrackBufferSizeProvider {
         override fun getBufferSizeInBytes(
             minBufferSizeInBytes: Int,
             encoding: Int,
@@ -103,7 +107,7 @@ class StashRenderersFactory(
             pcmFrameSize,
             sampleRate,
             bitrate,
-            minOf(maxAudioTrackPlaybackSpeed, MAX_SIZED_SPEED),
+            /* maxAudioTrackPlaybackSpeed = */ 1.0,
         )
     }
 }

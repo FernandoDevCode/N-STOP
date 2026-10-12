@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { b64urlDecode, b64urlEncode, hashEmail, normalizeEmail, sameHex, sixDigitCode, validEmail } from "../crypto.js";
+import { cleanCode } from "../codes.js";
+import { b64urlDecode, b64urlEncode, eightDigitCode, hashEmail, normalizeEmail, randomHex, sameHex, validEmail } from "../crypto.js";
 
 // The same vectors are in infra/tipjar-worker/test/access.test.js: the tip jar, its CSV import and
 // this site must hash an email identically, or supporters can't sign in.
@@ -32,12 +33,26 @@ test("base64url round-trips and rejects other alphabets", () => {
     assert.throws(() => b64urlDecode("a+b/"));
 });
 
-test("sixDigitCode is six digits, leading zeros kept, and spread out", () => {
+test("eightDigitCode is eight digits, leading zeros kept, and spread out", () => {
     const seen = new Set();
+    const firstDigits = new Set();
     for (let i = 0; i < 2000; i++) {
-        const c = sixDigitCode();
-        assert.match(c, /^\d{6}$/);
+        const c = eightDigitCode();
+        assert.match(c, /^\d{8}$/);
         seen.add(c);
+        firstDigits.add(c[0]);
     }
-    assert.ok(seen.size > 1990, "codes repeat far too often");
+    assert.ok(seen.size > 1995, "codes repeat far too often");
+    assert.equal(firstDigits.size, 10, "a leading 0 is kept as a digit");
+});
+
+test("cleanCode takes 8 digits, spaced or hyphenated any way; anything else isn't a code", () => {
+    for (const ok of ["12345678", "1234 5678", "1234-5678", " 12 34 56 78 ", "1234\t5678"]) assert.equal(cleanCode(ok), "12345678", ok);
+    for (const bad of ["", "123456", "1234567", "123456789", "1234567a", "１２３４５６７８", null, undefined]) assert.equal(cleanCode(bad), null, String(bad));
+});
+
+test("randomHex is 32 hex characters by default, and never the same twice here", () => {
+    const ids = new Set(Array.from({ length: 500 }, () => randomHex()));
+    assert.equal(ids.size, 500);
+    for (const id of ids) assert.match(id, /^[0-9a-f]{32}$/);
 });

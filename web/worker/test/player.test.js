@@ -201,16 +201,17 @@ test("not signed in: the early-access page, and after signing in, back to /playe
     const sent = await handle(post("/access", { email: EMAIL, next: "/player" }), e, ctx);
     await ctx.drain();
     assert.match(await sent.text(), /name="next" value="\/player"/);
-    const code = /is (\d{6})/.exec(e.EMAIL.sent[0].text)[1];
+    const code = /is (\d{8})/.exec(e.EMAIL.sent[0].text)[1];
+    const pending = { headers: { Cookie: sent.headers.get("set-cookie").split(";")[0] } }; // the browser that asked
     // ...and a wrong code keeps it too...
-    const wrong = await handle(post("/access/verify", { email: EMAIL, code: code === "000000" ? "111111" : "000000", next: "/player" }), e, fakeCtx());
+    const wrong = await handle(post("/access/verify", { email: EMAIL, code: code === "00000000" ? "11111111" : "00000000", next: "/player" }, pending), e, fakeCtx());
     assert.equal(wrong.status, 400);
     assert.equal((await wrong.text()).match(/name="next" value="\/player"/g).length, 2);
     // ...and the right code goes back to /player.
-    const verified = await handle(post("/access/verify", { email: EMAIL, code, next: "/player" }), e, fakeCtx());
+    const verified = await handle(post("/access/verify", { email: EMAIL, code, next: "/player" }, pending), e, fakeCtx());
     assert.equal(verified.status, 303);
     assert.equal(verified.headers.get("location"), "/player");
-    const cookie = verified.headers.get("set-cookie").split(";")[0];
+    const cookie = verified.headers.getSetCookie()[0].split(";")[0];
     const res = await open(e, cookie);
     assert.equal(res.status, 302);
     assert.ok(await verifyTicket(parseRedirect(res).ticket, KEYS.pub, NOW));
@@ -341,10 +342,11 @@ test("next can't point anywhere else: other player paths are dropped, and the si
 
     // A forged next on the sign-in form lands on / instead.
     const ctx = fakeCtx();
-    await handle(post("/access", { email: EMAIL }), e, ctx);
+    const sent = await handle(post("/access", { email: EMAIL }), e, ctx);
     await ctx.drain();
-    const code = /is (\d{6})/.exec(e.EMAIL.sent[0].text)[1];
-    const res = await handle(post("/access/verify", { email: EMAIL, code, next: "https://evil.example/" }), e, fakeCtx());
+    const code = /is (\d{8})/.exec(e.EMAIL.sent[0].text)[1];
+    const pending = { headers: { Cookie: sent.headers.get("set-cookie").split(";")[0] } };
+    const res = await handle(post("/access/verify", { email: EMAIL, code, next: "https://evil.example/" }, pending), e, fakeCtx());
     assert.equal(res.status, 303);
     assert.equal(res.headers.get("location"), "/");
     const front = await handle(get("/access?next=https%3A%2F%2Fevil.example"), e);

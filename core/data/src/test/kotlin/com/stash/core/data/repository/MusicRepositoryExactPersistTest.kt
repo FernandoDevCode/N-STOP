@@ -33,6 +33,7 @@ class MusicRepositoryExactPersistTest {
         singleTrackDownloadEnqueuer = mockk(relaxed = true),
         lastFmRecommendationSource = mockk(relaxed = true),
         sharedMixDao = mockk(relaxed = true),
+        downloadJobs = com.stash.core.data.sync.DownloadJobRegistry(),
     )
 
     private fun row(id: Long) = TrackEntity(id = id, title = "Avril 14th", artist = "Aphex Twin")

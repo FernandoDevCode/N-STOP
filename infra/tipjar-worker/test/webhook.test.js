@@ -11,7 +11,8 @@ const SUPPORTERS = {
         { name: "Slowcab", amountUsd: 5, message: "Amazing work!", timestamp: "2025-01-01T00:00:00Z" },
     ],
 };
-const supportersOf = (e) => JSON.parse(e.STASH_KV.map.get("supporters").value).supporters;
+/** The stored list's entries, without the `key` each carries since 2026-10 (GET / leaves it out too). */
+const supportersOf = (e) => JSON.parse(e.STASH_KV.map.get("supporters").value).supporters.map(({ key, ...entry }) => entry);
 
 test("GET / serves the supporters list exactly as before: same bytes, same headers", async () => {
     const e = env({ STASH_KV: fakeKV({ supporters: JSON.stringify(SUPPORTERS) }) });
@@ -77,8 +78,11 @@ test("a private donation (is_public: false) is listed as Anonymous with no messa
     const res = await worker.fetch(kofiPost(donation({ is_public: false, from_name: "Secret Sam", message: "keep this quiet" })), e);
     assert.equal(res.status, 200);
     assert.deepEqual(supportersOf(e)[0], { name: "Anonymous", amountUsd: 5, message: "", timestamp: "2026-10-04T12:00:00Z" });
-    const stored = e.STASH_KV.map.get("supporters").value;
-    assert.ok(!stored.includes("Secret Sam") && !stored.includes("keep this quiet"));
+    // Nowhere in STASH_KV: not the list, not the supporter's own key, not its metadata.
+    for (const [key, { value, opts }] of e.STASH_KV.map) {
+        const stored = `${value} ${JSON.stringify(opts.metadata ?? {})}`;
+        assert.ok(!stored.includes("Secret Sam") && !stored.includes("keep this quiet"), key);
+    }
     // A payload without the field (older Ko-fi posts) stays public, as before.
     const { is_public: _, ...legacy } = donation({ message_id: "m2", kofi_transaction_id: "tx-2" });
     await worker.fetch(kofiPost(legacy), e);
@@ -101,7 +105,7 @@ test("early access lives in ACCESS_KV by email hash, never the email; STASH_KV k
     const access = e.ACCESS_KV.json(`access:${hash}`);
     assert.equal(access.source, "kofi");
     assert.ok(access.firstAt && access.lastAt);
-    assert.deepEqual([...e.STASH_KV.map.keys()].sort(), ["kofitxn:tx-1", "supporters"]);
+    assert.deepEqual([...e.STASH_KV.map.keys()].sort(), ["kofitxn:tx-1", "supporter:2026-10-04T12:00:00.000Z:tx-1", "supporters"]);
     for (const [key, { value, opts }] of e.ACCESS_KV.map) {
         const all = `${key} ${value} ${JSON.stringify(opts.metadata ?? {})}`.toLowerCase();
         assert.ok(!all.includes("ann@example.org") && !all.includes("ann@"), `${key} holds the email`);

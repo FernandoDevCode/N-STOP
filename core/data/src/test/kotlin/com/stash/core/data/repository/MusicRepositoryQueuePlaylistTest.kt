@@ -679,6 +679,7 @@ class MusicRepositoryQueuePlaylistTest {
             singleTrackDownloadEnqueuer = enqueuer,
             lastFmRecommendationSource = mockk(relaxed = true),
             sharedMixDao = mockk(relaxed = true),
+            downloadJobs = com.stash.core.data.sync.DownloadJobRegistry(),
         )
     }
 }

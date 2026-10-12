@@ -48,27 +48,48 @@ test("code sends per email apply to every email, so the limit says nothing about
 
 test("code tries per IP: over the limit is a 429 before the code is even looked at", async () => {
     const e = env({ VERIFY_IP_RL: fakeRL(10) });
-    for (let i = 0; i < 10; i++) assert.equal((await run(e, post("/access/verify", { email: EMAIL, code: "123456" }))).status, 400);
-    await expectSlowDown(await run(e, post("/access/verify", { email: EMAIL, code: "123456" })));
+    for (let i = 0; i < 10; i++) assert.equal((await run(e, post("/access/verify", { email: EMAIL, code: "12345678" }))).status, 400);
+    await expectSlowDown(await run(e, post("/access/verify", { email: EMAIL, code: "12345678" })));
 });
 
-test("code tries per email: every email is limited before its code is looked up, listed or not", async () => {
+// A browser that has asked for a code: the stash_signin cookie is all verify needs from it.
+const BROWSER_A = "a".repeat(32);
+const BROWSER_B = "b".repeat(32);
+const from = (id) => ({ Cookie: `stash_signin=${id}` });
+
+test("code tries per email and browser: limited before the code is looked up, listed or not, and someone else's browser doesn't slow yours", async () => {
     const h = await hashEmail(EMAIL);
     const e = env({ VERIFY_EMAIL_RL: fakeRL(5), ACCESS_KV: fakeKV({ [`access:${h}`]: { source: "kofi" } }) });
     for (const email of [EMAIL, "stranger@example.com"]) {
         // Different addresses each time: only the per-email limit can catch this.
-        for (let i = 0; i < 5; i++) assert.equal((await run(e, post("/access/verify", { email, code: "123456" }, { ip: `192.0.2.${i}` }))).status, 400);
-        await expectSlowDown(await run(e, post("/access/verify", { email, code: "123456" }, { ip: "192.0.2.99" })));
+        for (let i = 0; i < 5; i++) assert.equal((await run(e, post("/access/verify", { email, code: "12345678" }, { ip: `192.0.2.${i}`, headers: from(BROWSER_A) }))).status, 400);
+        await expectSlowDown(await run(e, post("/access/verify", { email, code: "12345678" }, { ip: "192.0.2.99", headers: from(BROWSER_A) })));
     }
-    assert.ok(e.VERIFY_EMAIL_RL.counts.has(h));
+    // Another browser trying the same email isn't held up by the first one's tries.
+    assert.equal((await run(e, post("/access/verify", { email: EMAIL, code: "12345678" }, { headers: from(BROWSER_B) }))).status, 400);
+    assert.ok(e.VERIFY_EMAIL_RL.counts.has(`${h}:${BROWSER_A}`), "keyed by the email's hash and the browser");
     assert.ok(![...e.VERIFY_EMAIL_RL.counts.keys()].some((k) => k.includes("@")));
+});
+
+test("a try with no pending cookie never reaches the per-email limit or KV", async () => {
+    const e = env({ VERIFY_EMAIL_RL: fakeRL(5) });
+    const reads = [];
+    const kvGet = e.ACCESS_KV.get.bind(e.ACCESS_KV);
+    e.ACCESS_KV.get = (key, type) => (reads.push(key), kvGet(key, type));
+    for (let i = 0; i < 8; i++) {
+        const res = await run(e, post("/access/verify", { email: EMAIL, code: "12345678" }));
+        assert.equal(res.status, 400);
+        assert.match(await res.text(), /id="other-browser"/);
+    }
+    assert.equal(e.VERIFY_EMAIL_RL.counts.size, 0);
+    assert.deepEqual(reads, []);
 });
 
 test("IPv6 is bucketed by /48 for every per-IP limit", async () => {
     const e = env({ VERIFY_IP_RL: fakeRL(2), REQUEST_IP_RL: fakeRL(2) });
-    await run(e, post("/access/verify", { email: EMAIL, code: "123456" }, { ip: "2001:db8:aa::1" }));
-    await run(e, post("/access/verify", { email: EMAIL, code: "123456" }, { ip: "2001:db8:aa:ffff::2" }));
-    await expectSlowDown(await run(e, post("/access/verify", { email: EMAIL, code: "123456" }, { ip: "2001:db8:aa:1234:5678::3" })));
+    await run(e, post("/access/verify", { email: EMAIL, code: "12345678" }, { ip: "2001:db8:aa::1" }));
+    await run(e, post("/access/verify", { email: EMAIL, code: "12345678" }, { ip: "2001:db8:aa:ffff::2" }));
+    await expectSlowDown(await run(e, post("/access/verify", { email: EMAIL, code: "12345678" }, { ip: "2001:db8:aa:1234:5678::3" })));
     await run(e, post("/request", { email: "a@example.com" }, { ip: "2001:db8:bb:1::1" }));
     await run(e, post("/request", { email: "b@example.com" }, { ip: "2001:db8:bb:2::1" }));
     await expectSlowDown(await run(e, post("/request", { email: "c@example.com" }, { ip: "2001:db8:bb:3::1" })));

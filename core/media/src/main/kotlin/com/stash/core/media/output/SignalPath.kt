@@ -27,8 +27,10 @@ enum class MixerPath {
  * @property trackFormat what Stash writes to the AudioTrack.
  * @property mixerSampleRate the rate the mixer runs at, when known: the song's
  *   own rate for MATCHED / BIT_PERFECT, else the output's native rate.
- * @property bitPerfectUnavailable bit-perfect was asked for and this phone/DAC
- *   can't do it at this rate, so the output fell back to rate matching.
+ * @property mixerFormat the format Stash set the USB mixer to (MATCHED /
+ *   BIT_PERFECT): what the DAC finally gets. Null on the shared mixer.
+ * @property bitPerfectMiss bit-perfect was asked for and the output fell back
+ *   to rate matching, and why.
  * @property sharedReason why the mixer was left shared, for the explanation line.
  */
 data class OutputPathState(
@@ -41,7 +43,7 @@ data class OutputPathState(
     val mixerFormat: SampleFormat?,
     val device: OutputDevice?,
     val mode: HiResOutputMode,
-    val bitPerfectUnavailable: Boolean = false,
+    val bitPerfectMiss: BitPerfectMiss? = null,
     val sharedReason: MixerDecision.Reason? = null,
 )
 
@@ -111,21 +113,25 @@ object SignalPathExplainer {
         // 4. Android mixer
         val resampled = output.mixer == MixerPath.SHARED &&
             output.mixerSampleRate != null && output.mixerSampleRate != srcRate
+        // The format Stash set the USB mixer to: the last step before the DAC.
+        // Narrower than the source (a 16-bit-only DAC, a 24-bit file) and the
+        // extra bits end there, after the "Output" line's float.
+        val mixerBits = output.mixerFormat?.takeIf { output.mixer != MixerPath.SHARED }?.bits
+        val sourceBits = source?.bitsPerSample
+        val narrowed = mixerBits != null && sourceBits != null && mixerBits < sourceBits
+        val matchedNarrowed = output.mixer == MixerPath.MATCHED && narrowed
         stages += SignalStage(
             title = "Android",
             detail = when (output.mixer) {
                 MixerPath.BIT_PERFECT -> "Bit-perfect · ${output.mixerFormat?.label ?: ""}".trimEnd(' ', '·')
-                MixerPath.MATCHED -> buildString {
-                    append("Matched to ${khz(srcRate)}, not resampled")
-                    if (output.bitPerfectUnavailable) append(" (bit-perfect not offered at this rate)")
-                }
+                MixerPath.MATCHED -> matchedDetail(output, srcRate, matchedNarrowed)
                 MixerPath.SHARED -> when {
                     resampled -> "Resampled to ${khz(output.mixerSampleRate!!)}" + sharedHint(output)
                     output.mixerSampleRate != null -> "Shared mixer at ${khz(output.mixerSampleRate)}, no resampling"
                     else -> "Shared mixer"
                 }
             },
-            ok = !resampled,
+            ok = !resampled && !matchedNarrowed,
         )
 
         // 5. Device
@@ -148,7 +154,9 @@ object SignalPathExplainer {
             dspInPath -> SignalQuality.ENHANCED
             else -> SignalQuality.LOSSLESS
         }
-        val hiRes = (source?.bitsPerSample ?: 16) > 16 || srcRate > 48_000
+        // Counted from what reaches the DAC: a 24-bit file on a 16-bit DAC isn't hi-res there.
+        val deliveredBits = if (narrowed) mixerBits else sourceBits
+        val hiRes = (deliveredBits ?: 16) > 16 || srcRate > 48_000
         val headline = when (quality) {
             SignalQuality.BIT_PERFECT -> "Bit-perfect"
             SignalQuality.LOSSLESS -> if (hiRes) "Hi-Res, not resampled" else "Lossless, not resampled"
@@ -157,6 +165,28 @@ object SignalPathExplainer {
             SignalQuality.LOSSY -> "Lossy source"
         }
         return SignalVerdict(quality, headline, stages, output.device?.name)
+    }
+
+    /**
+     * "Matched to 96 kHz / 24-bit, not resampled", or, when the DAC's format
+     * is narrower than the song, "Matched to 48 kHz / 16-bit (your DAC's
+     * maximum)". A bit-perfect request served this way says why.
+     */
+    private fun matchedDetail(o: OutputPathState, rate: Int, narrowed: Boolean): String = buildString {
+        append("Matched to ").append(khz(rate))
+        o.mixerFormat?.let { append(" / ").append(it.label) }
+        if (!narrowed) append(", not resampled")
+        val notes = listOfNotNull(
+            "your DAC's maximum".takeIf { narrowed },
+            o.bitPerfectMiss?.let { missNote(it) },
+        )
+        if (notes.isNotEmpty()) append(" (").append(notes.joinToString("; ")).append(')')
+    }
+
+    private fun missNote(miss: BitPerfectMiss): String = when (miss) {
+        BitPerfectMiss.NOT_OFFERED -> "bit-perfect not offered at this rate"
+        BitPerfectMiss.SPEED -> "bit-perfect needs 1x speed"
+        BitPerfectMiss.LISTEN_TOGETHER -> "bit-perfect is off during Listen Together"
     }
 
     private fun sharedHint(o: OutputPathState): String = when (o.sharedReason) {

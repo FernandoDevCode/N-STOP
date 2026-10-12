@@ -69,10 +69,16 @@ export function b64urlDecode(text) {
     return Uint8Array.from(bin, (c) => c.charCodeAt(0));
 }
 
-/** Six uniformly random digits. Values at or above 4,294,000,000 (a multiple of 10^6) are drawn again. */
-export function sixDigitCode() {
+/**
+ * Eight uniformly random digits (a sign-in code). Values at or above 4,200,000,000 (a multiple of 10^8) are drawn
+ * again, about 2% of draws.
+ */
+export function eightDigitCode() {
     const buf = new Uint32Array(1);
     do crypto.getRandomValues(buf);
-    while (buf[0] >= 4_294_000_000);
-    return String(buf[0] % 1_000_000).padStart(6, "0");
+    while (buf[0] >= 4_200_000_000);
+    return String(buf[0] % 100_000_000).padStart(8, "0");
 }
+
+/** [bytes] random bytes as hex: 16 (128 bits, 32 characters) by default. */
+export const randomHex = (bytes = 16) => hex(crypto.getRandomValues(new Uint8Array(bytes)));

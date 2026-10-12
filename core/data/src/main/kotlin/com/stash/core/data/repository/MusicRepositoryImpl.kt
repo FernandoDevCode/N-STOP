@@ -10,6 +10,7 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.await
 import com.stash.core.common.matchesArtistCredits
+import com.stash.core.common.strictCanonical
 import com.stash.core.data.db.dao.AlbumSummary
 import com.stash.core.data.db.dao.ArtistSummary
 import com.stash.core.data.db.dao.PlaylistDao
@@ -32,6 +33,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
@@ -68,6 +70,7 @@ class MusicRepositoryImpl @Inject constructor(
     private val singleTrackDownloadEnqueuer: com.stash.core.data.sync.SingleTrackDownloadEnqueuer,
     private val lastFmRecommendationSource: LastFmRecommendationSource,
     private val sharedMixDao: com.stash.core.data.db.dao.SharedMixDao,
+    private val downloadJobs: com.stash.core.data.sync.DownloadJobRegistry,
 ) : MusicRepository {
 
     // ── Deletion event plumbing ─────────────────────────────────────────
@@ -458,6 +461,9 @@ class MusicRepositoryImpl @Inject constructor(
     override fun observeTrackByYoutubeId(youtubeId: String): Flow<Track?> =
         trackDao.observeByYoutubeId(youtubeId).map { it?.toDomain() }
 
+    override fun observeDownloadStatus(trackId: Long): Flow<com.stash.core.model.DownloadStatus?> =
+        downloadQueueDao.observeStatusForTrack(trackId).distinctUntilChanged()
+
     override fun observePlaylist(id: Long): Flow<Playlist?> =
         playlistDao.getByIdFlow(id).map { it?.toDomain() }
 
@@ -513,8 +519,8 @@ class MusicRepositoryImpl @Inject constructor(
                 return existing.id
             }
         }
-        val cTitle = canonicalizeIdentity(track.title)
-        val cArtist = canonicalizeIdentity(track.artist)
+        val cTitle = strictCanonical(track.title)
+        val cArtist = strictCanonical(track.artist)
         if (cTitle.isNotBlank() && cArtist.isNotBlank()) {
             trackDao.findByCanonicalIdentity(cTitle, cArtist)?.let { existing ->
                 // Fuzzy title/artist match: could be a different recording (radio edit vs album),
@@ -574,8 +580,8 @@ class MusicRepositoryImpl @Inject constructor(
         return insertOrAdopt(
             incoming.toEntity().copy(
                 id = 0L,
-                canonicalTitle = canonicalizeIdentity(incoming.title),
-                canonicalArtist = canonicalizeIdentity(incoming.artist),
+                canonicalTitle = strictCanonical(incoming.title),
+                canonicalArtist = strictCanonical(incoming.artist),
                 isStreamable = true,
             ),
         )
@@ -589,14 +595,6 @@ class MusicRepositoryImpl @Inject constructor(
         if (existing.durationMs <= 0L && incoming.durationMs > 0L) trackDao.backfillDurationIfMissing(existing.id, incoming.durationMs)
         if (trustIsrc) incoming.isrc?.takeIf { it.isNotBlank() }?.let { trackDao.backfillIsrcIfMissing(existing.id, it) }
     }
-
-    /** Same normalization as [SearchDownloadCoordinator.canonicalize] — kept
-     *  local to avoid leaking that private helper out of `:data:download`. */
-    private fun canonicalizeIdentity(s: String): String =
-        s.lowercase()
-            .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
 
     override suspend fun deleteTrack(track: Track): Boolean {
         // Best-effort file deletion -- the file may already be gone.
@@ -631,8 +629,11 @@ class MusicRepositoryImpl @Inject constructor(
         // (user_requested), so a playlist's Download switch going off never
         // deletes it (#474). The reset is one write that reports a row the
         // leftover cleanup deleted after the read (#532): then a fresh row is filed.
-        val queueId = downloadQueueDao.getByTrackId(trackId)?.id
-            ?.takeIf { downloadQueueDao.requeueForTap(it) == 1 }
+        // A song downloading right now is left to finish (see requeueTappedRow).
+        val existingId = downloadQueueDao.getByTrackId(trackId)?.id
+        val reuse = existingId?.let { requeueTappedRow(it) }
+        if (reuse == TapRequeue.DOWNLOADING) return true
+        val queueId = existingId?.takeIf { reuse == TapRequeue.REQUEUED }
             ?: downloadQueueDao.insert(
                 com.stash.core.data.db.entity.DownloadQueueEntity(
                     trackId = trackId,
@@ -649,6 +650,34 @@ class MusicRepositoryImpl @Inject constructor(
         // mode (the reason the stuck sync rows never drained).
         singleTrackDownloadEnqueuer.enqueue(queueId)
         return true
+    }
+
+    /** What a tap did with the song's existing queue row. */
+    private enum class TapRequeue { DOWNLOADING, REQUEUED, GONE }
+
+    /**
+     * Resets a tapped song's queue row to PENDING, unless a job in this process
+     * is downloading it right now. Resetting that one made the tap's own worker
+     * cancel the live download and start over, and the running one, finding its
+     * row moved, could stop early; so it only becomes the user's own request
+     * ([DownloadQueueDao.markUserRequested]) and finishes. A row IN_PROGRESS with
+     * no live job is stuck (the process died mid-download) and is reset as before.
+     *
+     * Under the job registry's claim lock: a worker claims and registers in one
+     * step there, so no claim can land between the check and the reset.
+     * [com.stash.core.data.sync.DownloadJobRegistry.isLive] is read first: it costs no query, and a song
+     * no job holds is reset without one.
+     */
+    private suspend fun requeueTappedRow(queueId: Long): TapRequeue = downloadJobs.withClaimsHeld {
+        when {
+            downloadJobs.isLive(queueId) &&
+                downloadQueueDao.getStatusById(queueId) == com.stash.core.model.DownloadStatus.IN_PROGRESS -> {
+                downloadQueueDao.markUserRequested(queueId)
+                TapRequeue.DOWNLOADING
+            }
+            downloadQueueDao.requeueForTap(queueId) == 1 -> TapRequeue.REQUEUED
+            else -> TapRequeue.GONE
+        }
     }
 
     override suspend fun removeDownload(trackId: Long) {

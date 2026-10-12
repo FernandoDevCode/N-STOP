@@ -26,6 +26,7 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -88,7 +89,17 @@ class OutputPlan internal constructor(
 }
 
 /** Per-player facts the output stage needs but Media3's output config doesn't carry. */
-class OutputSession {
+class OutputSession(
+    /**
+     * This player is Stash's main playback (the service's master or its
+     * crossfade spare): its streams are planned, applied to the USB mixer and
+     * published as the signal path. False for any other player built on the
+     * same output stage — the search preview — which keeps the EQ but plays
+     * over the shared mixer and never touches the DAC, the signal path or
+     * [HiResOutputController.bitPerfectEngaged].
+     */
+    val mainPlayback: Boolean,
+) {
     /** What the player's decoder is being fed (from AnalyticsListener.onAudioInputFormatChanged). */
     @Volatile var source: SourceFormat? = null
 
@@ -119,6 +130,11 @@ class OutputSession {
  *   plugged in mid-song, the user flips the setting), by asking the stream to
  *   be rebuilt ([StashAudioOutput.requestReplan]).
  * - **Publishes** what is actually happening for the signal-path UI.
+ *
+ * Only the main playback's streams do any of this ([OutputSession.mainPlayback]);
+ * the search preview's are ignored, so a preview can neither retune the DAC
+ * under the paused song nor leave its own path (and a bit-perfect crossfade
+ * hold) published after it ends.
  *
  * Mixer preferences are tied to Stash's uid by Android, so they only ever
  * affect Stash's own playback; they are cleared when the mode goes back to
@@ -163,8 +179,21 @@ class HiResOutputController @Inject constructor(
         combine(source, output, dspActive) { s, o, d -> SignalPathExplainer.explain(s, o, d) }
             .stateIn(scope, SharingStarted.Eagerly, null)
 
+    /** Listen Together holds bit-perfect off for its session; see [setBitPerfectHeld]. */
+    @Volatile private var bitPerfectHeld = false
+
     private val live = CopyOnWriteArraySet<StashAudioOutput>()
     @Volatile private var active: StashAudioOutput? = null
+
+    /**
+     * Guards [active] together with [_output]: the two players' playback
+     * threads and main all publish, and a delayed clear ([unregister]) must
+     * never wipe a stream that started after it was scheduled.
+     */
+    private val publishLock = Any()
+
+    /** How many times the audible stream was released; a pending clear acts only for the latest. Under [publishLock]. */
+    private var activeReleases = 0L
 
     /** USB devices Stash has set a mixer preference on: id → what was applied. */
     private val applied = ConcurrentHashMap<Int, Applied>()
@@ -196,8 +225,15 @@ class HiResOutputController @Inject constructor(
         )
     }
 
-    /** Plans a new output stream. Side-effect free; called on the playback thread. */
-    fun prepare(sampleRate: Int, channelCount: Int, speed: Float, attributes: AudioAttributes): OutputPlan {
+    /**
+     * Plans a new output stream for [session]'s player, at its current speed.
+     * Side-effect free; called on the playback thread.
+     */
+    fun prepare(sampleRate: Int, channelCount: Int, session: OutputSession, attributes: AudioAttributes): OutputPlan {
+        // A preview plays over the shared mixer whatever the mode: it must never retune the DAC.
+        if (!session.mainPlayback) {
+            return OutputPlan(MixerDecision.Shared(MixerDecision.Reason.NOT_MAIN_PLAYBACK), SampleFormat.FLOAT, null, null)
+        }
         val m = mode
         val device = routedDevice(attributes)
         fun shared(reason: MixerDecision.Reason) =
@@ -206,16 +242,19 @@ class HiResOutputController @Inject constructor(
         if (Build.VERSION.SDK_INT < 34) return shared(MixerDecision.Reason.UNSUPPORTED_ANDROID)
         if (attributes.usage != AudioAttributes.USAGE_MEDIA) return shared(MixerDecision.Reason.NOT_MEDIA_USAGE)
         if (device == null || !device.isUsb()) return shared(MixerDecision.Reason.NOT_USB)
-        return refusals.screen(MixerApi34.plan(audioManager, device, m, sampleRate, channelCount, speed))
+        return refusals.screen(
+            MixerApi34.plan(audioManager, device, m, sampleRate, channelCount, session.speed, bitPerfectHeld),
+        )
     }
 
     /**
      * Applies [output]'s plan to the USB mixer and makes it the published,
      * audible output. Called from [StashAudioOutput.play] just before the
      * AudioTrack starts. A rejected preference degrades the stream to the
-     * shared mixer rather than failing playback.
+     * shared mixer rather than failing playback. A preview's stream is ignored.
      */
     fun activate(output: StashAudioOutput) {
+        if (!output.session.mainPlayback) return
         val plan = output.plan
         val device = plan.device
         if (Build.VERSION.SDK_INT >= 34 && device != null) {
@@ -229,16 +268,69 @@ class HiResOutputController @Inject constructor(
                 output.onMixerRejected()
             }
         }
-        active = output
-        _output.value = output.pathState()
+        synchronized(publishLock) {
+            active = output
+            _output.value = output.pathState()
+        }
         output.session.source?.let { _source.value = it }
     }
 
-    fun register(output: StashAudioOutput) { live += output }
+    /** A new stream exists; only the main playback's are rechecked on route and mode changes. */
+    fun register(output: StashAudioOutput) {
+        if (output.session.mainPlayback) live += output
+    }
 
+    /**
+     * [output] was released. If it was the audible stream, another of the
+     * main playback's streams that is still playing takes over at once (the
+     * outgoing song, when a crossfade is handed back and the incoming one is
+     * stopped). Otherwise its path is cleared, unless a stream starts within
+     * [RELEASE_GRACE_MS]: a seek, a rebuild (a route, mode or speed change) or
+     * the next song at another rate releases one stream just before the next
+     * starts, and clearing in between would blink the signal path and flick
+     * crossfade's bit-perfect hold off and on. Before, a stopped player's path
+     * stayed published for good: the Equalizer screen kept saying "bypassed
+     * for bit-perfect" and crossfade stayed held off with nothing playing.
+     */
     fun unregister(output: StashAudioOutput) {
         live -= output
-        if (active === output) active = null
+        val release = synchronized(publishLock) {
+            if (active !== output) return
+            val stillPlaying = live.firstOrNull { it.playing }
+            if (stillPlaying != null) {
+                active = stillPlaying
+                _output.value = stillPlaying.pathState()
+                stillPlaying.session.source?.let { _source.value = it }
+                return
+            }
+            active = null
+            ++activeReleases
+        }
+        scope.launch {
+            delay(RELEASE_GRACE_MS)
+            synchronized(publishLock) {
+                if (active == null && activeReleases == release) _output.value = null
+            }
+        }
+    }
+
+    /**
+     * Holds bit-perfect off while a Listen Together session runs: the service
+     * sets it on entering the session and clears it on leaving.
+     *
+     * Bit-perfect only holds at exactly 1x, and drift correction nudges the
+     * speed between 0.97x and 1.03x every few seconds. Each nudge flipped the
+     * plan between bit-perfect and matched, and each flip rebuilt the stream
+     * (a re-seek), which made more drift and more nudges. Held, Bit-perfect
+     * mode plans rate matching at every speed: the DAC still runs at the
+     * song's rate, and a nudge no longer changes the plan.
+     */
+    fun setBitPerfectHeld(held: Boolean) {
+        if (held == bitPerfectHeld) return
+        bitPerfectHeld = held
+        // Logged at the wiring site: unit tests prove the planning, not that the service calls this.
+        Log.i(TAG, if (held) "bit-perfect held off for Listen Together" else "bit-perfect hold released")
+        recheckLiveOutputs()
     }
 
     /** The player behind [session] started decoding a new source. */
@@ -249,12 +341,15 @@ class HiResOutputController @Inject constructor(
 
     /** [output]'s AudioTrack moved to another device (playback thread). */
     fun onRouted(output: StashAudioOutput) {
-        if (active === output) _output.value = output.pathState()
+        if (!output.session.mainPlayback) return
+        publishIfActive(output)
         recheck(output)
     }
 
     /** [output]'s speed changed; bit-perfect can only hold at 1x. */
-    fun onSpeedChanged(output: StashAudioOutput) = recheck(output)
+    fun onSpeedChanged(output: StashAudioOutput) {
+        recheck(output)
+    }
 
     /** An AudioTrack wouldn't open in [plan]'s format (playback thread); see [StashAudioOutputProvider]. */
     internal fun onTrackRefused(plan: OutputPlan) = refusals.remember(plan)
@@ -277,8 +372,9 @@ class HiResOutputController @Inject constructor(
     private fun recheckLiveOutputs() = live.forEach(::recheck)
 
     private fun recheck(output: StashAudioOutput) {
+        if (!output.session.mainPlayback) return
         val fresh = runCatching {
-            prepare(output.streamSampleRate, output.channelCount, output.session.speed, output.platformAttributes)
+            prepare(output.streamSampleRate, output.channelCount, output.session, output.platformAttributes)
         }.getOrNull() ?: return
         val current = output.plan
         when {
@@ -286,9 +382,16 @@ class HiResOutputController @Inject constructor(
             // reason and device so the signal path tells today's story.
             fresh.key == current.key -> {
                 output.adopt(fresh)
-                if (active === output) _output.value = output.pathState()
+                publishIfActive(output)
             }
             current.needsRebuildFor(fresh) -> output.requestReplan()
+        }
+    }
+
+    /** Republishes [output]'s path when it is the audible stream. */
+    private fun publishIfActive(output: StashAudioOutput) {
+        synchronized(publishLock) {
+            if (active === output) _output.value = output.pathState()
         }
     }
 
@@ -332,6 +435,9 @@ class HiResOutputController @Inject constructor(
 
     companion object {
         private const val TAG = "HiResOutput"
+
+        /** How long a released stream's path stays published waiting for its successor (see [unregister]). */
+        internal const val RELEASE_GRACE_MS = 1_000L
 
         fun AudioDeviceInfo.isUsb(): Boolean = type == AudioDeviceInfo.TYPE_USB_DEVICE ||
             type == AudioDeviceInfo.TYPE_USB_HEADSET ||
@@ -377,6 +483,7 @@ private object MixerApi34 {
         sampleRate: Int,
         channelCount: Int,
         speed: Float,
+        bitPerfectHeld: Boolean,
     ): OutputPlan {
         val platform: List<AudioMixerAttributes> =
             runCatching { audioManager.getSupportedMixerAttributes(device) }.getOrDefault(emptyList())
@@ -396,7 +503,7 @@ private object MixerApi34 {
                 index = i,
             )
         }
-        return when (val d = MixerSelection.choose(options, mode, sampleRate, channelCount, speed)) {
+        return when (val d = MixerSelection.choose(options, mode, sampleRate, channelCount, speed, bitPerfectHeld)) {
             is MixerDecision.Configure -> OutputPlan(d, d.trackFormat, device, platform[d.option.index])
             is MixerDecision.Shared -> OutputPlan(d, SampleFormat.FLOAT, device, null)
         }

@@ -3,6 +3,7 @@ package com.stash.core.media.actions
 import android.os.SystemClock
 import android.util.Log
 import androidx.media3.common.PlaybackException
+import com.stash.core.common.strictCanonical
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.media.preview.PreviewPlayer
 import com.stash.core.media.preview.PreviewState
@@ -582,8 +583,8 @@ class TrackActionsDelegate @Inject constructor(
         }
         val existing = trackDao.findByYoutubeId(item.videoId)
             ?: trackDao.findByCanonicalIdentity(
-                title = canonicalize(item.title),
-                artist = canonicalize(item.artist),
+                title = strictCanonical(item.title),
+                artist = strictCanonical(item.artist),
             )
         return existing?.id ?: trackDao.insert(
             com.stash.core.data.db.entity.TrackEntity(
@@ -592,25 +593,14 @@ class TrackActionsDelegate @Inject constructor(
                 album = item.album.orEmpty(),
                 albumArtist = item.albumArtist.orEmpty(),
                 youtubeId = item.videoId,
-                canonicalTitle = canonicalize(item.title),
-                canonicalArtist = canonicalize(item.artist),
+                canonicalTitle = strictCanonical(item.title),
+                canonicalArtist = strictCanonical(item.artist),
                 durationMs = (item.durationSeconds * 1000).toLong(),
                 source = com.stash.core.model.MusicSource.YOUTUBE,
                 albumArtUrl = item.thumbnailUrl,
             )
         )
     }
-
-    /**
-     * Normalises a string for DB identity matching. MUST stay byte-identical
-     * to [SearchDownloadCoordinator.canonicalize] or the delegate's insert-if-
-     * absent lookup disagrees with the download path and creates duplicate rows.
-     */
-    private fun canonicalize(s: String): String =
-        s.lowercase()
-            .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
 
     /** Add [item] to an existing playlist. Inserts a streamable stub if the
      *  track isn't in the library yet (NOT downloaded). */

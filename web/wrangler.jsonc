@@ -119,9 +119,11 @@
     { "name": "CODE_SEND_RL", "namespace_id": "2015", "simple": { "limit": 1, "period": 60 } },
     // Code tries, per IP.
     { "name": "VERIFY_IP_RL", "namespace_id": "2012", "simple": { "limit": 10, "period": 60 } },
-    // Code tries, per email (by its hash), for every email, before its code is looked up.
-    // Per location, like every limit here: with the 5 wrong tries each set of codes allows,
-    // it keeps guessing to a few tries a minute per location, each about 3 in a million.
+    // Code tries, per email (by its hash) and browser (its stash_signin cookie), for every email,
+    // before its code is looked up. Per browser too, so someone guessing at an email from their own
+    // browser never slows down the tries of the browser that asked for the code. Per location, like
+    // every limit here; what really caps guessing is the 5 wrong tries each browser's codes allow
+    // (worker/codes.js), each try at most 3 in 100 million.
     { "name": "VERIFY_EMAIL_RL", "namespace_id": "2014", "simple": { "limit": 5, "period": 60 } },
     // Access requests, per IP.
     { "name": "REQUEST_IP_RL", "namespace_id": "2013", "simple": { "limit": 3, "period": 60 } }
@@ -146,7 +148,7 @@
   },
 
   // Secrets, set with `npx wrangler secret put <NAME>` (never in this file):
-  //   SESSION_SECRET  signs the sign-in cookie and the stored codes. At least 32 random
+  //   SESSION_SECRET  signs the session cookie and the stored codes. At least 32 random
   //                   characters, e.g. `openssl rand -base64 48`. Changing it signs everyone out.
   //   ADMIN_EMAILS    comma-separated emails allowed on /admin (also checked by Access).
   //   EMAIL_PEPPER    required: keys the email hashes (sign-in refuses to run without it). The same

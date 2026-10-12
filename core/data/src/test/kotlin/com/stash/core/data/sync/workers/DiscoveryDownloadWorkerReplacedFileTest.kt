@@ -19,6 +19,7 @@ import com.stash.core.model.MusicSource
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -123,6 +124,36 @@ class DiscoveryDownloadWorkerReplacedFileTest {
         assertTrue(oldFile.exists())
         assertEquals(oldFile.absolutePath, row.filePath)
         assertTrue("back in the Library on its kept file", row.isDownloaded)
+    }
+
+    @Test fun `a re-download the user cancels before it returns restores the kept file`() = runBlocking {
+        val trackId = trackHandedBackForReplacement()
+        val queueId = db.downloadQueueDao().getByTrackId(trackId)!!.id
+        coEvery { trackDownloader.downloadTrack(any(), any()) } coAnswers {
+            db.downloadQueueDao().markCancelledIfActive(queueId, System.currentTimeMillis())
+            throw CancellationException("cancelled")
+        }
+
+        buildWorker().doWork()
+
+        val row = db.trackDao().getById(trackId)!!
+        assertEquals(oldFile.absolutePath, row.filePath)
+        assertTrue("back in the Library on its kept file", row.isDownloaded)
+    }
+
+    @Test fun `a re-download stopped with the worker restores the kept file`() = runBlocking {
+        val trackId = trackHandedBackForReplacement()
+        coEvery { trackDownloader.downloadTrack(any(), any()) } throws CancellationException("stopped")
+
+        try {
+            buildWorker().doWork()
+        } catch (expected: CancellationException) {
+        }
+
+        val row = db.trackDao().getById(trackId)!!
+        assertEquals(oldFile.absolutePath, row.filePath)
+        assertTrue(row.isDownloaded)
+        assertTrue(oldFile.exists())
     }
 
     @Test fun `a failed first download restores nothing`() = runBlocking {

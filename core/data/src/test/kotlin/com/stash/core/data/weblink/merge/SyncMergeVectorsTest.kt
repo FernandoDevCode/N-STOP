@@ -109,6 +109,10 @@ class SyncMergeVectorsTest {
                 remote = ver(c["remote"])!!,
                 parent = if (c["remote"]["parent"] is JsonNull) null else c["remote"]["parent"].s,
                 fromPhone = c["remote"]["fromPhone"].jsonPrimitive.boolean,
+                // §7.3 step 4: the merge base of a concurrent op, as the web's vectors.test.ts passes them. Cases
+                // without `baseHash` run the rules without step 4.
+                baseHash = if (c.has("baseHash")) c["baseHash"].s else null,
+                ancestor = ver(c["ancestor"]),
             )
             val e = c["expect"]
             assertWithMessage(c["name"].s).that(r.action.name.lowercase()).isEqualTo(e["action"].s)

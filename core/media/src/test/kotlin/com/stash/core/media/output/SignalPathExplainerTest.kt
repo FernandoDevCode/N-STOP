@@ -18,10 +18,18 @@ class SignalPathExplainerTest {
         device: OutputDevice? = usb,
         mode: HiResOutputMode = HiResOutputMode.STANDARD,
         reason: MixerDecision.Reason? = MixerDecision.Reason.MODE_STANDARD,
+        mixerFormat: SampleFormat? = null,
+        miss: BitPerfectMiss? = null,
     ) = OutputPathState(
         sampleRate = rate, channelCount = 2, decodedFormat = SampleFormat.FLOAT, trackFormat = track,
-        mixer = mixer, mixerSampleRate = mixerRate, mixerFormat = null, device = device, mode = mode,
-        sharedReason = reason,
+        mixer = mixer, mixerSampleRate = mixerRate, mixerFormat = mixerFormat, device = device, mode = mode,
+        bitPerfectMiss = miss, sharedReason = reason,
+    )
+
+    /** Match mode on a USB DAC at the source's own rate. */
+    private fun matched(rate: Int, format: SampleFormat?, miss: BitPerfectMiss? = null) = out(
+        rate = rate, mixer = MixerPath.MATCHED, mixerRate = rate, mode = HiResOutputMode.MATCH_RATE, reason = null,
+        mixerFormat = format, miss = miss,
     )
 
     @Test fun `no output yet means nothing to explain`() {
@@ -93,6 +101,45 @@ class SignalPathExplainerTest {
         val dev = v.stages.last()
         assertThat(dev.ok).isFalse()
         assertThat(dev.detail).contains("re-encoded")
+    }
+
+    @Test fun `a 16-bit-only DAC shows the last step down to 16-bit, not just the float output`() {
+        // The device case: the mixer ran PCM_16 at 48 kHz while the sheet said "32-bit float".
+        val flac2448 = SourceFormat("FLAC", lossless = true, sampleRate = 48_000, bitsPerSample = 24, channelCount = 2)
+        val v = SignalPathExplainer.explain(flac2448, matched(48_000, SampleFormat.INT16), false)!!
+        val android = v.stages.first { it.title == "Android" }
+        assertThat(android.detail).isEqualTo("Matched to 48 kHz / 16-bit (your DAC's maximum)")
+        assertThat(android.ok).isFalse()
+        assertThat(v.stages.first { it.title == "Output" }.detail).isEqualTo("48 kHz · 32-bit float")
+        // 16 bits reach the DAC: not claimed as hi-res.
+        assertThat(v.headline).isEqualTo("Lossless, not resampled")
+    }
+
+    @Test fun `a matched mixer at least as wide as the source names its format and costs nothing`() {
+        val cd = SignalPathExplainer.explain(flac1644, matched(44_100, SampleFormat.INT16), false)!!
+        assertThat(cd.stages.first { it.title == "Android" }.detail).isEqualTo("Matched to 44.1 kHz / 16-bit, not resampled")
+        assertThat(cd.stages.all { it.ok }).isTrue()
+
+        val hiRes = SignalPathExplainer.explain(flac2496, matched(96_000, SampleFormat.INT32), false)!!
+        assertThat(hiRes.stages.first { it.title == "Android" }.detail).isEqualTo("Matched to 96 kHz / 32-bit, not resampled")
+        assertThat(hiRes.headline).isEqualTo("Hi-Res, not resampled")
+    }
+
+    @Test fun `bit-perfect served as rate matching says why`() {
+        fun detail(miss: BitPerfectMiss) = SignalPathExplainer.explain(
+            flac2496, matched(96_000, SampleFormat.INT24, miss).copy(mode = HiResOutputMode.BIT_PERFECT), false,
+        )!!.stages.first { it.title == "Android" }.detail
+        assertThat(detail(BitPerfectMiss.LISTEN_TOGETHER))
+            .isEqualTo("Matched to 96 kHz / 24-bit, not resampled (bit-perfect is off during Listen Together)")
+        assertThat(detail(BitPerfectMiss.SPEED)).endsWith("(bit-perfect needs 1x speed)")
+        assertThat(detail(BitPerfectMiss.NOT_OFFERED)).endsWith("(bit-perfect not offered at this rate)")
+    }
+
+    @Test fun `a narrowed mixer and a bit-perfect miss share one note`() {
+        val flac2448 = SourceFormat("FLAC", lossless = true, sampleRate = 48_000, bitsPerSample = 24, channelCount = 2)
+        val v = SignalPathExplainer.explain(flac2448, matched(48_000, SampleFormat.INT16, BitPerfectMiss.NOT_OFFERED), false)!!
+        assertThat(v.stages.first { it.title == "Android" }.detail)
+            .isEqualTo("Matched to 48 kHz / 16-bit (your DAC's maximum; bit-perfect not offered at this rate)")
     }
 
     @Test fun `khz formatting`() {

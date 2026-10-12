@@ -235,7 +235,7 @@ class WebLibraryImporterTest {
     private companion object {
         const val T = 1_759_838_400_000L
 
-        /** The library's canonical_title / canonical_artist (MusicRepositoryImpl's canonicalizeIdentity). */
-        fun canon(s: String) = s.lowercase().replace(Regex("[^\\p{L}\\p{N}\\s]"), " ").replace(Regex("\\s+"), " ").trim()
+        /** The library's canonical_title / canonical_artist. */
+        fun canon(s: String) = com.stash.core.common.strictCanonical(s)
     }
 }

@@ -166,13 +166,6 @@ class WebSide(private val server: FakeSyncServer, private val browser: FakeBrows
         check(r is SyncResult.Ok) { "post: $r" }
     }
 
-    /** A batch of any [text], sealed under the space key (one this app may not read). */
-    suspend fun postRaw(text: String) {
-        val env = SyncCrypto.seal(key(), spaceId, epoch, SyncCrypto.Place.LOG, text)
-        val r = server.postLog(browser.auth, spaceId, env)
-        check(r is SyncResult.Ok) { "post: $r" }
-    }
-
     /** Every batch in the log (after the snapshot) written by [device], opened. */
     fun batches(device: String): List<MirrorBatch> = server.spaces.getValue(spaceId).log.filter { it.device == device }.map {
         MirrorWire.readOps(SyncCrypto.open(SyncCrypto.dataKey(keyFor(it.env.e), spaceId), spaceId, SyncCrypto.Place.LOG, it.env))

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -31,7 +32,8 @@ import com.stash.core.data.sync.SyncPhase
  *
  * @param phase      Current [SyncPhase] (drives the status label).
  * @param progress   0f–1f overall progress, forwarded to the linear indicator.
- * @param onStopSync Invoked when the user taps "Stop sync".
+ * @param onStopSync Invoked when the user taps "Stop sync" (or "Cancel" while a
+ *                   "Sync now" is still waiting for a network).
  */
 @Composable
 fun SyncActionProgress(
@@ -56,11 +58,20 @@ fun SyncActionProgress(
                 disabledContentColor = MaterialTheme.colorScheme.onPrimary,
             ),
         ) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(20.dp),
-                color = MaterialTheme.colorScheme.onPrimary,
-                strokeWidth = 2.dp,
-            )
+            if (phase is SyncPhase.WaitingForNetwork) {
+                // Nothing is running yet: no spinner, which would read as work.
+                Icon(
+                    imageVector = Icons.Filled.CloudOff,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                )
+            } else {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    strokeWidth = 2.dp,
+                )
+            }
             Spacer(Modifier.width(8.dp))
             Text(
                 text = phaseLabel(phase),
@@ -85,7 +96,8 @@ fun SyncActionProgress(
             )
             Spacer(Modifier.width(8.dp))
             Text(
-                text = "Stop sync",
+                // A sync still waiting for a network has nothing to stop: it's a queued tap.
+                text = if (phase is SyncPhase.WaitingForNetwork) "Cancel" else "Stop sync",
                 style = MaterialTheme.typography.labelLarge,
             )
         }
@@ -104,6 +116,8 @@ fun SyncActionProgress(
 
 /** Human-readable label for the current sync phase. */
 internal fun phaseLabel(phase: SyncPhase): String = when (phase) {
+    // "Sync now" tapped offline: it starts by itself when a connection returns.
+    is SyncPhase.WaitingForNetwork -> "Waiting for network..."
     is SyncPhase.Authenticating -> "Authenticating..."
     is SyncPhase.FetchingPlaylists -> {
         // No fixed total is known during fetch (Spotify's folder-walked

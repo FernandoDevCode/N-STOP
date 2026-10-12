@@ -223,8 +223,13 @@ test("add by email (source manual), with or without the email; remove ends acces
     // Signed in, then removed: the very next request is signed out (no cache wait in this instance).
     const cookie = `stash_access=${await signSession(SECRET, h)}`;
     assert.ok(await hasAccess(e, h));
+    // Codes waiting in two browsers for that email, and one for someone else.
+    const other = await hashEmail("someone@example.com");
+    const pending = [`code:${h}:${"a".repeat(32)}`, `code:${h}:${"b".repeat(32)}`, `code:${other}:${"a".repeat(32)}`];
+    for (const key of pending) await e.ACCESS_KV.put(key, '{"codes":[],"n":0}', { expirationTtl: 600 });
     assert.equal((await adminPost({ action: "remove", email: "sponsor@example.com" }, e)).headers.get("location"), "/admin?done=removed");
     assert.equal(e.ACCESS_KV.json(`access:${h}`), null);
+    assert.deepEqual([...e.ACCESS_KV.map.keys()].filter((k) => k.startsWith("code:")), [pending[2]], "every browser's codes for that email go, nobody else's");
     assertSignedOutHome(await (await handle(get("/", { Cookie: cookie }), e)).text());
     assert.equal((await adminPost({ action: "remove", email: "sponsor@example.com" }, e)).headers.get("location"), "/admin?done=not-listed");
     assert.equal((await adminPost({ action: "add", email: "not an email" }, e)).headers.get("location"), "/admin?done=bad-email");

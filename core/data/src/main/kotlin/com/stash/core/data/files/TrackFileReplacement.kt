@@ -4,6 +4,8 @@ import android.util.Log
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.dao.fileUsedByAnotherTrack
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -25,6 +27,7 @@ import javax.inject.Singleton
  *  - cancelled after commit ([discardCancelledDownload]): the new file goes,
  *    unless it IS the kept file (a same-name re-download replaces it in
  *    place), and the kept file is restored.
+ *  - stopped anywhere else ([restoreAfterStop]): the kept file is restored.
  */
 @Singleton
 class TrackFileReplacement @Inject constructor(
@@ -56,6 +59,23 @@ class TrackFileReplacement @Inject constructor(
         if (keptPath.isNullOrBlank() || !localFileOps.exists(keptPath)) return@bestEffort
         if (trackDao.restoreKeptFile(trackId, keptPath) > 0) {
             Log.i(TAG, "trackId=$trackId keeps its file $keptPath: the replacement isn't coming")
+        }
+    }
+
+    /**
+     * [restoreKeptFile] for a download that stopped (the user cancelled it, or
+     * WorkManager stopped the worker) before its row recorded a new file,
+     * wherever it stopped: before the download returned anything, or after
+     * the commit. The kept file is the one the row still records; the DAO
+     * restores only a row [TrackDao.markForReplacement] left, so for every
+     * other track, and once the row records the new file, this does nothing.
+     * Without it a replacement stopped mid-download kept the song out of the
+     * Library with its file unseen on disk. NonCancellable: it runs as the
+     * coroutine is being cancelled.
+     */
+    suspend fun restoreAfterStop(trackId: Long) = withContext(NonCancellable) {
+        bestEffort("restore the kept file of trackId=$trackId after a stop") {
+            restoreKeptFile(trackId, trackDao.getById(trackId)?.filePath)
         }
     }
 

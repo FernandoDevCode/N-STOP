@@ -7,6 +7,7 @@ import com.stash.core.model.Playlist
 import com.stash.core.model.Track
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.emptyFlow
 
 /**
  * Primary repository interface for music data operations.
@@ -159,6 +160,17 @@ interface MusicRepository {
      * by [ensureTrackPersisted] (issue #105 follow-up).
      */
     fun observeTrackByYoutubeId(youtubeId: String): Flow<Track?>
+
+    /**
+     * Live status of [trackId]'s download queue row, null while it has none.
+     * Lets a screen that started a download (Now Playing's download ring) tell
+     * "failed", "cancelled" or "waiting for a lossless copy" from "still
+     * going", instead of waiting out a timeout.
+     *
+     * The default never emits, so test fakes compile without it; a caller must
+     * also watch the track itself (and keep a timeout) rather than wait on this.
+     */
+    fun observeDownloadStatus(trackId: Long): Flow<com.stash.core.model.DownloadStatus?> = emptyFlow()
 
     // ── Mutations ───────────────────────────────────────────────────────
 

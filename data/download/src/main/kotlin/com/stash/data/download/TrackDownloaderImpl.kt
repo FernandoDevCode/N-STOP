@@ -36,6 +36,9 @@ class TrackDownloaderImpl @Inject constructor(
                 // acceptDownloadOrDelete deletes the junk + returns false, so the
                 // track stays not-downloaded (and therefore streamable); the
                 // worker routes Failed through its normal bounded-retry handling.
+                // DownloadManager already refuses a junk temp file before the
+                // commit, where it could still replace the track's own file in
+                // place; this is the backstop for the committed one.
                 // The track's previous file is NOT deleted here: the worker
                 // deletes it once the row records the new one (see
                 // TrackFileReplacement.deleteReplacedFile).

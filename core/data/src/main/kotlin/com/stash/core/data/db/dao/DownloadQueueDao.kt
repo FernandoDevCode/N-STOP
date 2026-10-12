@@ -469,6 +469,27 @@ interface DownloadQueueDao {
     @Query("SELECT status FROM download_queue WHERE id = :id LIMIT 1")
     suspend fun getStatusById(id: Long): DownloadStatus?
 
+    /**
+     * Live status of [trackId]'s download, for Now Playing's download ring: null
+     * while the track has no queue row. A track can carry more than one row (a
+     * sync's and a tap's), so the one furthest from settled speaks for it:
+     * downloading, then waiting, then done, then held for a lossless copy, then
+     * failed, then cancelled. Uses the `track_id` index.
+     */
+    @Query("""
+        SELECT status FROM download_queue WHERE track_id = :trackId
+        ORDER BY CASE status
+            WHEN 'IN_PROGRESS' THEN 0
+            WHEN 'PENDING' THEN 1
+            WHEN 'COMPLETED' THEN 2
+            WHEN 'WAITING_FOR_LOSSLESS' THEN 3
+            WHEN 'FAILED' THEN 4
+            ELSE 5
+        END
+        LIMIT 1
+    """)
+    fun observeStatusForTrack(trackId: Long): Flow<DownloadStatus?>
+
     // ── Failed Downloads viewer (Library Health phase 1) ────────────────
 
     /** Look up a single queue row by primary key. Used by the
@@ -587,6 +608,14 @@ interface DownloadQueueDao {
          WHERE id = :id
     """)
     suspend fun requeueForTap(id: Long): Int
+
+    /**
+     * A tap on a song that is downloading right now: its row becomes a download
+     * the user asked for by hand, as [requeueForTap] makes it, and nothing else
+     * changes, so the download in flight carries on.
+     */
+    @Query("UPDATE download_queue SET user_requested = 1 WHERE id = :id")
+    suspend fun markUserRequested(id: Long): Int
 
     /**
      * A search download (a tap) found no lossless source and waits on the song's

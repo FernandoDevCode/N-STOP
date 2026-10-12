@@ -296,8 +296,9 @@ class NowPlayingViewModel @Inject constructor(
      * kicked off from Now Playing but that haven't landed on disk yet. Drives
      * the spinner on the download button, since the WorkManager download is
      * fire-and-forget and the plain icon gave no in-progress feedback. Cleared
-     * when the track's live row flips `isDownloaded`, or after a watchdog
-     * timeout so a failed/stuck job never strands a permanent spinner.
+     * when the track's live row flips `isDownloaded`, when its queue row says
+     * the download stopped (failed, cancelled, held for a lossless copy), or
+     * after a watchdog timeout so a stuck job never strands a permanent spinner.
      */
     private val _downloadingKeys = MutableStateFlow<Set<String>>(emptySet())
 
@@ -1133,13 +1134,25 @@ class NowPlayingViewModel @Inject constructor(
                     return@launchUserAction
                 }
                 _userMessages.tryEmit("Downloading…")
-                // Watchdog: drop the spinner once the row lands on disk, or
-                // after a timeout so a failed/stuck job can't strand it.
+                // Watchdog: drop the spinner once the song lands on disk, or as
+                // soon as its queue row says the download stopped without it
+                // (failed, cancelled, held for a lossless copy, or removed),
+                // saying which. It used to wait only for the file, so a failed
+                // download spun for the whole timeout and then went quiet. The
+                // timeout stays as the last resort for a job that just hangs.
                 viewModelScope.launch {
-                    withTimeoutOrNull(180_000L) {
-                        musicRepository.observeTrackById(realId).first { it?.isDownloaded == true }
+                    val outcome = withTimeoutOrNull(DOWNLOAD_WATCHDOG_MS) {
+                        kotlinx.coroutines.flow.merge(
+                            musicRepository.observeTrackById(realId)
+                                .filter { it?.isDownloaded == true }
+                                .map { DownloadWatch.DONE },
+                            musicRepository.observeDownloadStatus(realId)
+                                .map(::downloadWatchOf)
+                                .filter { it != DownloadWatch.RUNNING },
+                        ).first()
                     }
                     _downloadingKeys.update { it - key }
+                    outcome?.let { downloadWatchMessage(it, track.title) }?.let { _userMessages.tryEmit(it) }
                 }
             }
         }
@@ -1596,3 +1609,9 @@ private const val ROW_LAG_GRACE_MS = 400L
  * queue looks nothing up, short enough that lyrics are in hand well before most people open them.
  */
 private const val PREFETCH_DWELL_MS = 1_800L
+
+/**
+ * The last resort for Now Playing's download ring: a download whose queue row never settles
+ * (a job that hangs) stops spinning after this. Every outcome the row records ends it sooner.
+ */
+private const val DOWNLOAD_WATCHDOG_MS = 180_000L

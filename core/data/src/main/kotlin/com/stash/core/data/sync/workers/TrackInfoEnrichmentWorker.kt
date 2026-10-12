@@ -13,13 +13,16 @@ import androidx.work.WorkerParameters
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.lastfm.LastFmCredentials
+import com.stash.core.data.lastfm.LastFmEnrichmentBackoff
 import com.stash.core.data.lastfm.LastFmSessionPreference
 import com.stash.core.data.lastfm.isTransientLastFmFailure
 import com.stash.core.data.sync.enqueueUniquePeriodicWorkReviving
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 
 /**
@@ -44,6 +47,7 @@ class TrackInfoEnrichmentWorker @AssistedInject constructor(
     private val apiClient: LastFmApiClient,
     private val credentials: LastFmCredentials,
     private val sessionPreference: LastFmSessionPreference,
+    private val backoff: LastFmEnrichmentBackoff,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -87,13 +91,37 @@ class TrackInfoEnrichmentWorker @AssistedInject constructor(
             return Result.success()
         }
 
-        val candidates = trackDao.findTracksNeedingLastfmEnrichment(BATCH_SIZE)
+        // Tracks a recent run failed on wait their turn (LastFmEnrichmentBackoff),
+        // as in TagEnrichmentWorker: the same failing newest tracks headed and
+        // ended every run, so older tracks never got their play counts.
+        val startedAt = System.currentTimeMillis()
+        val candidates = backoff.candidates(LastFmEnrichmentBackoff.Pass.TRACK_INFO, BATCH_SIZE, startedAt) { limit ->
+            trackDao.findTracksNeedingLastfmEnrichment(limit)
+        }
         if (candidates.isEmpty()) {
             Log.d(TAG, "no tracks need enrichment — done")
             return Result.success()
         }
         Log.i(TAG, "enriching ${candidates.size} tracks")
 
+        val failed = mutableListOf<Long>()
+        val processed = try {
+            enrich(candidates, username, failed)
+        } finally {
+            // Also when the run is stopped: the failures so far still count.
+            withContext(NonCancellable) {
+                backoff.recordFailures(LastFmEnrichmentBackoff.Pass.TRACK_INFO, failed, startedAt)
+            }
+        }
+        Log.i(TAG, "done: processed=$processed errors=${failed.size}")
+        return Result.success()
+    }
+
+    /**
+     * Enriches each of [candidates] for [username], adding the ones Last.fm
+     * couldn't be asked about to [failed]. Returns how many got real data.
+     */
+    private suspend fun enrich(candidates: List<Long>, username: String, failed: MutableList<Long>): Int {
         var processed = 0
         var consecutiveErrors = 0
         for (trackId in candidates) {
@@ -106,7 +134,9 @@ class TrackInfoEnrichmentWorker @AssistedInject constructor(
                 // Network drop, 5xx, 429 or every key throttled: write NOTHING.
                 // The "no data" sentinel below is permanent, and stamping it on
                 // an outage zeroed this track's playcount for good. Only
-                // Last.fm's own "not found" answer is allowed to reach it.
+                // Last.fm's own "not found" answer is allowed to reach it. The
+                // track backs off so the next run starts elsewhere.
+                failed += trackId
                 if (++consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
                     Log.w(TAG, "stopping early after $consecutiveErrors consecutive Last.fm failures")
                     break
@@ -141,7 +171,6 @@ class TrackInfoEnrichmentWorker @AssistedInject constructor(
             }
             delay(REQUEST_INTERVAL_MS)
         }
-        Log.i(TAG, "done: processed=$processed")
-        return Result.success()
+        return processed
     }
 }

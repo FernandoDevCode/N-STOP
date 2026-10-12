@@ -258,11 +258,16 @@ class TrackDownloadWorker @AssistedInject constructor(
             supervisorScope {
                 for (queueItem in pendingItems) {
                     launch {
-                        if (downloadQueueDao.claimForDownload(queueItem.id) == 0) return@launch
                         val itemJob = currentCoroutineContext().job
-                        downloadJobs.register(queueItem.id, itemJob)
-                        itemJob.invokeOnCompletion { downloadJobs.unregister(queueItem.id, itemJob) }
+                        // Claim and register as one step, so a tap never sees this
+                        // row IN_PROGRESS without its live job (DownloadJobRegistry).
+                        if (!downloadJobs.claimAndRegister(queueItem.id, itemJob) {
+                                downloadQueueDao.claimForDownload(queueItem.id) != 0
+                            }
+                        ) return@launch
                         if (downloadQueueDao.getStatusById(queueItem.id) == DownloadStatus.SKIPPED) {
+                            // Cancelled as it was claimed: a replacement keeps its file.
+                            fileReplacement.restoreAfterStop(queueItem.trackId)
                             return@launch
                         }
                         // The track's file before this download, read before it
@@ -536,6 +541,13 @@ class TrackDownloadWorker @AssistedInject constructor(
                             val userCancelled = withContext(NonCancellable) {
                                 downloadQueueDao.getStatusById(queueItem.id) == DownloadStatus.SKIPPED
                             }
+                            // Either way, a track handed back for a better copy
+                            // (markForReplacement) that stopped before its row
+                            // recorded a new file gets its kept file back as its
+                            // download: before, it only did on FAILED or after a
+                            // commit, and one stopped mid-download dropped out of
+                            // the Library. A no-op for every other track.
+                            fileReplacement.restoreAfterStop(queueItem.trackId)
                             if (userCancelled) {
                                 return@launch
                             }
@@ -781,10 +793,11 @@ class TrackDownloadWorker @AssistedInject constructor(
         // can no-op on non-FAILED rows). Relies on updateStatus's defaults to
         // null out error_message / completed_at / rejected_video_id and reset
         // failure_type to NONE, matching the chain-mode IN_PROGRESS call.
-        if (downloadQueueDao.claimForDownload(entry.id) == 0) return Result.success()
         val itemJob = currentCoroutineContext().job
-        downloadJobs.register(entry.id, itemJob)
-        itemJob.invokeOnCompletion { downloadJobs.unregister(entry.id, itemJob) }
+        // Claimed and registered as one step: see DownloadJobRegistry.claimAndRegister.
+        if (!downloadJobs.claimAndRegister(entry.id, itemJob) { downloadQueueDao.claimForDownload(entry.id) != 0 }) {
+            return Result.success()
+        }
         // If WorkManager stops the work anywhere after the claim — an unmet constraint
         // (battery low, network gone) or the OS reclaiming the job — hand the claim back
         // before rethrowing. WorkManager reruns the work when the constraint clears, and
@@ -792,13 +805,16 @@ class TrackDownloadWorker @AssistedInject constructor(
         // that rerun return success without downloading anything (seen on-device
         // 2026-09-22, the stop landing after DownloadManager had already returned).
         //
-        // ponytail: a process killed outright still leaves IN_PROGRESS until the next
-        // sync's resetStaleInProgress(); an in-process takeover would need the
-        // DownloadJobRegistry to be claim-atomic.
+        // A process killed outright still leaves IN_PROGRESS until the next sync's
+        // resetStaleInProgress(), or until a tap on the song, which resets a row
+        // whose job isn't live (MusicRepositoryImpl.queueDownload).
         return try {
             downloadClaimed(entry, track)
         } catch (ce: kotlinx.coroutines.CancellationException) {
             withContext(NonCancellable) { downloadQueueDao.releaseClaim(entry.id) } // no-op unless IN_PROGRESS
+            // A replacement stopped before its row recorded a new file keeps its
+            // file as its download (see the chain-mode cancel branch).
+            fileReplacement.restoreAfterStop(entry.trackId)
             throw ce
         }
     }
@@ -809,6 +825,8 @@ class TrackDownloadWorker @AssistedInject constructor(
         track: com.stash.core.model.Track,
     ): Result {
         if (downloadQueueDao.getStatusById(entry.id) == DownloadStatus.SKIPPED) {
+            // Cancelled as it was claimed: a replacement keeps its file.
+            fileReplacement.restoreAfterStop(entry.trackId)
             return Result.success()
         }
 
@@ -827,6 +845,8 @@ class TrackDownloadWorker @AssistedInject constructor(
                 downloadQueueDao.getStatusById(entry.id) == DownloadStatus.SKIPPED
             }
             if (userCancelled) {
+                // runSingleTrackMode restores after a rethrow; this return skips it.
+                fileReplacement.restoreAfterStop(entry.trackId)
                 return Result.success()
             }
             throw ce

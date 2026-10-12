@@ -244,7 +244,7 @@ The server stamps each slot write with its own time (`serverAt`); readers use `s
   ] }
 ```
 
-**Snapshot** (compaction, chunked): `{ "kind": "stash-mirror-state", "v": 1, "uptoSeq": 812, "likes": [{ s, on, at }…], "plays": [{ s, playedAt, device }…], "playsClearedBefore": t, "playlists": [{ id, name, items, follow?, ro?, at, hash }…] }` (`device`: who played it, so a device reading a snapshot can mark plays from others with their origin). Tombstones older than 90 days are dropped from snapshots (§6.5 makes that safe).
+**Snapshot** (compaction, chunked): `{ "kind": "stash-mirror-state", "v": 1, "uptoSeq": 812, "likes": [{ s, on, at }…], "plays": [{ s, playedAt, device }…], "playsClearedBefore": t, "playlists": [{ id, name, items, follow?, ro?, at, hash }…] }` (`device`: who played it, so a device reading a snapshot can mark plays from others with their origin). Snapshots keep every tombstone, however old (amended 2026-10-11: they used to drop ones older than 90 days, see below).
 
 **Send** (`inbox`, one-off): the plaintext *is* a `stash-web-library` v1 document (the picker's selection), so the receiver runs its normal importer.
 
@@ -360,7 +360,7 @@ No open relay: nothing can be stored without a device token; a device token only
 
 ### 6.5 Retention
 
-- A device not seen for **90 days** is removed (alarm), which sets `rotationDue`. This is also why tombstones can be dropped after 90 days: any device that could still need one has been removed and must re-link (re-linking runs the first-merge question again).
+- A device not seen for **90 days** is removed (alarm), which sets `rotationDue`. Tombstones used to be dropped from snapshots after 90 days on the strength of this rule, but "seen" is any request, so a device whose pull stalls is never removed and could bring an unliked song or a deleted playlist back; since 2026-10-11 both sides keep every tombstone.
 - A space with no devices, or none seen for 90 days, is deleted (`deleteAll()`).
 - `now`/`queue` slots: dropped 7 days after their `serverAt`. Inbox: 7 days, or when the receiver deletes it.
 - Cloudflare keeps 30 days of point-in-time recovery for DO storage, which only the owner could use, and which holds ciphertext only.

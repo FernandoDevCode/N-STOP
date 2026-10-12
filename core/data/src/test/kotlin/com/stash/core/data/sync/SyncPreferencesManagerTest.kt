@@ -65,4 +65,14 @@ class SyncPreferencesManagerTest {
         mgr.setYoutubeSyncMode(SyncMode.ACCUMULATE)
         assertTrue(mgr.anyAccumulate())
     }
+
+    @Test fun `Undo's pause on Auto-sync is off by default, kept, and cleared`() = runTest {
+        assertEquals(false, mgr.preferences.first().autoSyncPausedAfterUndo)
+
+        mgr.setAutoSyncPausedAfterUndo(true)
+        assertEquals(true, mgr.preferences.first().autoSyncPausedAfterUndo)
+
+        mgr.setAutoSyncPausedAfterUndo(false)
+        assertEquals(false, mgr.preferences.first().autoSyncPausedAfterUndo)
+    }
 }

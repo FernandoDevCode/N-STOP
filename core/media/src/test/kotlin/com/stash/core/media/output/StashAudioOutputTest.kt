@@ -68,7 +68,12 @@ class StashAudioOutputTest {
         return OutputPlan(MixerDecision.Configure(option, format), format, null, Any())
     }
 
-    private fun output(inner: FakeOutput, inFormat: SampleFormat, plan: OutputPlan) = StashAudioOutput(
+    private fun output(
+        inner: FakeOutput,
+        inFormat: SampleFormat,
+        plan: OutputPlan,
+        speed: Float = 1f,
+    ) = StashAudioOutput(
         inner = inner,
         inFormat = inFormat,
         outFormat = plan.trackFormat,
@@ -77,8 +82,9 @@ class StashAudioOutputTest {
         plan = plan,
         dsp = FloatDspChain({ eq }, { loudness }),
         controller = controller,
-        session = OutputSession(),
+        session = OutputSession(mainPlayback = true).also { it.speed = speed },
         platformAttributes = mockk(relaxed = true),
+        bufferTier = TrackBufferSizing.tierFor(speed),
     )
 
     private fun floats(vararg v: Float): ByteBuffer =
@@ -174,5 +180,41 @@ class StashAudioOutputTest {
         val out = output(FakeOutput(), SampleFormat.FLOAT, sharedPlan())
         out.play()
         verify { controller.activate(out) }
+    }
+
+    @Test fun `Listen Together's speed nudges keep the track`() {
+        // Drift correction steers between 0.97x and 1.03x: a rebuild per nudge was a re-seek per nudge.
+        val out = output(FakeOutput(), SampleFormat.FLOAT, sharedPlan())
+        out.write(floats(0f, 0f), 1, 0L)
+        out.setPlaybackParameters(PlaybackParameters(1.03f))
+        out.setPlaybackParameters(PlaybackParameters(0.97f))
+        out.setPlaybackParameters(PlaybackParameters(1f))
+        assertThat(out.write(floats(0f, 0f), 1, 0L)).isTrue() // no replan thrown
+        verify(exactly = 3) { controller.onSpeedChanged(out) }
+    }
+
+    @Test fun `everyday speeds up to 2x keep the 1x-sized track`() {
+        val out = output(FakeOutput(), SampleFormat.FLOAT, sharedPlan())
+        out.write(floats(0f, 0f), 1, 0L)
+        out.setPlaybackParameters(PlaybackParameters(1.5f))
+        out.setPlaybackParameters(PlaybackParameters(2f))
+        assertThat(out.write(floats(0f, 0f), 1, 0L)).isTrue()
+    }
+
+    @Test fun `a speed past 2x rebuilds the track at the larger size`() {
+        val out = output(FakeOutput(), SampleFormat.FLOAT, sharedPlan())
+        out.write(floats(0f, 0f), 1, 0L)
+        out.setPlaybackParameters(PlaybackParameters(3f))
+        val e = assertThrows(AudioOutput.WriteException::class.java) { out.write(floats(0f, 0f), 1, 0L) }
+        assertThat(e.isRecoverable).isTrue()
+    }
+
+    @Test fun `back from 3x to 1x the doubled track is rebuilt, so the EQ answers quickly again`() {
+        val out = output(FakeOutput(), SampleFormat.FLOAT, sharedPlan(), speed = 3f)
+        out.write(floats(0f, 0f), 1, 0L)
+        out.setPlaybackParameters(PlaybackParameters(4f)) // same tier: kept
+        assertThat(out.write(floats(0f, 0f), 1, 0L)).isTrue()
+        out.setPlaybackParameters(PlaybackParameters(1f))
+        assertThrows(AudioOutput.WriteException::class.java) { out.write(floats(0f, 0f), 1, 0L) }
     }
 }

@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -38,6 +39,8 @@ private val Context.youtubeScrobblerStateDataStore: DataStore<Preferences> by pr
  *    scrobbler saw on its most recent start. When the installed app's
  *    version is newer, the kill-switch flag clears automatically — the
  *    "self-heal on app update" mechanism from the spec.
+ *  - `lookup_failures`: the plays whose canonical lookup failed, with how
+ *    many of those failures were the play's own (see [lookupFailures]).
  */
 @Singleton
 class YouTubeScrobblerState @Inject constructor(
@@ -46,6 +49,7 @@ class YouTubeScrobblerState @Inject constructor(
     private val disabledReasonKey = stringPreferencesKey("disabled_reason")
     private val consecutiveFailuresKey = intPreferencesKey("consecutive_failures")
     private val lastKnownVersionCodeKey = intPreferencesKey("last_known_version_code")
+    private val lookupFailuresKey = stringSetPreferencesKey("lookup_failures")
 
     val disabledReason: Flow<String?> = context.youtubeScrobblerStateDataStore.data.map {
         it[disabledReasonKey]
@@ -83,5 +87,53 @@ class YouTubeScrobblerState @Inject constructor(
         context.youtubeScrobblerStateDataStore.edit {
             it[lastKnownVersionCodeKey] = versionCode
         }
+    }
+
+    /**
+     * Listening-event id → attempts charged, for each play whose canonical
+     * lookup failed. A play in here goes to the back of the drain queue, so
+     * one that keeps failing can't head (and end) every pass; the attempts
+     * count only failures that were the play's own, and bound how long it
+     * is retried (see [YouTubeHistoryScrobbler.drainQueue]).
+     */
+    suspend fun lookupFailures(): Map<Long, Int> =
+        decodeLookupFailures(context.youtubeScrobblerStateDataStore.data.first()[lookupFailuresKey].orEmpty())
+
+    /** Records [attempts] for the play [eventId] (0: moved back, nothing charged). */
+    suspend fun setLookupFailure(eventId: Long, attempts: Int) {
+        context.youtubeScrobblerStateDataStore.edit { prefs ->
+            val entries = decodeLookupFailures(prefs[lookupFailuresKey].orEmpty()) + (eventId to attempts)
+            prefs[lookupFailuresKey] = encodeLookupFailures(entries)
+        }
+    }
+
+    /** Forgets the plays [eventIds]: sent, dropped, no longer queued, or their lookup works now. */
+    suspend fun clearLookupFailures(eventIds: Collection<Long>) {
+        if (eventIds.isEmpty()) return
+        context.youtubeScrobblerStateDataStore.edit { prefs ->
+            val entries = decodeLookupFailures(prefs[lookupFailuresKey].orEmpty())
+            if (eventIds.any { it in entries }) prefs[lookupFailuresKey] = encodeLookupFailures(entries - eventIds.toSet())
+        }
+    }
+
+    internal companion object {
+        /**
+         * Plays kept in the record; beyond it the oldest (lowest id) go. One
+         * dropped from it only loses its place at the back of the queue.
+         */
+        const val MAX_LOOKUP_FAILURES = 200
+
+        /** `"<eventId>:<attempts>"` entries; anything else is skipped. */
+        fun decodeLookupFailures(raw: Set<String>): Map<Long, Int> = raw.mapNotNull { entry ->
+            val id = entry.substringBefore(':').toLongOrNull()
+            val attempts = entry.substringAfter(':', "").toIntOrNull()
+            if (id == null || attempts == null) null else id to attempts
+        }.toMap()
+
+        /** The newest [MAX_LOOKUP_FAILURES] of [entries], encoded for [decodeLookupFailures]. */
+        fun encodeLookupFailures(entries: Map<Long, Int>): Set<String> = entries.entries
+            .sortedByDescending { it.key }
+            .take(MAX_LOOKUP_FAILURES)
+            .mapTo(HashSet()) { "${it.key}:${it.value}" }
     }
 }

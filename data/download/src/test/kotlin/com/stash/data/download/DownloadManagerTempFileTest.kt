@@ -91,6 +91,8 @@ class DownloadManagerTempFileTest {
         lyricsFetchTrigger = mockk<LyricsFetchTrigger>(relaxed = true),
         audioDurationExtractor = mockk(relaxed = true),
         losslessHealthGate = mockk(relaxed = true),
+        // Every fetched file counts as audio here; DownloadManagerJunkBodyTest checks the gate.
+        localFileOps = mockk<com.stash.core.data.files.LocalFileOps> { every { acceptDownloadOrDelete(any()) } returns true },
     )
 
     /** A track whose audio the user picked: straight to the YouTube rung. */

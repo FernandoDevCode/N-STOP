@@ -1,0 +1,27 @@
+---
+/**
+ * A code entered in a browser that didn't ask for one (no stash_signin cookie, worker/session.js): a code only works
+ * in the browser that asked for it, so this one never did, or asked too long ago. The same page whatever the email,
+ * since it depends only on this browser. "Send a new code" asks again from here (POST /access sets the cookie, from
+ * the fresh id the Worker fills into the form's `signin` field).
+ */
+import GateShell from '../../components/gate/GateShell.astro';
+---
+
+<GateShell title="Enter the code where you asked for it" path="/gate/other-browser">
+  <div class="gate-card glass">
+    <p class="overline">Early access</p>
+    <h1>Enter the code where you asked for it</h1>
+    <p>
+      A code only works in the browser that asked for it, and this one didn't, or asked too long ago. Enter it in that
+      browser, or send a new code to <strong data-fill="email">your email</strong> and enter it here.
+    </p>
+    <form method="post" action="/access">
+      <input type="hidden" name="email" value="" data-value="email" />
+      <input type="hidden" name="next" value="" data-value="next" />
+      <input type="hidden" name="signin" value="" data-value="signin" />
+      <button type="submit" class="button button-primary">Send a new code</button>
+    </form>
+    <p class="gate-small">Not on the list? <a href="/request">Request access</a>.</p>
+  </div>
+</GateShell>

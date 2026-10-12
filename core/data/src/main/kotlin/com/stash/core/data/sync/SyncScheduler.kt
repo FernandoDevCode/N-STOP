@@ -1,6 +1,8 @@
 package com.stash.core.data.sync
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.util.Log
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -186,14 +188,39 @@ class SyncScheduler @Inject constructor(
     }
 
     /**
+     * Whether the phone has a connection that reaches the internet right now:
+     * the same validated network WorkManager's `CONNECTED` waits for, so "no"
+     * here means the chain will sit waiting. A seam so tests can go offline.
+     */
+    internal var networkAvailable: () -> Boolean = ::hasValidatedNetwork
+
+    private fun hasValidatedNetwork(): Boolean {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return true
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    }
+
+    /**
      * Triggers a sync immediately without any initial delay.
      *
      * Uses relaxed constraints (any network, no battery requirement) because
      * the user explicitly requested this sync. Replaces a sync chain with no
      * step running (not started, or paused between steps); ignored while a
      * step runs.
+     *
+     * Offline, the sync is queued rather than refused: the Sync tab shows
+     * "Waiting for network" ([SyncStateManager.onWaitingForNetwork]) with a
+     * Cancel, and the chain starts by itself when a connection returns. That
+     * may be hours later on mobile data, when "now, on any network" no longer
+     * holds, so its downloads (the chain's own and the kept-playlist sweep's)
+     * then follow [wifiOnly], the Sync tab's Wi-Fi rule, like a scheduled
+     * sync's. Online, everything runs at once on any network, as before.
+     *
+     * Suspends rather than blocks: the "is a step running?" read used to be a
+     * WorkManager `.get()` on the caller's thread, which was the main thread.
      */
-    fun triggerManualSync() {
+    suspend fun triggerManualSync(wifiOnly: Boolean) {
         // Guard against re-triggering a sync that's already running. Without
         // this, a second tap (e.g. an impatient user during a long fetch on
         // a large library) called enqueueChain -> REPLACE, which cancels the
@@ -201,37 +228,42 @@ class SyncScheduler @Inject constructor(
         // playlist/mix fetch throws JobCancellationException and the whole
         // chain restarts from zero. A user who taps repeatedly because sync
         // LOOKS stalled was actually the one preventing it from ever
-        // finishing. isSyncInProgress() checks WorkManager's live state
-        // directly rather than trusting caller-side flags, so this holds
-        // even if the UI's own isSyncing guard is bypassed or stale.
+        // finishing. This reads WorkManager's live state directly rather than
+        // trusting caller-side flags, so it holds even if the UI's own
+        // isSyncing guard is bypassed or stale.
         // Only a RUNNING step counts, though. A chain that hasn't started, or is
         // paused between steps (downloads waiting for Wi-Fi, or after a process
         // restart), has nothing in flight and shows no sync on the Sync tab: the
         // guard used to count those, and ignored every tap without a word.
-        if (isSyncInProgress()) {
+        // Replacing one just fetches again; the downloads it queued stay queued.
+        if (chainInfos().any { it.state == WorkInfo.State.RUNNING }) {
             Log.i(TAG, "Manual sync requested, but a sync is already running — ignoring")
             return
         }
 
-        Log.i(TAG, "Manual sync triggered by user")
-        // Immediately signal the UI that sync is starting so the button
-        // shows progress feedback even before WorkManager picks up the work.
-        syncStateManager.onAuthenticating()
+        val online = networkAvailable()
+        Log.i(TAG, "Manual sync triggered by user (online=$online, wifiOnly=$wifiOnly)")
+        // Immediately signal the UI so the button shows feedback even before
+        // WorkManager picks up the work. Offline it would sit on
+        // "Authenticating…" until a network returned, looking stuck.
+        if (online) syncStateManager.onAuthenticating() else syncStateManager.onWaitingForNetwork()
 
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
-        enqueueChain(initialDelayMs = 0, constraints = constraints, trigger = SyncTrigger.MANUAL)
+        val downloadConstraints = if (online || !wifiOnly) {
+            constraints
+        } else {
+            Constraints.Builder().setRequiredNetworkType(NetworkType.UNMETERED).build()
+        }
+        enqueueChain(
+            initialDelayMs = 0,
+            constraints = constraints,
+            trigger = SyncTrigger.MANUAL,
+            downloadConstraints = downloadConstraints,
+            downloadsOnAnyNetwork = online,
+        )
     }
-
-    /**
-     * True while a chain step is RUNNING. A chain paused between steps doesn't
-     * count: replacing it just fetches again, and the downloads it queued stay
-     * queued. Blocks on a query of WorkManager's own database.
-     */
-    private fun isSyncInProgress(): Boolean =
-        workManager.getWorkInfosForUniqueWork(UNIQUE_WORK_NAME).get()
-            .any { it.state == WorkInfo.State.RUNNING }
 
     /**
      * The sync chain's steps; empty when there's none. Suspends rather than
@@ -249,6 +281,22 @@ class SyncScheduler @Inject constructor(
     fun cancelSync() {
         workManager.cancelUniqueWork(UNIQUE_WORK_NAME)
         syncStateManager.reset()
+    }
+
+    /**
+     * Cancels a sync chain with no step running: one waiting to start (a
+     * scheduled run waiting for Wi-Fi, a "Sync now" waiting for a network) or
+     * paused between steps. "Undo last sync" calls this so a sync queued before
+     * the undo doesn't redo it as soon as its network turns up. A running step
+     * is left alone. Returns whether a chain was cancelled.
+     */
+    suspend fun cancelPendingSync(): Boolean {
+        val chain = chainInfos()
+        if (chain.all { it.state.isFinished } || chain.any { it.state == WorkInfo.State.RUNNING }) return false
+        Log.i(TAG, "Cancelling a sync that hadn't finished starting (Undo last sync)")
+        workManager.cancelUniqueWork(UNIQUE_WORK_NAME)
+        syncStateManager.reset()
+        return true
     }
 
     /**
@@ -331,11 +379,18 @@ class SyncScheduler @Inject constructor(
      *                       sync history. A scheduled sync enqueues with
      *                       [ExistingWorkPolicy.KEEP], so it never cancels a sync
      *                       already queued or running; a manual one with REPLACE.
+     * @param downloadConstraints The download step's own constraints; [constraints]
+     *                       unless a "Sync now" queued offline keeps Wi-Fi only.
+     * @param downloadsOnAnyNetwork Tells the diff step its kept-playlist sweep may
+     *                       download on any network ([DiffWorker.KEY_MANUAL_SYNC]):
+     *                       a "Sync now" started online.
      */
     private fun enqueueChain(
         initialDelayMs: Long,
         constraints: Constraints,
         trigger: SyncTrigger = SyncTrigger.MANUAL,
+        downloadConstraints: Constraints = constraints,
+        downloadsOnAnyNetwork: Boolean = trigger == SyncTrigger.MANUAL,
     ) {
         val fetchWork = OneTimeWorkRequestBuilder<PlaylistFetchWorker>()
             .setConstraints(constraints)
@@ -359,12 +414,12 @@ class SyncScheduler @Inject constructor(
             .setConstraints(constraints)
             // WorkManager hands a chained worker its own input merged with the
             // fetch step's output, so the diff step learns a "Sync now" here.
-            .setInputData(workDataOf(DiffWorker.KEY_MANUAL_SYNC to (trigger == SyncTrigger.MANUAL)))
+            .setInputData(workDataOf(DiffWorker.KEY_MANUAL_SYNC to downloadsOnAnyNetwork))
             .addTag("sync_diff")
             .build()
 
         val downloadWork = OneTimeWorkRequestBuilder<TrackDownloadWorker>()
-            .setConstraints(constraints)
+            .setConstraints(downloadConstraints)
             .addTag("sync_download")
             .build()
 

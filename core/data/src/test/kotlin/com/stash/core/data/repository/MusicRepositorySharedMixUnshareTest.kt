@@ -56,6 +56,7 @@ class MusicRepositorySharedMixUnshareTest {
         singleTrackDownloadEnqueuer = mockk(relaxed = true),
         lastFmRecommendationSource = mockk(relaxed = true),
         sharedMixDao = sharedMixDao,
+        downloadJobs = com.stash.core.data.sync.DownloadJobRegistry(),
     )
 
     private val playlist = Playlist(id = PID, name = "Mix", source = MusicSource.BOTH)

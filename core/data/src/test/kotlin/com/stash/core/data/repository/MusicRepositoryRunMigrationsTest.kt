@@ -118,5 +118,6 @@ class MusicRepositoryRunMigrationsTest {
         singleTrackDownloadEnqueuer = mockk(relaxed = true),
         lastFmRecommendationSource = mockk(relaxed = true),
         sharedMixDao = db.sharedMixDao(),
+        downloadJobs = com.stash.core.data.sync.DownloadJobRegistry(),
     )
 }

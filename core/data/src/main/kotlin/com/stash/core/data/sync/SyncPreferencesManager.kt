@@ -36,6 +36,7 @@ internal val Context.syncPrefsDataStore by preferencesDataStore(
  * @property youtubeSyncMode Refresh/accumulate mode applied to YouTube-sourced playlists.
  * @property youtubeLikedStudioOnly When true, filters UGC, cover, live, and podcast tracks from YT Music Liked Songs sync.
  * @property syncDays 7-bit bitmask of days the auto-sync should run (bit 0 = Monday … bit 6 = Sunday).
+ * @property autoSyncPausedAfterUndo Auto-sync skips its runs until the user next taps Sync.
  */
 data class SyncPreferences(
     val syncHour: Int = 6,
@@ -58,6 +59,13 @@ data class SyncPreferences(
      * the scheduler does not enqueue work.
      */
     val syncDays: Int = 0b1111111,
+    /**
+     * Set by "Undo last sync", cleared by the next "Sync now". While set, the
+     * daily Auto-sync skips its runs: otherwise it would redo the sync the user
+     * just undid, hours later and unasked. A manual Sync is the user saying the
+     * library is right again, so it resumes the schedule.
+     */
+    val autoSyncPausedAfterUndo: Boolean = false,
 )
 
 /**
@@ -89,6 +97,7 @@ class SyncPreferencesManager @Inject constructor(
         val YOUTUBE_LIKED_STUDIO_ONLY = booleanPreferencesKey("youtube_liked_studio_only")
         val SYNC_DAYS = intPreferencesKey("sync_days")
         val DISCOVER_AUTO_MIXES = booleanPreferencesKey("discover_auto_mixes")
+        val AUTO_SYNC_PAUSED_AFTER_UNDO = booleanPreferencesKey("auto_sync_paused_after_undo")
     }
 
     /** Reactive stream of the current [SyncPreferences]. */
@@ -102,6 +111,7 @@ class SyncPreferencesManager @Inject constructor(
             youtubeSyncMode = resolveYoutubeMode(prefs),
             youtubeLikedStudioOnly = prefs[Keys.YOUTUBE_LIKED_STUDIO_ONLY] ?: false,
             syncDays = prefs[Keys.SYNC_DAYS] ?: 0b1111111,
+            autoSyncPausedAfterUndo = prefs[Keys.AUTO_SYNC_PAUSED_AFTER_UNDO] ?: false,
         )
     }
 
@@ -189,6 +199,11 @@ class SyncPreferencesManager @Inject constructor(
     /** Enable or disable the daily automatic sync. */
     suspend fun setAutoSyncEnabled(enabled: Boolean) {
         context.syncPrefsDataStore.edit { it[Keys.AUTO_SYNC] = enabled }
+    }
+
+    /** Pause Auto-sync after "Undo last sync" (true), or resume it on the next "Sync now" (false). */
+    suspend fun setAutoSyncPausedAfterUndo(paused: Boolean) {
+        context.syncPrefsDataStore.edit { it[Keys.AUTO_SYNC_PAUSED_AFTER_UNDO] = paused }
     }
 
     /** Restrict sync to Wi-Fi only, or allow any network. */

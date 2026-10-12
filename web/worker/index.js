@@ -5,8 +5,9 @@
  *   GET  /               the home page, with the goal: its web player section has the sign-in form, or (signed in)
  *                        a button to /player, and only a signed-in visitor gets the footer's Sign out button
  *   GET  /access         the early-access sign-in page (signed in: back to /)
- *   POST /access         email in -> a sign-in code by email, if that email has access. The same answer either way.
- *   POST /access/verify  email + code -> the stash_access cookie, then back to /
+ *   POST /access         email in -> a sign-in code by email, if that email has access. The same answer either way,
+ *                        with the stash_signin cookie that ties the code to this browser (session.js).
+ *   POST /access/verify  email + code, from the browser that asked -> the stash_access cookie, then back to /
  *   GET  /request        the request-access form;  POST /request  stores the request (same answer either way)
  *   POST /signout        clears the cookie
  *   GET  /player         signed in with early access: a 2-minute ticket and a 302 to the web player (player.js).
@@ -36,7 +37,22 @@ import { clientKey, readForm, sameOrigin } from "./http.js";
 import { KEYS } from "./keys.js";
 import { fetchAsset, fill, gatePage, personal, withSecurityHeaders } from "./pages.js";
 import { authUrl, mintTicket, playerNext, playerOrigin, playerPath, playerReturn, playerSub, ticketKey } from "./player.js";
-import { clearedCookie, cookieValue, currentSession, hasAccess, readSession, rememberAccess, sessionCookie, sessionSecret, signSession } from "./session.js";
+import {
+    asSigninId,
+    clearedCookie,
+    clearedSigninCookie,
+    cookieValue,
+    currentSession,
+    hasAccess,
+    newSigninId,
+    readSession,
+    rememberAccess,
+    sessionCookie,
+    sessionSecret,
+    signinCookie,
+    signinId,
+    signSession,
+} from "./session.js";
 
 /** HTML pages anyone can see. Files (CSS, images, fonts, XML) are always public. */
 const PUBLIC_PAGES = new Set(["/privacy", "/link"]);
@@ -133,7 +149,12 @@ function loosePath(path) {
     return p.replace(/[\\/]+/g, "/").toLowerCase();
 }
 
-const seeOther = (location, headers = {}) => new Response(null, { status: 303, headers: { Location: location, "Cache-Control": "no-store", ...headers } });
+/** A 303 to [location], setting each of [cookies]. */
+function seeOther(location, cookies = []) {
+    const headers = new Headers({ Location: location, "Cache-Control": "no-store" });
+    for (const cookie of cookies) headers.append("Set-Cookie", cookie);
+    return new Response(null, { status: 303, headers });
+}
 const notAllowed = (allow) => new Response(null, { status: 405, headers: { Allow: allow } });
 
 /** The goal bar's numbers, or null (and no bar) if KV can't be read right now. */
@@ -146,19 +167,22 @@ async function goalFor(env) {
     }
 }
 
-/** The early-access sign-in page (/access). [back] (from playerReturn) goes in the sign-in form, to come back to after signing in. */
+/**
+ * The early-access sign-in page (/access). [back] (from playerReturn) goes in the sign-in form, to come back to after
+ * signing in. So does a fresh sign-in id (session.js, stash_signin), for a browser that hasn't one yet.
+ */
 async function front(env, url, back = null) {
-    return gatePage(env, url, "front", { goal: await goalFor(env), text: back ? { next: back } : {} });
+    return gatePage(env, url, "front", { goal: await goalFor(env), text: { ...(back ? { next: back } : {}), signin: newSigninId() } });
 }
 
 /**
  * The home page, for everyone, with the goal. Its web player section has two versions (data-if): the sign-in
- * form for a visitor who isn't signed in, and a button to /player for one who is; the footer's Sign out button
- * is only for a signed-in visitor.
+ * form for a visitor who isn't signed in (with a fresh sign-in id, session.js), and a button to /player for one
+ * who is; the footer's Sign out button is only for a signed-in visitor.
  */
 async function home(env, url, signedIn) {
     const res = await fetchAsset(env, url, "/");
-    return personal(fill(res, { goal: await goalFor(env), flags: { "signed-in": signedIn, "signed-out": !signedIn } }));
+    return personal(fill(res, { goal: await goalFor(env), text: { signin: newSigninId() }, flags: { "signed-in": signedIn, "signed-out": !signedIn } }));
 }
 
 function problem(env, url, status, message, title = "Something went wrong") {
@@ -196,7 +220,12 @@ async function formOf(request, env, url) {
     return { form, secret: sessionSecret(env) };
 }
 
-/** POST /access: sends a code if the email has access; the page says the same thing either way. */
+/**
+ * POST /access: sends a code if the email has access; the page says the same thing either way. Every answer that
+ * says a code is on its way sets the stash_signin cookie (this browser's id, kept if it has one, so asking again
+ * doesn't void the code already sent), listed or not, so the cookie says nothing about who has access either.
+ * Without one, the id the form came with (a double click sends it twice), or a new one.
+ */
 async function sendCode(request, env, url, later) {
     const { form, secret, response } = await formOf(request, env, url);
     if (response) return response;
@@ -209,18 +238,23 @@ async function sendCode(request, env, url, later) {
     if (!(await env.SEND_EMAIL_RL.limit({ key: h })).success) return slowDown(env, url);
     // Silent: at most one code email a minute per address. Counted for every email, so it costs the same either way.
     const mayEmail = (await env.CODE_SEND_RL.limit({ key: h })).success;
+    const browser = signinId(request) ?? asSigninId(form.signin) ?? newSigninId();
     if ((await env.ACCESS_KV.get(KEYS.access(h))) && mayEmail) {
         later(
             (async () => {
-                const code = await issueCode(env, secret, h);
+                const code = await issueCode(env, secret, h, browser);
                 if (code) await sendEmail(env, { to: email, ...codeEmail(code) });
             })().catch((err) => console.error("code not sent:", err && err.message)),
         );
     }
-    return gatePage(env, url, "sent", { text: back ? { email, next: back } : { email } });
+    return gatePage(env, url, "sent", { text: back ? { email, next: back } : { email }, headers: { "Set-Cookie": signinCookie(browser) } });
 }
 
-/** POST /access/verify: the right code signs you in; anything else gets one answer for every kind of failure. */
+/**
+ * POST /access/verify: the right code, from the browser that asked for it, signs you in. A browser with no
+ * stash_signin cookie is told to use the one that asked (that depends only on this browser, never on the email);
+ * anything else gets one answer for every kind of failure.
+ */
 async function verify(request, env, url, later) {
     const { form, secret, response } = await formOf(request, env, url);
     if (response) return response;
@@ -228,16 +262,22 @@ async function verify(request, env, url, later) {
     const email = normalizeEmail(form.email);
     const code = cleanCode(form.code);
     const back = playerReturn(form.next);
-    const failed = () => gatePage(env, url, "code-failed", { status: 400, text: back ? { email, next: back } : { email } });
+    // The pages below have a "Send a new code" form: it gets a fresh sign-in id too, for a browser without one.
+    const text = { email, ...(back ? { next: back } : {}), signin: newSigninId() };
+    const failed = () => gatePage(env, url, "code-failed", { status: 400, text });
     if (!validEmail(email)) return failed();
+    const browser = signinId(request);
+    if (!browser) return gatePage(env, url, "other-browser", { status: 400, text });
     const h = await hashEmail(email, env.EMAIL_PEPPER);
-    // Every email, before its code is looked up: 5 tries a minute, however many addresses they come from.
-    if (!(await env.VERIFY_EMAIL_RL.limit({ key: h })).success) return slowDown(env, url);
+    // Every email, listed or not, before its code is looked up: 5 tries a minute per email and browser, however many
+    // IP addresses they come from. Keyed by the browser too, so someone guessing at your email from their own
+    // browser can't slow down your tries in yours.
+    if (!(await env.VERIFY_EMAIL_RL.limit({ key: `${h}:${browser}` })).success) return slowDown(env, url);
     if (!code) return failed();
-    if (!(await checkCode(env, secret, h, code, later))) return failed();
+    if (!(await checkCode(env, secret, h, browser, code, later))) return failed();
     rememberAccess(h, undefined);
     if (!(await hasAccess(env, h))) return failed(); // removed while the code was on its way
-    return seeOther(back || "/", { "Set-Cookie": sessionCookie(await signSession(secret, h)) });
+    return seeOther(back || "/", [sessionCookie(await signSession(secret, h)), clearedSigninCookie]);
 }
 
 /** POST /request: keeps {email, note} until someone handles it (or 30 days). The same answer whoever asks. */

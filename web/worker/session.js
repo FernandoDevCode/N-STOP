@@ -1,5 +1,5 @@
 /**
- * The sign-in cookie, stash_access: b64url(payload).b64url(HMAC-SHA256(SESSION_SECRET, b64url(payload))),
+ * The session cookie, stash_access: b64url(payload).b64url(HMAC-SHA256(SESSION_SECRET, b64url(payload))),
  * where payload is {"h": <email hash>, "exp": <unix seconds>}. It holds no email, only the hash the
  * access list is keyed by, and lasts 90 days.
  *
@@ -9,7 +9,7 @@
  * Signing out deletes the cookie from that browser; it doesn't revoke a copy of it, which keeps working until
  * it expires or the email is taken off the list (accepted: the cookie is HttpOnly and sent only over HTTPS).
  */
-import { b64urlDecode, b64urlEncode, clock, hmacBytes, hmacVerify } from "./crypto.js";
+import { b64urlDecode, b64urlEncode, clock, hmacBytes, hmacVerify, randomHex } from "./crypto.js";
 import { KEYS } from "./keys.js";
 
 export const COOKIE = "stash_access";
@@ -53,6 +53,31 @@ export function cookieValue(request, name = COOKIE) {
 
 export const sessionCookie = (value) => `${COOKIE}=${value}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_SECONDS}`;
 export const clearedCookie = `${COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`;
+
+/**
+ * The pending sign-in cookie, stash_signin: a random id (128 bits, hex) for one browser's sign-in, set when it asks
+ * for a code, and kept (the same id, its time restarted) when it asks again. The codes that browser asks for are
+ * stored under it and checked with it (worker/codes.js), so a code only works in the browser that asked for it, and
+ * nobody else's wrong tries can use it up. It holds nothing about the visitor, is sent only to /access and
+ * /access/verify, outlives every code it can hold (they last 10 minutes), and signing in deletes it.
+ *
+ * A browser without one yet takes the id its email form came with (a hidden `signin` field the Worker fills with a
+ * fresh random id each time it serves the form): with no script to stop a double click, both posts then carry the
+ * same id, so the code sent for one of them works whichever answer the browser keeps.
+ */
+export const SIGNIN_COOKIE = "stash_signin";
+export const SIGNIN_SECONDS = 30 * 60;
+const SIGNIN_ID = /^[0-9a-f]{32}$/;
+
+/** [value] if it's a well-formed sign-in id, else null. Nothing else ever reaches a KV key or a cookie. */
+export const asSigninId = (value) => (typeof value === "string" && SIGNIN_ID.test(value) ? value : null);
+
+/** This browser's sign-in id, or null when it has none (or something that isn't one). */
+export const signinId = (request) => asSigninId(cookieValue(request, SIGNIN_COOKIE));
+
+export const newSigninId = () => randomHex(16);
+export const signinCookie = (id) => `${SIGNIN_COOKIE}=${id}; HttpOnly; Secure; SameSite=Lax; Path=/access; Max-Age=${SIGNIN_SECONDS}`;
+export const clearedSigninCookie = `${SIGNIN_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/access; Max-Age=0`;
 
 const accessCache = new Map();
 

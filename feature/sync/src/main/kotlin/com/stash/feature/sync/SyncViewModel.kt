@@ -20,12 +20,16 @@ import com.stash.core.data.sync.toDisplayStatus
 import com.stash.core.model.SyncDisplayStatus
 import com.stash.data.download.files.LibrarySizeHolder
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -172,6 +176,20 @@ data class SyncUiState(
 )
 
 /**
+ * What the "Undo last sync" card shows: the restore point taken before the
+ * last sync, and how many playlists that sync changed.
+ */
+data class UndoCard(
+    val syncId: Long,
+    val createdAtEpochMs: Long,
+    val changedPlaylists: Int,
+)
+
+/** A sync is under way, waiting for its network included: not idle, done or failed. */
+internal fun SyncPhase.isActive(): Boolean =
+    this !is SyncPhase.Idle && this !is SyncPhase.Completed && this !is SyncPhase.Error
+
+/**
  * ViewModel backing the Sync screen.
  *
  * Combines live sync phase, user preferences, auth state for each service,
@@ -242,18 +260,40 @@ class SyncViewModel @Inject constructor(
             )
 
     /**
-     * The most recent pre-sync restore point, or null when there's nothing to
-     * undo. Drives the "Undo last sync" card — absent means the card isn't
-     * rendered at all, so the control only exists when it can actually do
-     * something.
+     * The "Undo last sync" card: the last sync's restore point and how many
+     * playlists that sync changed, or null when there's nothing to undo. Absent
+     * means the card isn't rendered at all, so the control only exists when it
+     * can actually do something: no point, a sync that changed nothing, or a
+     * sync still running (undoing under it would race its writes).
+     *
+     * The count is worked out against the library when the point appears and
+     * when a sync stops, not stored with the point, which is taken before the
+     * sync has changed anything.
      */
-    val undoPoint: StateFlow<com.stash.core.data.db.entity.SyncUndoPointEntity?> =
-        syncUndoDao.latestPoint()
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val undoCard: StateFlow<UndoCard?> =
+        combine(
+            syncUndoDao.latestPoint(),
+            syncStateManager.phase.map { it.isActive() }.distinctUntilChanged(),
+        ) { point, syncing -> point.takeUnless { syncing } }
+            .mapLatest { point -> point?.let { undoCardFor(it) } }
             .stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5_000),
                 initialValue = null,
             )
+
+    private suspend fun undoCardFor(point: com.stash.core.data.db.entity.SyncUndoPointEntity): UndoCard? {
+        val changed = try {
+            syncUndoDao.countChangedPlaylists(point.syncId, point.createdAtEpochMs)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("SyncViewModel", "Couldn't count what sync ${point.syncId} changed", e)
+            return null
+        }
+        return if (changed > 0) UndoCard(point.syncId, point.createdAtEpochMs, changed) else null
+    }
 
     /**
      * Live account of what the running sync is finding. Drives the terminal on
@@ -280,30 +320,56 @@ class SyncViewModel @Inject constructor(
 
     /**
      * Roll the library back to how it looked before the last sync: playlists it
-     * hid come back, playlists it emptied are refilled in order. Tracks the user
-     * added by hand are left untouched.
+     * hid come back, playlists it added are hidden, playlists it emptied are
+     * refilled in order. Tracks the user added or removed by hand, and Download
+     * switches flipped since, are left untouched.
+     *
+     * Then pauses Auto-sync until the next "Sync now", and drops a sync queued
+     * meanwhile: either would otherwise redo the sync the user just undid.
      *
      * Doesn't restore deleted audio files — nothing can — but sync no longer
      * deletes them while any source is on Accumulate.
      */
     fun onUndoLastSync() {
-        if (_undoInProgress.value) return
+        if (_undoInProgress.value || _uiState.value.isSyncing) return
         viewModelScope.launch {
             _undoInProgress.value = true
-            val point = syncUndoDao.latestPointNow()
-            if (point == null) {
-                _undoResult.value = "Nothing to undo."
-            } else {
-                val restored = runCatching { syncUndoDao.restore(point.syncId) }
-                _undoResult.value = restored.fold(
-                    onSuccess = { count ->
-                        "Undone — restored ${point.playlistCount} playlists and $count tracks."
-                    },
-                    onFailure = { "Couldn't undo that sync. Nothing was changed." },
-                )
+            try {
+                _undoResult.value = undoLastSync()
+            } finally {
+                _undoInProgress.value = false
             }
-            _undoInProgress.value = false
         }
+    }
+
+    private suspend fun undoLastSync(): String {
+        val point = syncUndoDao.latestPointNow() ?: return "Nothing to undo."
+        val changed = try {
+            val changed = syncUndoDao.countChangedPlaylists(point.syncId, point.createdAtEpochMs)
+            syncScheduler.cancelPendingSync()
+            syncUndoDao.restore(point.syncId)
+            changed
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("SyncViewModel", "Undo of sync ${point.syncId} failed", e)
+            return "Couldn't undo that sync. Nothing was changed."
+        }
+        // After the restore, and never failing it: the library is already back.
+        try {
+            syncPreferencesManager.setAutoSyncPausedAfterUndo(true)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("SyncViewModel", "Couldn't pause Auto-sync after the undo", e)
+        }
+        val playlists = if (changed == 1) "1 playlist is" else "$changed playlists are"
+        val paused = if (_uiState.value.syncPreferences.autoSyncEnabled) {
+            " Auto-sync is paused until you tap Sync."
+        } else {
+            ""
+        }
+        return "Undone — $playlists back to how they were before that sync.$paused"
     }
 
     /** Clear the one-shot undo message once the UI has shown it. */
@@ -395,13 +461,21 @@ class SyncViewModel @Inject constructor(
 
     /** Trigger an immediate sync, replacing any pending schedule. No-ops
      *  while a sync is already in progress — see [SyncScheduler.triggerManualSync]
-     *  for why re-triggering mid-sync is actively harmful, not just redundant. */
+     *  for why re-triggering mid-sync is actively harmful, not just redundant.
+     *  Offline it queues the sync until a network returns ("Waiting for network"). */
     fun onSyncNow() {
         if (_uiState.value.isSyncing) {
             android.util.Log.i("SyncViewModel", "onSyncNow ignored — sync already in progress")
             return
         }
-        syncScheduler.triggerManualSync()
+        // The Wi-Fi rule this screen shows: what a sync queued offline downloads under.
+        val wifiOnly = _uiState.value.syncPreferences.wifiOnly
+        val pausedAfterUndo = _uiState.value.syncPreferences.autoSyncPausedAfterUndo
+        viewModelScope.launch {
+            // A manual Sync ends the pause "Undo last sync" put on Auto-sync.
+            if (pausedAfterUndo) syncPreferencesManager.setAutoSyncPausedAfterUndo(false)
+            syncScheduler.triggerManualSync(wifiOnly)
+        }
     }
 
     /**
@@ -600,9 +674,7 @@ class SyncViewModel @Inject constructor(
                     it.copy(
                         syncPhase = phase,
                         overallProgress = phase.progress,
-                        isSyncing = phase !is SyncPhase.Idle &&
-                            phase !is SyncPhase.Completed &&
-                            phase !is SyncPhase.Error,
+                        isSyncing = phase.isActive(),
                     )
                 }
             }
