@@ -20,21 +20,24 @@ import com.stash.data.spotify.model.SpotifyPlaylistItem
  *  - [revision]: the playlist's `revisionId` from the library listing, read BEFORE its tracks were
  *    fetched, so it is never newer than the tracks mirrored. A change on Spotify mid-fetch only
  *    means the next sync reads the playlist again.
- *  - [digest]: the playlist's rows here (live, removed and added-here memberships, their order)
- *    and its stored song count, as [com.stash.core.data.db.dao.PlaylistDao.mirrorDigest] sums them.
- *    Any change to them, by any code path, makes the next sync read the playlist again. That is
- *    why removing a song, deleting one, blocking one and the orphan sweep need no hook of their
- *    own, and why a path added later can't forget one.
+ *  - [digest]: an exact fingerprint of the playlist's rows here (live, removed and added-here
+ *    memberships, their positions) and its stored song count
+ *    ([com.stash.core.data.db.dao.mirrorDigestOf]). Any change to them, by any code path, makes
+ *    the next sync read the playlist again. That is why removing a song, deleting one and the
+ *    orphan sweep need no hook of their own, and why a path added later can't forget one.
  *  - [syncMode]: Refresh or Accumulate, which decides what a re-read would do.
  *  - [recordedAtMs]: when the mirror was made. Older than [MAX_AGE_MS] and the playlist is read
- *    again anyway: what the stamp can't see (a song downloaded elsewhere that the diff would link
- *    in as the playlist's copy, a fix to the diff in an app update) still reaches every playlist
- *    within a week.
+ *    again anyway: what the stamp can't see (a fix to the diff in an app update, a better row for
+ *    a song appearing in the library) still reaches every playlist within a week. The one such
+ *    thing a sync acts on often, linking a song's downloaded copy in, the diff does for a skipped
+ *    playlist too, with no network (DiffWorker.reconcileSkippedPlaylist).
  *
- * What it can't see by the rows, a hook forgets: an unblock (the song's links were deleted at
- * block time, and which playlists hold it on Spotify isn't known here), a backup restore or merge
- * (see [com.stash.core.data.db.DatabaseBackupManager]), and "Undo last sync"
- * ([com.stash.core.data.db.dao.SyncUndoDao.forgetSnapshotIdsSyncedSince]).
+ * What it can't see by the rows, a hook forgets: a block (a twin row of the song in another
+ * playlist is filtered by a full sync) and an unblock (which playlists hold it on Spotify isn't
+ * known here), both in [com.stash.core.data.blocklist.BlocklistGuard]; a backup restore (see
+ * [com.stash.core.data.db.DatabaseBackupManager]); and "Undo last sync"
+ * ([com.stash.core.data.db.dao.SyncUndoDao.forgetSnapshotIdsSyncedSince]). Only a library
+ * playlist the user saved is ever stamped ([isStampable]).
  *
  * Bump [VERSION] when a change to the diff must reach every playlist at once: every stamp written
  * before stops matching, so the next sync reads everything.
@@ -53,7 +56,7 @@ internal data class SpotifyMirrorStamp(
         /** Format and diff generation; see the class KDoc for when to bump it. */
         const val VERSION = "v1"
 
-        /** Never in a base64 revision id, nor in a digest (digits and ':'). */
+        /** Never in a base64 revision id, nor in a digest (hex). */
         private const val SEPARATOR = "|"
 
         /** How long a mirror is trusted before the playlist is read again regardless. */
@@ -111,18 +114,32 @@ internal fun stampToSkipOn(
 }
 
 /**
+ * Whether a playlist may ever be stamped and skipped: a library playlist the user saved, never
+ * one Spotify generates (an id in [com.stash.data.spotify.SpotifyApiClient.SPOTIFY_OWNED_ID_PREFIX]:
+ * Discover Weekly, daylist, editorials) and never a row filed as a mix. Whether a generated
+ * playlist's revision moves when its personalized content rotates is unverified, and a mix's
+ * cover follows its first track on every full diff, which a skip wouldn't.
+ */
+internal fun isStampable(sourceId: String, type: PlaylistType): Boolean =
+    !sourceId.startsWith(com.stash.data.spotify.SpotifyApiClient.SPOTIFY_OWNED_ID_PREFIX) &&
+        type != PlaylistType.DAILY_MIX
+
+/**
  * The revision a fetched library playlist's snapshot carries, which the diff stamps onto the
  * playlist once it has mirrored the tracks; null when this fetch must not be stamped.
  *
- * Always the LISTING's revision, read before the fetch, never one read alongside the tracks:
- * the playlist can change on Spotify mid-walk, and the older revision then just fails to match
- * next time. And only for a walk Spotify's own track count verified
+ * The LISTING's revision, read before the fetch, and only when the fetch read the same one
+ * ([fetchedRevision], from the walk's first page): a playlist that changed on Spotify between
+ * the two reads is mirrored but not stamped, so the next sync reads it again. And only for a
+ * walk Spotify's own track count verified
  * ([com.stash.data.spotify.SpotifyPlaylistTracks.countVerified]). A short fetch that slipped
  * through as complete is mirrored today and healed by the next sync's read; stamped, the next
  * syncs would skip it and it would stay short for up to [SpotifyMirrorStamp.MAX_AGE_MS].
  */
-internal fun revisionToRecord(listRevision: String?, countVerified: Boolean): String? =
-    listRevision?.takeIf { countVerified && SpotifyMirrorStamp.isUsableRevision(it) }
+internal fun revisionToRecord(listRevision: String?, countVerified: Boolean, fetchedRevision: String?): String? =
+    listRevision?.takeIf {
+        countVerified && it == fetchedRevision && SpotifyMirrorStamp.isUsableRevision(it)
+    }
 
 /**
  * The snapshot row of a Spotify library playlist, as the fetch step writes it for the diff.

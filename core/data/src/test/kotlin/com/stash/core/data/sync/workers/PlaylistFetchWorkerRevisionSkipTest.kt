@@ -91,7 +91,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
         every { syncPreferencesManager.youtubeSyncMode } returns flowOf(SyncMode.REFRESH)
         coEvery { spotify.getLikedSongs(any(), any()) } returns SyncResult.Empty("no liked songs")
         coEvery { spotify.getPlaylistTracks(any()) } returns SyncResult.Success(
-            SpotifyPlaylistTracks(tracks = listOf(track("A"), track("B")), countVerified = true),
+            SpotifyPlaylistTracks(tracks = listOf(track("A"), track("B")), countVerified = true, revisionId = revision),
         )
         coEvery { streamingPreference.current() } returns false
         listing(listed("pl1", revision))
@@ -188,7 +188,8 @@ class PlaylistFetchWorkerRevisionSkipTest {
         val step = userPlaylistsStep(syncId)
         assertEquals("a skipped playlist is still a synced one", 1, step.itemCount)
         assertEquals(StepStatus.SUCCESS, step.status)
-        assertEquals("shown in a shared diagnostics bundle", "1 unchanged since the last sync, not re-read", step.errorMessage)
+        assertEquals("shown in a shared diagnostics bundle", "1 unchanged since the last sync, not re-read", step.note)
+        assertNull("no error on a clean run", step.errorMessage)
     }
 
     @Test fun `an unchanged playlist comes out of the whole sync exactly as it went in`() = runBlocking {
@@ -231,7 +232,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
         assertEquals("read before the tracks, so never newer than them", revision, snapshot.snapshotId)
         assertFalse(snapshot.partial)
         assertEquals(2, db.remoteSnapshotDao().getTrackSnapshotsBySyncId(syncId).size)
-        assertNull("nothing skipped, nothing noted", userPlaylistsStep(syncId).errorMessage)
+        assertNull("nothing skipped, nothing noted", userPlaylistsStep(syncId).note)
     }
 
     @Test fun `a playlist the listing gives no revision for is read`() = runBlocking {
@@ -279,7 +280,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
 
     @Test fun `a forgotten stamp reads the playlist`() = runBlocking {
         seedMirroredPlaylist()
-        // What an unblock or a backup merge does (see PlaylistDao.forgetSpotifyMirrorStamps).
+        // What a block or an unblock does (see PlaylistDao.forgetSpotifyMirrorStamps).
         db.playlistDao().forgetSpotifyMirrorStamps()
 
         runFetch()
@@ -289,12 +290,54 @@ class PlaylistFetchWorkerRevisionSkipTest {
 
     @Test fun `a fetch Spotify's count didn't verify carries no revision, so it is read again next time`() = runBlocking {
         coEvery { spotify.getPlaylistTracks(any()) } returns SyncResult.Success(
-            SpotifyPlaylistTracks(tracks = listOf(track("A"), track("B")), countVerified = false),
+            SpotifyPlaylistTracks(tracks = listOf(track("A"), track("B")), countVerified = false, revisionId = revision),
         )
 
         val syncId = runFetch()
 
         assertNull(snapshotOf("pl1", syncId).snapshotId)
+    }
+
+    @Test fun `a playlist that changed between the listing and the fetch is mirrored but not stamped`() = runBlocking {
+        // The walk's first page reports a newer revision than the listing read just before.
+        coEvery { spotify.getPlaylistTracks(any()) } returns SyncResult.Success(
+            SpotifyPlaylistTracks(
+                tracks = listOf(track("A"), track("B")), countVerified = true,
+                revisionId = "AAAAANewerRevisionMidSyncXXXXXXX",
+            ),
+        )
+
+        val syncId = runFetch()
+
+        val snapshot = snapshotOf("pl1", syncId)
+        assertFalse("still mirrored in full", snapshot.partial)
+        assertNull("not stamped, so the next sync reads it again", snapshot.snapshotId)
+    }
+
+    @Test fun `a fetch whose first page carried no revision is not stamped`() = runBlocking {
+        coEvery { spotify.getPlaylistTracks(any()) } returns SyncResult.Success(
+            SpotifyPlaylistTracks(tracks = listOf(track("A"), track("B")), countVerified = true, revisionId = null),
+        )
+
+        val syncId = runFetch()
+
+        assertNull(snapshotOf("pl1", syncId).snapshotId)
+    }
+
+    @Test fun `a Spotify-generated playlist is read every time, even carrying a stamp`() = runBlocking {
+        val ownedId = "37i9dQZEVXcDiscoverWeekly"
+        listing(listed(ownedId, revision))
+        val pid = db.playlistDao().insert(
+            PlaylistEntity(name = "Discover Weekly", source = MusicSource.SPOTIFY, sourceId = ownedId, type = PlaylistType.CUSTOM),
+        )
+        db.playlistDao().updateSnapshotId(
+            pid,
+            SpotifyMirrorStamp(revision, SyncMode.REFRESH, System.currentTimeMillis(), db.playlistDao().mirrorDigest(pid)!!).encode(),
+        )
+
+        runFetch()
+
+        coVerify(exactly = 1) { spotify.getPlaylistTracks(ownedId) }
     }
 
     @Test fun `a failed fetch carries no revision`() = runBlocking {

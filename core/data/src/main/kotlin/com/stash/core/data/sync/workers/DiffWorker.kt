@@ -312,6 +312,11 @@ class DiffWorker @AssistedInject constructor(
                 ) {
                     Log.d(TAG, "Playlist '${playlistSnapshot.playlistName}' unchanged, skipping")
                     skippedUnchanged++
+                    // What a full diff would still do here, with no network: link
+                    // a song's downloaded copy in (see reconcileSkippedPlaylist).
+                    if (reconcileSkippedPlaylist(localPlaylist, localSnapshotId)) {
+                        Log.i(TAG, "Playlist '${playlistSnapshot.playlistName}' unchanged, linked downloaded copies")
+                    }
                     // Checked, with nothing to do: the progress still moves.
                     playlistsDiffed++
                     syncStateManager.onDiffing(playlistsDiffed, playlistSnapshots.size)
@@ -890,40 +895,13 @@ class DiffWorker @AssistedInject constructor(
         // this playlist's "Song", while a downloaded "Song [Official Video]"
         // is. Ids are not compared: the downloaded copy is another row by
         // design, usually a different video than the stub's.
-        fun reconcileKey(track: TrackEntity) =
-            CanonicalKey(track.canonicalTitle.lowercase(), track.canonicalArtist.lowercase())
-        val reconcileKeys = existingPairs
-            .map { it.first.entity }
-            .filter { !it.isDownloaded && !it.matchDismissed }
-            .map { reconcileKey(it) }
-            // A blank key would take any downloaded song with a blank key, every local import included.
-            .filterNot { TrackCanonical.isBlankKey(it.title, it.artist) }
-            .distinct()
-        val downloadedByKey: Map<CanonicalKey, List<TrackEntity>> = if (reconcileKeys.isEmpty()) {
-            emptyMap()
-        } else {
-            val wanted = reconcileKeys.toSet()
-            trackDao.findDownloadedByCanonicalIdentities(reconcileKeys.map { it.title to it.artist })
-                .filter { reconcileKey(it) in wanted }
-                .groupBy(::reconcileKey)
-                .mapValues { (_, rows) -> rows.sortedBy { it.id } }
-        }
-        for ((batchTrack, snapshot) in existingPairs) {
-            val existingTrack = batchTrack.entity
-            addCrossRefIfNotSoftDeleted(localPlaylist.id, existingTrack.id, snapshot.position, existingCrossRefs, crossRefsToInsert)
-
-            if (!existingTrack.isDownloaded && !existingTrack.matchDismissed) {
-                val downloadedMatch = downloadedByKey[reconcileKey(existingTrack)]
-                    ?.firstOrNull { TrackCanonical.sameVersion(it.title, existingTrack.title) }
-                if (downloadedMatch != null && downloadedMatch.id != existingTrack.id) {
-                    addCrossRefIfNotSoftDeleted(localPlaylist.id, downloadedMatch.id, snapshot.position, existingCrossRefs, crossRefsToInsert)
-                    val failedEntry = downloadQueueDao.getFailedByTrackId(existingTrack.id)
-                    if (failedEntry != null) {
-                        downloadQueueDao.updateStatus(id = failedEntry.id, status = DownloadStatus.COMPLETED)
-                    }
-                }
-            }
-        }
+        linkDownloadedTwins(
+            playlistId = localPlaylist.id,
+            members = existingPairs.map { (batchTrack, snapshot) -> batchTrack.entity to snapshot.position },
+            existingCrossRefs = existingCrossRefs,
+            out = crossRefsToInsert,
+            relinkMembers = true,
+        )
 
         // ── Flush batched writes ─────────────────────────────────────────
         if (crossRefsToInsert.isNotEmpty()) {
@@ -947,6 +925,112 @@ class DiffWorker @AssistedInject constructor(
         finalizePlaylistMetadata(playlistSnapshot, localPlaylist, trackSnapshots, syncMode)
         return newTrackCount
     }
+
+    /**
+     * Auto-reconciliation: links the downloaded copy of a song into the
+     * playlist next to the playlist's own undownloaded row, and closes that
+     * row's failed download (the song is on the phone after all). Example: in
+     * Download mode a song failed to download, then the user downloaded the
+     * same song from Search; the playlist plays the downloaded copy.
+     *
+     * [members] are the playlist's existing songs with their positions, in the
+     * order the diff walks them. With [relinkMembers] (a full diff) each one's
+     * own link is written first, interleaved exactly as before, so a later
+     * song's own link still wins over an earlier song's copy link. Without it
+     * (a playlist the fetch skipped, see [reconcileSkippedPlaylist]) the links
+     * already exist and only a copy with no row in the playlist is added.
+     *
+     * Candidates are looked up ONCE per playlist, by (title, artist) pairs
+     * through the canonical index: the per-track findDownloadedByCanonical was
+     * a full table scan for every undownloaded existing track (every
+     * membership, for an Online-mode user) on every sync, inside this write
+     * transaction. Lowest id per key reproduces that query's unordered LIMIT 1
+     * (scan order is rowid), and pairs can't collide the way a `|`-joined key
+     * could. Only a downloaded row of the same version counts (SameSongRule's
+     * version check): the words are loose, so a downloaded "Song (Live)" is not
+     * this playlist's "Song", while a downloaded "Song [Official Video]" is.
+     * Ids are not compared: the downloaded copy is another row by design,
+     * usually a different video than the stub's.
+     */
+    private suspend fun linkDownloadedTwins(
+        playlistId: Long,
+        members: List<Pair<TrackEntity, Int>>,
+        existingCrossRefs: Map<Long, PlaylistTrackCrossRef>,
+        out: MutableMap<Long, PlaylistTrackCrossRef>,
+        relinkMembers: Boolean,
+    ) {
+        fun reconcileKey(track: TrackEntity) =
+            CanonicalKey(track.canonicalTitle.lowercase(), track.canonicalArtist.lowercase())
+        val reconcileKeys = members
+            .map { it.first }
+            .filter { !it.isDownloaded && !it.matchDismissed }
+            .map { reconcileKey(it) }
+            // A blank key would take any downloaded song with a blank key, every local import included.
+            .filterNot { TrackCanonical.isBlankKey(it.title, it.artist) }
+            .distinct()
+        val downloadedByKey: Map<CanonicalKey, List<TrackEntity>> = if (reconcileKeys.isEmpty()) {
+            emptyMap()
+        } else {
+            val wanted = reconcileKeys.toSet()
+            trackDao.findDownloadedByCanonicalIdentities(reconcileKeys.map { it.title to it.artist })
+                .filter { reconcileKey(it) in wanted }
+                .groupBy(::reconcileKey)
+                .mapValues { (_, rows) -> rows.sortedBy { it.id } }
+        }
+        for ((existingTrack, position) in members) {
+            if (relinkMembers) {
+                addCrossRefIfNotSoftDeleted(playlistId, existingTrack.id, position, existingCrossRefs, out)
+            }
+
+            if (!existingTrack.isDownloaded && !existingTrack.matchDismissed) {
+                val downloadedMatch = downloadedByKey[reconcileKey(existingTrack)]
+                    ?.firstOrNull { TrackCanonical.sameVersion(it.title, existingTrack.title) }
+                if (downloadedMatch != null && downloadedMatch.id != existingTrack.id) {
+                    if (relinkMembers || existingCrossRefs[downloadedMatch.id] == null) {
+                        addCrossRefIfNotSoftDeleted(playlistId, downloadedMatch.id, position, existingCrossRefs, out)
+                    }
+                    val failedEntry = downloadQueueDao.getFailedByTrackId(existingTrack.id)
+                    if (failedEntry != null) {
+                        downloadQueueDao.updateStatus(id = failedEntry.id, status = DownloadStatus.COMPLETED)
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * The network-free part of the diff, for a playlist the fetch skipped: what
+     * a full diff of its unchanged remote content would still do here, because
+     * it depends on the library rather than on Spotify. That is
+     * [linkDownloadedTwins] over the playlist's own synced songs at their
+     * positions (the same songs, at the same positions, the last full diff
+     * linked). Without it, a song downloaded elsewhere would wait up to a week
+     * (SpotifyMirrorStamp.MAX_AGE_MS) to reach an unchanged playlist.
+     *
+     * When that adds a link, the playlist now equals what a full diff would
+     * have left, so [stamp] is re-written in the same transaction with the new
+     * rows' digest; its revision, mode and time stay, so the week still counts
+     * from the last real read. Returns whether a link was added.
+     */
+    private suspend fun reconcileSkippedPlaylist(localPlaylist: PlaylistEntity, stamp: String): Boolean =
+        database.withTransaction {
+            val crossRefs = playlistDao.getCrossRefsForPlaylist(localPlaylist.id).associateBy { it.trackId }
+            val positionOf = crossRefs.values
+                .filter { it.removedAt == null && !it.locallyAdded }
+                .associate { it.trackId to it.position }
+            val members = playlistDao.getUndownloadedSyncedMembers(localPlaylist.id)
+                .mapNotNull { track -> positionOf[track.id]?.let { track to it } }
+            if (members.isEmpty()) return@withTransaction false
+            val added = linkedMapOf<Long, PlaylistTrackCrossRef>()
+            linkDownloadedTwins(localPlaylist.id, members, crossRefs, added, relinkMembers = false)
+            if (added.isEmpty()) return@withTransaction false
+            playlistDao.insertAllCrossRefs(added.values.toList())
+            val digest = playlistDao.mirrorDigest(localPlaylist.id)
+            val restamped = digest?.let { SpotifyMirrorStamp.decode(stamp)?.copy(digest = it) }
+            // Can't re-stamp: forget it, so the next sync reads the playlist in full.
+            playlistDao.updateSnapshotId(localPlaylist.id, restamped?.encode())
+            true
+        }
 
     /**
      * Adds a cross-ref to [out] unless a soft-deleted row already exists
@@ -1034,8 +1118,9 @@ class DiffWorker @AssistedInject constructor(
      * Stamps a playlist this pass mirrored completely, so the next sync can
      * skip reading it while nothing has changed, there or here (see
      * [SpotifyMirrorStamp]). Only a snapshot carrying a revision gets one: a
-     * Spotify library playlist whose fetch Spotify's own count verified
-     * ([revisionToRecord]); every other snapshot carries none and is always
+     * Spotify library playlist whose fetch Spotify's own count verified and
+     * whose revision held through the fetch ([revisionToRecord]), the user's
+     * own kind of playlist ([isStampable]); every other playlist is always
      * read. Runs after this pass's last write to the playlist's rows and
      * count, inside the same transaction, so the digest describes exactly what
      * this mirror left.
@@ -1045,6 +1130,8 @@ class DiffWorker @AssistedInject constructor(
         localPlaylist: PlaylistEntity,
         syncMode: SyncMode,
     ) {
+        // A Spotify-generated playlist or a row filed as a mix is always read (isStampable).
+        if (!isStampable(localPlaylist.sourceId, localPlaylist.type)) return
         val revision = playlistSnapshot.snapshotId
             ?.takeIf { SpotifyMirrorStamp.isUsableRevision(it) }
             ?: return

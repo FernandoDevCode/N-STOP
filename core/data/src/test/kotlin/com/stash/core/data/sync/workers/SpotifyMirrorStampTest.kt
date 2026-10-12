@@ -22,7 +22,7 @@ class SpotifyMirrorStampTest {
 
     private val now = 1_800_000_000_000L
     private val revision = "AAAAAMv6SY4RNBP4lRibleC3UcWweCUH"
-    private val digest = "3:3:30:90:0:0"
+    private val digest = "9f2c1d0b7a4e6f8812ab34cd56ef7890"
 
     private fun stamp(
         revision: String = this.revision,
@@ -92,7 +92,7 @@ class SpotifyMirrorStampTest {
 
     @Test fun `a change to the playlist's rows here reads the playlist`() {
         // A song removed, deleted, blocked or added since the mirror moves the digest.
-        assertNull(skipOn(stamp(), currentDigest = "3:2:20:50:0:0"))
+        assertNull(skipOn(stamp(), currentDigest = "0000000000000000aaaaaaaaaaaaaaaa"))
         assertNull(skipOn(stamp(), currentDigest = null))
     }
 
@@ -116,16 +116,22 @@ class SpotifyMirrorStampTest {
         assertNull(skipOn(stamp(recordedAtMs = now + 60_000)))
     }
 
-    // ── revisionToRecord: only a count-verified fetch is ever stamped ────
+    // ── revisionToRecord: only a verified fetch of the listed revision is stamped ──
 
-    @Test fun `a verified fetch carries the listing's revision`() {
-        assertEquals(revision, revisionToRecord(revision, countVerified = true))
+    @Test fun `a verified fetch of the listed revision carries it`() {
+        assertEquals(revision, revisionToRecord(revision, countVerified = true, fetchedRevision = revision))
     }
 
     @Test fun `an unverified fetch carries none, so it is read again next time`() {
-        assertNull(revisionToRecord(revision, countVerified = false))
-        assertNull(revisionToRecord(null, countVerified = true))
-        assertNull(revisionToRecord("AAAA|BBBB", countVerified = true))
+        assertNull(revisionToRecord(revision, countVerified = false, fetchedRevision = revision))
+        assertNull(revisionToRecord(null, countVerified = true, fetchedRevision = null))
+        assertNull(revisionToRecord("AAAA|BBBB", countVerified = true, fetchedRevision = "AAAA|BBBB"))
+    }
+
+    @Test fun `a fetch that read another revision than the listing carries none`() {
+        // The playlist changed between the two reads, or the walk reported no revision.
+        assertNull(revisionToRecord(revision, countVerified = true, fetchedRevision = "AAAAANewerRevisionMidSyncXXXXXXX"))
+        assertNull(revisionToRecord(revision, countVerified = true, fetchedRevision = null))
     }
 
     // ── The skipped playlist's snapshot row ──────────────────────────────

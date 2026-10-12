@@ -837,7 +837,9 @@ class PlaylistFetchWorker @AssistedInject constructor(
             // and the mode a re-read would sync in. Either read failing just
             // means every playlist is read, as before skipping existed.
             val mirrorStamps = loadSpotifyMirrorStamps()
-            val skipSyncMode = runCatching { syncPreferencesManager.spotifySyncMode.first() }
+            // Read once: what decides the skips also gates hiding missing playlists
+            // below. Unreadable: nothing is skipped and nothing is hidden.
+            val spotifySyncMode = runCatching { syncPreferencesManager.spotifySyncMode.first() }
                 .onFailure { if (it is CancellationException) throw it }
                 .getOrNull()
             val skipCheckedAtMs = System.currentTimeMillis()
@@ -845,9 +847,11 @@ class PlaylistFetchWorker @AssistedInject constructor(
 
             for (playlist in customPlaylists) {
                 try {
-                    val trustedStamp = mirrorStamps[playlist.id]?.let { row ->
-                        stampToSkipOn(playlist.revisionId, row.stamp, row.digest, skipSyncMode, skipCheckedAtMs)
-                    }
+                    val trustedStamp = mirrorStamps[playlist.id]
+                        ?.takeIf { isStampable(playlist.id, PlaylistType.CUSTOM) }
+                        ?.let { row ->
+                            stampToSkipOn(playlist.revisionId, row.stamp, row.digest, spotifySyncMode, skipCheckedAtMs)
+                        }
                     if (trustedStamp != null) {
                         // Unchanged on Spotify and here since its last full
                         // sync: no tracks fetched. The row keeps it in this
@@ -876,6 +880,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     // Spotify's own count confirmed every song was read: only
                     // then may the diff stamp this playlist for a later skip.
                     var countVerified = false
+                    // The revision the walk itself started from, to cross-check the listing's.
+                    var fetchedRevision: String? = null
                     val fetchedItems = try {
                         when (val tracksResult = spotifyApiClient.getPlaylistTracks(playlist.id)) {
                             is SyncResult.Success -> {
@@ -888,6 +894,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                                     )
                                 }
                                 countVerified = tracksResult.data.countVerified
+                                fetchedRevision = tracksResult.data.revisionId
                                 tracksResult.data.tracks
                             }
                             is SyncResult.Empty -> emptyList()
@@ -911,11 +918,13 @@ class PlaylistFetchWorker @AssistedInject constructor(
                             playlist = playlist,
                             syncId = syncId,
                             partial = fetchFailed || fetchPartial,
-                            // The listing's revision, read before this fetch:
-                            // what the diff stamps once the tracks are mirrored.
+                            // The listing's revision, read before this fetch and
+                            // confirmed by it: what the diff stamps once the
+                            // tracks are mirrored.
                             snapshotId = revisionToRecord(
                                 listRevision = playlist.revisionId,
                                 countVerified = countVerified && !fetchFailed && !fetchPartial,
+                                fetchedRevision = fetchedRevision,
                             ),
                         )
                     )
@@ -954,12 +963,12 @@ class PlaylistFetchWorker @AssistedInject constructor(
             if (skippedUnchanged > 0) {
                 Log.i(
                     TAG,
-                    "fetchSpotifyPlaylists: skipped $skippedUnchanged unchanged Spotify playlist(s) " +
-                        "(revision unchanged), read ${customPlaylists.size - skippedUnchanged}",
+                    "fetchSpotifyPlaylists: skipped $skippedUnchanged Spotify playlist(s) unchanged " +
+                        "since the last sync, read ${customPlaylists.size - skippedUnchanged}",
                 )
             }
 
-            if (shouldDeactivateMissingPlaylists(syncPreferencesManager.spotifySyncMode.first(), inventoryComplete)) {
+            if (spotifySyncMode != null && shouldDeactivateMissingPlaylists(spotifySyncMode, inventoryComplete)) {
                 // The first change this sync makes to the library: "Undo last sync"
                 // must restore from before it, or the playlists hidden here never
                 // come back. The diff step keeps this point instead of taking its own.
@@ -975,19 +984,15 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     syncLog.warn("Hid $hidden Spotify playlist(s) no longer in your account")
                 }
             }
-            // The skips ride along as a note (as Liked Songs' studio filter does), so
-            // a shared diagnostics bundle shows how many playlists weren't re-read.
-            val skippedNote = if (skippedUnchanged > 0) "$skippedUnchanged unchanged since the last sync, not re-read" else null
             diagnostics.add(
                 SyncStepResult(
                     "SPOTIFY",
                     "getUserPlaylists",
                     if (inventoryComplete) StepStatus.SUCCESS else StepStatus.ERROR,
                     userPlaylistCount,
-                    errorMessage = listOfNotNull(
-                        if (inventoryComplete) null else "inventory incomplete — a page/folder/track fetch failed mid-walk",
-                        skippedNote,
-                    ).joinToString("; ").ifEmpty { null },
+                    errorMessage = if (inventoryComplete) null else "inventory incomplete — a page/folder/track fetch failed mid-walk",
+                    // A shared diagnostics bundle shows how many weren't re-read.
+                    note = if (skippedUnchanged > 0) "$skippedUnchanged unchanged since the last sync, not re-read" else null,
                 )
             )
         } catch (e: SpotifyApiException) {
