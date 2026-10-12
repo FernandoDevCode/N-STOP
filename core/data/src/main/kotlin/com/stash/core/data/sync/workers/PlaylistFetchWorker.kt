@@ -832,8 +832,36 @@ class PlaylistFetchWorker @AssistedInject constructor(
             }
             Log.d(TAG, "fetchSpotifyPlaylists: found ${customPlaylists.size} user playlists (filtered from ${userPlaylists.size})")
 
+            // Skip reading what hasn't changed (see SpotifyMirrorStamp): one
+            // read of every stamp, with each playlist's rows as they are now,
+            // and the mode a re-read would sync in. Either read failing just
+            // means every playlist is read, as before skipping existed.
+            val mirrorStamps = loadSpotifyMirrorStamps()
+            val skipSyncMode = runCatching { syncPreferencesManager.spotifySyncMode.first() }
+                .onFailure { if (it is CancellationException) throw it }
+                .getOrNull()
+            val skipCheckedAtMs = System.currentTimeMillis()
+            var skippedUnchanged = 0
+
             for (playlist in customPlaylists) {
                 try {
+                    val trustedStamp = mirrorStamps[playlist.id]?.let { row ->
+                        stampToSkipOn(playlist.revisionId, row.stamp, row.digest, skipSyncMode, skipCheckedAtMs)
+                    }
+                    if (trustedStamp != null) {
+                        // Unchanged on Spotify and here since its last full
+                        // sync: no tracks fetched. The row keeps it in this
+                        // run's inventory and tells the diff to leave it alone.
+                        remoteSnapshotDao.insertPlaylistSnapshot(
+                            unchangedSpotifyPlaylistSnapshot(playlist, trustedStamp, syncId),
+                        )
+                        skippedUnchanged++
+                        userPlaylistCount++
+                        Log.d(TAG, "fetchSpotifyPlaylists: '${playlist.name}' — unchanged since its last full sync, not re-read")
+                        reportPlaylistFetched()
+                        continue
+                    }
+
                     // #343: fetch tracks FIRST (like the YouTube paths) so
                     // the snapshot row can carry an HONEST partial flag. The
                     // old order inserted the snapshot, then a failed track
@@ -845,6 +873,9 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     // playlist — snapshot it partial so REFRESH merges instead
                     // of mirroring the playlist down to the pages that loaded.
                     var fetchPartial = false
+                    // Spotify's own count confirmed every song was read: only
+                    // then may the diff stamp this playlist for a later skip.
+                    var countVerified = false
                     val fetchedItems = try {
                         when (val tracksResult = spotifyApiClient.getPlaylistTracks(playlist.id)) {
                             is SyncResult.Success -> {
@@ -856,6 +887,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                                             "${tracksResult.data.partialReason}",
                                     )
                                 }
+                                countVerified = tracksResult.data.countVerified
                                 tracksResult.data.tracks
                             }
                             is SyncResult.Empty -> emptyList()
@@ -875,18 +907,16 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     }
 
                     val playlistSnapshotId = remoteSnapshotDao.insertPlaylistSnapshot(
-                        RemotePlaylistSnapshotEntity(
+                        spotifyLibraryPlaylistSnapshot(
+                            playlist = playlist,
                             syncId = syncId,
-                            source = MusicSource.SPOTIFY,
-                            sourcePlaylistId = playlist.id,
-                            playlistName = playlist.name,
-                            playlistType = PlaylistType.CUSTOM,
-                            trackCount = playlist.tracks?.total ?: 0,
-                            artUrl = com.stash.core.common.ArtUrlUpgrader.upgrade(
-                                playlist.images?.firstOrNull()?.url,
-                            ),
                             partial = fetchFailed || fetchPartial,
-                            expectedCount = playlist.tracks?.total,
+                            // The listing's revision, read before this fetch:
+                            // what the diff stamps once the tracks are mirrored.
+                            snapshotId = revisionToRecord(
+                                listRevision = playlist.revisionId,
+                                countVerified = countVerified && !fetchFailed && !fetchPartial,
+                            ),
                         )
                     )
 
@@ -920,6 +950,13 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     syncLog.warn("${playlist.name} — couldn't fetch tracks (kept as-is)")
                 }
                 reportPlaylistFetched()
+            }
+            if (skippedUnchanged > 0) {
+                Log.i(
+                    TAG,
+                    "fetchSpotifyPlaylists: skipped $skippedUnchanged unchanged Spotify playlist(s) " +
+                        "(revision unchanged), read ${customPlaylists.size - skippedUnchanged}",
+                )
             }
 
             if (shouldDeactivateMissingPlaylists(syncPreferencesManager.spotifySyncMode.first(), inventoryComplete)) {
@@ -957,6 +994,21 @@ class PlaylistFetchWorker @AssistedInject constructor(
 
         Log.d(TAG, "fetchSpotifyPlaylists: completed -- $dailyMixCount daily mixes, $likedSongCount liked songs, $userPlaylistCount user playlists")
     }
+
+    /**
+     * Every Spotify playlist's mirror stamp next to its rows' digest now, by
+     * Spotify playlist id: what decides which library playlists this sync can
+     * skip reading ([stampToSkipOn]). Empty when the read fails, so a broken
+     * read costs the skip, never a playlist's update.
+     */
+    private suspend fun loadSpotifyMirrorStamps(): Map<String, com.stash.core.data.db.dao.SpotifyMirrorStampRow> =
+        try {
+            playlistDao.spotifyMirrorStamps().associateBy { it.sourceId }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Log.w(TAG, "fetchSpotifyPlaylists: couldn't read mirror stamps, reading every playlist", e)
+            emptyMap()
+        }
 
     /**
      * Fetches Home Mixes, Liked Songs, and user playlists from YouTube Music

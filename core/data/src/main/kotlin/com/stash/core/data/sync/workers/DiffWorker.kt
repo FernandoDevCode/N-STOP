@@ -296,7 +296,15 @@ class DiffWorker @AssistedInject constructor(
                     continue
                 }
 
-                // Check snapshot_id for change detection (Spotify only).
+                // A Spotify library playlist the fetch step didn't re-read: its
+                // mirror stamp still vouched for it (see SpotifyMirrorStamp), so
+                // the snapshot carries that stamp and no tracks. Matching the
+                // playlist's own stamp, it is left exactly as the last full sync
+                // left it. A fetched snapshot carries a bare revision instead,
+                // which never equals a stamp, so whatever was fetched is diffed.
+                // Should the stamp have been forgotten since the fetch, this
+                // misses and the snapshot's partial flag keeps the diff below
+                // from clearing or recording anything.
                 val localSnapshotId = playlistDao.getSnapshotId(localPlaylist.id)
                 if (localSnapshotId != null &&
                     playlistSnapshot.snapshotId != null &&
@@ -304,6 +312,9 @@ class DiffWorker @AssistedInject constructor(
                 ) {
                     Log.d(TAG, "Playlist '${playlistSnapshot.playlistName}' unchanged, skipping")
                     skippedUnchanged++
+                    // Checked, with nothing to do: the progress still moves.
+                    playlistsDiffed++
+                    syncStateManager.onDiffing(playlistsDiffed, playlistSnapshots.size)
                     continue
                 }
 
@@ -416,7 +427,7 @@ class DiffWorker @AssistedInject constructor(
 
             Log.i(
                 TAG,
-                "diff summary: ${playlistSnapshots.size} fetched, $skippedSwitchedOff skipped (switched off), " +
+                "diff summary: ${playlistSnapshots.size} checked, $skippedSwitchedOff skipped (switched off), " +
                     "$skippedUnchanged skipped (unchanged snapshot), $newTrackCount new tracks, " +
                     "streamingMode=$streamingMode",
             )
@@ -616,7 +627,7 @@ class DiffWorker @AssistedInject constructor(
         }
 
         if (trackSnapshots.isEmpty()) {
-            finalizePlaylistMetadata(playlistSnapshot, localPlaylist, trackSnapshots)
+            finalizePlaylistMetadata(playlistSnapshot, localPlaylist, trackSnapshots, syncMode)
             return 0
         }
 
@@ -636,7 +647,7 @@ class DiffWorker @AssistedInject constructor(
         }
 
         if (allowedSnapshots.isEmpty()) {
-            finalizePlaylistMetadata(playlistSnapshot, localPlaylist, trackSnapshots)
+            finalizePlaylistMetadata(playlistSnapshot, localPlaylist, trackSnapshots, syncMode)
             return 0
         }
 
@@ -933,7 +944,7 @@ class DiffWorker @AssistedInject constructor(
             )
         }
 
-        finalizePlaylistMetadata(playlistSnapshot, localPlaylist, trackSnapshots)
+        finalizePlaylistMetadata(playlistSnapshot, localPlaylist, trackSnapshots, syncMode)
         return newTrackCount
     }
 
@@ -979,27 +990,28 @@ class DiffWorker @AssistedInject constructor(
 
     /**
      * Playlist metadata bookkeeping shared by every processPlaylist exit
-     * path (including the early-return-on-empty branches). Unchanged from
-     * the original inline tail of processPlaylist.
+     * path (including the early-return-on-empty branches): when it was last
+     * read, its song count, its mirror stamp and, for mixes, its cover.
      */
     private suspend fun finalizePlaylistMetadata(
         playlistSnapshot: RemotePlaylistSnapshotEntity,
         localPlaylist: PlaylistEntity,
         trackSnapshots: List<RemoteTrackSnapshotEntity>,
+        syncMode: SyncMode,
     ) {
         playlistDao.updateLastSynced(localPlaylist.id, System.currentTimeMillis())
         if (snapshotUnreliable(playlistSnapshot, trackSnapshots)) {
             // #343: an unreliable fetch was NOT mirrored (see processPlaylist).
-            // Recording its snapshot_id would make the next sync skip this
-            // playlist as "unchanged" and the missing tracks would never
-            // re-sync; stamping trackSnapshots.size would show a lying track
-            // count over retained content. Leave both as they were.
+            // Stamping it would make the next sync skip this playlist as
+            // "unchanged" and the missing tracks would never re-sync; stamping
+            // trackSnapshots.size would show a lying track count over retained
+            // content. Leave both as they were: an older stamp stops matching
+            // the rows this pass merged into, so the next sync reads it again.
             return
         }
-        if (playlistSnapshot.snapshotId != null) {
-            playlistDao.updateSnapshotId(localPlaylist.id, playlistSnapshot.snapshotId)
-        }
         playlistDao.updateTrackCount(localPlaylist.id, trackSnapshots.size)
+        // After the count: the stamp's digest covers it.
+        recordMirrorStamp(playlistSnapshot, localPlaylist, syncMode)
 
         if (localPlaylist.type == PlaylistType.DAILY_MIX) {
             val coverToSet = trackSnapshots
@@ -1016,5 +1028,33 @@ class DiffWorker @AssistedInject constructor(
         ) {
             playlistDao.updateArtUrl(localPlaylist.id, playlistSnapshot.artUrl)
         }
-    }   
+    }
+
+    /**
+     * Stamps a playlist this pass mirrored completely, so the next sync can
+     * skip reading it while nothing has changed, there or here (see
+     * [SpotifyMirrorStamp]). Only a snapshot carrying a revision gets one: a
+     * Spotify library playlist whose fetch Spotify's own count verified
+     * ([revisionToRecord]); every other snapshot carries none and is always
+     * read. Runs after this pass's last write to the playlist's rows and
+     * count, inside the same transaction, so the digest describes exactly what
+     * this mirror left.
+     */
+    private suspend fun recordMirrorStamp(
+        playlistSnapshot: RemotePlaylistSnapshotEntity,
+        localPlaylist: PlaylistEntity,
+        syncMode: SyncMode,
+    ) {
+        val revision = playlistSnapshot.snapshotId
+            ?.takeIf { SpotifyMirrorStamp.isUsableRevision(it) }
+            ?: return
+        val digest = playlistDao.mirrorDigest(localPlaylist.id) ?: return
+        val stamp = SpotifyMirrorStamp(
+            revision = revision,
+            syncMode = syncMode,
+            recordedAtMs = System.currentTimeMillis(),
+            digest = digest,
+        )
+        playlistDao.updateSnapshotId(localPlaylist.id, stamp.encode())
+    }
 }

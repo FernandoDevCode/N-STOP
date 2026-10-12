@@ -169,6 +169,10 @@ interface SyncUndoDao {
      * skips a playlist whose id hasn't moved, so once its tracks were put back
      * the next sync would have left it undone for good, while re-reading the
      * rest: half the library redone and half not.
+     *
+     * A playlist the sync skipped as unchanged (its mirror stamp, see
+     * SpotifyMirrorStamp, still matched) was not re-read: `last_synced` didn't
+     * move, its rows go back exactly as they were, and its stamp stays valid.
      */
     @Query(
         """

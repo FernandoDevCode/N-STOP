@@ -50,7 +50,18 @@ data class RemotePlaylistSnapshotEntity(
     @ColumnInfo(name = "mix_number")
     val mixNumber: Int? = null,
 
-    /** Source-provided snapshot/version identifier for change detection. */
+    /**
+     * Change detection for Spotify library playlists (see
+     * [com.stash.core.data.sync.workers.SpotifyMirrorStamp]):
+     *  - a fetched playlist: Spotify's revision from the library listing, set
+     *    only when Spotify's own count verified the fetch. The diff stamps it
+     *    onto the playlist once the tracks are mirrored.
+     *  - a playlist whose fetch the sync skipped: the stamp it trusted, which
+     *    the diff matches against the playlist's own to leave it as it is.
+     *
+     * Null for everything else (mixes, Liked Songs, YouTube, an unverified
+     * fetch): those are always diffed and never stamped.
+     */
     @ColumnInfo(name = "snapshot_id")
     val snapshotId: String? = null,
 
