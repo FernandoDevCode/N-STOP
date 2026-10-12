@@ -258,10 +258,13 @@ class TrackDownloadWorker @AssistedInject constructor(
             supervisorScope {
                 for (queueItem in pendingItems) {
                     launch {
-                        if (downloadQueueDao.claimForDownload(queueItem.id) == 0) return@launch
                         val itemJob = currentCoroutineContext().job
-                        downloadJobs.register(queueItem.id, itemJob)
-                        itemJob.invokeOnCompletion { downloadJobs.unregister(queueItem.id, itemJob) }
+                        // Claim and register as one step, so a tap never sees this
+                        // row IN_PROGRESS without its live job (DownloadJobRegistry).
+                        if (!downloadJobs.claimAndRegister(queueItem.id, itemJob) {
+                                downloadQueueDao.claimForDownload(queueItem.id) != 0
+                            }
+                        ) return@launch
                         if (downloadQueueDao.getStatusById(queueItem.id) == DownloadStatus.SKIPPED) {
                             // Cancelled as it was claimed: a replacement keeps its file.
                             fileReplacement.restoreAfterStop(queueItem.trackId)
@@ -790,10 +793,11 @@ class TrackDownloadWorker @AssistedInject constructor(
         // can no-op on non-FAILED rows). Relies on updateStatus's defaults to
         // null out error_message / completed_at / rejected_video_id and reset
         // failure_type to NONE, matching the chain-mode IN_PROGRESS call.
-        if (downloadQueueDao.claimForDownload(entry.id) == 0) return Result.success()
         val itemJob = currentCoroutineContext().job
-        downloadJobs.register(entry.id, itemJob)
-        itemJob.invokeOnCompletion { downloadJobs.unregister(entry.id, itemJob) }
+        // Claimed and registered as one step: see DownloadJobRegistry.claimAndRegister.
+        if (!downloadJobs.claimAndRegister(entry.id, itemJob) { downloadQueueDao.claimForDownload(entry.id) != 0 }) {
+            return Result.success()
+        }
         // If WorkManager stops the work anywhere after the claim — an unmet constraint
         // (battery low, network gone) or the OS reclaiming the job — hand the claim back
         // before rethrowing. WorkManager reruns the work when the constraint clears, and
@@ -801,9 +805,9 @@ class TrackDownloadWorker @AssistedInject constructor(
         // that rerun return success without downloading anything (seen on-device
         // 2026-09-22, the stop landing after DownloadManager had already returned).
         //
-        // ponytail: a process killed outright still leaves IN_PROGRESS until the next
-        // sync's resetStaleInProgress(); an in-process takeover would need the
-        // DownloadJobRegistry to be claim-atomic.
+        // A process killed outright still leaves IN_PROGRESS until the next sync's
+        // resetStaleInProgress(), or until a tap on the song, which resets a row
+        // whose job isn't live (MusicRepositoryImpl.queueDownload).
         return try {
             downloadClaimed(entry, track)
         } catch (ce: kotlinx.coroutines.CancellationException) {

@@ -137,6 +137,7 @@ class MusicRepositoryDownloadSwitchRaceTest {
             singleTrackDownloadEnqueuer = mockk(relaxed = true),
             lastFmRecommendationSource = mockk(relaxed = true),
             sharedMixDao = mockk(relaxed = true),
+            downloadJobs = com.stash.core.data.sync.DownloadJobRegistry(),
         ),
     ).also { coEvery { it.startDiscoveryDrain(any(), any()) } just Runs }
 

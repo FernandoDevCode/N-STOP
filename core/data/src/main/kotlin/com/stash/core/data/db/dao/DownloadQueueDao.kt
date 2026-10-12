@@ -589,6 +589,14 @@ interface DownloadQueueDao {
     suspend fun requeueForTap(id: Long): Int
 
     /**
+     * A tap on a song that is downloading right now: its row becomes a download
+     * the user asked for by hand, as [requeueForTap] makes it, and nothing else
+     * changes, so the download in flight carries on.
+     */
+    @Query("UPDATE download_queue SET user_requested = 1 WHERE id = :id")
+    suspend fun markUserRequested(id: Long): Int
+
+    /**
      * A search download (a tap) found no lossless source and waits on the song's
      * row: WAITING_FOR_LOSSLESS, as [updateStatus] writes it, and in the same write
      * the row becomes the user's ask, as [requeueForTap] marks it: the leftover

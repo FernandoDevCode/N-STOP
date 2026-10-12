@@ -11,6 +11,7 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.sync.DownloadJobRegistry
 import com.stash.core.data.sync.SingleTrackDownloadEnqueuer
 import com.stash.core.data.sync.SyncPreferencesManager
 import com.stash.core.model.DownloadStatus
@@ -21,9 +22,11 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MusicRepositoryDownloadsMixTest {
@@ -84,6 +87,7 @@ class MusicRepositoryDownloadsMixTest {
         // suspend fun, so the gate is open for pre-existing tests with no stub.
         syncPreferencesManager: SyncPreferencesManager = mockk(relaxed = true),
         singleTrackDownloadEnqueuer: com.stash.core.data.sync.SingleTrackDownloadEnqueuer = mockk(relaxed = true),
+        downloadJobs: DownloadJobRegistry = DownloadJobRegistry(),
     ): MusicRepositoryImpl = MusicRepositoryImpl(
         context = context,
         trackDao = trackDao,
@@ -101,6 +105,7 @@ class MusicRepositoryDownloadsMixTest {
         singleTrackDownloadEnqueuer = singleTrackDownloadEnqueuer,
         lastFmRecommendationSource = mockk(relaxed = true),
         sharedMixDao = mockk(relaxed = true),
+        downloadJobs = downloadJobs,
     )
 
     private fun downloadedTrack(id: Long, filePath: String = "/music/$id.flac") = TrackEntity(
@@ -150,6 +155,54 @@ class MusicRepositoryDownloadsMixTest {
         coVerify { dq.requeueForTap(88L) }
         coVerify { enqueuer.enqueue(88L) }
         coVerify(exactly = 0) { dq.insert(any()) }
+    }
+
+    @Test
+    fun `queueDownload leaves a song that is downloading right now alone`() = runTest {
+        // The bug: a tap reset the row to PENDING under the live download, so the
+        // tap's own worker cancelled it and started over.
+        val trackDao = mockk<TrackDao>(relaxed = true)
+        coEvery { trackDao.getById(5L) } returns notDownloadedTrack(5L)
+        val dq = mockk<DownloadQueueDao>(relaxed = true)
+        val existing = mockk<DownloadQueueEntity>(relaxed = true)
+        every { existing.id } returns 88L
+        coEvery { dq.getByTrackId(5L) } returns existing
+        coEvery { dq.getStatusById(88L) } returns DownloadStatus.IN_PROGRESS
+        val jobs = DownloadJobRegistry()
+        val download = Job()
+        assertTrue(jobs.claimAndRegister(88L, download) { true })
+        val enqueuer = mockk<SingleTrackDownloadEnqueuer>(relaxed = true)
+
+        val repo = buildRepo(trackDao = trackDao, downloadQueueDao = dq, singleTrackDownloadEnqueuer = enqueuer, downloadJobs = jobs)
+
+        assertEquals(true, repo.queueDownload(5L))
+        coVerify { dq.markUserRequested(88L) }
+        coVerify(exactly = 0) { dq.requeueForTap(any()) }
+        coVerify(exactly = 0) { dq.insert(any()) }
+        coVerify(exactly = 0) { enqueuer.enqueue(any()) }
+        assertTrue(download.isActive)
+        download.cancel()
+    }
+
+    @Test
+    fun `queueDownload resets a row left in progress by a process that died`() = runTest {
+        val trackDao = mockk<TrackDao>(relaxed = true)
+        coEvery { trackDao.getById(5L) } returns notDownloadedTrack(5L)
+        val dq = mockk<DownloadQueueDao>(relaxed = true)
+        val existing = mockk<DownloadQueueEntity>(relaxed = true)
+        every { existing.id } returns 88L
+        coEvery { dq.getByTrackId(5L) } returns existing
+        coEvery { dq.getStatusById(88L) } returns DownloadStatus.IN_PROGRESS
+        coEvery { dq.requeueForTap(88L) } returns 1
+        val enqueuer = mockk<SingleTrackDownloadEnqueuer>(relaxed = true)
+
+        // No live job holds row 88: IN_PROGRESS is a leftover, not a download.
+        val repo = buildRepo(trackDao = trackDao, downloadQueueDao = dq, singleTrackDownloadEnqueuer = enqueuer)
+
+        assertEquals(true, repo.queueDownload(5L))
+        coVerify { dq.requeueForTap(88L) }
+        coVerify { enqueuer.enqueue(88L) }
+        coVerify(exactly = 0) { dq.markUserRequested(any()) }
     }
 
     @Test

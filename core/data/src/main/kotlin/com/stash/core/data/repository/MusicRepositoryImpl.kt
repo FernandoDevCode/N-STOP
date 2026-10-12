@@ -69,6 +69,7 @@ class MusicRepositoryImpl @Inject constructor(
     private val singleTrackDownloadEnqueuer: com.stash.core.data.sync.SingleTrackDownloadEnqueuer,
     private val lastFmRecommendationSource: LastFmRecommendationSource,
     private val sharedMixDao: com.stash.core.data.db.dao.SharedMixDao,
+    private val downloadJobs: com.stash.core.data.sync.DownloadJobRegistry,
 ) : MusicRepository {
 
     // ── Deletion event plumbing ─────────────────────────────────────────
@@ -624,8 +625,11 @@ class MusicRepositoryImpl @Inject constructor(
         // (user_requested), so a playlist's Download switch going off never
         // deletes it (#474). The reset is one write that reports a row the
         // leftover cleanup deleted after the read (#532): then a fresh row is filed.
-        val queueId = downloadQueueDao.getByTrackId(trackId)?.id
-            ?.takeIf { downloadQueueDao.requeueForTap(it) == 1 }
+        // A song downloading right now is left to finish (see requeueTappedRow).
+        val existingId = downloadQueueDao.getByTrackId(trackId)?.id
+        val reuse = existingId?.let { requeueTappedRow(it) }
+        if (reuse == TapRequeue.DOWNLOADING) return true
+        val queueId = existingId?.takeIf { reuse == TapRequeue.REQUEUED }
             ?: downloadQueueDao.insert(
                 com.stash.core.data.db.entity.DownloadQueueEntity(
                     trackId = trackId,
@@ -642,6 +646,34 @@ class MusicRepositoryImpl @Inject constructor(
         // mode (the reason the stuck sync rows never drained).
         singleTrackDownloadEnqueuer.enqueue(queueId)
         return true
+    }
+
+    /** What a tap did with the song's existing queue row. */
+    private enum class TapRequeue { DOWNLOADING, REQUEUED, GONE }
+
+    /**
+     * Resets a tapped song's queue row to PENDING, unless a job in this process
+     * is downloading it right now. Resetting that one made the tap's own worker
+     * cancel the live download and start over, and the running one, finding its
+     * row moved, could stop early; so it only becomes the user's own request
+     * ([DownloadQueueDao.markUserRequested]) and finishes. A row IN_PROGRESS with
+     * no live job is stuck (the process died mid-download) and is reset as before.
+     *
+     * Under the job registry's claim lock: a worker claims and registers in one
+     * step there, so no claim can land between the check and the reset.
+     * [com.stash.core.data.sync.DownloadJobRegistry.isLive] is read first: it costs no query, and a song
+     * no job holds is reset without one.
+     */
+    private suspend fun requeueTappedRow(queueId: Long): TapRequeue = downloadJobs.withClaimsHeld {
+        when {
+            downloadJobs.isLive(queueId) &&
+                downloadQueueDao.getStatusById(queueId) == com.stash.core.model.DownloadStatus.IN_PROGRESS -> {
+                downloadQueueDao.markUserRequested(queueId)
+                TapRequeue.DOWNLOADING
+            }
+            downloadQueueDao.requeueForTap(queueId) == 1 -> TapRequeue.REQUEUED
+            else -> TapRequeue.GONE
+        }
     }
 
     override suspend fun removeDownload(trackId: Long) {

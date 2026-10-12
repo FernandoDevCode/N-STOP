@@ -196,10 +196,12 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
     /** Runs one discovery row in its own cancellable child, never the worker Job. */
     private suspend fun processQueueItem(queueItem: DownloadQueueEntity): Boolean = supervisorScope {
         val child = async {
-            if (downloadQueueDao.claimForDownload(queueItem.id) == 0) return@async false
             val itemJob = currentCoroutineContext().job
-            downloadJobs.register(queueItem.id, itemJob)
-            itemJob.invokeOnCompletion { downloadJobs.unregister(queueItem.id, itemJob) }
+            // Claimed and registered as one step: see DownloadJobRegistry.claimAndRegister.
+            if (!downloadJobs.claimAndRegister(queueItem.id, itemJob) {
+                    downloadQueueDao.claimForDownload(queueItem.id) != 0
+                }
+            ) return@async false
             if (downloadQueueDao.getStatusById(queueItem.id) == DownloadStatus.SKIPPED) {
                 // Cancelled as it was claimed: a replacement keeps its file.
                 fileReplacement.restoreAfterStop(queueItem.trackId)
