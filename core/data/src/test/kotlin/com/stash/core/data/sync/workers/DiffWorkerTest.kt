@@ -410,6 +410,49 @@ class DiffWorkerTest {
     }
 
     @Test
+    fun `Spotify's credit or remaster tag still meets the YouTube row of the same song`() = runBlocking {
+        // Before the version check these merged; a strict check split them into duplicates, and for
+        // someone syncing both services this word match is the only link between the two rows.
+        val playlistId = seedAccumulatePlaylist()
+        val stay = db.trackDao().insert(searchSaved("STAY", "The Kid LAROI, Justin Bieber", "video000011"))
+        val song = db.trackDao().insert(searchSaved("Song [Official Video]", "Artist", "video000012"))
+        stubGrowingSnapshot(
+            RemoteTrackSnapshotEntity(
+                syncId = 1L, snapshotPlaylistId = 21L,
+                title = "STAY (with Justin Bieber)", artist = "The Kid LAROI & Justin Bieber",
+                spotifyUri = "spotify:track:stay", position = 0,
+            ),
+            remoteTrack("Song (2011 Remaster)", "spotify:track:song", 1),
+        )
+
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+
+        assertEquals("no row added", setOf(stay, song), db.trackDao().getAllForIntegrityScan().map { it.id }.toSet())
+        assertEquals(
+            listOf(stay, song),
+            db.playlistDao().getCrossRefsForPlaylist(playlistId).sortedBy { it.position }.map { it.trackId },
+        )
+        coVerify(exactly = 0) { downloadQueueDao.insertAll(match { it.isNotEmpty() }) }
+    }
+
+    @Test
+    fun `an undownloaded track links its downloaded twin across a credit`() = runBlocking {
+        val playlistId = seedAccumulatePlaylist()
+        val stub = db.trackDao().insert(
+            TrackEntity(
+                title = "Song (with X)", artist = "Artist", spotifyUri = "spotify:track:with",
+                canonicalTitle = "song", canonicalArtist = "artist",
+            )
+        )
+        val twin = db.trackDao().insert(searchSaved("Song", "Artist", "video000014"))
+        stubGrowingSnapshot(remoteTrack("Song (with X)", "spotify:track:with", 0))
+
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+
+        assertEquals(setOf(stub, twin), db.playlistDao().getCrossRefsForPlaylist(playlistId).map { it.trackId }.toSet())
+    }
+
+    @Test
     fun `an undownloaded track does not link a downloaded twin of another version`() = runBlocking {
         val playlistId = seedAccumulatePlaylist()
         val stub = db.trackDao().insert(

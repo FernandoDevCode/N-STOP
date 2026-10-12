@@ -15,9 +15,12 @@ import com.stash.core.data.db.entity.TrackEntity
  * two different uploads of one song. So a row found by words is taken only when
  *  1. **no id disagrees**: the row has no YouTube video id or the same one, and no Spotify URI or
  *     the same one. An id only one side has never disagrees (a Spotify stub has no video id yet);
- *  2. **it is the same version**: [TrackCanonical.sameVersion] on the two raw titles, so
- *     "Song (Live)" or "Song (Remix)" never lands on "Song", while "Song (feat. X)" and
- *     "Song (Official Video)" still find it;
+ *  2. **it is the same version**: [TrackCanonical.sameVersion] on the two raw titles, a deny-list:
+ *     only a performance word one names and the other doesn't (live, remix, acoustic, sped up...)
+ *     keeps them apart. So "Song (Live)" or "Song (Remix)" never lands on "Song", while
+ *     "STAY (with Justin Bieber)", "PRBLMS [Official Music Video]", "Song (2011 Remaster)" and
+ *     "Song (Clean)" still find their song. For people who sync Spotify and YouTube this word
+ *     match is the only link between the two services' rows, so it must not split one song;
  *  3. **for a download, the row holds no file**: a row that already has audio is another copy, so
  *     the new download gets its own row rather than replacing that file.
  *

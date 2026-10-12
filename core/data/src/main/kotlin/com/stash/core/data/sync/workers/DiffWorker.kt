@@ -666,6 +666,10 @@ class DiffWorker @AssistedInject constructor(
         // titles name the same version. The words are loose, so without the
         // version check a "Song (Live)" saved from Search would take a synced
         // "Song" (each side has only its own kind of id, so ids can't tell).
+        // The version check is a deny-list (only a performance word one title
+        // names and the other doesn't), so Spotify's "STAY (with Justin
+        // Bieber)" still meets YouTube's "STAY": for people syncing both
+        // services this match is the only link between their rows.
         fun mayReuseByWords(
             track: BatchTrack,
             snapshot: RemoteTrackSnapshotEntity,
@@ -839,8 +843,9 @@ class DiffWorker @AssistedInject constructor(
         // pairs can't collide the way a `|`-joined key could. Only a
         // downloaded row of the same version counts (SameSongRule's version
         // check): the words are loose, so a downloaded "Song (Live)" is not
-        // this playlist's "Song". Ids are not compared: the downloaded copy is
-        // another row by design, usually a different video than the stub's.
+        // this playlist's "Song", while a downloaded "Song [Official Video]"
+        // is. Ids are not compared: the downloaded copy is another row by
+        // design, usually a different video than the stub's.
         fun reconcileKey(track: TrackEntity) =
             CanonicalKey(track.canonicalTitle.lowercase(), track.canonicalArtist.lowercase())
         val reconcileKeys = existingPairs

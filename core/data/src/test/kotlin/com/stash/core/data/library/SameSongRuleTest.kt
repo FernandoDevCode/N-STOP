@@ -65,14 +65,30 @@ class SameSongRuleTest {
         row("Song")
         assertNull(find("Song (Live)"))
         assertNull(find("Song (Remix)"))
-        assertNull(find("Song [2011 Remaster]"))
+        assertNull(find("Song (Acoustic)"))
+        assertNull(find("Song (Sped Up)"))
     }
 
-    @Test fun `presentation tags and credits are the same version`() = runTest {
+    @Test fun `presentation tags, credits, remasters and editions are the same version`() = runTest {
         val song = row("Song")
         assertEquals(song, find("Song (Official Video)"))
         assertEquals(song, find("Song [Lyrics]"))
         assertEquals(song, find("Song ft. X"))
+        assertEquals(song, find("Song [2011 Remaster]"))
+        assertEquals(song, find("Song (Clean)"))
+        assertEquals(song, find("Song (Single Version)"))
+    }
+
+    @Test fun `real titles from the two services meet`() = runTest {
+        // Spotify's credit vs YouTube's bare title, and YouTube's presentation tags vs the bare title.
+        val stay = row("STAY (with Justin Bieber)", artist = "The Kid LAROI & Justin Bieber", spotifyUri = "spotify:track:stay")
+        assertEquals(stay, find("STAY", artist = "The Kid LAROI & Justin Bieber", youtubeId = "video000001"))
+
+        val prblms = row("PRBLMS", artist = "6LACK", youtubeId = "video000002")
+        assertEquals(prblms, find("PRBLMS [Official Music Video]", artist = "6LACK"))
+
+        val sun = row("When the Sun Hits", artist = "Slowdive", spotifyUri = "spotify:track:sun")
+        assertEquals(sun, find("When the Sun Hits (Audio)", artist = "Slowdive", youtubeId = "video000003"))
     }
 
     @Test fun `a conflicting video or Spotify id stays apart, a missing one never conflicts`() = runTest {

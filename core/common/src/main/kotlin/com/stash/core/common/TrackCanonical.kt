@@ -15,7 +15,8 @@ package com.stash.core.common
  *
  * Because the title rule drops brackets, two versions share one key: "Song (Live)" and "Song" are
  * both "song". A row found by its words alone may only stand for an incoming song when
- * [sameVersion] agrees too (the whole reuse rule is `SameSongRule` in core:data).
+ * [sameVersion] agrees too (the whole reuse rule is `SameSongRule` in core:data): a deny-list, so
+ * only a performance word ([VersionWords]) one title names and the other doesn't keeps them apart.
  *
  * This is `TrackMatcher`'s rule, moved here unchanged so code outside the sync can call it without
  * injecting the matcher. Do not change its output: the blocklist keys (`artist|title`) and every
@@ -23,13 +24,13 @@ package com.stash.core.common
  */
 object TrackCanonical {
 
-    /** A bracketed group: (remix), (feat. X), [live]. [versionKey] sees exactly the groups [title] drops. */
+    /** A bracketed group: (remix), (feat. X), [live]. [version] reads exactly the groups [title] drops. */
     private val BRACKET_GROUP = Regex("""\s*[\(\[][^)\]]*[\)\]]""")
 
     /**
      * "feat", "ft", "featuring" and everything after. Note there is no word boundary in front, so
      * "Left Hand" loses "ft Hand" ("le"). Kept as is: the stored keys and the blocklist depend on it.
-     * [versionKey] doesn't repeat the quirk, so the reuse rule still tells such titles apart.
+     * [version] doesn't repeat the quirk, so the reuse rule still tells such titles apart.
      */
     private val FEAT_TAIL = Regex("""\s*(feat\.?|ft\.?|featuring)\s+.*""", RegexOption.IGNORE_CASE)
 
@@ -38,27 +39,23 @@ object TrackCanonical {
 
     /**
      * A credit outside brackets: a whole word after a space (so not "Left Hand", not a title that
-     * starts with "Ft."), up to a " - " that starts a version suffix, or to the end:
+     * starts with "Ft."), up to a dash that starts a version suffix, or to the end:
      * "Song feat. Jay-Z - Live" loses "feat. Jay-Z" and keeps "- Live".
      */
     private val CREDIT_TAIL = Regex(
-        """(?<=\s)(?:feat\.?|ft\.?|featuring)\s+.*?(?=\s+-\s+|$)""",
+        """(?<=\s)(?:feat\.?|ft\.?|featuring)\s+.*?(?=\s+[-\x{2013}\x{2014}]\s+|$)""",
         RegexOption.IGNORE_CASE,
     )
 
-    /** A bracketed group (in strict form) that only credits other artists. The words Stash on the web drops too. */
-    private val CREDIT_GROUP = Regex("""^(?:feat|ft|featuring)(?:\s|$)""")
-
     /**
-     * Bracketed tags YouTube adds to how a song is presented, never to which recording it is.
-     * Compared with the whole group in strict form, so "(Official Video HD)" is not one of them: it
-     * counts as a version, which can only keep two songs apart, never merge them.
+     * The credit that opens a bracketed group, up to a dash or the group's end: "feat. X", "ft X",
+     * "featuring X", "with X", "w/ X", "prod. X", "produced by X". It names other artists, never a
+     * version, so a performance word in a name ("feat. The Cover Girls") counts for nothing, while
+     * one after the dash ("with X - Live") still does.
      */
-    private val PRESENTATION_TAGS = setOf(
-        "official video", "official music video", "official audio", "official lyric video",
-        "official lyrics video", "official visualizer", "official visualiser", "official hd video",
-        "official", "video", "music video", "audio", "hd video", "lyric video", "lyrics video",
-        "lyrics", "lyric", "visualizer", "visualiser", "hd", "hq", "4k", "explicit",
+    private val CREDIT_GROUP = Regex(
+        """^\s*(?:feat\.?|ft\.?|featuring|with|w/|prod\.?|produced\s+by)(?=[\s.:/]|$).*?(?=\s+[-\x{2013}\x{2014}]\s+|$)""",
+        RegexOption.IGNORE_CASE,
     )
 
     /**
@@ -89,25 +86,46 @@ object TrackCanonical {
             .joinToString(", ")
 
     /**
-     * Which version a title names, as far as its words tell: the title without its credits
-     * ("(feat. X)", "ft. X") and without YouTube presentation tags ("(Official Video)", "[Lyrics]"),
-     * in [strictCanonical] form. Everything else [title] drops stays: "(Live)", "(Remix)",
-     * "[2011 Remaster]", "(Taylor's Version)", and the words a mid-word "ft " cuts off.
+     * What a title says about which recording it is. Two titles are the same version when both
+     * parts are equal ([sameVersion]).
+     *
+     * @property base the title without its bracketed groups, a credit ("ft. X") and a dash suffix
+     *   (" - Live"), in [strictCanonical] form. Two titles with one canonical key share it, except
+     *   where the loose rule's mid-word "ft" cut different words ("Left Hand Free" and "Left Outside
+     *   Alone" both key as "le"): the base keeps those two songs apart.
+     * @property words the [VersionWords] named in the parts the loose rule drops: bracketed groups
+     *   other than a credit, and a dash suffix. Never the base, so "Live Forever" names none.
+     */
+    data class Version(val base: String, val words: Set<String>)
+
+    /**
+     * The [Version] a title names.
      *
      * @param title Raw track title.
-     * @return A key that is equal for two titles of the same version.
      */
-    fun versionKey(title: String): String {
-        val withoutTags = BRACKET_GROUP.replace(title) { group ->
-            val words = strictCanonical(group.value)
-            if (CREDIT_GROUP.containsMatchIn(words) || words in PRESENTATION_TAGS) " " else group.value
+    fun version(title: String): Version {
+        val versionText = StringBuilder()
+        val unbracketed = BRACKET_GROUP.replace(title) { group ->
+            val bracketed = group.value.trim()
+            versionText.append(' ').append(CREDIT_GROUP.replace(bracketed.substring(1, bracketed.length - 1), ""))
+            " "
         }
-        return strictCanonical(CREDIT_TAIL.replace(withoutTags, " "))
+        val uncredited = CREDIT_TAIL.replace(unbracketed, " ")
+        val dash = VersionWords.DASH_SUFFIX.find(uncredited)
+        if (dash != null) versionText.append(' ').append(dash.value)
+        val base = if (dash != null) uncredited.substring(0, dash.range.first) else uncredited
+        return Version(base = strictCanonical(base), words = VersionWords.of(versionText.toString()))
     }
 
     /**
-     * Whether two titles name the same version of a song: "Song (feat. X)", "Song ft. X",
-     * "Song (Official Video)" and "Song" do; "Song (Live)" and "Song" don't.
+     * Whether two titles name the same version of a song. A deny-list: they are two versions only
+     * when one names a performance word ([VersionWords]: live, remix, acoustic, sped up, Taylor's
+     * Version...) that the other doesn't. Everything else is the same version: credits ("(feat. X)",
+     * "(with X)", "(prod. X)"), presentation tags ("[Official Music Video]", "(Audio)", "(HD)"), a
+     * remaster with or without a year, Deluxe, Mono / Stereo, Single / Album / Radio Version,
+     * Explicit / Clean. So "STAY (with Justin Bieber)" and "STAY", "Song - Remastered 2011" and
+     * "Song", "Loser (Fcukers Remix - Official Audio)" and "Loser - Fcukers Remix" are one version
+     * each; "Song (Live)" and "Song" are two.
      */
-    fun sameVersion(a: String, b: String): Boolean = versionKey(a) == versionKey(b)
+    fun sameVersion(a: String, b: String): Boolean = version(a) == version(b)
 }

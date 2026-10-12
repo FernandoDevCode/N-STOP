@@ -160,6 +160,16 @@ class SearchDownloadCoordinatorReuseTest {
     }
 
     @Test
+    fun `a synced stub under Spotify's credit or a remaster tag is filled by the bare title`() = runTest {
+        rowsByWords(row(3L, "Song (with X)", spotifyUri = "spotify:track:abc"))
+
+        download(item("Song [Official Audio]"))
+
+        coVerify(exactly = 0) { trackDao.insert(any()) }
+        recordedOn(3L)
+    }
+
+    @Test
     fun `another video of the song gets its own row`() = runTest {
         rowsByWords(row(6L, "Song", youtubeId = "otherVideo1"))
 

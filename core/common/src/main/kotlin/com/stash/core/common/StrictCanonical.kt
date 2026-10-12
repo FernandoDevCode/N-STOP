@@ -12,7 +12,7 @@ package com.stash.core.common
  * a tap were stored in this strict form instead, so a song synced from Spotify and the same song
  * saved from search were filed as two rows. It stays, unchanged, for two jobs that need strict
  * words: rows written by it are still in users' libraries and are recognised by exactly this
- * output to be re-keyed, and [TrackCanonical.versionKey] uses it to tell versions apart.
+ * output to be re-keyed, and [TrackCanonical.version] compares the base of two titles in it.
  */
 fun strictCanonical(s: String): String =
     s.lowercase()
