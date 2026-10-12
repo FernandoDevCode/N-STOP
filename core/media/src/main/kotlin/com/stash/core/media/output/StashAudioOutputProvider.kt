@@ -43,18 +43,23 @@ class StashAudioOutputProvider(
         // The plan and the buffer both follow the player's speed right now.
         val tier = TrackBufferSizing.tierFor(session.speed)
         var plan = controller.prepare(config.sampleRate, channels, session, attributes)
+        // Shared mixer: open the track in the source's own format. Android converts it,
+        // and no conversion runs in our stage.
+        if (plan.decision is MixerDecision.Shared && plan.trackFormat != inFormat) {
+            plan = plan.withTrackFormat(inFormat)
+        }
         val inner = try {
             super.getAudioOutput(trackConfig(config, inFormat, plan.trackFormat, channels, tier))
         } catch (e: AudioOutputProvider.InitializationException) {
-            if (plan.trackFormat == SampleFormat.FLOAT) throw e
+            if (plan.trackFormat == inFormat) throw e
             // A device that lists a bit-perfect format but won't open an
             // AudioTrack in it: play, on the shared mixer, rather than not at all.
             // Remembered, or the next recheck would plan the same format again
             // and rebuild the stream into the same refusal, over and over.
             Log.w(TAG, "AudioTrack in ${plan.trackFormat} refused; falling back to float", e)
             controller.onTrackRefused(plan)
-            plan = plan.rejected(SampleFormat.FLOAT)
-            super.getAudioOutput(trackConfig(config, inFormat, SampleFormat.FLOAT, channels, tier))
+            plan = plan.rejected(inFormat)
+            super.getAudioOutput(trackConfig(config, inFormat, inFormat, channels, tier))
         }
         return StashAudioOutput(
             inner = inner,

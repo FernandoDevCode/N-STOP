@@ -65,10 +65,14 @@ class OutputPlan internal constructor(
     val key: String = when (decision) {
         is MixerDecision.Configure ->
             "cfg:${device?.id}:${decision.option.index}:${decision.option.sampleRate}:$trackFormat"
-        is MixerDecision.Shared -> "shared:$trackFormat"
+        is MixerDecision.Shared -> "shared"
     }
 
     private val isRejected: Boolean get() = decision == MixerDecision.Shared(MixerDecision.Reason.REJECTED)
+
+    /** Same plan, but the AudioTrack opens in [format] (a shared plan follows the source's own format). */
+    internal fun withTrackFormat(format: SampleFormat): OutputPlan =
+        OutputPlan(decision, format, device, platformMixer)
 
     /**
      * This plan's stream degraded to the shared mixer after Android or the DAC
