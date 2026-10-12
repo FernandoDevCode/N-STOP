@@ -36,7 +36,9 @@ import java.nio.ByteBuffer
  * and out) the buffer goes straight to the AudioTrack, untouched and uncopied.
  *
  * Frame accounting is exact (see [ConvertingWriter]); no stage adds latency,
- * so position, gapless trimming and end-of-stream behave as without us.
+ * so position, gapless trimming and end-of-stream behave as without us. The
+ * only delay is the AudioTrack's own buffer, kept at Media3's 1x size up to 2x
+ * speed ([TrackBufferSizing]).
  */
 @OptIn(UnstableApi::class)
 class StashAudioOutput(
@@ -51,6 +53,8 @@ class StashAudioOutput(
     private val controller: HiResOutputController,
     val session: OutputSession,
     val platformAttributes: android.media.AudioAttributes,
+    /** The speed tier the AudioTrack's buffer was sized for ([TrackBufferSizing.tierFor]). */
+    private val bufferTier: Int,
 ) : ForwardingAudioOutput(inner) {
 
     /** The plan this stream was built for; degraded to shared if Android rejects the mixer request. */
@@ -64,6 +68,10 @@ class StashAudioOutput(
     private var framesWritten = 0L
 
     @Volatile private var replanRequested = false
+
+    /** Between play() and pause() or release(); see [HiResOutputController.unregister]. */
+    @Volatile internal var playing = false
+        private set
 
     private val audioTrack: AudioTrack? = (inner as? AudioTrackAudioOutput)?.audioTrack
     private val routingListener = AudioRouting.OnRoutingChangedListener { controller.onRouted(this) }
@@ -130,8 +138,14 @@ class StashAudioOutput(
     }
 
     override fun play() {
+        playing = true
         controller.activate(this)
         super.play()
+    }
+
+    override fun pause() {
+        playing = false
+        super.pause()
     }
 
     override fun flush() {
@@ -159,13 +173,19 @@ class StashAudioOutput(
 
     override fun setPlaybackParameters(playbackParams: PlaybackParameters) {
         super.setPlaybackParameters(playbackParams)
-        if (session.speed != playbackParams.speed) {
-            session.speed = playbackParams.speed
+        val speed = playbackParams.speed
+        if (session.speed != speed) {
+            session.speed = speed
+            // Crossing 2x either way: a track sized for its new speed. Above
+            // that this buffer would run thin; below, the doubled one only
+            // delays the EQ. Listen Together's nudges and 0.5–2x never cross.
+            if (TrackBufferSizing.tierFor(speed) != bufferTier) requestReplan()
             controller.onSpeedChanged(this)
         }
     }
 
     override fun release() {
+        playing = false
         audioTrack?.removeOnRoutingChangedListener(routingListener)
         controller.unregister(this)
         super.release()
@@ -189,7 +209,7 @@ class StashAudioOutput(
             mixerFormat = (decision as? MixerDecision.Configure)?.option?.format,
             device = routed?.toOutputDevice(),
             mode = controller.mode,
-            bitPerfectUnavailable = (decision as? MixerDecision.Configure)?.bitPerfectUnavailable == true,
+            bitPerfectMiss = (decision as? MixerDecision.Configure)?.bitPerfectMiss,
             sharedReason = (decision as? MixerDecision.Shared)?.reason,
         )
     }

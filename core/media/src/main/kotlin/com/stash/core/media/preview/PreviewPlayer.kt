@@ -210,7 +210,13 @@ class PreviewPlayer @Inject constructor(
     @OptIn(UnstableApi::class)
     private fun requirePlayer(): ExoPlayer {
         return exoPlayer ?: ExoPlayer.Builder(context)
-            .setRenderersFactory(StashRenderersFactory(context, eqController, loudnessController, hiResOutputController))
+            // The user's EQ, but never the hi-res output: a preview mustn't retune the DAC under
+            // the paused song or publish its own signal path (see OutputSession.mainPlayback).
+            .setRenderersFactory(
+                StashRenderersFactory(
+                    context, eqController, loudnessController, hiResOutputController, mainPlayback = false,
+                ),
+            )
             .setLoadControl(PreviewLoadControlFactory.create())
             .setAudioAttributes(
                 AudioAttributes.Builder()
