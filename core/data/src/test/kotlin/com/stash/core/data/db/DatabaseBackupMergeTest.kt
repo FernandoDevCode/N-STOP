@@ -6,6 +6,8 @@ import androidx.datastore.preferences.preferencesDataStoreFile
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.test.core.app.ApplicationProvider
+import com.stash.core.common.TrackCanonical
+import com.stash.core.common.strictCanonical
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.SharedMixEntity
@@ -603,6 +605,76 @@ class DatabaseBackupMergeTest {
             key.delete()
             leftover.delete()
         }
+    }
+
+    // ── Matching by words: the same-song rule every other path follows ─────
+
+    /** A row as the sync and every writer now store it: the one loose rule's canonical words. */
+    private fun looseTrack(
+        title: String,
+        artist: String = "Artist",
+        spotifyUri: String? = null,
+        youtubeId: String? = null,
+        likedAt: Long? = null,
+    ) = TrackEntity(
+        title = title, artist = artist, spotifyUri = spotifyUri, youtubeId = youtubeId, stashLikedAt = likedAt,
+        canonicalTitle = TrackCanonical.title(title), canonicalArtist = TrackCanonical.artist(artist),
+    )
+
+    @Test
+    fun `merge keeps a backup's other version or upload apart`() = runTest {
+        val studio = live.trackDao().insert(looseTrack("Song", spotifyUri = "spotify:track:studio"))
+        val upload = live.trackDao().insert(looseTrack("Other", youtubeId = "videoAAAAAA1"))
+        val uri = buildBackupZip { backup ->
+            // Same loose words as the live rows, but a live take, and another video of "Other".
+            backup.trackDao().insert(looseTrack("Song (Live)", youtubeId = "videoLIVE001", likedAt = 5L))
+            backup.trackDao().insert(looseTrack("Other", youtubeId = "videoBBBBBB2", likedAt = 6L))
+        }
+
+        val result = manager.importDatabase(uri, BackupImportScope.LIBRARY_MERGE)
+
+        assertTrue("merge failed: ${result.exceptionOrNull()}", result.isSuccess)
+        assertEquals(2, result.getOrThrow().addedTracks)
+        assertEquals("no like lands on another song", 0, result.getOrThrow().likedTracks)
+        assertNull(live.trackDao().getById(studio)!!.stashLikedAt)
+        assertNull(live.trackDao().getById(upload)!!.stashLikedAt)
+        assertEquals(4, live.trackDao().getAllForIntegrityScan().size)
+    }
+
+    @Test
+    fun `merge finds the song under a credit and carries the like`() = runTest {
+        val stay = live.trackDao().insert(looseTrack("STAY (with Justin Bieber)", "The Kid LAROI & Justin Bieber", spotifyUri = "spotify:track:stay"))
+        val uri = buildBackupZip { backup ->
+            backup.trackDao().insert(looseTrack("STAY", "The Kid LAROI, Justin Bieber", youtubeId = "videoSTAY001", likedAt = 5L))
+        }
+
+        val result = manager.importDatabase(uri, BackupImportScope.LIBRARY_MERGE)
+
+        assertTrue("merge failed: ${result.exceptionOrNull()}", result.isSuccess)
+        assertEquals(0, result.getOrThrow().addedTracks)
+        assertEquals(1, result.getOrThrow().likedTracks)
+        assertEquals(5L, live.trackDao().getById(stay)!!.stashLikedAt)
+    }
+
+    /** A backup from before the re-key holds a Search-saved song's strict words. */
+    @Test
+    fun `merge finds the song for a backup row in strict words`() = runTest {
+        val synced = live.trackDao().insert(looseTrack("Don't Stop (feat. X)", "A & B", spotifyUri = "spotify:track:dontstop"))
+        val uri = buildBackupZip { backup ->
+            // Saved from Search before schema 55: the strict words, not the loose rule's.
+            backup.trackDao().insert(
+                TrackEntity(
+                    title = "Don't Stop", artist = "B & A", youtubeId = "videoDONT001", stashLikedAt = 5L,
+                    canonicalTitle = strictCanonical("Don't Stop"), canonicalArtist = strictCanonical("B & A"),
+                ),
+            )
+        }
+
+        val result = manager.importDatabase(uri, BackupImportScope.LIBRARY_MERGE)
+
+        assertTrue("merge failed: ${result.exceptionOrNull()}", result.isSuccess)
+        assertEquals(0, result.getOrThrow().addedTracks)
+        assertEquals(5L, live.trackDao().getById(synced)!!.stashLikedAt)
     }
 
     @Test
