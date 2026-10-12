@@ -44,6 +44,7 @@ class SavedSongWordsTest {
             downloadQueueDao = db.downloadQueueDao(),
             fileDeleter = mockk(relaxed = true),
             matcher = TrackMatcher(),
+            canonicalRecompute = mockk(relaxed = true),
         )
     }
 

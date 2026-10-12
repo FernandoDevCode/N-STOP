@@ -71,6 +71,7 @@ class MusicRepositoryCascadeTrackCountTest {
             downloadQueueDao = db.downloadQueueDao(),
             fileDeleter = mockk(relaxed = true),
             matcher = TrackMatcher(),
+            canonicalRecompute = mockk(relaxed = true),
         )
 
         repo(guard).removeTrackFromPlaylistAndMaybeDelete(2L, playlistId, alsoBlacklist = true)

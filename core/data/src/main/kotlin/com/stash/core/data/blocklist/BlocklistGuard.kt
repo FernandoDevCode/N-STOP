@@ -10,6 +10,7 @@ import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.dao.fileUsedByAnotherTrack
 import com.stash.core.data.db.entity.TrackBlocklistEntity
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.library.CanonicalRecomputeState
 import com.stash.core.data.sync.TrackMatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -44,6 +45,7 @@ class BlocklistGuard @Inject constructor(
     private val downloadQueueDao: DownloadQueueDao,
     private val fileDeleter: FileDeleter,
     private val matcher: TrackMatcher,
+    private val canonicalRecompute: CanonicalRecomputeState,
 ) {
 
     /** Identity check by raw fields. Used by sync workers reading from snapshots. */
@@ -115,9 +117,14 @@ class BlocklistGuard @Inject constructor(
         Log.d(TAG, "Blocked '${track.artist} - ${track.title}' (id=${track.id}, source=$source)")
     }
 
-    /** Remove the block. Used by the Settings unblock action. */
+    /**
+     * Remove the block. Used by the Settings unblock action. A song saved while this key was
+     * blocked kept its exact words (so the blocklist couldn't match and sweep it); a fresh
+     * re-key run gives it the shared words again, or sync wouldn't find it and would add a twin.
+     */
     suspend fun unblock(canonicalKey: String) {
         blocklistDao.deleteByKey(canonicalKey)
+        canonicalRecompute.rearm()
     }
 
     /** UI feed for the Blocked Songs viewer. */

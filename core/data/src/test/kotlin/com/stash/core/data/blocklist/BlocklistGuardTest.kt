@@ -10,6 +10,7 @@ import com.stash.core.data.db.entity.TrackBlocklistEntity
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.data.sync.TrackMatcher
 import com.stash.core.model.MusicSource
+import com.stash.core.data.library.CanonicalRecomputeState
 import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -37,6 +38,7 @@ class BlocklistGuardTest {
     private val playlistDao: PlaylistDao = mockk(relaxed = true)
     private val downloadQueueDao: DownloadQueueDao = mockk(relaxed = true)
     private val fileDeleter: FileDeleter = mockk(relaxed = true)
+    private val canonicalRecompute: CanonicalRecomputeState = mockk(relaxed = true)
 
     private val guard = BlocklistGuard(
         database = database,
@@ -46,6 +48,7 @@ class BlocklistGuardTest {
         downloadQueueDao = downloadQueueDao,
         fileDeleter = fileDeleter,
         matcher = matcher,
+        canonicalRecompute = canonicalRecompute,
     )
 
     @Before
@@ -166,5 +169,11 @@ class BlocklistGuardTest {
     fun `unblock deletes the blocklist row by canonical key`() = runTest {
         guard.unblock("arctic monkeys|505")
         coVerify(exactly = 1) { blocklistDao.deleteByKey("arctic monkeys|505") }
+    }
+
+    @Test
+    fun `unblock asks for a fresh re-key, so songs saved while blocked get the shared words`() = runTest {
+        guard.unblock("arctic monkeys|505")
+        coVerify(exactly = 1) { canonicalRecompute.rearm() }
     }
 }
