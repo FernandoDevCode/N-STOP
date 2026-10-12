@@ -10,6 +10,7 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.await
 import com.stash.core.common.matchesArtistCredits
+import com.stash.core.common.strictCanonical
 import com.stash.core.data.db.dao.AlbumSummary
 import com.stash.core.data.db.dao.ArtistSummary
 import com.stash.core.data.db.dao.PlaylistDao
@@ -513,8 +514,8 @@ class MusicRepositoryImpl @Inject constructor(
                 return existing.id
             }
         }
-        val cTitle = canonicalizeIdentity(track.title)
-        val cArtist = canonicalizeIdentity(track.artist)
+        val cTitle = strictCanonical(track.title)
+        val cArtist = strictCanonical(track.artist)
         if (cTitle.isNotBlank() && cArtist.isNotBlank()) {
             trackDao.findByCanonicalIdentity(cTitle, cArtist)?.let { existing ->
                 // Fuzzy title/artist match: could be a different recording (radio edit vs album),
@@ -574,8 +575,8 @@ class MusicRepositoryImpl @Inject constructor(
         return insertOrAdopt(
             incoming.toEntity().copy(
                 id = 0L,
-                canonicalTitle = canonicalizeIdentity(incoming.title),
-                canonicalArtist = canonicalizeIdentity(incoming.artist),
+                canonicalTitle = strictCanonical(incoming.title),
+                canonicalArtist = strictCanonical(incoming.artist),
                 isStreamable = true,
             ),
         )
@@ -589,14 +590,6 @@ class MusicRepositoryImpl @Inject constructor(
         if (existing.durationMs <= 0L && incoming.durationMs > 0L) trackDao.backfillDurationIfMissing(existing.id, incoming.durationMs)
         if (trustIsrc) incoming.isrc?.takeIf { it.isNotBlank() }?.let { trackDao.backfillIsrcIfMissing(existing.id, it) }
     }
-
-    /** Same normalization as [SearchDownloadCoordinator.canonicalize] — kept
-     *  local to avoid leaking that private helper out of `:data:download`. */
-    private fun canonicalizeIdentity(s: String): String =
-        s.lowercase()
-            .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
 
     override suspend fun deleteTrack(track: Track): Boolean {
         // Best-effort file deletion -- the file may already be gone.

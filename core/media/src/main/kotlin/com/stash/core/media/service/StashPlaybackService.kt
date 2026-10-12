@@ -25,6 +25,7 @@ import androidx.media3.common.MediaMetadata
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.stash.core.common.strictCanonical
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.prefs.CrossfadePreference
@@ -1681,8 +1682,8 @@ class StashPlaybackService : MediaLibraryService() {
         val artist = metadata.artist?.toString().orEmpty()
         val album = metadata.albumTitle?.toString().orEmpty()
         val albumArtist = metadata.albumArtist?.toString().orEmpty()
-        val cTitle = canonicalizeIdentity(title)
-        val cArtist = canonicalizeIdentity(artist)
+        val cTitle = strictCanonical(title)
+        val cArtist = strictCanonical(artist)
 
         if (cTitle.isNotBlank() && cArtist.isNotBlank()) {
             trackDao.findByCanonicalIdentity(cTitle, cArtist)?.let { return it.id }
@@ -1707,12 +1708,6 @@ class StashPlaybackService : MediaLibraryService() {
             )
         )
     }
-
-    private fun canonicalizeIdentity(s: String): String =
-        s.lowercase()
-            .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
 
     private val sessionPlayer = ServiceSessionPlayer()
 

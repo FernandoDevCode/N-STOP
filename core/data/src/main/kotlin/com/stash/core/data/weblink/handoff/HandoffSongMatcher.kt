@@ -2,6 +2,7 @@ package com.stash.core.data.weblink.handoff
 
 import android.util.Log
 import androidx.room.withTransaction
+import com.stash.core.common.strictCanonical
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
@@ -124,11 +125,11 @@ class HandoffSongMatcher @Inject constructor(
 
     /** [byWords] for the mirror: the first row with the same words that doesn't already stand for another song. */
     private suspend fun byWords(song: WireSong, c: Claims): TrackEntity? =
-        trackDao.findAllByCanonicalIdentity(canonical(song.title), canonical(song.artist)).firstOrNull { c.fits(it, song, byId = false) }
+        trackDao.findAllByCanonicalIdentity(strictCanonical(song.title), strictCanonical(song.artist)).firstOrNull { c.fits(it, song, byId = false) }
 
     /** The library's row with the same words, checked with sync-v1 identity (an ISRC on both sides must agree). */
     private suspend fun byWords(song: WireSong): TrackEntity? {
-        val row = trackDao.findByCanonicalIdentity(canonical(song.title), canonical(song.artist)) ?: return null
+        val row = trackDao.findByCanonicalIdentity(strictCanonical(song.title), strictCanonical(song.artist)) ?: return null
         return row.takeIf { SongKey.sameSong(SongRef(it.title, it.artist, it.isrc), song) }
     }
 
@@ -153,12 +154,6 @@ class HandoffSongMatcher @Inject constructor(
         }
 
         private const val BATCH = 200
-
-        /** The library's `canonical_title` / `canonical_artist` form (MusicRepositoryImpl's canonicalizeIdentity). */
-        private fun canonical(s: String): String = s.lowercase()
-            .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
     }
 }
 
