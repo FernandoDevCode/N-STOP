@@ -153,6 +153,10 @@ interface DownloadQueueDao {
     @Query("SELECT * FROM download_queue WHERE track_id = :trackId LIMIT 1")
     suspend fun getByTrackId(trackId: Long): DownloadQueueEntity?
 
+    /** Whether the user asked by hand for [trackId] to download: a queue row of theirs (`user_requested`), in any state. */
+    @Query("SELECT EXISTS(SELECT 1 FROM download_queue WHERE track_id = :trackId AND user_requested = 1)")
+    suspend fun hasUserRequest(trackId: Long): Boolean
+
     /**
      * Whether [trackId] has a row a bulk "download this playlist" must leave
      * alone: waiting or running, failed (its retries and the Failed downloads

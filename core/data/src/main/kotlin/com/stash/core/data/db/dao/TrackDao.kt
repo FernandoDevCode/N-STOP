@@ -7,6 +7,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
+import com.stash.core.common.TrackCanonical
 import com.stash.core.data.db.SQLITE_BIND_LIMIT
 import com.stash.core.data.db.chunkedForBind
 import com.stash.core.data.db.chunkedForBindWrite
@@ -191,6 +192,21 @@ data class ArtBackfillRow(
     val title: String,
     @androidx.room.ColumnInfo(name = "youtube_id")
     val youtubeId: String?,
+)
+
+/**
+ * A row's words and its stored canonical words, for the one-time recompute
+ * that re-keys rows a stricter rule wrote before schema 55
+ * ([com.stash.core.data.library.CanonicalRecompute]).
+ */
+data class CanonicalWordsRow(
+    val id: Long,
+    val title: String,
+    val artist: String,
+    @androidx.room.ColumnInfo(name = "canonical_title")
+    val canonicalTitle: String,
+    @androidx.room.ColumnInfo(name = "canonical_artist")
+    val canonicalArtist: String,
 )
 
 /**
@@ -737,6 +753,43 @@ interface TrackDao {
     suspend fun findAllByCanonicalIdentity(title: String, artist: String): List<TrackEntity>
 
     /**
+     * The next [limit] rows after [afterId], in id order, with just the columns the canonical
+     * recompute reads. Keyset paging on the primary key: each page is an index seek, however far
+     * into a ~19k-row library a resumed run starts.
+     */
+    @Query(
+        """
+        SELECT id, title, artist, canonical_title, canonical_artist FROM tracks
+        WHERE id > :afterId
+        ORDER BY id ASC
+        LIMIT :limit
+        """
+    )
+    suspend fun canonicalWordsAfter(afterId: Long, limit: Int): List<CanonicalWordsRow>
+
+    /**
+     * Re-keys one row's canonical words, only while they are still [oldTitle] / [oldArtist]: a
+     * writer that changed them since the recompute read the row (the YouTube canonicalizer, a
+     * concurrent sync) wins, and this write is skipped. Touches no other column and no other row.
+     *
+     * @return 1 when the row was re-keyed, 0 when it had changed (or is gone).
+     */
+    @Query(
+        """
+        UPDATE tracks
+        SET canonical_title = :newTitle, canonical_artist = :newArtist
+        WHERE id = :id AND canonical_title = :oldTitle AND canonical_artist = :oldArtist
+        """
+    )
+    suspend fun recomputeCanonicalIfUnchanged(
+        id: Long,
+        oldTitle: String,
+        oldArtist: String,
+        newTitle: String,
+        newArtist: String,
+    ): Int
+
+    /**
      * Consolidated lookup used by the sync diff pass: matches by Spotify
      * URI first, then YouTube ID, then canonical identity — in the same
      * priority order as the three separate calls it replaces. Folds the
@@ -788,48 +841,77 @@ interface TrackDao {
      * Do not call this directly — use [findExistingForBatch], which chunks
      * the key lists so no single query exceeds SQLite's bind-variable cap
      * (999 on Android <= 11; a ~500-track playlist blows it and the whole
-     * sync fails with "too many SQL variables" — issue #337).
+     * sync fails with "too many SQL variables" — issue #337), and narrows the
+     * canonical branch from title to (title, artist).
+     *
+     * Every branch is a bare indexed column, so SQLite answers the OR as a
+     * union of three index searches: spotify_uri and youtube_id by their
+     * unique indexes, canonical_title by the (canonical_title,
+     * canonical_artist) index (schema 55). It used to match
+     * `canonical_title || '|' || canonical_artist`, which no index can serve:
+     * every sync of every playlist scanned the whole table. Pinned by
+     * TrackDaoCanonicalIndexTest.
      */
     @Query(
         """
         SELECT * FROM tracks
         WHERE spotify_uri IN (:spotifyUris)
            OR youtube_id IN (:youtubeIds)
-           OR (canonical_title || '|' || canonical_artist) IN (:canonicalKeys)
+           OR canonical_title IN (:canonicalTitles)
         """
     )
     suspend fun findExistingForBatchRaw(
         spotifyUris: List<String>,
         youtubeIds: List<String>,
-        canonicalKeys: List<String>,
+        canonicalTitles: List<String>,
     ): List<TrackEntity>
 
     /**
-     * Bind-safe wrapper for [findExistingForBatchRaw]: when the combined key
-     * count fits one query it passes straight through; otherwise each
-     * dimension is queried in chunks (other dimensions padded with a
-     * never-match sentinel) and the results are unioned by id.
+     * Every track whose Spotify URI is in [spotifyUris], whose video id is in
+     * [youtubeIds], or whose (canonical_title, canonical_artist) is one of
+     * [canonicalIdentities]. Bind-safe: when the combined key count fits one
+     * query it is one query; otherwise each dimension is queried in chunks
+     * (other dimensions padded with a never-match sentinel) and the results
+     * are unioned by id.
+     *
+     * The query matches the canonical branch by title alone (so it can use
+     * the index); a row that shares only the title with a wanted identity is
+     * dropped here, so callers get exactly the rows they asked for. A blank
+     * identity ([TrackCanonical.isBlankKey]: "(Intro)", no artist) is skipped:
+     * `canonical_title IN ('')` loaded every local import, per playlist,
+     * every sync, inside the diff's write transaction.
      */
     suspend fun findExistingForBatch(
         spotifyUris: List<String>,
         youtubeIds: List<String>,
-        canonicalKeys: List<String>,
+        canonicalIdentities: List<Pair<String, String>>,
     ): List<TrackEntity> {
-        if (spotifyUris.size + youtubeIds.size + canonicalKeys.size <= BATCH_BIND_LIMIT) {
-            return findExistingForBatchRaw(spotifyUris, youtubeIds, canonicalKeys)
+        val wantedIdentities = canonicalIdentities.filterNot { (t, a) -> TrackCanonical.isBlankKey(t, a) }
+        // Never an empty IN (): that is a syntax error.
+        val titles = wantedIdentities.map { it.first }.distinct().ifEmpty { listOf(BATCH_NEVER_MATCH) }
+        val rows = if (spotifyUris.size + youtubeIds.size + titles.size <= BATCH_BIND_LIMIT) {
+            findExistingForBatchRaw(spotifyUris, youtubeIds, titles)
+        } else {
+            val pad = listOf(BATCH_NEVER_MATCH)
+            val byId = LinkedHashMap<Long, TrackEntity>()
+            spotifyUris.chunked(BATCH_BIND_LIMIT).forEach { chunk ->
+                findExistingForBatchRaw(chunk, pad, pad).forEach { byId[it.id] = it }
+            }
+            youtubeIds.chunked(BATCH_BIND_LIMIT).forEach { chunk ->
+                findExistingForBatchRaw(pad, chunk, pad).forEach { byId[it.id] = it }
+            }
+            titles.chunked(BATCH_BIND_LIMIT).forEach { chunk ->
+                findExistingForBatchRaw(pad, pad, chunk).forEach { byId[it.id] = it }
+            }
+            byId.values.toList()
         }
-        val pad = listOf(BATCH_NEVER_MATCH)
-        val byId = LinkedHashMap<Long, TrackEntity>()
-        spotifyUris.chunked(BATCH_BIND_LIMIT).forEach { chunk ->
-            findExistingForBatchRaw(chunk, pad, pad).forEach { byId[it.id] = it }
+        val uris = spotifyUris.toHashSet()
+        val videoIds = youtubeIds.toHashSet()
+        val identities = wantedIdentities.toHashSet()
+        return rows.filter {
+            it.spotifyUri in uris || it.youtubeId in videoIds ||
+                (it.canonicalTitle to it.canonicalArtist) in identities
         }
-        youtubeIds.chunked(BATCH_BIND_LIMIT).forEach { chunk ->
-            findExistingForBatchRaw(pad, chunk, pad).forEach { byId[it.id] = it }
-        }
-        canonicalKeys.chunked(BATCH_BIND_LIMIT).forEach { chunk ->
-            findExistingForBatchRaw(pad, pad, chunk).forEach { byId[it.id] = it }
-        }
-        return byId.values.toList()
     }
 
     /** Find a track by primary key. */
@@ -2540,39 +2622,53 @@ interface TrackDao {
         userLoved: Boolean,
     )
 
-    /** Find a downloaded track by canonical identity (for auto-reconciliation). */
-    @Query("""
-        SELECT * FROM tracks
-        WHERE is_downloaded = 1
-          AND LOWER(canonical_title) = LOWER(:canonicalTitle)
-          AND LOWER(canonical_artist) = LOWER(:canonicalArtist)
-        LIMIT 1
-    """)
-    suspend fun findDownloadedByCanonical(canonicalTitle: String, canonicalArtist: String): TrackEntity?
-
     /**
-     * Batched [findDownloadedByCanonical] for DiffWorker's auto-reconciliation:
-     * every downloaded track whose lowercased `title|artist` key is in
-     * [canonicalKeys]. The single-row form ran once per undownloaded existing
-     * track of every playlist, every sync, and each call is a full table scan
-     * (LOWER() rules out an index). An Online-mode user, with nothing
-     * downloaded, paid ~one scan per playlist membership inside the diff's
-     * write transactions. This is one scan per playlist.
+     * Every downloaded track with this canonical identity, oldest first. Discovery's library
+     * dedup takes the first of the same version (SameSongRule): the canonical words are loose, so
+     * one key can hold "Song" and "Song (Live)".
      *
-     * The `|`-joined key can collide ("a|b" + "c" vs "a" + "b|c"), so callers
-     * must re-check title and artist separately. Use
-     * [findDownloadedByCanonicalKeys], which chunks for the bind cap.
+     * Bare column equality, so the (canonical_title, canonical_artist) index serves it. It used
+     * to compare `LOWER(canonical_title) = LOWER(:canonicalTitle)`, which forced a table scan for
+     * nothing: every writer of these columns has always stored them lowercased, and callers pass
+     * lowercased words, so the plain comparison matches the same rows.
      */
     @Query("""
         SELECT * FROM tracks
-        WHERE is_downloaded = 1
-          AND (LOWER(canonical_title) || '|' || LOWER(canonical_artist)) IN (:canonicalKeys)
+        WHERE canonical_title = :canonicalTitle
+          AND canonical_artist = :canonicalArtist
+          AND is_downloaded = 1
+        ORDER BY id ASC
     """)
-    suspend fun findDownloadedByCanonicalKeysRaw(canonicalKeys: List<String>): List<TrackEntity>
+    suspend fun findAllDownloadedByCanonical(canonicalTitle: String, canonicalArtist: String): List<TrackEntity>
 
-    /** Bind-safe wrapper for [findDownloadedByCanonicalKeysRaw]. Empty input runs no query. */
-    suspend fun findDownloadedByCanonicalKeys(canonicalKeys: List<String>): List<TrackEntity> =
-        canonicalKeys.chunkedForBind { findDownloadedByCanonicalKeysRaw(it) }
+    /**
+     * Raw form of [findDownloadedByCanonicalIdentities]: every downloaded track whose
+     * canonical_title is in [canonicalTitles]. By title alone so the (canonical_title,
+     * canonical_artist) index serves it; the wrapper narrows to the wanted (title, artist) pairs.
+     */
+    @Query("""
+        SELECT * FROM tracks
+        WHERE canonical_title IN (:canonicalTitles)
+          AND is_downloaded = 1
+    """)
+    suspend fun findDownloadedByCanonicalTitlesRaw(canonicalTitles: List<String>): List<TrackEntity>
+
+    /**
+     * Batched [findAllDownloadedByCanonical] for DiffWorker's auto-reconciliation: every
+     * downloaded track whose (canonical_title, canonical_artist) is one of [canonicalIdentities],
+     * looked up once per playlist instead of once per undownloaded member. Index-backed (schema 55);
+     * it used to match `LOWER(canonical_title) || '|' || LOWER(canonical_artist)`, a full table
+     * scan per playlist inside the diff's write transactions, and a `|`-joined key that could
+     * collide ("a|b" + "c" vs "a" + "b|c"). Pairs can't collide. Chunks for the bind cap; empty
+     * input runs no query. A blank identity ([TrackCanonical.isBlankKey]) is skipped: it would load
+     * every local import.
+     */
+    suspend fun findDownloadedByCanonicalIdentities(canonicalIdentities: List<Pair<String, String>>): List<TrackEntity> {
+        val wanted = canonicalIdentities.filterNot { (t, a) -> TrackCanonical.isBlankKey(t, a) }.toHashSet()
+        return wanted.map { it.first }.distinct()
+            .chunkedForBind { findDownloadedByCanonicalTitlesRaw(it) }
+            .filter { (it.canonicalTitle to it.canonicalArtist) in wanted }
+    }
 
     /**
      * Returns the canonical-key set ("$canonicalArtist|$canonicalTitle")

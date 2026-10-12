@@ -6,7 +6,12 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.withTransaction
 import androidx.sqlite.db.SimpleSQLiteQuery
+import com.stash.core.common.TrackCanonical
+import com.stash.core.data.db.dao.CanonicalWordsRow
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
+import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.library.CanonicalRecompute
+import com.stash.core.data.library.SameSongRule
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -651,6 +656,8 @@ class DatabaseBackupManager @Inject constructor(
                             "${counts.mergedMemberships} memberships",
                     )
                     cleanupStaging(stagedDb, stagedDatastore)
+                    // No restart follows a merge, so the re-key runs now.
+                    rearmCanonicalRecompute(runNow = true)
                     return@runCatching BackupImportResult(
                         restoredTreeUri = null,
                         requiresRestart = false,
@@ -696,6 +703,9 @@ class DatabaseBackupManager @Inject constructor(
                 cleanupStaging(stagedDb, stagedDatastore)
                 throw e
             }
+            // After the settings files: a restored canonical_recompute file must not
+            // hide that the swapped-in library needs the re-key.
+            if (scope.swapsDatabaseFile) rearmCanonicalRecompute(runNow = false)
 
             // 5. Read the restored Tree URI from DataStore — only meaningful
             //    when this scope actually restored settings files. We use a
@@ -710,6 +720,28 @@ class DatabaseBackupManager @Inject constructor(
                 restoredTreeUri = restoredTreeUri,
                 requiresRestart = true,
             )
+        }
+    }
+
+    /**
+     * A restored or merged backup made before schema 55 brings back rows whose canonical words are
+     * in the old strict form, which lookups by words can't find. Re-arming makes the next app start
+     * run the one-time re-key ([com.stash.core.data.library.CanonicalRecompute]) again; on rows it
+     * already re-keyed it changes nothing. [runNow] also enqueues it at once (a merge keeps the live
+     * database open), after any run already under way; a swap leaves it to the restart, since the
+     * old database is closed. A run that is past its last read when the re-arm lands can't mark it
+     * done (each re-arm is a new generation). Best-effort: the import has already succeeded, and a
+     * missed re-arm only leaves those rows as they were before this version.
+     */
+    private suspend fun rearmCanonicalRecompute(runNow: Boolean) {
+        try {
+            val state = com.stash.core.data.library.CanonicalRecomputeState.forContext(context)
+            state.rearm()
+            if (runNow) com.stash.core.data.sync.workers.CanonicalRecomputeWorker.enqueueAfterRearm(context)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("BackupManager", "Couldn't re-arm the canonical re-key", e)
         }
     }
 
@@ -746,7 +778,10 @@ class DatabaseBackupManager @Inject constructor(
      *  1. **Tracks** are matched by identity — Spotify URI first, then YouTube
      *     id, then canonical (title, artist), mirroring
      *     TrackDao.findByAnyIdentity's priority — and only MISSING rows are
-     *     inserted. An existing song is never modified or duplicated.
+     *     inserted. An existing song is never modified or duplicated. A words
+     *     match must be the same song under SameSongRule (no id disagrees, the
+     *     same version), the rule every other path that finds a song by its
+     *     words follows, so a backup's "Song (Live)" never lands on "Song".
      *  2. **Playlists** are matched by `source_id` (unique index). Existing
      *     playlists keep ALL their current metadata; only genuinely new
      *     playlists are inserted. Imported-new playlists arrive with sync OFF
@@ -813,28 +848,42 @@ class DatabaseBackupManager @Inject constructor(
 
                 // ── 1. Tracks ────────────────────────────────────────────
                 // Identity indexes over the live library, built once so N
-                // backup tracks cost zero extra queries. First row wins on
-                // canonical collisions (uri/yt are unique-indexed anyway).
+                // backup tracks cost zero extra queries. Every row with a
+                // canonical key is kept under it, oldest first: the words are
+                // loose, so one key holds "Song" and "Song (Live)", and the
+                // backup track takes the first that SameSongRule calls it.
                 val liveBySpotifyUri = HashMap<String, Long>()
                 val liveByYoutubeId = HashMap<String, Long>()
-                val liveByCanonical = HashMap<String, Long>()
-                for (t in trackDao.getAllForIntegrityScan()) {
+                val liveByCanonical = HashMap<String, MutableList<TrackEntity>>()
+                for (t in trackDao.getAllForIntegrityScan().sortedBy { it.id }) {
                     t.spotifyUri?.let { liveBySpotifyUri.putIfAbsent(it, t.id) }
                     t.youtubeId?.let { liveByYoutubeId.putIfAbsent(it, t.id) }
                     if (hasCanonicalIdentity(t.canonicalTitle, t.canonicalArtist)) {
-                        liveByCanonical.putIfAbsent(
-                            canonicalKey(t.canonicalTitle, t.canonicalArtist), t.id,
-                        )
+                        liveByCanonical.getOrPut(canonicalKey(t.canonicalTitle, t.canonicalArtist)) { mutableListOf() }.add(t)
                     }
                 }
 
                 /** Backup track id → live track id (inserted or matched). */
                 val trackIdMap = HashMap<Long, Long>(backupTracks.size)
                 for (track in backupTracks.sortedBy { it.id }) {
+                    val words = lookupWords(track)
                     val existing = track.spotifyUri?.let { liveBySpotifyUri[it] }
                         ?: track.youtubeId?.let { liveByYoutubeId[it] }
-                        ?: if (hasCanonicalIdentity(track.canonicalTitle, track.canonicalArtist)) {
-                            liveByCanonical[canonicalKey(track.canonicalTitle, track.canonicalArtist)]
+                        ?: if (hasCanonicalIdentity(words.first, words.second)) {
+                            // By words only when it is the same song: no id disagrees and the
+                            // same version, so a backup's "Song (Live)" or another upload of
+                            // the song never takes (and likes) the library's "Song".
+                            liveByCanonical[canonicalKey(words.first, words.second)]
+                                ?.firstOrNull {
+                                    SameSongRule.mayReuseByWords(
+                                        row = it,
+                                        title = track.title,
+                                        youtubeId = track.youtubeId,
+                                        spotifyUri = track.spotifyUri,
+                                        forDownload = false,
+                                    )
+                                }
+                                ?.id
                         } else null
                     if (existing != null) {
                         trackIdMap[track.id] = existing
@@ -860,30 +909,28 @@ class DatabaseBackupManager @Inject constructor(
                     // Landing as not-downloaded is the recoverable direction:
                     // if the audio IS present, adoption re-claims it on the
                     // next reconcile.
-                    val newId = trackDao.insert(
-                        track.copy(
-                            id = 0,
-                            isDownloaded = false,
-                            filePath = null,
-                            albumArtPath = null,
-                            // getTracksNeedingEmbed and the Home banner count
-                            // both gate on `metadata_embedded_at IS NULL`, so a
-                            // stamp carried in from the backup would exclude the
-                            // file adoption creates later from the tag pass for
-                            // good — no stale-stamp sweep heals this one.
-                            metadataEmbeddedAt = null,
-                            fileSizeBytes = 0,
-                            qualityKbps = 0,
-                            sampleRateHz = null,
-                            bitsPerSample = null,
-                        )
+                    val inserted = track.copy(
+                        id = 0,
+                        isDownloaded = false,
+                        filePath = null,
+                        albumArtPath = null,
+                        // getTracksNeedingEmbed and the Home banner count
+                        // both gate on `metadata_embedded_at IS NULL`, so a
+                        // stamp carried in from the backup would exclude the
+                        // file adoption creates later from the tag pass for
+                        // good — no stale-stamp sweep heals this one.
+                        metadataEmbeddedAt = null,
+                        fileSizeBytes = 0,
+                        qualityKbps = 0,
+                        sampleRateHz = null,
+                        bitsPerSample = null,
                     )
+                    val newId = trackDao.insert(inserted)
                     track.spotifyUri?.let { liveBySpotifyUri.putIfAbsent(it, newId) }
                     track.youtubeId?.let { liveByYoutubeId.putIfAbsent(it, newId) }
-                    if (hasCanonicalIdentity(track.canonicalTitle, track.canonicalArtist)) {
-                        liveByCanonical.putIfAbsent(
-                            canonicalKey(track.canonicalTitle, track.canonicalArtist), newId,
-                        )
+                    if (hasCanonicalIdentity(words.first, words.second)) {
+                        liveByCanonical.getOrPut(canonicalKey(words.first, words.second)) { mutableListOf() }
+                            .add(inserted.copy(id = newId))
                     }
                     trackIdMap[track.id] = newId
                     addedTracks++
@@ -1028,7 +1075,21 @@ class DatabaseBackupManager @Inject constructor(
     }
 
     private fun hasCanonicalIdentity(title: String, artist: String): Boolean =
-        title.isNotBlank() && artist.isNotBlank()
+        !TrackCanonical.isBlankKey(title, artist)
+
+    /**
+     * The canonical words a backup track is looked up by: the one loose rule's, as the live library
+     * stores them. A backup from before schema 55 holds the old strict words for songs saved from
+     * Search, a stream or a like ([CanonicalRecompute.looseWordsFor] recognises exactly those), and
+     * looking those up as stored would miss the live row of the same song and add it again. Other
+     * rows are looked up by their words as stored. Only the lookup: the row is copied as it is, and
+     * the re-key that follows the merge rewrites its words (keeping them where the loose key is
+     * blocked).
+     */
+    private fun lookupWords(track: TrackEntity): Pair<String, String> =
+        CanonicalRecompute.looseWordsFor(
+            CanonicalWordsRow(track.id, track.title, track.artist, track.canonicalTitle, track.canonicalArtist),
+        ) ?: (track.canonicalTitle to track.canonicalArtist)
 
     /** Stable composite key for canonical-identity matching. */
     private fun canonicalKey(title: String, artist: String): String = "$title\u0001$artist"

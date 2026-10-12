@@ -1,12 +1,14 @@
 package com.stash.core.data.sync.workers
 
 import android.content.Context
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.workDataOf
+import com.stash.core.common.strictCanonical
 import com.stash.core.data.blocklist.BlocklistGuard
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.dao.DownloadQueueDao
@@ -17,6 +19,9 @@ import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.RemotePlaylistSnapshotEntity
 import com.stash.core.data.db.entity.RemoteTrackSnapshotEntity
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.library.CanonicalRecompute
+import com.stash.core.data.library.CanonicalRecomputeRunner
+import com.stash.core.data.library.CanonicalRecomputeState
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.sync.SyncPreferencesManager
@@ -30,6 +35,10 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -37,10 +46,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.io.File
 import java.time.Instant
 
 /**
@@ -52,6 +64,8 @@ import java.time.Instant
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [33])
 class DiffWorkerTest {
+
+    @get:Rule val tmp = TemporaryFolder()
 
     private val context: Context = ApplicationProvider.getApplicationContext()
     private lateinit var db: StashDatabase
@@ -301,11 +315,12 @@ class DiffWorkerTest {
                 spotifyUri = "spotify:track:a-stream",
             )
         )
-        // Stored with different case: the lookup has always matched case-insensitively.
+        // Every writer stores canonical words lowercased, so the lookup compares
+        // them as stored (index-backed) rather than through LOWER().
         val downloadedTwin = db.trackDao().insert(
             TrackEntity(
                 title = "Track A", artist = "Artist",
-                canonicalTitle = "Track A", canonicalArtist = "ARTIST",
+                canonicalTitle = "track a", canonicalArtist = "artist",
                 spotifyUri = "spotify:track:a-file",
                 isDownloaded = true, filePath = "/music/a.flac",
             )
@@ -353,6 +368,197 @@ class DiffWorkerTest {
             listOf(streamOnly),
             db.playlistDao().getCrossRefsForPlaylist(playlistId).map { it.trackId },
         )
+    }
+
+    // ── One "same song" rule: the sync meets rows saved from Search ────────
+
+    /** A row as a Search download now stores it: the one loose rule, its video id, a file. */
+    private fun searchSaved(title: String, artist: String, videoId: String) = TrackEntity(
+        title = title, artist = artist, youtubeId = videoId, source = MusicSource.YOUTUBE,
+        canonicalTitle = TrackMatcher().canonicalTitle(title), canonicalArtist = TrackMatcher().canonicalArtist(artist),
+        isDownloaded = true, filePath = "/music/$videoId.opus",
+    )
+
+    @Test
+    fun `a synced song finds the row Search saved for it and does not download it again`() = runBlocking {
+        val playlistId = seedAccumulatePlaylist()
+        val saved = db.trackDao().insert(searchSaved("Don't Stop", "B, A", "video000001"))
+        stubGrowingSnapshot(
+            RemoteTrackSnapshotEntity(
+                syncId = 1L, snapshotPlaylistId = 21L,
+                title = "Don't Stop (feat. C)", artist = "A & B",
+                spotifyUri = "spotify:track:dontstop", position = 0,
+            )
+        )
+
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+
+        assertEquals(listOf(saved), db.trackDao().getAllForIntegrityScan().map { it.id })
+        assertEquals(listOf(saved), db.playlistDao().getCrossRefsForPlaylist(playlistId).map { it.trackId })
+        coVerify(exactly = 0) { downloadQueueDao.insertAll(match { it.isNotEmpty() }) }
+    }
+
+    @Test
+    fun `a live version saved from Search does not stand in for the synced studio song`() = runBlocking {
+        val playlistId = seedAccumulatePlaylist()
+        val live = db.trackDao().insert(searchSaved("Song (Live)", "Artist", "video000002"))
+        val queued = mutableListOf<Long>()
+        coEvery { downloadQueueDao.insertAll(any()) } answers {
+            queued += firstArg<List<DownloadQueueEntity>>().map { it.trackId }
+            emptyList()
+        }
+        stubGrowingSnapshot(remoteTrack("Song", "spotify:track:studio", 0))
+
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+
+        val studio = db.trackDao().findBySpotifyUri("spotify:track:studio")!!
+        assertTrue("the studio song gets its own row", studio.id != live)
+        assertEquals("song", studio.canonicalTitle)
+        assertEquals(
+            "the live row is neither taken nor linked as the studio song's downloaded twin",
+            listOf(studio.id),
+            db.playlistDao().getCrossRefsForPlaylist(playlistId).map { it.trackId },
+        )
+        assertEquals(listOf(studio.id), queued)
+        assertEquals("/music/video000002.opus", db.trackDao().getById(live)?.filePath)
+    }
+
+    @Test
+    fun `Spotify's credit or remaster tag still meets the YouTube row of the same song`() = runBlocking {
+        // Before the version check these merged; a strict check split them into duplicates, and for
+        // someone syncing both services this word match is the only link between the two rows.
+        val playlistId = seedAccumulatePlaylist()
+        val stay = db.trackDao().insert(searchSaved("STAY", "The Kid LAROI, Justin Bieber", "video000011"))
+        val song = db.trackDao().insert(searchSaved("Song [Official Video]", "Artist", "video000012"))
+        stubGrowingSnapshot(
+            RemoteTrackSnapshotEntity(
+                syncId = 1L, snapshotPlaylistId = 21L,
+                title = "STAY (with Justin Bieber)", artist = "The Kid LAROI & Justin Bieber",
+                spotifyUri = "spotify:track:stay", position = 0,
+            ),
+            remoteTrack("Song (2011 Remaster)", "spotify:track:song", 1),
+        )
+
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+
+        assertEquals("no row added", setOf(stay, song), db.trackDao().getAllForIntegrityScan().map { it.id }.toSet())
+        assertEquals(
+            listOf(stay, song),
+            db.playlistDao().getCrossRefsForPlaylist(playlistId).sortedBy { it.position }.map { it.trackId },
+        )
+        coVerify(exactly = 0) { downloadQueueDao.insertAll(match { it.isNotEmpty() }) }
+    }
+
+    @Test
+    fun `an undownloaded track links its downloaded twin across a credit`() = runBlocking {
+        val playlistId = seedAccumulatePlaylist()
+        val stub = db.trackDao().insert(
+            TrackEntity(
+                title = "Song (with X)", artist = "Artist", spotifyUri = "spotify:track:with",
+                canonicalTitle = "song", canonicalArtist = "artist",
+            )
+        )
+        val twin = db.trackDao().insert(searchSaved("Song", "Artist", "video000014"))
+        stubGrowingSnapshot(remoteTrack("Song (with X)", "spotify:track:with", 0))
+
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+
+        assertEquals(setOf(stub, twin), db.playlistDao().getCrossRefsForPlaylist(playlistId).map { it.trackId }.toSet())
+    }
+
+    @Test
+    fun `a sync that runs before the one-time re-key still finds songs saved before it`() = runBlocking {
+        val playlistId = seedAccumulatePlaylist()
+        // Saved from Search before schema 55: the strict words, which the diff's lookups can't find.
+        val saved = db.trackDao().insert(
+            TrackEntity(
+                title = "Don't Stop", artist = "B & A", youtubeId = "video000021", source = MusicSource.YOUTUBE,
+                canonicalTitle = strictCanonical("Don't Stop"), canonicalArtist = strictCanonical("B & A"),
+                isDownloaded = true, filePath = "/music/video000021.opus",
+            )
+        )
+        val storeScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        try {
+            val state = CanonicalRecomputeState(
+                PreferenceDataStoreFactory.create(scope = storeScope) { File(tmp.root, "canonical_recompute.preferences_pb") },
+            )
+            stubGrowingSnapshot(
+                RemoteTrackSnapshotEntity(
+                    syncId = 1L, snapshotPlaylistId = 21L,
+                    title = "Don't Stop (feat. C)", artist = "A & B",
+                    spotifyUri = "spotify:track:dontstop", position = 0,
+                )
+            )
+
+            val result = buildWorker(CanonicalRecomputeRunner(CanonicalRecompute(db), state)).doWork()
+
+            assertTrue(result is androidx.work.ListenableWorker.Result.Success)
+            assertTrue("the re-key ran first", state.isDone())
+            assertEquals("no duplicate is filed", listOf(saved), db.trackDao().getAllForIntegrityScan().map { it.id })
+            assertEquals(listOf(saved), db.playlistDao().getCrossRefsForPlaylist(playlistId).map { it.trackId })
+        } finally {
+            storeScope.cancel()
+        }
+    }
+
+    @Test
+    fun `a re-key that fails never fails the sync`() = runBlocking {
+        val playlistId = seedAccumulatePlaylist()
+        stubGrowingSnapshot(remoteTrack("Song", "spotify:track:song", 0))
+        val failing = mockk<CanonicalRecomputeRunner>()
+        coEvery { failing.runIfPending() } throws IllegalStateException("disk full")
+
+        assertTrue(buildWorker(failing).doWork() is androidx.work.ListenableWorker.Result.Success)
+
+        assertEquals(1, db.playlistDao().getCrossRefsForPlaylist(playlistId).size)
+    }
+
+    @Test
+    fun `a title with no canonical words is never matched by them`() = runBlocking {
+        // "(Intro)" and "[Untitled]" both key as a blank title: by their words they'd be one song.
+        val playlistId = seedAccumulatePlaylist()
+        val untitled = db.trackDao().insert(searchSaved("[Untitled]", "Artist", "video000015"))
+        val localImport = db.trackDao().insert(
+            TrackEntity(title = "Intro", artist = "Me", source = MusicSource.LOCAL, isDownloaded = true, filePath = "/music/intro.mp3"),
+        )
+        stubGrowingSnapshot(remoteTrack("(Intro)", "spotify:track:intro", 0))
+
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+
+        val intro = db.trackDao().findBySpotifyUri("spotify:track:intro")!!
+        assertTrue("the intro gets its own row", intro.id != untitled && intro.id != localImport)
+        assertEquals(listOf(intro.id), db.playlistDao().getCrossRefsForPlaylist(playlistId).map { it.trackId })
+    }
+
+    @Test
+    fun `an undownloaded track with no canonical words links no downloaded twin`() = runBlocking {
+        val playlistId = seedAccumulatePlaylist()
+        val stub = db.trackDao().insert(
+            TrackEntity(title = "(Intro)", artist = "Artist", spotifyUri = "spotify:track:intro", canonicalTitle = "", canonicalArtist = "artist"),
+        )
+        db.trackDao().insert(searchSaved("[Untitled]", "Artist", "video000016"))
+        stubGrowingSnapshot(remoteTrack("(Intro)", "spotify:track:intro", 0))
+
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+
+        assertEquals(listOf(stub), db.playlistDao().getCrossRefsForPlaylist(playlistId).map { it.trackId })
+    }
+
+    @Test
+    fun `an undownloaded track does not link a downloaded twin of another version`() = runBlocking {
+        val playlistId = seedAccumulatePlaylist()
+        val stub = db.trackDao().insert(
+            TrackEntity(
+                title = "Song", artist = "Artist", spotifyUri = "spotify:track:studio",
+                canonicalTitle = "song", canonicalArtist = "artist",
+            )
+        )
+        db.trackDao().insert(searchSaved("Song (Remix)", "Artist", "video000003"))
+        stubGrowingSnapshot(remoteTrack("Song", "spotify:track:studio", 0))
+
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+
+        assertEquals(listOf(stub), db.playlistDao().getCrossRefsForPlaylist(playlistId).map { it.trackId })
     }
 
     private suspend fun seedAccumulatePlaylist(): Long {
@@ -1117,7 +1323,10 @@ class DiffWorkerTest {
         assertEquals("mix_number must survive", 1, row.mixNumber)
     }
 
-    private fun buildWorker(): DiffWorker = TestListenableWorkerBuilder<DiffWorker>(context)
+    /** [canonicalRecompute]: done already by default; these tests are about the diff, not the one-time re-key. */
+    private fun buildWorker(
+        canonicalRecompute: CanonicalRecomputeRunner = mockk(relaxed = true),
+    ): DiffWorker = TestListenableWorkerBuilder<DiffWorker>(context)
         .setInputData(workDataOf(PlaylistFetchWorker.KEY_SYNC_ID to 1L))
         .setWorkerFactory(object : WorkerFactory() {
             override fun createWorker(
@@ -1142,6 +1351,7 @@ class DiffWorkerTest {
                 // the real DAO from the in-memory DB keeps it honest.
                 syncUndoDao = db.syncUndoDao(),
                 syncLog = com.stash.core.data.sync.SyncLog(),
+                canonicalRecompute = canonicalRecompute,
             )
         })
         .build()

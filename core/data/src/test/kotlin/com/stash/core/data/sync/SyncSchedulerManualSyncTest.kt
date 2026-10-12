@@ -8,7 +8,9 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.impl.WorkManagerImpl
 import androidx.work.testing.WorkManagerTestInitHelper
+import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.sync.workers.DiffWorker
+import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -39,7 +41,7 @@ class SyncSchedulerManualSyncTest {
 
     @Before fun setUp() {
         WorkManagerTestInitHelper.initializeTestWorkManager(context)
-        scheduler = SyncScheduler(context, state)
+        scheduler = SyncScheduler(context, state, mockk<SyncHistoryDao>(relaxed = true))
     }
 
     /** Closed here, not by the garbage collector in the middle of another test. */
@@ -54,7 +56,7 @@ class SyncSchedulerManualSyncTest {
         assertTrue(diffStepInput().getBoolean(DiffWorker.KEY_MANUAL_SYNC, false))
 
         // A scheduled sync never starts over another one (#520), so the manual chain goes first.
-        scheduler.cancelSync()
+        runBlocking { scheduler.cancelSync() }
         runBlocking { scheduler.startScheduledSync(wifiOnly = false) }
         assertFalse(diffStepInput().getBoolean(DiffWorker.KEY_MANUAL_SYNC, true))
     }
@@ -96,7 +98,7 @@ class SyncSchedulerManualSyncTest {
         scheduler.networkAvailable = { false }
         runBlocking { scheduler.triggerManualSync(wifiOnly = true) }
 
-        scheduler.cancelSync()
+        runBlocking { scheduler.cancelSync() }
 
         assertEquals(SyncPhase.Idle, state.phase.value)
         assertEquals(WorkInfo.State.CANCELLED, step("sync_fetch").state)

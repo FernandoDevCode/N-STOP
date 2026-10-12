@@ -1,6 +1,7 @@
 package com.stash.core.data.repository
 
 import com.google.common.truth.Truth.assertThat
+import com.stash.core.data.blocklist.BlocklistGuard
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.model.share.SharedTrack
@@ -15,6 +16,8 @@ class MusicRepositoryExactPersistTest {
     private val trackDao = mockk<TrackDao>(relaxed = true)
     private val descriptor = SharedTrack("Avril 14th", "Aphex Twin", durationMs = 125_000, isrc = "GBBPW0100025", spotifyId = "sp1", youtubeId = "yt1")
 
+    private val blocklistGuard = mockk<BlocklistGuard>(relaxed = true)
+
     // Same argument list as MusicRepositorySharedMixUnshareTest.repo(). If the constructor has changed since, match that test.
     private fun repo() = MusicRepositoryImpl(
         context = mockk(relaxed = true),
@@ -23,7 +26,7 @@ class MusicRepositoryExactPersistTest {
         syncHistoryDao = mockk(relaxed = true),
         downloadQueueDao = mockk(relaxed = true),
         discoveryQueueDao = mockk(relaxed = true),
-        blocklistGuard = mockk(relaxed = true),
+        blocklistGuard = blocklistGuard,
         trackMatcher = mockk(relaxed = true),
         stashMixRecipeDao = mockk(relaxed = true),
         downloadNetworkPreference = mockk(relaxed = true),
@@ -70,6 +73,21 @@ class MusicRepositoryExactPersistTest {
             assertThat(canonicalTitle).isEqualTo("avril 14th")
         }
         coVerify(exactly = 0) { trackDao.findByCanonicalIdentity(any(), any()) }
+        coVerify(exactly = 0) { trackDao.findAllByCanonicalIdentity(any(), any()) }
+    }
+
+    @Test fun `a new row whose loose key is blocked keeps its strict words`() = runTest {
+        coEvery { trackDao.findByYoutubeId(any()) } returns null
+        coEvery { trackDao.findBySpotifyUri(any()) } returns null
+        coEvery { trackDao.findByIsrc(any()) } returns null
+        coEvery { blocklistGuard.isKeyBlocked("avril 14th", "aphex twin") } returns true
+        val inserted = slot<TrackEntity>()
+        coEvery { trackDao.insert(capture(inserted)) } returns 44
+
+        repo().ensureExactTrackPersisted(descriptor.copy(title = "Avril 14th (Live)"))
+
+        assertThat(inserted.captured.canonicalTitle).isEqualTo("avril 14th live")
+        assertThat(inserted.captured.canonicalArtist).isEqualTo("aphex twin")
     }
 
     @Test fun `blank ids are neither looked up nor stored`() = runTest {

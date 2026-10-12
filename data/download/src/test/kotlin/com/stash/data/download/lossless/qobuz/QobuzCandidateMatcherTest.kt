@@ -175,6 +175,15 @@ class QobuzCandidateMatcherTest {
         assertThat(score("Song", "Song", candVersion = "2019 Remix")).isLessThan(QobuzCandidateMatcher.MIN_CONFIDENCE)
     }
 
+    @Test fun `the version words the library shares are rejected too`() {
+        // One list with the library's same-song rule (VersionWords): a re-recording, an unplugged
+        // set or a session take is not the song the query asked for.
+        assertThat(score("Song", "Song (Taylor's Version)")).isWithin(0.0001f).of(0.4f)
+        assertThat(score("Song", "Song", candVersion = "MTV Unplugged")).isWithin(0.0001f).of(0.4f)
+        assertThat(score("Song", "Song", candVersion = "BBC Session")).isWithin(0.0001f).of(0.4f)
+        assertThat(score("Song (Taylor's Version)", "Song (Taylor's Version)")).isEqualTo(1.0f)
+    }
+
     @Test fun `a live album whose titles don't say live keeps the live cut when the length confirms it`() {
         // KISS "Deuce" off "Alive!" (217 s). Neither the title nor the album says "live".
         val query = TrackQuery(artist = "KISS", title = "Deuce", album = "Alive!", durationMs = 217_000)

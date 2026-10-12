@@ -48,7 +48,7 @@ class TrackDaoFindExistingForBatchTest {
         val result = dao.findExistingForBatch(
             spotifyUris = emptyList(),
             youtubeIds = emptyList(),
-            canonicalKeys = listOf("t|a"),
+            canonicalIdentities = listOf("t" to "a"),
         )
 
         assertEquals(1, result.size)
@@ -63,7 +63,7 @@ class TrackDaoFindExistingForBatchTest {
         val result = dao.findExistingForBatch(
             spotifyUris = listOf(sentinel),
             youtubeIds = listOf(sentinel),
-            canonicalKeys = listOf("runaway|kanye west"),
+            canonicalIdentities = listOf("runaway" to "kanye west"),
         )
 
         assertEquals(1, result.size)
@@ -76,10 +76,50 @@ class TrackDaoFindExistingForBatchTest {
         val result = dao.findExistingForBatch(
             spotifyUris = listOf(sentinel),
             youtubeIds = listOf(sentinel),
-            canonicalKeys = listOf("no-match-key"),
+            canonicalIdentities = listOf("no-match" to "key"),
         )
 
         assertTrue(result.isEmpty())
+    }
+
+    @Test fun `a blank canonical identity is never looked up, so no local import is loaded`() = runTest {
+        // "(Intro)" or "[Untitled]" key as a blank title; a blank title used to bind as
+        // `canonical_title IN ('')`, which loads every never-keyed local import ("", "").
+        val boundArgs = mutableListOf<Any?>()
+        val watchedDb = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), StashDatabase::class.java)
+            .allowMainThreadQueries()
+            .setQueryCallback({ sql, args -> if (sql.trimStart().startsWith("SELECT", ignoreCase = true)) boundArgs.addAll(args) }, Runnable::run)
+            .build()
+        try {
+            val watchedDao = watchedDb.trackDao()
+            repeat(3) { watchedDao.insert(TrackEntity(title = "Import $it", artist = "Me", isDownloaded = true, filePath = "/m/$it.mp3")) }
+            watchedDao.insert(
+                TrackEntity(
+                    title = "[Untitled]", artist = "Artist", canonicalTitle = "", canonicalArtist = "artist",
+                    isDownloaded = true, filePath = "/m/untitled.opus",
+                ),
+            )
+            val byUri = watchedDao.insert(
+                TrackEntity(title = "(Intro)", artist = "Artist", spotifyUri = "spotify:track:intro", canonicalTitle = "", canonicalArtist = "artist"),
+            )
+            boundArgs.clear()
+
+            val result = watchedDao.findExistingForBatch(
+                spotifyUris = listOf("spotify:track:intro"),
+                youtubeIds = listOf(sentinel),
+                canonicalIdentities = listOf("" to "artist", "" to "", "song" to ""),
+            )
+
+            assertEquals("only the id match comes back", listOf(byUri), result.map { it.id })
+            assertTrue("no blank title was bound: $boundArgs", "" !in boundArgs)
+            assertTrue(
+                "a downloaded twin is never looked up by a blank identity either",
+                watchedDao.findDownloadedByCanonicalIdentities(listOf("" to "artist", "" to "")).isEmpty(),
+            )
+            assertTrue("$boundArgs", "" !in boundArgs)
+        } finally {
+            watchedDb.close()
+        }
     }
 
     @Test fun `oversized key sets stay under the SQLite bind limit and lose no matches`() = runTest {
@@ -120,7 +160,7 @@ class TrackDaoFindExistingForBatchTest {
             val result = watchedDao.findExistingForBatch(
                 spotifyUris = (0 until 900).map { "spotify:track:$it" },
                 youtubeIds = (0 until 900).map { "yt$it" },
-                canonicalKeys = (900 until 1000).map { "t$it|a$it" },
+                canonicalIdentities = (900 until 1000).map { "t$it" to "a$it" },
             )
 
             assertEquals(1000, result.size)

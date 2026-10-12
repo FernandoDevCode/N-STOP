@@ -55,7 +55,7 @@ class RoomMirrorLibraryTest {
                 s.isrc?.let { t.backfillIsrcIfMissing(existing.id, it) }
                 existing.id
             } else {
-                t.insert(TrackEntity(title = s.title, artist = s.artist, isrc = s.isrc, youtubeId = s.youtubeId, spotifyUri = s.spotifyId?.let { "spotify:track:$it" }, isStreamable = true, canonicalTitle = canon(s.title), canonicalArtist = canon(s.artist)))
+                t.insert(TrackEntity(title = s.title, artist = s.artist, isrc = s.isrc, youtubeId = s.youtubeId, spotifyUri = s.spotifyId?.let { "spotify:track:$it" }, isStreamable = true, canonicalTitle = canonTitle(s.title), canonicalArtist = canonArtist(s.artist)))
             }
         }
         coEvery { music.addTrackToPlaylist(any(), any()) } coAnswers {
@@ -70,7 +70,7 @@ class RoomMirrorLibraryTest {
     @After fun tearDown() = db.close()
 
     private suspend fun track(title: String, stashLiked: Boolean = false) = db.trackDao().insert(
-        TrackEntity(title = title, artist = "Artist", stashLikedAt = if (stashLiked) 5L else null, source = MusicSource.SPOTIFY, isStreamable = true, canonicalTitle = canon(title), canonicalArtist = "artist"),
+        TrackEntity(title = title, artist = "Artist", stashLikedAt = if (stashLiked) 5L else null, source = MusicSource.SPOTIFY, isStreamable = true, canonicalTitle = canonTitle(title), canonicalArtist = "artist"),
     )
 
     @Test fun `a mirrored like is a Stash like, and an unlike leaves a Spotify like alone`() = runTest {
@@ -266,6 +266,8 @@ class RoomMirrorLibraryTest {
     }
 
     private companion object {
-        fun canon(s: String) = s.lowercase().replace(Regex("[^\\p{L}\\p{N}\\s]"), " ").replace(Regex("\\s+"), " ").trim()
+        /** The library's canonical_title / canonical_artist: the one loose rule every writer uses. */
+        fun canonTitle(s: String) = com.stash.core.common.TrackCanonical.title(s)
+        fun canonArtist(s: String) = com.stash.core.common.TrackCanonical.artist(s)
     }
 }

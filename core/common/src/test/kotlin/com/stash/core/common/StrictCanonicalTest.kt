@@ -4,10 +4,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * Pins [strictCanonical], the one strict identity rule behind `tracks.canonical_title` /
- * `canonical_artist` for songs saved outside the sync. Rows already in users' libraries were
- * written by the five copies this replaced, so its output on these inputs must never move: a
- * change here re-keys every lookup against those rows.
+ * Pins [strictCanonical], the strict word form that songs saved outside the sync were stored in
+ * until schema 55. Rows already in users' libraries were written by it (and by the five copies it
+ * replaced), and they are recognised for re-keying by exactly this output, so it must never move.
  */
 class StrictCanonicalTest {
 

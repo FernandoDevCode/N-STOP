@@ -18,6 +18,14 @@ sealed interface SearchDownloadStatus {
 
     data object Completed : SearchDownloadStatus
 
+    /**
+     * The library already holds this song's audio, so nothing was downloaded and no row was made:
+     * the same video's row has a file, or a row the same-song rule calls this song (no id
+     * disagrees, the same version) does. A different version or another upload of the song is not
+     * this, and downloads on a row of its own.
+     */
+    data object AlreadyInLibrary : SearchDownloadStatus
+
     data class Failed(val message: String) : SearchDownloadStatus
 
     /**

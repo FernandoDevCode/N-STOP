@@ -484,9 +484,11 @@ class SyncViewModel @Inject constructor(
      * worker sees a cancellation exception and exits. In-progress track
      * downloads that finish before the cancellation is observed will still
      * complete, but no new tracks are enqueued. The daily schedule stays.
+     * The run's history row is closed as cancelled too, so the status card at
+     * the top of the tab stops saying "Syncing...".
      */
     fun onStopSync() {
-        syncScheduler.cancelSync()
+        viewModelScope.launch { syncScheduler.cancelSync() }
     }
 
     /** Toggle sync_enabled for a specific Spotify playlist. */

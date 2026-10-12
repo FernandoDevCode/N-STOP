@@ -10,13 +10,14 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.await
 import com.stash.core.common.matchesArtistCredits
-import com.stash.core.common.strictCanonical
 import com.stash.core.data.db.dao.AlbumSummary
 import com.stash.core.data.db.dao.ArtistSummary
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.SyncHistoryDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.SyncHistoryEntity
+import com.stash.core.data.library.canonicalWordsForSave
+import com.stash.core.data.library.findReusableByWords
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.data.mapper.toEntity
 import com.stash.core.data.mix.LastFmRecommendationSource
@@ -519,18 +520,24 @@ class MusicRepositoryImpl @Inject constructor(
                 return existing.id
             }
         }
-        val cTitle = strictCanonical(track.title)
-        val cArtist = strictCanonical(track.artist)
-        if (cTitle.isNotBlank() && cArtist.isNotBlank()) {
-            trackDao.findByCanonicalIdentity(cTitle, cArtist)?.let { existing ->
-                // Fuzzy title/artist match: could be a different recording (radio edit vs album),
-                // and lossless trusts ISRC, so only duration is taken here.
-                backfillFrom(existing, track, trustIsrc = false)
-                return existing.id
-            }
+        // By words only under SameSongRule (no conflicting id, same version): the words are
+        // loose, so "Song (Live)" or another upload of the song would otherwise take "Song".
+        trackDao.findReusableByWords(
+            title = track.title,
+            artist = track.artist,
+            youtubeId = track.youtubeId,
+            spotifyUri = track.spotifyUri,
+            forDownload = false,
+        )?.let { existing ->
+            // Matched by words, not by id: could still be a different recording (radio edit vs
+            // album), and lossless trusts ISRC, so only duration is taken here.
+            backfillFrom(existing, track, trustIsrc = false)
+            return existing.id
         }
 
-        // Insert a fresh stub — id = 0 so Room autogens.
+        // Insert a fresh stub — id = 0 so Room autogens. A like, a listen, a share: the user's own
+        // save, so a blocked loose key keeps the strict words instead of hiding the new row.
+        val (cTitle, cArtist) = blocklistGuard.canonicalWordsForSave(track.title, track.artist)
         return insertOrAdopt(
             track.toEntity().copy(
                 id = 0L,
@@ -577,11 +584,14 @@ class MusicRepositoryImpl @Inject constructor(
             backfillFrom(existing, incoming) // an exact match is the same recording, so its ISRC is trusted
             return existing.id
         }
+        // A Listen Together or hand-off song the user plays or keeps: a blocked loose key keeps
+        // the strict words, so the new row isn't hidden and swept (canonicalWordsForSave).
+        val (cTitle, cArtist) = blocklistGuard.canonicalWordsForSave(incoming.title, incoming.artist)
         return insertOrAdopt(
             incoming.toEntity().copy(
                 id = 0L,
-                canonicalTitle = strictCanonical(incoming.title),
-                canonicalArtist = strictCanonical(incoming.artist),
+                canonicalTitle = cTitle,
+                canonicalArtist = cArtist,
                 isStreamable = true,
             ),
         )

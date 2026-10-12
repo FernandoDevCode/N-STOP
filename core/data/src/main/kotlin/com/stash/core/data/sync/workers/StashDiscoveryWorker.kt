@@ -15,6 +15,7 @@ import androidx.work.OutOfQuotaPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.stash.core.common.TrackCanonical
 import com.stash.core.data.db.dao.DiscoveryQueueDao
 import com.stash.core.data.sync.SyncNotificationManager
 import com.stash.core.data.sync.enqueueUniquePeriodicWorkReviving
@@ -351,13 +352,20 @@ class StashDiscoveryWorker @AssistedInject constructor(
 
         // De-dup against the existing library by canonical title+artist
         // match. Saves a redundant download when the user already has the
-        // track from another source.
+        // track from another source. Only a row of the same version counts
+        // (SameSongRule's version check): the words are loose, so a downloaded
+        // "Song (Live)" must not stand in for a recommended "Song".
         val canonicalTitle = trackMatcher.canonicalTitle(entry.title)
         val canonicalArtist = trackMatcher.canonicalArtist(entry.artist)
-        val existing = trackDao.findDownloadedByCanonical(
-            canonicalTitle = canonicalTitle.lowercase(),
-            canonicalArtist = canonicalArtist.lowercase(),
-        )
+        // A blank key ("(Intro)", no artist) names no song, and would load every local import.
+        val existing = if (TrackCanonical.isBlankKey(canonicalTitle, canonicalArtist)) {
+            null
+        } else {
+            trackDao.findAllDownloadedByCanonical(
+                canonicalTitle = canonicalTitle.lowercase(),
+                canonicalArtist = canonicalArtist.lowercase(),
+            ).firstOrNull { TrackCanonical.sameVersion(it.title, entry.title) }
+        }
 
         val trackId = if (existing != null) {
             // Nothing to download — just link.
@@ -382,7 +390,7 @@ class StashDiscoveryWorker @AssistedInject constructor(
             // collide; the canonical-identity dedup above already absorbs
             // the only realistic cross-source race (streaming engine
             // inserting a row with matching canonical title+artist first,
-            // which `findDownloadedByCanonical` won't catch because
+            // which `findAllDownloadedByCanonical` won't catch because
             // streaming inserts aren't `is_downloaded = 1`). Broadening
             // that lookup is a separate refactor — out of scope for the
             // stream-only seam; the worst-case here is a duplicate stub,

@@ -7,6 +7,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import androidx.room.withTransaction
 import androidx.work.workDataOf
+import com.stash.core.common.TrackCanonical
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.db.dao.PlaylistDao
@@ -19,6 +20,7 @@ import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.RemotePlaylistSnapshotEntity
 import com.stash.core.data.db.entity.RemoteTrackSnapshotEntity
 import com.stash.core.data.db.entity.TrackEntity
+import com.stash.core.data.library.SameSongRule
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.sync.SyncPreferencesManager
 import com.stash.core.data.sync.SyncStateManager
@@ -164,6 +166,7 @@ class DiffWorker @AssistedInject constructor(
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
     private val syncUndoDao: com.stash.core.data.db.dao.SyncUndoDao,
     private val syncLog: com.stash.core.data.sync.SyncLog,
+    private val canonicalRecompute: com.stash.core.data.library.CanonicalRecomputeRunner,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -214,6 +217,12 @@ class DiffWorker @AssistedInject constructor(
         try {
             syncStateManager.onDiffing()
             syncHistoryDao.updateStatus(syncId, SyncState.DIFFING)
+
+            // Before anything is looked up by its words: rows saved before
+            // schema 55 hold the old strict words, which this diff can't find.
+            // A sync that ran ahead of the one-time re-key filed a permanent
+            // duplicate of each, so it runs here first when it hasn't finished.
+            reKeyOldCanonicalWords()
 
             // Restore point for "Undo last sync", captured BEFORE anything
             // destructive: everything above this line only reads or writes
@@ -447,6 +456,24 @@ class DiffWorker @AssistedInject constructor(
     }
 
     /**
+     * Runs the one-time canonical re-key ([com.stash.core.data.library.CanonicalRecomputeRunner])
+     * when it hasn't finished: a few seconds of short transactions, once, and a single DataStore
+     * read on every sync after. Never fatal: a sync that can't re-key first works as it did before
+     * the re-key existed, and the startup worker retries it.
+     */
+    private suspend fun reKeyOldCanonicalWords() {
+        try {
+            if (canonicalRecompute.runIfPending()) {
+                Log.i(TAG, "re-keyed rows saved before schema 55 before diffing")
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "canonical re-key before the diff failed; diffing anyway", e)
+        }
+    }
+
+    /**
      * Finds an existing local playlist matching the remote snapshot,
      * or creates a new one if none exists.
      */
@@ -628,9 +655,13 @@ class DiffWorker @AssistedInject constructor(
             .ifEmpty { listOf(NEVER_MATCH_SENTINEL) }
         val youtubeIds = allowedSnapshots.mapNotNull { it.youtubeId?.takeIf(String::isNotBlank) }.distinct()
             .ifEmpty { listOf(NEVER_MATCH_SENTINEL) }
-        val canonicalKeys = canonicalOf.values.map { (t, a) -> "$t|$a" }.distinct()
+        // Blank keys are left out (the DAO skips them too): they name no song.
+        val canonicalIdentities = canonicalOf.values
+            .filterNot { TrackCanonical.isBlankKey(it.title, it.artist) }
+            .map { (t, a) -> t to a }
+            .distinct()
 
-        val candidates = trackDao.findExistingForBatch(spotifyUris, youtubeIds, canonicalKeys)
+        val candidates = trackDao.findExistingForBatch(spotifyUris, youtubeIds, canonicalIdentities)
         val candidateTracks = candidates.associate { candidate ->
             candidate.id to BatchTrack(candidate, isNew = false)
         }
@@ -657,21 +688,27 @@ class DiffWorker @AssistedInject constructor(
 
         candidateTracks.values.forEach(::registerBatchTrack)
 
-        // A canonical-title/artist match is only safe to reuse when neither
-        // side's strong identifiers actively disagree. Without this, two
-        // tracks that share a title/artist but carry different spotifyUri
-        // or youtubeId values would incorrectly merge into a single row —
-        // e.g. two different YouTube uploads of the same song.
-        fun strongIdsCompatible(
+        // A canonical-title/artist match is only safe to reuse under
+        // SameSongRule, the rule every path that finds a row by its words
+        // shares: neither side's strong identifiers actively disagree (two
+        // different YouTube uploads of the same song stay two rows), and the
+        // titles name the same version. The words are loose, so without the
+        // version check a "Song (Live)" saved from Search would take a synced
+        // "Song" (each side has only its own kind of id, so ids can't tell).
+        // The version check is a deny-list (only a performance word one title
+        // names and the other doesn't), so Spotify's "STAY (with Justin
+        // Bieber)" still meets YouTube's "STAY": for people syncing both
+        // services this match is the only link between their rows.
+        fun mayReuseByWords(
             track: BatchTrack,
             snapshot: RemoteTrackSnapshotEntity,
-        ): Boolean {
-            fun compatible(stored: String?, incoming: String?): Boolean =
-                stored.isNullOrBlank() || incoming.isNullOrBlank() || stored == incoming
-
-            return compatible(track.entity.spotifyUri, snapshot.spotifyUri) &&
-                compatible(track.entity.youtubeId, snapshot.youtubeId)
-        }
+        ): Boolean = SameSongRule.mayReuseByWords(
+            row = track.entity,
+            title = snapshot.title,
+            youtubeId = snapshot.youtubeId,
+            spotifyUri = snapshot.spotifyUri,
+            forDownload = false,
+        )
 
         fun matchBatchTrack(snapshot: RemoteTrackSnapshotEntity): BatchTrack? {
             snapshot.spotifyUri?.takeIf(String::isNotBlank)?.let { uri ->
@@ -680,8 +717,12 @@ class DiffWorker @AssistedInject constructor(
             snapshot.youtubeId?.takeIf(String::isNotBlank)?.let { yid ->
                 byYoutubeId[yid]?.let { return it }
             }
-            return byCanonical[canonicalOf.getValue(snapshot)]?.firstOrNull {
-                strongIdsCompatible(it, snapshot)
+            // A blank key ("(Intro)", no artist) names no song: "(Intro)" and
+            // "[Untitled]" by one artist would otherwise be one row.
+            val key = canonicalOf.getValue(snapshot)
+            if (TrackCanonical.isBlankKey(key.title, key.artist)) return null
+            return byCanonical[key]?.firstOrNull {
+                mayReuseByWords(it, snapshot)
             }
         }
 
@@ -826,27 +867,35 @@ class DiffWorker @AssistedInject constructor(
         // reconciliation) stay per-row — they're targeted single-column
         // UPDATEs, not the insert flood that caused the slowdown.
         //
-        // Auto-reconciliation candidates are looked up ONCE per playlist: the
-        // per-track findDownloadedByCanonical was a full table scan for every
+        // Auto-reconciliation candidates are looked up ONCE per playlist, by
+        // (title, artist) pairs through the canonical index: the per-track
+        // findDownloadedByCanonical was a full table scan for every
         // undownloaded existing track (every membership, for an Online-mode
         // user) on every sync, inside this write transaction. Lowest id per key
         // reproduces that query's unordered LIMIT 1 (scan order is rowid), and
-        // the separate title/artist key rejects a `|`-join collision.
+        // pairs can't collide the way a `|`-joined key could. Only a
+        // downloaded row of the same version counts (SameSongRule's version
+        // check): the words are loose, so a downloaded "Song (Live)" is not
+        // this playlist's "Song", while a downloaded "Song [Official Video]"
+        // is. Ids are not compared: the downloaded copy is another row by
+        // design, usually a different video than the stub's.
         fun reconcileKey(track: TrackEntity) =
             CanonicalKey(track.canonicalTitle.lowercase(), track.canonicalArtist.lowercase())
         val reconcileKeys = existingPairs
             .map { it.first.entity }
             .filter { !it.isDownloaded && !it.matchDismissed }
             .map { reconcileKey(it) }
+            // A blank key would take any downloaded song with a blank key, every local import included.
+            .filterNot { TrackCanonical.isBlankKey(it.title, it.artist) }
             .distinct()
-        val downloadedByKey: Map<CanonicalKey, TrackEntity> = if (reconcileKeys.isEmpty()) {
+        val downloadedByKey: Map<CanonicalKey, List<TrackEntity>> = if (reconcileKeys.isEmpty()) {
             emptyMap()
         } else {
             val wanted = reconcileKeys.toSet()
-            trackDao.findDownloadedByCanonicalKeys(reconcileKeys.map { "${it.title}|${it.artist}" })
+            trackDao.findDownloadedByCanonicalIdentities(reconcileKeys.map { it.title to it.artist })
                 .filter { reconcileKey(it) in wanted }
                 .groupBy(::reconcileKey)
-                .mapValues { (_, rows) -> rows.minBy { it.id } }
+                .mapValues { (_, rows) -> rows.sortedBy { it.id } }
         }
         for ((batchTrack, snapshot) in existingPairs) {
             val existingTrack = batchTrack.entity
@@ -854,6 +903,7 @@ class DiffWorker @AssistedInject constructor(
 
             if (!existingTrack.isDownloaded && !existingTrack.matchDismissed) {
                 val downloadedMatch = downloadedByKey[reconcileKey(existingTrack)]
+                    ?.firstOrNull { TrackCanonical.sameVersion(it.title, existingTrack.title) }
                 if (downloadedMatch != null && downloadedMatch.id != existingTrack.id) {
                     addCrossRefIfNotSoftDeleted(localPlaylist.id, downloadedMatch.id, snapshot.position, existingCrossRefs, crossRefsToInsert)
                     val failedEntry = downloadQueueDao.getFailedByTrackId(existingTrack.id)

@@ -2,7 +2,7 @@ package com.stash.core.data.weblink.handoff
 
 import android.util.Log
 import androidx.room.withTransaction
-import com.stash.core.common.strictCanonical
+import com.stash.core.common.TrackCanonical
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
@@ -125,12 +125,22 @@ class HandoffSongMatcher @Inject constructor(
 
     /** [byWords] for the mirror: the first row with the same words that doesn't already stand for another song. */
     private suspend fun byWords(song: WireSong, c: Claims): TrackEntity? =
-        trackDao.findAllByCanonicalIdentity(strictCanonical(song.title), strictCanonical(song.artist)).firstOrNull { c.fits(it, song, byId = false) }
+        rowsWithWordsOf(song).firstOrNull { c.fits(it, song, byId = false) }
 
-    /** The library's row with the same words, checked with sync-v1 identity (an ISRC on both sides must agree). */
-    private suspend fun byWords(song: WireSong): TrackEntity? {
-        val row = trackDao.findByCanonicalIdentity(strictCanonical(song.title), strictCanonical(song.artist)) ?: return null
-        return row.takeIf { SongKey.sameSong(SongRef(it.title, it.artist, it.isrc), song) }
+    /**
+     * The library's oldest row with the same words that is the same song by sync-v1 identity (an ISRC on both sides must
+     * agree; `SongKey.fold` keeps version words like "(Live)", so the loose canonical words never stand in for it). Every
+     * row with those words is checked, not just the first: the loose words group "Song" with "Song (Live)".
+     */
+    private suspend fun byWords(song: WireSong): TrackEntity? =
+        rowsWithWordsOf(song).firstOrNull { SongKey.sameSong(SongRef(it.title, it.artist, it.isrc), song) }
+
+    /** Every row with [song]'s canonical words, oldest first; none for a blank key, which would load every local import. */
+    private suspend fun rowsWithWordsOf(song: WireSong): List<TrackEntity> {
+        val title = TrackCanonical.title(song.title)
+        val artist = TrackCanonical.artist(song.artist)
+        if (TrackCanonical.isBlankKey(title, artist)) return emptyList()
+        return trackDao.findAllByCanonicalIdentity(title, artist)
     }
 
     companion object {

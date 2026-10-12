@@ -1,5 +1,6 @@
 package com.stash.core.data.sync
 
+import com.stash.core.common.TrackCanonical
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.abs
@@ -24,51 +25,27 @@ class TrackMatcher @Inject constructor() {
 
         /** Maximum duration difference (in milliseconds) for a fuzzy match. */
         private const val DURATION_TOLERANCE_MS = 10_000L
-
-        /** Regex to strip parenthetical content: (remix), (feat. X), [live], etc. */
-        private val PARENTHETICAL_REGEX = Regex("""\s*[\(\[][^)\]]*[\)\]]""")
-
-        /** Regex to strip "feat", "ft", "featuring" and everything after. */
-        private val FEAT_REGEX = Regex("""\s*(feat\.?|ft\.?|featuring)\s+.*""", RegexOption.IGNORE_CASE)
-
-        /** Common artist separators. */
-        private val ARTIST_SEPARATOR_REGEX = Regex("""\s*[,;&/]\s*|\s+(?:and|&)\s+""", RegexOption.IGNORE_CASE)
     }
 
     /**
-     * Produce a canonical form of a track title for comparison.
-     *
-     * Strips parenthetical content (remix tags, featured artists in parens),
-     * removes "feat/ft" suffixes, lowercases, and trims whitespace.
+     * Produce a canonical form of a track title for comparison: the library's one
+     * rule, [TrackCanonical.title] (brackets and a trailing credit dropped, lowercased,
+     * trimmed). Every writer of `tracks.canonical_title` uses it.
      *
      * @param title Raw track title.
      * @return Normalised title string.
      */
-    fun canonicalTitle(title: String): String {
-        return title
-            .replace(PARENTHETICAL_REGEX, "")
-            .replace(FEAT_REGEX, "")
-            .lowercase()
-            .trim()
-    }
+    fun canonicalTitle(title: String): String = TrackCanonical.title(title)
 
     /**
-     * Produce a canonical form of an artist name for comparison.
-     *
-     * Splits on common separators (, ; & / "and"), lowercases each part,
-     * sorts alphabetically, and rejoins with ", ".
+     * Produce a canonical form of an artist name for comparison: the library's one
+     * rule, [TrackCanonical.artist] (split on , ; & / "and", lowercased, sorted, joined
+     * with ", "). Every writer of `tracks.canonical_artist` uses it.
      *
      * @param artist Raw artist string (may contain multiple artists).
      * @return Normalised, sorted artist string.
      */
-    fun canonicalArtist(artist: String): String {
-        return artist
-            .split(ARTIST_SEPARATOR_REGEX)
-            .map { it.lowercase().trim() }
-            .filter { it.isNotEmpty() }
-            .sorted()
-            .joinToString(", ")
-    }
+    fun canonicalArtist(artist: String): String = TrackCanonical.artist(artist)
 
     /**
      * Check whether two tracks are an exact match based on canonical

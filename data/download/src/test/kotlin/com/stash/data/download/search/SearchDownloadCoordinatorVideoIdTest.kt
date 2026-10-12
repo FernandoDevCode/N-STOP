@@ -166,7 +166,7 @@ class SearchDownloadCoordinatorVideoIdTest {
                 ),
             )
         coEvery { trackDao.findByYoutubeId(any()) } returns null
-        coEvery { trackDao.findByCanonicalIdentity(any(), any()) } returns null
+        coEvery { trackDao.findAllByCanonicalIdentity(any(), any()) } returns emptyList()
         coEvery { trackDao.insert(any()) } returns 7L
         coEvery { trackDao.markAsDownloaded(any(), any(), any(), any(), any(), any()) } returns 1
 

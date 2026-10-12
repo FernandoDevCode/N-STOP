@@ -3,8 +3,10 @@ package com.stash.core.media.actions
 import android.os.SystemClock
 import android.util.Log
 import androidx.media3.common.PlaybackException
-import com.stash.core.common.strictCanonical
+import com.stash.core.common.TrackCanonical
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.library.SameSongRule
+import com.stash.core.data.library.findReusableByWords
 import com.stash.core.media.preview.PreviewPlayer
 import com.stash.core.media.preview.PreviewState
 import com.stash.core.media.preview.SearchPreviewMediaSource
@@ -18,6 +20,7 @@ import dagger.hilt.android.scopes.ViewModelScoped
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -132,6 +135,28 @@ class TrackActionsDelegate @Inject constructor(
 
     private fun scope(): CoroutineScope =
         checkNotNull(boundScope) { "TrackActionsDelegate used before bindToScope" }
+
+    /**
+     * "Already in your library" answers that arrive together are told once: an album's
+     * Download all walks every track, and a message per song already held queued up a run
+     * of identical snackbars (the buffer holds 4; the rest were dropped). A burst of N says
+     * "N songs already in your library". Main thread, like every status collector here.
+     */
+    private var alreadyInLibraryCount = 0
+    private var alreadyInLibraryNotice: Job? = null
+
+    private fun noteAlreadyInLibrary() {
+        alreadyInLibraryCount++
+        alreadyInLibraryNotice?.cancel()
+        alreadyInLibraryNotice = scope().launch {
+            delay(ALREADY_IN_LIBRARY_WINDOW_MS)
+            val count = alreadyInLibraryCount
+            alreadyInLibraryCount = 0
+            _userMessages.tryEmit(
+                if (count == 1) "Already in your library" else "$count songs already in your library",
+            )
+        }
+    }
 
     /**
      * Starts an audio preview for [track] using the v0.9.12 MediaSource-based
@@ -471,6 +496,14 @@ class TrackActionsDelegate @Inject constructor(
                             _downloadedIds.update { it + key }
                             _waitingForLosslessIds.update { it - key }
                         }
+                        is SearchDownloadStatus.AlreadyInLibrary -> {
+                            // The library already has this song's audio: nothing was
+                            // downloaded or added. The row shows the downloaded check.
+                            _downloadingIds.update { it - key }
+                            _downloadedIds.update { it + key }
+                            _waitingForLosslessIds.update { it - key }
+                            noteAlreadyInLibrary()
+                        }
                         is SearchDownloadStatus.Failed -> {
                             _downloadingIds.update { it - key }
                             _userMessages.tryEmit("Download failed: ${status.message}")
@@ -570,7 +603,11 @@ class TrackActionsDelegate @Inject constructor(
      *
      * Mirrors [SearchDownloadCoordinator.upsertSearchTrack]'s lookup sequence
      * and TrackEntity construction so identity-matching agrees with the
-     * download path (same row, no duplicate).
+     * download path (same row, no duplicate). A row found by its words is taken
+     * only under [SameSongRule]: no conflicting video id and the same version,
+     * so adding "Song (Live)" never adds the library's "Song". A row with a file
+     * is fine here: nothing is downloaded, and the playlist gets the copy the
+     * library already holds.
      */
     private suspend fun ensureTrackPersisted(item: TrackItem): Long? {
         if (blocklistGuard.isBlocked(
@@ -582,9 +619,12 @@ class TrackActionsDelegate @Inject constructor(
             return null
         }
         val existing = trackDao.findByYoutubeId(item.videoId)
-            ?: trackDao.findByCanonicalIdentity(
-                title = strictCanonical(item.title),
-                artist = strictCanonical(item.artist),
+            ?: trackDao.findReusableByWords(
+                title = item.title,
+                artist = item.artist,
+                youtubeId = item.videoId,
+                spotifyUri = null,
+                forDownload = false,
             )
         return existing?.id ?: trackDao.insert(
             com.stash.core.data.db.entity.TrackEntity(
@@ -593,8 +633,8 @@ class TrackActionsDelegate @Inject constructor(
                 album = item.album.orEmpty(),
                 albumArtist = item.albumArtist.orEmpty(),
                 youtubeId = item.videoId,
-                canonicalTitle = strictCanonical(item.title),
-                canonicalArtist = strictCanonical(item.artist),
+                canonicalTitle = TrackCanonical.title(item.title),
+                canonicalArtist = TrackCanonical.artist(item.artist),
                 durationMs = (item.durationSeconds * 1000).toLong(),
                 source = com.stash.core.model.MusicSource.YOUTUBE,
                 albumArtUrl = item.thumbnailUrl,
@@ -687,6 +727,9 @@ class TrackActionsDelegate @Inject constructor(
 
     companion object {
         private const val TAG = "TrackActionsDelegate"
+
+        /** How long to gather "Already in your library" answers into one message. */
+        private const val ALREADY_IN_LIBRARY_WINDOW_MS = 800L
 
         /**
          * Retry window after `playUrl` — an ExoPlayer error inside this window

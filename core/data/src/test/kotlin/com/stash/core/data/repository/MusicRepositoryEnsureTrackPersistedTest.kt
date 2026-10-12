@@ -1,6 +1,7 @@
 package com.stash.core.data.repository
 
 import android.database.sqlite.SQLiteConstraintException
+import com.stash.core.data.blocklist.BlocklistGuard
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.db.entity.TrackEntity
 import com.stash.core.model.MusicSource
@@ -27,7 +28,7 @@ class MusicRepositoryEnsureTrackPersistedTest {
         val trackDao = mockk<TrackDao>(relaxed = true)
         // No id, no youtube match, no canonical match — only the spotify_uri hits.
         coEvery { trackDao.findByYoutubeId(any()) } returns null
-        coEvery { trackDao.findByCanonicalIdentity(any(), any()) } returns null
+        coEvery { trackDao.findAllByCanonicalIdentity(any(), any()) } returns emptyList()
         coEvery { trackDao.findBySpotifyUri("spotify:track:xyz") } returns
             TrackEntity(
                 id = 55L,
@@ -59,11 +60,56 @@ class MusicRepositoryEnsureTrackPersistedTest {
 
     @Test fun `a fuzzy title-artist match never takes the incoming isrc`() = runTest {
         val trackDao = mockk<TrackDao>(relaxed = true)
-        coEvery { trackDao.findByCanonicalIdentity(any(), any()) } returns
-            TrackEntity(id = 8L, title = "Song", artist = "Artist", source = MusicSource.SPOTIFY)
+        coEvery { trackDao.findAllByCanonicalIdentity("song", "artist") } returns
+            listOf(TrackEntity(id = 8L, title = "Song", artist = "Artist", source = MusicSource.SPOTIFY))
         val repo = buildRepo(trackDao)
-        repo.ensureTrackPersisted(Track(title = "Song", artist = "Artist", isrc = "USABC1234567"))
+        val id = repo.ensureTrackPersisted(Track(title = "Song", artist = "Artist", isrc = "USABC1234567"))
+        assertEquals(8L, id)
         coVerify(exactly = 0) { trackDao.backfillIsrcIfMissing(any(), any()) }
+    }
+
+    @Test fun `a words match of another version or another video is not taken`() = runTest {
+        val trackDao = mockk<TrackDao>(relaxed = true)
+        coEvery { trackDao.findByYoutubeId(any()) } returns null
+        coEvery { trackDao.findBySpotifyUri(any()) } returns null
+        // Loose words: "Song (Live)" and another upload of "Song" both key as song|artist.
+        coEvery { trackDao.findAllByCanonicalIdentity("song", "artist") } returns listOf(
+            TrackEntity(id = 3L, title = "Song (Live)", artist = "Artist", source = MusicSource.YOUTUBE),
+            TrackEntity(id = 4L, title = "Song", artist = "Artist", youtubeId = "otherVideo1", source = MusicSource.YOUTUBE),
+        )
+        coEvery { trackDao.insert(any()) } returns 9L
+
+        val id = buildRepo(trackDao).ensureTrackPersisted(Track(title = "Song", artist = "Artist", youtubeId = "thisVideo01"))
+
+        assertEquals("neither the live row nor the other video's row is this song's", 9L, id)
+        coVerify(exactly = 1) { trackDao.insert(match { it.canonicalTitle == "song" && it.canonicalArtist == "artist" }) }
+    }
+
+    @Test fun `a saved song whose loose key is blocked keeps its strict words`() = runTest {
+        // The user blocked the studio "Song"; the blocklist key is loose, so it covers "Song (Live)" too.
+        val trackDao = mockk<TrackDao>(relaxed = true)
+        coEvery { trackDao.findByYoutubeId(any()) } returns null
+        coEvery { trackDao.findAllByCanonicalIdentity(any(), any()) } returns emptyList()
+        coEvery { trackDao.insert(any()) } returns 9L
+        val guard = mockk<BlocklistGuard>(relaxed = true)
+        coEvery { guard.isKeyBlocked("song", "a, b") } returns true
+
+        buildRepo(trackDao, guard).ensureTrackPersisted(Track(title = "Song (Live)", artist = "B & A", youtubeId = "thisVideo01"))
+
+        coVerify(exactly = 1) { trackDao.insert(match { it.canonicalTitle == "song live" && it.canonicalArtist == "b a" }) }
+    }
+
+    @Test fun `a saved song with nothing blocked is stored under the loose words`() = runTest {
+        val trackDao = mockk<TrackDao>(relaxed = true)
+        coEvery { trackDao.findByYoutubeId(any()) } returns null
+        coEvery { trackDao.findAllByCanonicalIdentity(any(), any()) } returns emptyList()
+        coEvery { trackDao.insert(any()) } returns 9L
+        val guard = mockk<BlocklistGuard>(relaxed = true)
+        coEvery { guard.isKeyBlocked(any(), any()) } returns false
+
+        buildRepo(trackDao, guard).ensureTrackPersisted(Track(title = "Song (Live)", artist = "B & A", youtubeId = "thisVideo01"))
+
+        coVerify(exactly = 1) { trackDao.insert(match { it.canonicalTitle == "song" && it.canonicalArtist == "a, b" }) }
     }
 
     @Test fun `losing the insert race to a concurrent caller adopts the winner's row`() = runTest {
@@ -72,7 +118,7 @@ class MusicRepositoryEnsureTrackPersistedTest {
         // Our lookup misses; by the time we insert, the other caller's row exists.
         coEvery { trackDao.findByYoutubeId("yt1") } returnsMany listOf(null, winner)
         coEvery { trackDao.findBySpotifyUri(any()) } returns null
-        coEvery { trackDao.findByCanonicalIdentity(any(), any()) } returns null
+        coEvery { trackDao.findAllByCanonicalIdentity(any(), any()) } returns emptyList()
         coEvery { trackDao.insert(any()) } throws SQLiteConstraintException("UNIQUE constraint failed: tracks.youtube_id")
 
         val id = buildRepo(trackDao).ensureTrackPersisted(Track(title = "Song", artist = "Artist", youtubeId = "yt1"))
@@ -84,7 +130,7 @@ class MusicRepositoryEnsureTrackPersistedTest {
         val trackDao = mockk<TrackDao>(relaxed = true)
         coEvery { trackDao.findByYoutubeId(any()) } returns null
         coEvery { trackDao.findBySpotifyUri(any()) } returns null
-        coEvery { trackDao.findByCanonicalIdentity(any(), any()) } returns null
+        coEvery { trackDao.findAllByCanonicalIdentity(any(), any()) } returns emptyList()
         coEvery { trackDao.insert(any()) } throws SQLiteConstraintException("NOT NULL constraint failed")
 
         val thrown = runCatching {
@@ -111,14 +157,17 @@ class MusicRepositoryEnsureTrackPersistedTest {
         assertEquals(12L, id)
     }
 
-    private fun buildRepo(trackDao: TrackDao): MusicRepositoryImpl = MusicRepositoryImpl(
+    private fun buildRepo(
+        trackDao: TrackDao,
+        blocklistGuard: BlocklistGuard = mockk(relaxed = true),
+    ): MusicRepositoryImpl = MusicRepositoryImpl(
         context = mockk(relaxed = true),
         trackDao = trackDao,
         playlistDao = mockk(relaxed = true),
         syncHistoryDao = mockk(relaxed = true),
         downloadQueueDao = mockk(relaxed = true),
         discoveryQueueDao = mockk(relaxed = true),
-        blocklistGuard = mockk(relaxed = true),
+        blocklistGuard = blocklistGuard,
         trackMatcher = mockk(relaxed = true),
         stashMixRecipeDao = mockk(relaxed = true),
         downloadNetworkPreference = mockk(relaxed = true),

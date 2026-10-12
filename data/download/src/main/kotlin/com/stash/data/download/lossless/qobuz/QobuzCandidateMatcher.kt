@@ -1,5 +1,6 @@
 package com.stash.data.download.lossless.qobuz
 
+import com.stash.core.common.VersionWords
 import com.stash.data.download.lossless.TrackQuery
 import kotlin.math.abs
 
@@ -89,7 +90,7 @@ object QobuzCandidateMatcher {
         // so a track off a live album can still take a live candidate.
         val candVersionWords = versionWords(
             BRACKETED.findAll(candTitle).joinToString(" ") { it.value } + " " +
-                DASHED.find(candTitle)?.value.orEmpty() + " " + candVersion.orEmpty(),
+                VersionWords.DASH_SUFFIX.find(candTitle)?.value.orEmpty() + " " + candVersion.orEmpty(),
         )
         val extraVersion = candVersionWords - versionWords(query.title + " " + query.album.orEmpty())
         // A length within 5% says it's the recording the user has (e.g. a live album
@@ -119,29 +120,13 @@ object QobuzCandidateMatcher {
     private const val VERSION_TIEBREAK = 0.9f
 
     private val BRACKETED = Regex("\\([^)]*\\)|\\[[^]]*\\]")
-    private val DASHED = Regex("\\s[-\u2013\u2014]\\s.*")
-    // A year, stereo, mono, single... mix is the same song, often a remaster reissue.
-    private val SAME_SONG_MIX =
-        Regex("\\b(\\d{4}|stereo|mono|single|radio|album|original|remaster|remastered)\\s+mix\\b")
 
-    // Whole words only, so "Alive" is not "live". "Edit" is left out: radio edits are fine.
-    private val VERSION_WORDS = Regex(
-        "\\b(remix|mix|live|cover|karaoke|instrumental|lofi|lo-fi|lo fi|piano|acoustic|" +
-            "orchestral|sped up|sped|slowed|nightcore|demo)\\b",
-    )
-
-    /** The version words [text] names, folded so "remix"/"mix", "lo-fi"/"lofi" and "sped up"/"sped" compare equal. */
-    internal fun versionWords(text: String): Set<String> =
-        VERSION_WORDS.findAll(SAME_SONG_MIX.replace(text.lowercase(), " "))
-            .map {
-                when (it.value) {
-                    "remix" -> "mix"
-                    "lo-fi", "lo fi" -> "lofi"
-                    "sped up" -> "sped"
-                    else -> it.value
-                }
-            }
-            .toSet()
+    /**
+     * The version words [text] names. The list (whole words; a year, stereo, mono, single... mix
+     * is the same song; "Edit" left out, radio edits are fine) is the library's too, so it lives in
+     * core:common: [VersionWords].
+     */
+    internal fun versionWords(text: String): Set<String> = VersionWords.of(text)
 
     // ── Pure-function helpers ────────────────────────────────────────────
 

@@ -55,7 +55,7 @@ class WebLibraryImporterTest {
                 TrackEntity(
                     title = s.title, artist = s.artist, isrc = s.isrc, youtubeId = s.youtubeId,
                     spotifyUri = s.spotifyId?.let { "spotify:track:$it" }, isStreamable = true,
-                    canonicalTitle = canon(s.title), canonicalArtist = canon(s.artist),
+                    canonicalTitle = canonTitle(s.title), canonicalArtist = canonArtist(s.artist),
                 ),
             )
         }
@@ -80,7 +80,7 @@ class WebLibraryImporterTest {
 
     private fun track(title: String, artist: String, isrc: String? = null, youtubeId: String? = null, likedAt: Long? = null) = TrackEntity(
         title = title, artist = artist, isrc = isrc, youtubeId = youtubeId, stashLikedAt = likedAt, source = MusicSource.SPOTIFY,
-        isStreamable = true, canonicalTitle = canon(title), canonicalArtist = canon(artist), dateAdded = Instant.ofEpochMilli(T),
+        isStreamable = true, canonicalTitle = canonTitle(title), canonicalArtist = canonArtist(artist), dateAdded = Instant.ofEpochMilli(T),
     )
 
     private suspend fun fill(): Map<String, Long> {
@@ -235,7 +235,8 @@ class WebLibraryImporterTest {
     private companion object {
         const val T = 1_759_838_400_000L
 
-        /** The library's canonical_title / canonical_artist. */
-        fun canon(s: String) = com.stash.core.common.strictCanonical(s)
+        /** The library's canonical_title / canonical_artist: the one loose rule every writer uses. */
+        fun canonTitle(s: String) = com.stash.core.common.TrackCanonical.title(s)
+        fun canonArtist(s: String) = com.stash.core.common.TrackCanonical.artist(s)
     }
 }
