@@ -62,7 +62,7 @@ data class PlaylistDiagnosticsRow(
  * @property sourceId The Spotify playlist id (`playlists.source_id`).
  * @property stamp    `playlists.snapshot_id`: the encoded
  *                    [com.stash.core.data.sync.workers.SpotifyMirrorStamp].
- * @property digest   [PlaylistDao.mirrorDigest] for the playlist right now.
+ * @property digest   [mirrorDigestOf] the playlist's rows right now.
  */
 data class SpotifyMirrorStampRow(
     val sourceId: String,
@@ -70,26 +70,46 @@ data class SpotifyMirrorStampRow(
     val digest: String,
 )
 
+/** One playlist and its stored song count, for [PlaylistDao.spotifyMirrorStamps]. */
+data class StampedSpotifyPlaylist(
+    val id: Long,
+    val sourceId: String,
+    val stamp: String,
+    val trackCount: Int,
+)
+
+/** One `playlist_tracks` row as the mirror digest sees it. See [mirrorDigestOf]. */
+data class MirrorRow(
+    val playlistId: Long,
+    val trackId: Long,
+    val position: Int,
+    val removed: Boolean,
+    val locallyAdded: Boolean,
+)
+
 /**
- * One playlist's rows summed up, for the mirror stamp
- * ([com.stash.core.data.sync.workers.SpotifyMirrorStamp]): its stored song
- * count, then over every `playlist_tracks` row (live, removed, added here) the
- * row count, the sum of track ids, the sum of track id × (position + 1), and
- * the track ids of removed rows and of rows the user added here. An add, a
- * removal, a deleted or blocked song, a re-order or a recount moves at least
- * one of them, so the stamp stops matching whatever code path made the change.
- *
- * Written against `p` = playlists LEFT JOIN `pt` = playlist_tracks, grouped by
- * playlist, so a playlist with no rows still sums (to zeros). Every query that
- * produces or checks a stamp must use exactly this expression.
+ * A playlist's rows as one short fingerprint, for the mirror stamp
+ * ([com.stash.core.data.sync.workers.SpotifyMirrorStamp]): SHA-256 over its
+ * stored song count and every `playlist_tracks` row (live, removed, added
+ * here), each as its exact (track, position, removed, added here), in track id
+ * order, cut to 128 bits of hex. Any add, removal, deleted or blocked song,
+ * re-order or recount changes it, whatever code path made the change, so the
+ * stamp stops matching. Exact, not summed: sums let a re-order or a matching
+ * remove-and-add cancel out. [rows] must all belong to one playlist; their
+ * order doesn't matter.
  */
-private const val MIRROR_DIGEST = """
-    (p.track_count || ':' || COUNT(pt.track_id) || ':' ||
-     COALESCE(SUM(pt.track_id), 0) || ':' ||
-     COALESCE(SUM(pt.track_id * (pt.position + 1)), 0) || ':' ||
-     COALESCE(SUM(CASE WHEN pt.removed_at IS NULL THEN 0 ELSE pt.track_id END), 0) || ':' ||
-     COALESCE(SUM(CASE WHEN pt.locally_added = 1 THEN pt.track_id ELSE 0 END), 0))
-"""
+fun mirrorDigestOf(trackCount: Int, rows: List<MirrorRow>): String {
+    val text = buildString {
+        append(trackCount)
+        rows.sortedBy { it.trackId }.forEach { r ->
+            append(';').append(r.trackId).append(',').append(r.position)
+                .append(',').append(if (r.removed) 1 else 0)
+                .append(',').append(if (r.locallyAdded) 1 else 0)
+        }
+    }
+    val hash = java.security.MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8))
+    return hash.take(16).joinToString("") { "%02x".format(it) }
+}
 
 /**
  * Data-access object for [PlaylistEntity] and the
@@ -569,41 +589,80 @@ interface PlaylistDao {
 
     /**
      * Every Spotify playlist that carries a mirror stamp, with its rows'
-     * [MIRROR_DIGEST] as they are now: what the fetch step decides its skips
-     * by, read once per sync. One grouped scan of those playlists' rows.
+     * [mirrorDigestOf] as they are now: what the fetch step decides its skips
+     * by, read once per sync (two queries, one pass over those rows).
      */
-    @Query(
-        """
-        SELECT p.source_id AS sourceId, p.snapshot_id AS stamp, $MIRROR_DIGEST AS digest
-        FROM playlists p
-        LEFT JOIN playlist_tracks pt ON pt.playlist_id = p.id
-        WHERE p.source = 'SPOTIFY' AND p.snapshot_id IS NOT NULL
-        GROUP BY p.id
-        """
-    )
-    suspend fun spotifyMirrorStamps(): List<SpotifyMirrorStampRow>
+    @Transaction
+    suspend fun spotifyMirrorStamps(): List<SpotifyMirrorStampRow> {
+        val rowsByPlaylist = mirrorRowsOfStampedSpotifyPlaylists().groupBy { it.playlistId }
+        return stampedSpotifyPlaylists().map { p ->
+            SpotifyMirrorStampRow(p.sourceId, p.stamp, mirrorDigestOf(p.trackCount, rowsByPlaylist[p.id].orEmpty()))
+        }
+    }
 
     /**
-     * [playlistId]'s [MIRROR_DIGEST] now; null when there is no such
+     * [playlistId]'s [mirrorDigestOf] now; null when there is no such
      * playlist. The diff stamps it after its last write to the playlist, so it
      * describes exactly what that mirror left.
      */
+    @Transaction
+    suspend fun mirrorDigest(playlistId: Long): String? {
+        val trackCount = trackCountOf(playlistId) ?: return null
+        return mirrorDigestOf(trackCount, mirrorRows(playlistId))
+    }
+
     @Query(
         """
-        SELECT $MIRROR_DIGEST
-        FROM playlists p
-        LEFT JOIN playlist_tracks pt ON pt.playlist_id = p.id
-        WHERE p.id = :playlistId
-        GROUP BY p.id
+        SELECT id, source_id AS sourceId, snapshot_id AS stamp, track_count AS trackCount
+        FROM playlists WHERE source = 'SPOTIFY' AND snapshot_id IS NOT NULL
         """
     )
-    suspend fun mirrorDigest(playlistId: Long): String?
+    suspend fun stampedSpotifyPlaylists(): List<StampedSpotifyPlaylist>
+
+    @Query(
+        """
+        SELECT playlist_id AS playlistId, track_id AS trackId, position,
+               (removed_at IS NOT NULL) AS removed, locally_added AS locallyAdded
+        FROM playlist_tracks
+        WHERE playlist_id IN (SELECT id FROM playlists WHERE source = 'SPOTIFY' AND snapshot_id IS NOT NULL)
+        """
+    )
+    suspend fun mirrorRowsOfStampedSpotifyPlaylists(): List<MirrorRow>
+
+    @Query(
+        """
+        SELECT playlist_id AS playlistId, track_id AS trackId, position,
+               (removed_at IS NOT NULL) AS removed, locally_added AS locallyAdded
+        FROM playlist_tracks WHERE playlist_id = :playlistId
+        """
+    )
+    suspend fun mirrorRows(playlistId: Long): List<MirrorRow>
+
+    @Query("SELECT track_count FROM playlists WHERE id = :playlistId")
+    suspend fun trackCountOf(playlistId: Long): Int?
+
+    /**
+     * The playlist's synced songs (not added here, not removed) that aren't
+     * downloaded and whose match wasn't dismissed: the ones the diff's
+     * downloaded-copy reconcile looks at, for a playlist the fetch skipped.
+     */
+    @Query(
+        """
+        SELECT t.* FROM tracks t
+        INNER JOIN playlist_tracks pt ON pt.track_id = t.id
+        WHERE pt.playlist_id = :playlistId AND pt.removed_at IS NULL AND pt.locally_added = 0
+          AND t.is_downloaded = 0 AND t.match_dismissed = 0
+        ORDER BY pt.position ASC, t.id ASC
+        """
+    )
+    suspend fun getUndownloadedSyncedMembers(playlistId: Long): List<TrackEntity>
 
     /**
      * Forgets every Spotify playlist's mirror stamp, so the next sync reads
-     * them all in full. For a change the stamps' digests can't see: an unblock
-     * (the song's links went at block time, and which playlists hold it on
-     * Spotify isn't known here) and a backup merge. Returns rows changed.
+     * them all in full. For a change the stamps' digests can't see in the
+     * playlists' own rows: a block (a twin of the song in another playlist is
+     * filtered by a full sync) and an unblock (which playlists hold it on
+     * Spotify isn't known here). Returns rows changed.
      */
     @Query("UPDATE playlists SET snapshot_id = NULL WHERE source = 'SPOTIFY' AND snapshot_id IS NOT NULL")
     suspend fun forgetSpotifyMirrorStamps(): Int

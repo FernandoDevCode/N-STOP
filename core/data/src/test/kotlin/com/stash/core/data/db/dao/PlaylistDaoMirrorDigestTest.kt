@@ -176,6 +176,41 @@ class PlaylistDaoMirrorDigestTest {
         assertNotEquals(before, digest())
     }
 
+    // ── Exact, not summed: changes that sums let cancel out ──────────────
+
+    private fun rows(vararg trackAtPosition: Pair<Long, Int>) =
+        trackAtPosition.map { (track, position) -> MirrorRow(1L, track, position, removed = false, locallyAdded = false) }
+
+    @Test fun `a re-order that keeps every sum still moves the digest`() {
+        // Tracks (11, 10, 12) vs (10, 12, 11) at positions 0..2: same count, sum
+        // and position-weighted sum (67), different playlists.
+        assertNotEquals(
+            mirrorDigestOf(3, rows(11L to 0, 10L to 1, 12L to 2)),
+            mirrorDigestOf(3, rows(10L to 0, 12L to 1, 11L to 2)),
+        )
+    }
+
+    @Test fun `a remove and an add that keep every sum still move the digest`() {
+        // Remove {5@0, 9@2}, add {6@3, 8@0}: the totals come out the same.
+        val before = rows(5L to 0, 7L to 1, 9L to 2)
+        val after = rows(8L to 0, 7L to 1, 6L to 3)
+        assertNotEquals(mirrorDigestOf(3, before), mirrorDigestOf(3, after))
+    }
+
+    @Test fun `the digest doesn't depend on the order rows are read in, and stays short`() {
+        val a = mirrorDigestOf(3, rows(1L to 0, 2L to 1, 3L to 2))
+        assertEquals(a, mirrorDigestOf(3, rows(3L to 2, 1L to 0, 2L to 1)))
+        assertEquals(32, a.length)
+    }
+
+    @Test fun `a swap of two songs in the playlist moves the digest`() = runTest {
+        val before = digest()
+        dao.insertCrossRef(PlaylistTrackCrossRef(playlistId = playlistId, trackId = trackIds[0], position = 1))
+        dao.insertCrossRef(PlaylistTrackCrossRef(playlistId = playlistId, trackId = trackIds[1], position = 0))
+
+        assertNotEquals(before, digest())
+    }
+
     @Test fun `an undo that puts back the very same rows leaves the digest as it was`() = runTest {
         // "Undo last sync" after a sync that skipped this playlist: its rows are
         // cleared and restored from the point, unchanged, so its stamp still holds.
@@ -191,7 +226,7 @@ class PlaylistDaoMirrorDigestTest {
     @Test fun `a playlist with no rows still has a digest`() = runTest {
         val empty = dao.insert(PlaylistEntity(name = "Empty", source = MusicSource.SPOTIFY, sourceId = "pl-empty"))
 
-        assertEquals("0:0:0:0:0:0", dao.mirrorDigest(empty))
+        assertEquals(mirrorDigestOf(0, emptyList()), dao.mirrorDigest(empty))
         assertNull(dao.mirrorDigest(-1L))
     }
 
