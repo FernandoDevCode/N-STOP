@@ -1314,6 +1314,22 @@ class PlayerRepositoryImpl @Inject constructor(
         historyCurrentId = null
     }
 
+    /** Records a song change into the history. Safe to call repeatedly; only a real change does anything. */
+    private fun noteCurrentItem(newId: String?, reason: Int?) {
+        Log.d("QueueHist", "note new=$newId prev=$historyCurrentId reason=$reason history=$playHistory")
+        if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) return
+        val prev = historyCurrentId
+        if (newId == null || newId == prev) return
+        // prev == null right after a new queue was loaded, so nothing gets pushed.
+        if (!goingBack && prev != null) {
+            playHistory.addLast(prev)
+            if (playHistory.size > 100) playHistory.removeFirst()
+            playNextAhead = (playNextAhead - 1).coerceAtLeast(0)
+        }
+        goingBack = false
+        historyCurrentId = newId
+    }
+
     /** replaceMediaItem, but under shuffle the play order is put back exactly as it was. */
     private fun replaceMediaItemKeepingShuffle(controller: MediaController, index: Int, item: MediaItem) {
         // Read BEFORE the replace. An identity walk means the controller's masking timeline
@@ -2393,19 +2409,7 @@ class PlayerRepositoryImpl @Inject constructor(
     internal val playerListener = object : Player.Listener { // internal: test seam
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            val newId = mediaItem?.mediaId
-            if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) {
-                val prev = historyCurrentId
-                // prev == null right after a new queue was loaded, so nothing gets pushed.
-                // This also covers a crossfade swap, which arrives as PLAYLIST_CHANGED.
-                if (!goingBack && prev != null && newId != null && prev != newId) {
-                    playHistory.addLast(prev)
-                    if (playHistory.size > 100) playHistory.removeFirst()
-                    playNextAhead = (playNextAhead - 1).coerceAtLeast(0)
-                }
-                goingBack = false
-                historyCurrentId = newId
-            }
+            noteCurrentItem(mediaItem?.mediaId, reason)
             val controller = controllerDeferred ?: return
             // Safety net: keep the chosen speed across transitions / queue rebuilds. Not in a session,
             // where drift correction nudges the speed on purpose.
@@ -2991,6 +2995,7 @@ class PlayerRepositoryImpl @Inject constructor(
         // NOT survive the session round-trip, so it can never self-disarm on the
         // read-back the way its KDoc originally assumed.
         maybeStampCurrentItemQuality(controller)
+        noteCurrentItem(controller.currentMediaItem?.mediaId, null)
 
         val currentItem = controller.currentMediaItem
         // Badge from the live resolve, not from extras that may not have stuck.
