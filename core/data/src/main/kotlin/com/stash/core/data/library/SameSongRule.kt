@@ -22,7 +22,9 @@ import com.stash.core.data.db.entity.TrackEntity
  *     "Song (Clean)" still find their song. For people who sync Spotify and YouTube this word
  *     match is the only link between the two services' rows, so it must not split one song;
  *  3. **for a download, the row holds no file**: a row that already has audio is another copy, so
- *     the new download gets its own row rather than replacing that file.
+ *     the new download gets its own row rather than replacing that file. Search checks first and
+ *     downloads nothing when such a row is the song ("Already in your library"), so this only
+ *     matters for a copy that lands while the download runs.
  *
  * Callers look up the incoming song's own ids first, so the same video (or Spotify track) always
  * finds its row before this rule is consulted.
@@ -30,12 +32,27 @@ import com.stash.core.data.db.entity.TrackEntity
 object SameSongRule {
 
     /**
-     * Whether [row], found by words, may stand for an incoming song.
+     * Whether [row], found by words, is the incoming song: rules 1 and 2.
      *
      * @param row the library row with the same canonical title and artist.
      * @param title the incoming song's raw title.
      * @param youtubeId the incoming song's video id, if it has one.
      * @param spotifyUri the incoming song's Spotify URI (`spotify:track:…`), if it has one.
+     */
+    fun isSameSong(
+        row: TrackEntity,
+        title: String,
+        youtubeId: String?,
+        spotifyUri: String?,
+    ): Boolean =
+        idsAgree(row.youtubeId, youtubeId) &&
+            idsAgree(row.spotifyUri, spotifyUri) &&
+            TrackCanonical.sameVersion(row.title, title)
+
+    /**
+     * Whether [row], found by words, may stand for an incoming song: [isSameSong], and for a
+     * download a row with no file of its own (rule 3).
+     *
      * @param forDownload true when the caller is about to record a downloaded file on the row.
      */
     fun mayReuseByWords(
@@ -44,25 +61,40 @@ object SameSongRule {
         youtubeId: String?,
         spotifyUri: String?,
         forDownload: Boolean,
-    ): Boolean =
-        idsAgree(row.youtubeId, youtubeId) &&
-            idsAgree(row.spotifyUri, spotifyUri) &&
-            (!forDownload || !row.holdsFile()) &&
-            TrackCanonical.sameVersion(row.title, title)
+    ): Boolean = isSameSong(row, title, youtubeId, spotifyUri) && (!forDownload || !holdsFile(row))
+
+    /** Whether [row] has audio of its own on this phone. */
+    fun holdsFile(row: TrackEntity): Boolean = row.isDownloaded || !row.filePath.isNullOrBlank()
 
     /** Two ids disagree only when both are present and differ. */
     private fun idsAgree(stored: String?, incoming: String?): Boolean =
         stored.isNullOrBlank() || incoming.isNullOrBlank() || stored == incoming
-
-    private fun TrackEntity.holdsFile(): Boolean = isDownloaded || !filePath.isNullOrBlank()
 }
 
 /**
- * The oldest row [SameSongRule] lets an incoming song take by its words, or null. Null too when the
- * title or artist has no canonical words (a title that is only a bracket, a blank artist): a blank
- * key would match every other blank row.
+ * Every row with the incoming song's canonical words that [SameSongRule.isSameSong] calls that song,
+ * oldest first. None when the title or artist has no canonical words (a title that is only a
+ * bracket, a blank artist): a blank key would match every other blank row.
  *
  * Index-backed: `findAllByCanonicalIdentity` filters on `(canonical_title, canonical_artist)`.
+ */
+suspend fun TrackDao.findSameSongByWords(
+    title: String,
+    artist: String,
+    youtubeId: String?,
+    spotifyUri: String?,
+): List<TrackEntity> {
+    val canonicalTitle = TrackCanonical.title(title)
+    val canonicalArtist = TrackCanonical.artist(artist)
+    if (TrackCanonical.isBlankKey(canonicalTitle, canonicalArtist)) return emptyList()
+    return findAllByCanonicalIdentity(canonicalTitle, canonicalArtist).filter {
+        SameSongRule.isSameSong(it, title, youtubeId, spotifyUri)
+    }
+}
+
+/**
+ * The oldest row [SameSongRule] lets an incoming song take by its words ([findSameSongByWords], and
+ * for a download one with no file of its own), or null.
  */
 suspend fun TrackDao.findReusableByWords(
     title: String,
@@ -70,11 +102,6 @@ suspend fun TrackDao.findReusableByWords(
     youtubeId: String?,
     spotifyUri: String?,
     forDownload: Boolean,
-): TrackEntity? {
-    val canonicalTitle = TrackCanonical.title(title)
-    val canonicalArtist = TrackCanonical.artist(artist)
-    if (TrackCanonical.isBlankKey(canonicalTitle, canonicalArtist)) return null
-    return findAllByCanonicalIdentity(canonicalTitle, canonicalArtist).firstOrNull {
-        SameSongRule.mayReuseByWords(it, title, youtubeId, spotifyUri, forDownload)
-    }
+): TrackEntity? = findSameSongByWords(title, artist, youtubeId, spotifyUri).firstOrNull {
+    !forDownload || !SameSongRule.holdsFile(it)
 }

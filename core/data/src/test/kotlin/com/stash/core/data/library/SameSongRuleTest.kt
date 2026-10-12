@@ -111,6 +111,18 @@ class SameSongRuleTest {
         assertEquals(stub, find("Song", youtubeId = "video000001", forDownload = true))
     }
 
+    @Test fun `every row that is the song is listed, with or without its file`() = runTest {
+        val stub = row("Song (feat. X)", spotifyUri = "spotify:track:1")
+        row("Song (Live)", file = "/m/live.opus")
+        row("Song", youtubeId = "video000009", file = "/m/other-video.opus")
+        val copy = row("Song [Official Audio]", file = "/m/song.flac")
+
+        val same = dao.findSameSongByWords("Song", "B & A", youtubeId = "video000001", spotifyUri = null)
+
+        assertEquals(listOf(stub, copy), same.map { it.id })
+        assertEquals(listOf(false, true), same.map(SameSongRule::holdsFile))
+    }
+
     @Test fun `the oldest row the rule allows wins, not the oldest by words`() = runTest {
         row("Song (Live)")
         row("Song", youtubeId = "video000009")

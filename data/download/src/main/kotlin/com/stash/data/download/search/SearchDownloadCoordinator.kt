@@ -12,6 +12,7 @@ import com.stash.core.common.TrackCanonical
 import com.stash.core.data.db.dao.DownloadQueueDao
 import com.stash.core.data.library.SameSongRule
 import com.stash.core.data.library.findReusableByWords
+import com.stash.core.data.library.findSameSongByWords
 import com.stash.core.data.prefs.QualityPreference
 import com.stash.core.data.audio.AudioDurationExtractor
 import com.stash.core.model.DownloadStatus
@@ -147,6 +148,10 @@ class SearchDownloadCoordinator @Inject constructor(
      *
      * A [TrackItem.videoId] without the YouTube video-id shape fails at once
      * ([SearchDownloadStatus.Resolving] → [SearchDownloadStatus.Failed]).
+     *
+     * A song the library already has the audio of (the same video's row with a
+     * file, or the same song by [SameSongRule] with one) downloads nothing:
+     *   [SearchDownloadStatus.Resolving] → [SearchDownloadStatus.AlreadyInLibrary]
      */
     fun download(track: TrackItem): Flow<SearchDownloadStatus> = flow {
         val key = track.videoId
@@ -169,6 +174,14 @@ class SearchDownloadCoordinator @Inject constructor(
         if (isBlocked(track)) {
             Log.d(TAG, "Refused download of blocked: ${track.artist} - ${track.title}")
             emit(SearchDownloadStatus.Failed("Track is blocked"))
+            return@flow
+        }
+
+        // A song the library already has the audio of is not downloaded a second time, and no
+        // second row is made for it. A different version or another upload is another song.
+        libraryCopyOf(track)?.let { copy ->
+            Log.d(TAG, "already in the library as track ${copy.id}: ${track.videoId}")
+            emit(SearchDownloadStatus.AlreadyInLibrary)
             return@flow
         }
 
@@ -760,12 +773,36 @@ class SearchDownloadCoordinator @Inject constructor(
     }
 
     /**
+     * The library's own copy of [track], when it has one: the same video's row with a file, or a
+     * row [SameSongRule] calls this song by its words (no id disagrees, the same version) that has
+     * a file. Then [download] fetches nothing ([SearchDownloadStatus.AlreadyInLibrary]). A failed
+     * lookup reads as no copy: the download goes ahead, and [upsertSearchTrack] never overwrites a
+     * file another row holds.
+     */
+    private suspend fun libraryCopyOf(track: TrackItem): com.stash.core.data.db.entity.TrackEntity? = try {
+        val sameVideo = trackDao.findByYoutubeId(track.videoId)
+        sameVideo?.takeIf(SameSongRule::holdsFile)
+            ?: trackDao.findSameSongByWords(
+                title = track.title,
+                artist = track.artist,
+                youtubeId = track.videoId,
+                spotifyUri = null,
+            ).firstOrNull(SameSongRule::holdsFile)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "library-copy lookup failed for ${track.videoId}: ${e.message}")
+        null
+    }
+
+    /**
      * The library row a download of [track] is recorded on, or null for a new row. The same
      * video always reuses its row. Otherwise a row with the same canonical words is taken only
      * under [SameSongRule] for a download: no conflicting video or Spotify id, the same version
      * ("Song (Live)" never lands on "Song"), and no file of its own (a row that already has audio
      * is another copy, which this download must not replace). In practice that is a synced song's
-     * stub still waiting for its download, which this download then fills.
+     * stub still waiting for its download, which this download then fills: [download] already
+     * stopped at a same-song row with a file ([libraryCopyOf]), so one here landed meanwhile.
      */
     private suspend fun findReusableRow(track: TrackItem) =
         trackDao.findByYoutubeId(track.videoId)

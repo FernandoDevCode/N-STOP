@@ -473,6 +473,14 @@ class TrackActionsDelegate @Inject constructor(
                             _downloadedIds.update { it + key }
                             _waitingForLosslessIds.update { it - key }
                         }
+                        is SearchDownloadStatus.AlreadyInLibrary -> {
+                            // The library already has this song's audio: nothing was
+                            // downloaded or added. The row shows the downloaded check.
+                            _downloadingIds.update { it - key }
+                            _downloadedIds.update { it + key }
+                            _waitingForLosslessIds.update { it - key }
+                            _userMessages.tryEmit("Already in your library")
+                        }
                         is SearchDownloadStatus.Failed -> {
                             _downloadingIds.update { it - key }
                             _userMessages.tryEmit("Download failed: ${status.message}")

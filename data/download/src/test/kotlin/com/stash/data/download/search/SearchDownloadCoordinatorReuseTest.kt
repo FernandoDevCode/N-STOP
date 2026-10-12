@@ -32,6 +32,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -123,9 +124,28 @@ class SearchDownloadCoordinatorReuseTest {
     private fun recordedOn(id: Long) =
         coVerify(exactly = 1) { trackDao.markAsDownloaded(id, any(), any(), any(), any(), any()) }
 
+    /** The library already has the song's audio: nothing is fetched, no row is made or changed. */
+    private suspend fun alreadyInLibrary(item: TrackItem) {
+        val statuses = newSubject().download(item).toList()
+        assertEquals(listOf(SearchDownloadStatus.Resolving, SearchDownloadStatus.AlreadyInLibrary), statuses)
+        coVerify(exactly = 0) { downloadExecutor.download(any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { trackFinalizer.finalizeFile(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { trackDao.insert(any()) }
+        coVerify(exactly = 0) { trackDao.markAsDownloaded(any(), any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { trackDao.updateYoutubeIdIfUnclaimed(any(), any()) }
+    }
+
     @Test
-    fun `the same video reuses its row`() = runTest {
+    fun `the same video with a file is already in the library`() = runTest {
         coEvery { trackDao.findByYoutubeId(VIDEO) } returns row(5L, "Song", youtubeId = VIDEO, file = "/old.opus")
+
+        alreadyInLibrary(item("Song"))
+    }
+
+    @Test
+    fun `the same video's row without a file is filled`() = runTest {
+        // A streamed song the user liked or added to a playlist: a row, no audio yet.
+        coEvery { trackDao.findByYoutubeId(VIDEO) } returns row(5L, "Song", youtubeId = VIDEO)
 
         download(item("Song"))
 
@@ -134,8 +154,17 @@ class SearchDownloadCoordinatorReuseTest {
     }
 
     @Test
+    fun `the same song under a credit or a remaster tag with a file is already in the library`() = runTest {
+        // A Spotify sync's lossless download: a file, no video id, so nothing conflicts.
+        rowsByWords(row(4L, "Song (feat. X) [2011 Remaster]", spotifyUri = "spotify:track:abc", file = "/library/Artist/Song.flac"))
+
+        alreadyInLibrary(item("Song [Official Video]"))
+    }
+
+    @Test
     fun `a live version gets its own row next to the library's Song`() = runTest {
-        rowsByWords(row(3L, "Song", spotifyUri = "spotify:track:studio"))
+        // The studio song has its file: a live take is another song, so it still downloads.
+        rowsByWords(row(3L, "Song", spotifyUri = "spotify:track:studio", file = "/library/Artist/Song.flac"))
 
         download(item("Song (Live)"))
 
@@ -171,7 +200,8 @@ class SearchDownloadCoordinatorReuseTest {
 
     @Test
     fun `another video of the song gets its own row`() = runTest {
-        rowsByWords(row(6L, "Song", youtubeId = "otherVideo1"))
+        // Its own file and a conflicting video id: kept apart, as likes and listens are.
+        rowsByWords(row(6L, "Song", youtubeId = "otherVideo1", file = "/library/Artist/Song.opus"))
 
         download(item("Song"))
 
@@ -180,9 +210,10 @@ class SearchDownloadCoordinatorReuseTest {
     }
 
     @Test
-    fun `a row that already holds a file is never overwritten by a words match`() = runTest {
-        // A lossless download of the song: no video id to conflict, but its own file.
-        rowsByWords(row(4L, "Song", spotifyUri = "spotify:track:abc", file = "/library/Artist/Song.flac"))
+    fun `a file that lands while the download runs is never overwritten by a words match`() = runTest {
+        // No copy when the download starts; by the time it is recorded, a sync has filed one.
+        val lossless = row(4L, "Song", spotifyUri = "spotify:track:abc", file = "/library/Artist/Song.flac")
+        coEvery { trackDao.findAllByCanonicalIdentity("song", "artist") } returnsMany listOf(emptyList(), listOf(lossless))
 
         download(item("Song"))
 
