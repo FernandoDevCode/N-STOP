@@ -727,4 +727,52 @@ class DatabaseBackupMergeTest {
         val merged = live.playlistDao().findBySourceId("backup-own")!!
         assertNull(live.sharedMixDao().forPlaylist(merged.id))
     }
+
+    // ── Remote version stamps (SpotifyMirrorStamp) never survive an import ──
+    //
+    // A stamp lets a sync skip reading a Spotify playlist unchanged since its
+    // last full sync. It vouches for the library it was written in, so neither
+    // import path may carry one: the next sync must read every playlist in full.
+
+    @Test
+    fun `merge makes the next sync read every Spotify playlist again`() = runTest {
+        val livePid = live.playlistDao().insert(playlist("Mine", "sp-live"))
+        live.playlistDao().updateSnapshotId(livePid, "v1|liveRev|REFRESH|1|0:0:0:0:0:0")
+        val uri = buildBackupZip { backup ->
+            val bPid = backup.playlistDao().insert(playlist("From Backup", "sp-backup", lastSynced = Instant.ofEpochMilli(1)))
+            backup.playlistDao().updateSnapshotId(bPid, "v1|backupRev|REFRESH|1|0:0:0:0:0:0")
+        }
+
+        val result = manager.importDatabase(uri, BackupImportScope.LIBRARY_MERGE)
+
+        assertTrue("merge failed: ${result.exceptionOrNull()}", result.isSuccess)
+        assertNull("a live stamp is forgotten", live.playlistDao().getSnapshotId(livePid))
+        val merged = live.playlistDao().findBySourceId("sp-backup")!!
+        assertNull("a backup's stamp never arrives", merged.snapshotId)
+    }
+
+    @Test
+    fun `a replace-restore makes the restored library's first sync read every playlist`() = runTest {
+        val uri = buildBackupZip { backup ->
+            val bPid = backup.playlistDao().insert(playlist("From Backup", "sp-backup", lastSynced = Instant.ofEpochMilli(1)))
+            backup.playlistDao().updateSnapshotId(bPid, "v1|backupRev|REFRESH|1|0:0:0:0:0:0")
+        }
+        val liveFile = context.getDatabasePath(StashDatabase.DATABASE_NAME)
+        liveFile.parentFile?.mkdirs()
+        try {
+            val result = manager.importDatabase(uri, BackupImportScope.LIBRARY_REPLACE)
+
+            assertTrue("restore failed: ${result.exceptionOrNull()}", result.isSuccess)
+            val stamps = android.database.sqlite.SQLiteDatabase.openDatabase(
+                liveFile.path, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY,
+            ).use { restored ->
+                restored.rawQuery("SELECT source_id, snapshot_id FROM playlists", null).use { c ->
+                    buildList { while (c.moveToNext()) add(c.getString(0) to c.getString(1)) }
+                }
+            }
+            assertEquals(listOf("sp-backup" to null), stamps)
+        } finally {
+            listOf("", "-journal", "-wal", "-shm", ".rollback").forEach { File(liveFile.path + it).delete() }
+        }
+    }
 }

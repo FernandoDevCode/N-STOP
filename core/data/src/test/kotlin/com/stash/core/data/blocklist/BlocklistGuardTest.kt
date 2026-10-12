@@ -176,4 +176,15 @@ class BlocklistGuardTest {
         guard.unblock("arctic monkeys|505")
         coVerify(exactly = 1) { canonicalRecompute.rearm() }
     }
+
+    /**
+     * The song goes back into every Spotify playlist that holds it, and which
+     * ones those are isn't known here: a playlist unchanged since its last sync
+     * would otherwise be skipped (SpotifyMirrorStamp) and never get it back.
+     */
+    @Test
+    fun `unblock makes the next sync read every Spotify playlist again`() = runTest {
+        guard.unblock("arctic monkeys|505")
+        coVerify(exactly = 1) { playlistDao.forgetSpotifyMirrorStamps() }
+    }
 }

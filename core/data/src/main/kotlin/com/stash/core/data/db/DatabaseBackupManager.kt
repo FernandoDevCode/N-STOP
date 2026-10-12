@@ -476,7 +476,14 @@ class DatabaseBackupManager @Inject constructor(
             .setJournalMode(RoomDatabase.JournalMode.TRUNCATE)
             .build()
         try {
-            staged.openHelper.writableDatabase
+            val db = staged.openHelper.writableDatabase
+            // The restored library's first sync reads every playlist in full: a
+            // playlist's remote version stamp (`snapshot_id`, see SpotifyMirrorStamp)
+            // vouches for the library it was written in, and a restore is rare and
+            // heavy enough that reading everything once beats reasoning about a
+            // backup's age or origin. On the copy, before the swap, so no restore
+            // path can bring one back.
+            db.execSQL("UPDATE playlists SET snapshot_id = NULL WHERE snapshot_id IS NOT NULL")
         } catch (e: Exception) {
             throw IllegalStateException(
                 "This backup could not be upgraded to this version of Stash, so it was not restored.", e,
@@ -1066,6 +1073,14 @@ class DatabaseBackupManager @Inject constructor(
                         playlistDao.getOrderedTrackIdsForPlaylist(playlistId).size,
                     )
                 }
+
+                // The next sync reads every Spotify playlist in full. A merged
+                // playlist row arrives with the backup's remote version stamp
+                // (snapshot_id), which vouches for the backup's library, not this
+                // one; and the songs the merge adds can change what a sync links
+                // into playlists whose rows didn't move (see SpotifyMirrorStamp).
+                // In the merge's transaction, so a failed merge forgets nothing.
+                playlistDao.forgetSpotifyMirrorStamps()
             }
 
             return MergeCounts(addedTracks, addedPlaylists, mergedMemberships, likedTracks)
