@@ -630,9 +630,9 @@ class DiffWorker @AssistedInject constructor(
             .ifEmpty { listOf(NEVER_MATCH_SENTINEL) }
         val youtubeIds = allowedSnapshots.mapNotNull { it.youtubeId?.takeIf(String::isNotBlank) }.distinct()
             .ifEmpty { listOf(NEVER_MATCH_SENTINEL) }
-        val canonicalKeys = canonicalOf.values.map { (t, a) -> "$t|$a" }.distinct()
+        val canonicalIdentities = canonicalOf.values.map { (t, a) -> t to a }.distinct()
 
-        val candidates = trackDao.findExistingForBatch(spotifyUris, youtubeIds, canonicalKeys)
+        val candidates = trackDao.findExistingForBatch(spotifyUris, youtubeIds, canonicalIdentities)
         val candidateTracks = candidates.associate { candidate ->
             candidate.id to BatchTrack(candidate, isNew = false)
         }
@@ -830,12 +830,13 @@ class DiffWorker @AssistedInject constructor(
         // reconciliation) stay per-row — they're targeted single-column
         // UPDATEs, not the insert flood that caused the slowdown.
         //
-        // Auto-reconciliation candidates are looked up ONCE per playlist: the
-        // per-track findDownloadedByCanonical was a full table scan for every
+        // Auto-reconciliation candidates are looked up ONCE per playlist, by
+        // (title, artist) pairs through the canonical index: the per-track
+        // findDownloadedByCanonical was a full table scan for every
         // undownloaded existing track (every membership, for an Online-mode
         // user) on every sync, inside this write transaction. Lowest id per key
         // reproduces that query's unordered LIMIT 1 (scan order is rowid), and
-        // the separate title/artist key rejects a `|`-join collision. Only a
+        // pairs can't collide the way a `|`-joined key could. Only a
         // downloaded row of the same version counts (SameSongRule's version
         // check): the words are loose, so a downloaded "Song (Live)" is not
         // this playlist's "Song". Ids are not compared: the downloaded copy is
@@ -851,7 +852,7 @@ class DiffWorker @AssistedInject constructor(
             emptyMap()
         } else {
             val wanted = reconcileKeys.toSet()
-            trackDao.findDownloadedByCanonicalKeys(reconcileKeys.map { "${it.title}|${it.artist}" })
+            trackDao.findDownloadedByCanonicalIdentities(reconcileKeys.map { it.title to it.artist })
                 .filter { reconcileKey(it) in wanted }
                 .groupBy(::reconcileKey)
                 .mapValues { (_, rows) -> rows.sortedBy { it.id } }

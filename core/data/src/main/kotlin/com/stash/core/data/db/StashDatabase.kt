@@ -99,7 +99,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         ArtistImageEntity::class,
         SharedMixEntity::class,
     ],
-    version = 54,
+    version = 55,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -1428,6 +1428,27 @@ abstract class StashDatabase : RoomDatabase() {
         }
 
         /**
+         * v54 -> v55: an index on `tracks (canonical_title, canonical_artist)`, the
+         * pair every lookup of a song by its words filters on (the sync's diff,
+         * Search downloads, likes, hand-offs, discovery). Without it each lookup
+         * scanned the whole table, inside the sync's write transactions, on
+         * libraries of ~19k rows. Not unique: one key holds every version of a
+         * song, and rows that already share a key must keep existing.
+         *
+         * Index only; no row changes. Rows that a stricter rule wrote before v55
+         * get the one loose rule's values from CanonicalRecomputeWorker after the
+         * app starts (Kotlin, in batches): SQL here can't run that rule.
+         */
+        val MIGRATION_54_55 = object : Migration(54, 55) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_tracks_canonical_title_canonical_artist` " +
+                        "ON `tracks` (`canonical_title`, `canonical_artist`)",
+                )
+            }
+        }
+
+        /**
          * The complete migration chain, shared by every builder of a
          * [StashDatabase]: the DI singleton in
          * [com.stash.core.data.di.DatabaseModule] AND the throwaway instance
@@ -1494,6 +1515,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_51_52,
                 MIGRATION_52_53,
                 MIGRATION_53_54,
+                MIGRATION_54_55,
             )
         }
     }

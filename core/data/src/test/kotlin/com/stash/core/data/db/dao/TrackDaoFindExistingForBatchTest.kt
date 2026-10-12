@@ -48,7 +48,7 @@ class TrackDaoFindExistingForBatchTest {
         val result = dao.findExistingForBatch(
             spotifyUris = emptyList(),
             youtubeIds = emptyList(),
-            canonicalKeys = listOf("t|a"),
+            canonicalIdentities = listOf("t" to "a"),
         )
 
         assertEquals(1, result.size)
@@ -63,7 +63,7 @@ class TrackDaoFindExistingForBatchTest {
         val result = dao.findExistingForBatch(
             spotifyUris = listOf(sentinel),
             youtubeIds = listOf(sentinel),
-            canonicalKeys = listOf("runaway|kanye west"),
+            canonicalIdentities = listOf("runaway" to "kanye west"),
         )
 
         assertEquals(1, result.size)
@@ -76,7 +76,7 @@ class TrackDaoFindExistingForBatchTest {
         val result = dao.findExistingForBatch(
             spotifyUris = listOf(sentinel),
             youtubeIds = listOf(sentinel),
-            canonicalKeys = listOf("no-match-key"),
+            canonicalIdentities = listOf("no-match" to "key"),
         )
 
         assertTrue(result.isEmpty())
@@ -120,7 +120,7 @@ class TrackDaoFindExistingForBatchTest {
             val result = watchedDao.findExistingForBatch(
                 spotifyUris = (0 until 900).map { "spotify:track:$it" },
                 youtubeIds = (0 until 900).map { "yt$it" },
-                canonicalKeys = (900 until 1000).map { "t$it|a$it" },
+                canonicalIdentities = (900 until 1000).map { "t$it" to "a$it" },
             )
 
             assertEquals(1000, result.size)

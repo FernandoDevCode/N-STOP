@@ -15,6 +15,12 @@ import java.time.Instant
  * - Browsing by artist / album.
  * - Sorting by date added, last played, or play count.
  * - Duplicate detection via the composite (title, artist) index.
+ * - Finding a song by its canonical words (the sync's diff, Search downloads,
+ *   likes, hand-offs) via the composite (canonical_title, canonical_artist)
+ *   index, schema 55. Not unique: one key holds every version of a song (the
+ *   words are loose), and rows that already share a key must keep existing.
+ *   Queries must compare the bare columns (`canonical_title = :t`, `IN (...)`);
+ *   wrapping them in `LOWER()` or `||` turns the lookup back into a table scan.
  */
 @Entity(
     tableName = "tracks",
@@ -27,6 +33,7 @@ import java.time.Instant
         Index(value = ["last_played"]),
         Index(value = ["play_count"]),
         Index(value = ["title", "artist"]),
+        Index(value = ["canonical_title", "canonical_artist"]),
     ],
 )
 data class TrackEntity(

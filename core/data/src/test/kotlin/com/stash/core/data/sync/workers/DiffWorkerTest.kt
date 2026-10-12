@@ -301,11 +301,12 @@ class DiffWorkerTest {
                 spotifyUri = "spotify:track:a-stream",
             )
         )
-        // Stored with different case: the lookup has always matched case-insensitively.
+        // Every writer stores canonical words lowercased, so the lookup compares
+        // them as stored (index-backed) rather than through LOWER().
         val downloadedTwin = db.trackDao().insert(
             TrackEntity(
                 title = "Track A", artist = "Artist",
-                canonicalTitle = "Track A", canonicalArtist = "ARTIST",
+                canonicalTitle = "track a", canonicalArtist = "artist",
                 spotifyUri = "spotify:track:a-file",
                 isDownloaded = true, filePath = "/music/a.flac",
             )
