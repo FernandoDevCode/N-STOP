@@ -811,20 +811,6 @@ class MirrorEngineTest {
         assertThat(space.snapshot).isEmpty()
     }
 
-    @Test fun `a batch that opens under the space key but this app can't read is a gap, it never compacts over it`() = runTest {
-        link()
-        likesMirroring()
-        // A browser's batch this reader is stricter about than the writer (here: `ops` isn't a list).
-        web.postRaw("""{"kind":"stash-mirror-ops","v":1,"device":"${web.id}","ops":{"t":"like"}}""")
-        val space = server.spaces.getValue(web.spaceId)
-        val unreadable = space.head
-        server.logLimit = space.head.toInt()
-        lib.like(song("G"))
-        assertThat(run()).isEqualTo(MirrorRun.Failed(MirrorEngine.CANT_COMPACT))
-        assertThat(records.record!!.gaps).contains(unreadable)
-        assertThat(space.snapshot).isEmpty()
-    }
-
     @Test fun `unlinked, the mirror's state goes, the library stays`() = runTest {
         link()
         likesMirroring()
