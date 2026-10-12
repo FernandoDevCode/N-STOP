@@ -19,7 +19,7 @@ import java.security.MessageDigest
  * repos and both pins together, or neither.
  */
 internal object SyncVectors {
-    const val MERGE_SHA256 = "058c44637f73f2fda113b79e04598d7cbb85ee7bc32abe6fb95a4bb7185f2296"
+    const val MERGE_SHA256 = "4568a4cc1c8ec6395a6560940005d316e09f8a7424f68b5fe7fa1f2b07f80198"
     const val CRYPTO_SHA256 = "b1a8f7a5a77ebc1212b8628c0906ef650c778634e809c5ee9439ccff116beb88"
 
     fun bytes(name: String): ByteArray =
