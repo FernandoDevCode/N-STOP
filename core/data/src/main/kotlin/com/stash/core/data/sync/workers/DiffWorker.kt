@@ -170,7 +170,11 @@ class DiffWorker @AssistedInject constructor(
         const val KEY_SYNC_ID = "sync_id"
         const val KEY_NEW_TRACKS = "new_tracks"
         const val KEY_PLAYLISTS_CHECKED = "playlists_checked"
-        /** Set by SyncScheduler on a "Sync now" chain: the kept-playlist sweep then uses any network. */
+        /**
+         * Set by SyncScheduler on a "Sync now" chain started online: the kept-playlist
+         * sweep then uses any network. A "Sync now" queued offline leaves it unset, so
+         * when it finally runs its downloads follow the Sync tab's Wi-Fi rule.
+         */
         const val KEY_MANUAL_SYNC = "manual_sync"
         private const val TAG = "DiffWorker"
         /** How many new songs to name before collapsing to "+N more". */

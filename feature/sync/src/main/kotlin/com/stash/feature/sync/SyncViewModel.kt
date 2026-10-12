@@ -395,13 +395,16 @@ class SyncViewModel @Inject constructor(
 
     /** Trigger an immediate sync, replacing any pending schedule. No-ops
      *  while a sync is already in progress — see [SyncScheduler.triggerManualSync]
-     *  for why re-triggering mid-sync is actively harmful, not just redundant. */
+     *  for why re-triggering mid-sync is actively harmful, not just redundant.
+     *  Offline it queues the sync until a network returns ("Waiting for network"). */
     fun onSyncNow() {
         if (_uiState.value.isSyncing) {
             android.util.Log.i("SyncViewModel", "onSyncNow ignored — sync already in progress")
             return
         }
-        syncScheduler.triggerManualSync()
+        // The Wi-Fi rule this screen shows: what a sync queued offline downloads under.
+        val wifiOnly = _uiState.value.syncPreferences.wifiOnly
+        viewModelScope.launch { syncScheduler.triggerManualSync(wifiOnly) }
     }
 
     /**

@@ -24,6 +24,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Semaphore
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -88,6 +89,7 @@ class YtLibraryBackfillWorker @AssistedInject constructor(
     private val syncNotificationManager: SyncNotificationManager,
     private val syncScheduler: SyncScheduler,
     private val canonicalizer: YtLibraryCanonicalizer,
+    private val syncPreferencesManager: com.stash.core.data.sync.SyncPreferencesManager,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -209,7 +211,11 @@ class YtLibraryBackfillWorker @AssistedInject constructor(
                     text = "$finalCanon queued for re-download — starting sync…",
                     progress = 1f,
                 )
-                syncScheduler.triggerManualSync()
+                // Should the network have dropped meanwhile, the sync waits for it and
+                // its downloads then follow the Sync tab's Wi-Fi rule.
+                syncScheduler.triggerManualSync(
+                    wifiOnly = syncPreferencesManager.preferences.first().wifiOnly,
+                )
             } else {
                 syncNotificationManager.updateProgress(
                     title = modeLabel,

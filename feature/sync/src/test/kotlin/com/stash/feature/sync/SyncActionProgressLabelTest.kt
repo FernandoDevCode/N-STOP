@@ -26,4 +26,10 @@ class SyncActionProgressLabelTest {
             phaseLabel(SyncPhase.Downloading(downloaded = 2, total = 5)),
         )
     }
+
+    /** "Sync now" tapped offline used to sit on "Authenticating..." until a network came back. */
+    @Test
+    fun `a sync queued offline says it is waiting for a network`() {
+        assertEquals("Waiting for network...", phaseLabel(SyncPhase.WaitingForNetwork))
+    }
 }

@@ -221,6 +221,32 @@ class SyncViewModelTest {
         coVerify { syncScheduler.applyWifiOnlyToWaitingSync(false) }
     }
 
+    // -- "Sync now" offline (2026-10-11): queued until a network returns ----------------
+
+    @Test
+    fun `Sync now hands the scheduler the Wi-Fi rule the tab shows`() = runTest {
+        every { prefs.preferences } returns MutableStateFlow(SyncPreferences(wifiOnly = false))
+        val vm = newVm()
+
+        vm.onSyncNow()
+        advanceUntilIdle()
+
+        coVerify { syncScheduler.triggerManualSync(false) }
+    }
+
+    @Test
+    fun `waiting for a network counts as a sync in progress, so a second tap is ignored`() = runTest {
+        every { syncStateManager.phase } returns MutableStateFlow(SyncPhase.WaitingForNetwork)
+        val vm = newVm()
+        advanceUntilIdle()
+        assertEquals(true, vm.uiState.value.isSyncing)
+
+        vm.onSyncNow()
+        advanceUntilIdle()
+
+        coVerify(exactly = 0) { syncScheduler.triggerManualSync(any()) }
+    }
+
     @Test
     fun `changing the days while Auto-sync is on reschedules`() = runTest {
         every { prefs.preferences } returns MutableStateFlow(

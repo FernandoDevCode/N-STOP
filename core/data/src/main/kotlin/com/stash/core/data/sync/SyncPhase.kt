@@ -20,6 +20,15 @@ sealed interface SyncPhase {
         override val progress: Float = 0f
     }
 
+    /**
+     * "Sync now" was tapped with no connection: the sync is queued and starts
+     * by itself when a network comes back (the fetch step then moves on to
+     * [Authenticating]). Nothing is running yet, so the Sync tab offers Cancel.
+     */
+    data object WaitingForNetwork : SyncPhase {
+        override val progress: Float = 0f
+    }
+
     /** Refreshing or validating OAuth tokens. */
     data object Authenticating : SyncPhase {
         override val progress: Float = 0.05f

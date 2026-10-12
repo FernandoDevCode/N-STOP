@@ -79,6 +79,11 @@ class SyncStateManager @Inject constructor() {
         _authExpiry.update { it.cleared(spotify = spotify, youtube = youtube) }
     }
 
+    /** Transition to [SyncPhase.WaitingForNetwork]: a "Sync now" queued until a network returns. */
+    fun onWaitingForNetwork() {
+        _phase.value = SyncPhase.WaitingForNetwork
+    }
+
     /** Transition to [SyncPhase.Authenticating]. */
     fun onAuthenticating() {
         _phase.value = SyncPhase.Authenticating
