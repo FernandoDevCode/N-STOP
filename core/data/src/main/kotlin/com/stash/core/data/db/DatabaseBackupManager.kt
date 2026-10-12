@@ -986,8 +986,8 @@ class DatabaseBackupManager @Inject constructor(
                             } else Instant.now(),
                             // A remote version stamp (SpotifyMirrorStamp) vouches for the
                             // backup's library, not this one: the next sync reads it in full.
-                            // A live playlist the merge adds rows to needs nothing: its
-                            // stamp's digest no longer matches those rows.
+                            // A live playlist the merge adds rows (or songs' copies) to needs
+                            // nothing: its stamp's fingerprint no longer matches.
                             snapshotId = null,
                         )
                     )

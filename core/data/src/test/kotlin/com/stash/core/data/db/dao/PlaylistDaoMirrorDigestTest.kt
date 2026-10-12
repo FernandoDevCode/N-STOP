@@ -185,8 +185,8 @@ class PlaylistDaoMirrorDigestTest {
         // Tracks (11, 10, 12) vs (10, 12, 11) at positions 0..2: same count, sum
         // and position-weighted sum (67), different playlists.
         assertNotEquals(
-            mirrorDigestOf(3, rows(11L to 0, 10L to 1, 12L to 2)),
-            mirrorDigestOf(3, rows(10L to 0, 12L to 1, 11L to 2)),
+            mirrorDigestOf(3, rows(11L to 0, 10L to 1, 12L to 2), emptyList()),
+            mirrorDigestOf(3, rows(10L to 0, 12L to 1, 11L to 2), emptyList()),
         )
     }
 
@@ -194,12 +194,12 @@ class PlaylistDaoMirrorDigestTest {
         // Remove {5@0, 9@2}, add {6@3, 8@0}: the totals come out the same.
         val before = rows(5L to 0, 7L to 1, 9L to 2)
         val after = rows(8L to 0, 7L to 1, 6L to 3)
-        assertNotEquals(mirrorDigestOf(3, before), mirrorDigestOf(3, after))
+        assertNotEquals(mirrorDigestOf(3, before, emptyList()), mirrorDigestOf(3, after, emptyList()))
     }
 
     @Test fun `the digest doesn't depend on the order rows are read in, and stays short`() {
-        val a = mirrorDigestOf(3, rows(1L to 0, 2L to 1, 3L to 2))
-        assertEquals(a, mirrorDigestOf(3, rows(3L to 2, 1L to 0, 2L to 1)))
+        val a = mirrorDigestOf(3, rows(1L to 0, 2L to 1, 3L to 2), emptyList())
+        assertEquals(a, mirrorDigestOf(3, rows(3L to 2, 1L to 0, 2L to 1), emptyList()))
         assertEquals(32, a.length)
     }
 
@@ -226,19 +226,88 @@ class PlaylistDaoMirrorDigestTest {
     @Test fun `a playlist with no rows still has a digest`() = runTest {
         val empty = dao.insert(PlaylistEntity(name = "Empty", source = MusicSource.SPOTIFY, sourceId = "pl-empty"))
 
-        assertEquals(mirrorDigestOf(0, emptyList()), dao.mirrorDigest(empty))
+        assertEquals(mirrorDigestOf(0, emptyList(), emptyList()), dao.mirrorDigest(empty))
         assertNull(dao.mirrorDigest(-1L))
     }
 
-    @Test fun `stamps are listed only for Spotify playlists that carry one, each with its digest now`() = runTest {
+    @Test fun `only Spotify playlists that carry a stamp are skip candidates`() = runTest {
         dao.updateSnapshotId(playlistId, "v1|rev|REFRESH|1|x")
         dao.insert(PlaylistEntity(name = "Unstamped", source = MusicSource.SPOTIFY, sourceId = "pl-none"))
         val youtube = dao.insert(PlaylistEntity(name = "YT", source = MusicSource.YOUTUBE, sourceId = "PLyt"))
         dao.updateSnapshotId(youtube, "v1|rev|REFRESH|1|x")
 
-        val rows = dao.spotifyMirrorStamps()
+        assertEquals(
+            listOf(StampedSpotifyPlaylist(playlistId, "pl1", "v1|rev|REFRESH|1|x", trackCount = 3)),
+            dao.stampedSpotifyPlaylists(),
+        )
+    }
 
-        assertEquals(listOf(SpotifyMirrorStampRow("pl1", "v1|rev|REFRESH|1|x", digest())), rows)
+    // ── The songs' copies: what the full diff's downloaded-copy linking acts on ──
+
+    /** Another row with song [i]'s canonical words, as a Search download or another source makes. */
+    private suspend fun copyOf(i: Int, downloaded: Boolean): Long = trackDao.insert(
+        TrackEntity(
+            title = "Song $i", artist = "Artist", canonicalTitle = "song $i", canonicalArtist = "artist",
+            source = MusicSource.YOUTUBE, youtubeId = "yt-$i-${System.nanoTime()}",
+            isDownloaded = downloaded, filePath = if (downloaded) "/music/song$i.flac" else null,
+        ),
+    )
+
+    @Test fun `a song downloaded elsewhere moves the digest`() = runTest {
+        val before = digest()
+
+        copyOf(0, downloaded = true)
+
+        assertNotEquals("the full diff would link it in, so the playlist must be read", before, digest())
+    }
+
+    @Test fun `a song's copy un-downloaded moves the digest`() = runTest {
+        val copy = copyOf(0, downloaded = true)
+        val before = digest()
+
+        trackDao.clearDownloadState(copy)
+
+        assertNotEquals("the full diff would no longer link it", before, digest())
+    }
+
+    @Test fun `a song of the playlist downloaded moves the digest`() = runTest {
+        val before = digest()
+
+        trackDao.markAsDownloaded(trackIds[2], filePath = "/music/song2.flac", fileSizeBytes = 1_000)
+
+        assertNotEquals(before, digest())
+    }
+
+    @Test fun `a new copy that isn't downloaded moves the digest too, at the cost of one read`() = runTest {
+        val before = digest()
+
+        copyOf(1, downloaded = false)
+
+        assertNotEquals(before, digest())
+    }
+
+    @Test fun `a library change to other songs keeps the digest`() = runTest {
+        val before = digest()
+
+        trackDao.insert(
+            TrackEntity(
+                title = "Elsewhere", artist = "Someone", canonicalTitle = "elsewhere", canonicalArtist = "someone",
+                isDownloaded = true, filePath = "/music/elsewhere.flac",
+            ),
+        )
+
+        assertEquals(before, digest())
+    }
+
+    @Test fun `songs with blank words have no copies, as the diff gives them none`() = runTest {
+        val blank = trackDao.insert(TrackEntity(title = "(Intro)", artist = "", canonicalTitle = "", canonicalArtist = ""))
+        dao.insertCrossRef(PlaylistTrackCrossRef(playlistId = playlistId, trackId = blank, position = 3))
+        val before = digest()
+
+        // Another blank-worded row, a local import, say: no copy of anything.
+        trackDao.insert(TrackEntity(title = "[Untitled]", artist = "", canonicalTitle = "", canonicalArtist = "", isDownloaded = true))
+
+        assertEquals(before, digest())
     }
 
     @Test fun `forgetting clears every Spotify stamp and nothing else`() = runTest {

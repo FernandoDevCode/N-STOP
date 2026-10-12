@@ -833,9 +833,9 @@ class PlaylistFetchWorker @AssistedInject constructor(
             Log.d(TAG, "fetchSpotifyPlaylists: found ${customPlaylists.size} user playlists (filtered from ${userPlaylists.size})")
 
             // Skip reading what hasn't changed (see SpotifyMirrorStamp): one
-            // read of every stamp, with each playlist's rows as they are now,
-            // and the mode a re-read would sync in. Either read failing just
-            // means every playlist is read, as before skipping existed.
+            // read of every stamp, and the mode a re-read would sync in. Either
+            // read failing just means every playlist is read, as before
+            // skipping existed. A fingerprint is computed per candidate only.
             val mirrorStamps = loadSpotifyMirrorStamps()
             // Read once: what decides the skips also gates hiding missing playlists
             // below. Unreadable: nothing is skipped and nothing is hidden.
@@ -849,8 +849,13 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 try {
                     val trustedStamp = mirrorStamps[playlist.id]
                         ?.takeIf { isStampable(playlist.id, PlaylistType.CUSTOM) }
+                        ?.takeIf { skipCandidate(playlist.revisionId, it.stamp, spotifySyncMode, skipCheckedAtMs) != null }
                         ?.let { row ->
-                            stampToSkipOn(playlist.revisionId, row.stamp, row.digest, spotifySyncMode, skipCheckedAtMs)
+                            // Revision, mode and age match: only now the fingerprint.
+                            stampToSkipOn(
+                                playlist.revisionId, row.stamp, playlistDao.mirrorDigest(row.id),
+                                spotifySyncMode, skipCheckedAtMs,
+                            )
                         }
                     if (trustedStamp != null) {
                         // Unchanged on Spotify and here since its last full
@@ -913,6 +918,15 @@ class PlaylistFetchWorker @AssistedInject constructor(
                         emptyList()
                     }
 
+                    if (countVerified && playlist.revisionId != null && fetchedRevision != playlist.revisionId) {
+                        // Changed between the two reads, or the two ids aren't the same kind
+                        // of value (not yet proven on a device): either way, no stamp.
+                        Log.d(
+                            TAG,
+                            "fetchSpotifyPlaylists: '${playlist.id}' not stamped: listing revision " +
+                                "${playlist.revisionId} != fetched revision $fetchedRevision",
+                        )
+                    }
                     val playlistSnapshotId = remoteSnapshotDao.insertPlaylistSnapshot(
                         spotifyLibraryPlaylistSnapshot(
                             playlist = playlist,
@@ -1007,14 +1021,14 @@ class PlaylistFetchWorker @AssistedInject constructor(
     }
 
     /**
-     * Every Spotify playlist's mirror stamp next to its rows' digest now, by
-     * Spotify playlist id: what decides which library playlists this sync can
-     * skip reading ([stampToSkipOn]). Empty when the read fails, so a broken
-     * read costs the skip, never a playlist's update.
+     * Every Spotify playlist carrying a mirror stamp, by Spotify playlist id: the
+     * library playlists this sync may skip reading ([skipCandidate],
+     * [stampToSkipOn]). Empty when the read fails, so a broken read costs the
+     * skip, never a playlist's update.
      */
-    private suspend fun loadSpotifyMirrorStamps(): Map<String, com.stash.core.data.db.dao.SpotifyMirrorStampRow> =
+    private suspend fun loadSpotifyMirrorStamps(): Map<String, com.stash.core.data.db.dao.StampedSpotifyPlaylist> =
         try {
-            playlistDao.spotifyMirrorStamps().associateBy { it.sourceId }
+            playlistDao.stampedSpotifyPlaylists().associateBy { it.sourceId }
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             Log.w(TAG, "fetchSpotifyPlaylists: couldn't read mirror stamps, reading every playlist", e)

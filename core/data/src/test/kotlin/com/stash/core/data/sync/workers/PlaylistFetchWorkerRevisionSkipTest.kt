@@ -12,6 +12,7 @@ import com.stash.core.auth.TokenManager
 import com.stash.core.auth.model.AuthService
 import com.stash.core.data.blocklist.BlocklistGuard
 import com.stash.core.data.db.StashDatabase
+import com.stash.core.data.db.entity.DownloadQueueEntity
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.TrackEntity
@@ -20,6 +21,7 @@ import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.sync.SyncPreferencesManager
 import com.stash.core.data.sync.TrackMatcher
 import com.stash.core.data.sync.auth.SpotifyAuthHealthProbe
+import com.stash.core.model.DownloadStatus
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.StepStatus
@@ -348,6 +350,64 @@ class PlaylistFetchWorkerRevisionSkipTest {
         val snapshot = snapshotOf("pl1", syncId)
         assertTrue(snapshot.partial)
         assertNull(snapshot.snapshotId)
+    }
+
+    // ── A song's copies changed: read in full, and the diff acts as always ──
+
+    /** Song "A" failed to download; the user then downloaded the same song from Search. */
+    private suspend fun downloadCopyOfA(playlistId: Long): Pair<Long, Long> {
+        val stubA = db.playlistDao().getCrossRefsForPlaylist(playlistId).minBy { it.position }.trackId
+        val failedId = db.downloadQueueDao().insert(
+            DownloadQueueEntity(trackId = stubA, syncId = null, status = DownloadStatus.FAILED, searchQuery = "Artist - A"),
+        )
+        val copy = db.trackDao().insert(
+            TrackEntity(
+                title = "A", artist = "Artist", canonicalTitle = "a", canonicalArtist = "artist",
+                source = MusicSource.YOUTUBE, youtubeId = "yt-a", isDownloaded = true, filePath = "/music/a.flac",
+            ),
+        )
+        return copy to failedId
+    }
+
+    @Test fun `a song downloaded elsewhere makes the next sync read the playlist and link it in`() = runBlocking {
+        val playlistId = seedMirroredPlaylist()
+        val (copy, failedId) = downloadCopyOfA(playlistId)
+
+        val syncId = runFetch()
+        runDiff(syncId)
+
+        coVerify(exactly = 1) { spotify.getPlaylistTracks("pl1") }
+        // Exactly what a full sync always did: the copy joins at the stub's position
+        // and the stub's failed download is closed.
+        assertEquals(0, db.playlistDao().getCrossRefsForPlaylist(playlistId).single { it.trackId == copy }.position)
+        assertEquals(DownloadStatus.COMPLETED, db.downloadQueueDao().getStatusById(failedId))
+        // The new stamp vouches for the new state: the sync after skips again.
+        runFetch()
+        coVerify(exactly = 1) { spotify.getPlaylistTracks("pl1") }
+    }
+
+    @Test fun `in Accumulate too, a new copy of a song makes the next sync read the playlist`() = runBlocking {
+        every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.ACCUMULATE)
+        val playlistId = seedMirroredPlaylist(stampMode = SyncMode.ACCUMULATE)
+        downloadCopyOfA(playlistId)
+
+        runFetch()
+
+        coVerify(exactly = 1) { spotify.getPlaylistTracks("pl1") }
+    }
+
+    @Test fun `a library change to other songs still lets the playlist be skipped`() = runBlocking {
+        seedMirroredPlaylist()
+        db.trackDao().insert(
+            TrackEntity(
+                title = "Elsewhere", artist = "Someone", canonicalTitle = "elsewhere", canonicalArtist = "someone",
+                isDownloaded = true, filePath = "/music/elsewhere.flac",
+            ),
+        )
+
+        runFetch()
+
+        coVerify(exactly = 0) { spotify.getPlaylistTracks(any()) }
     }
 
     // ── End to end: read, stamp, then skip ───────────────────────────────

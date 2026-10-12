@@ -116,6 +116,14 @@ class SpotifyMirrorStampTest {
         assertNull(skipOn(stamp(recordedAtMs = now + 60_000)))
     }
 
+    @Test fun `a candidate is judged without the fingerprint, which is computed only for it`() {
+        val stored = stamp()
+        assertEquals(SpotifyMirrorStamp.decode(stored), skipCandidate(revision, stored, SyncMode.REFRESH, now))
+        assertNull(skipCandidate("AAAAAOther", stored, SyncMode.REFRESH, now))
+        assertNull(skipCandidate(revision, stored, SyncMode.ACCUMULATE, now))
+        assertNull(skipCandidate(revision, stamp(recordedAtMs = now - SpotifyMirrorStamp.MAX_AGE_MS), SyncMode.REFRESH, now))
+    }
+
     // ── revisionToRecord: only a verified fetch of the listed revision is stamped ──
 
     @Test fun `a verified fetch of the listed revision carries it`() {
