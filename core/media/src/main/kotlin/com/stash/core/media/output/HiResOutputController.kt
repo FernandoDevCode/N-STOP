@@ -265,7 +265,7 @@ class HiResOutputController @Inject constructor(
             val attributes = output.platformAttributes
             val ok = when (plan.decision) {
                 is MixerDecision.Configure -> applyMixer(device, attributes, plan.platformMixer!!)
-                is MixerDecision.Shared -> { clearMixer(device); true }
+                is MixerDecision.Shared -> { clearMixer(device, attributes); true }
             }
             if (!ok) {
                 refusals.remember(plan)
@@ -416,10 +416,15 @@ class HiResOutputController @Inject constructor(
     }
 
     @RequiresApi(34)
-    private fun clearMixer(device: AudioDeviceInfo) {
-        val current = applied.remove(device.id) ?: return
+    private fun clearMixer(device: AudioDeviceInfo, attributes: AudioAttributes? = null) {
+        val current = applied.remove(device.id)
+        // Not tracked (the app restarted since it was set): still clear whatever Android holds.
+        val attrs = current?.attributes ?: attributes ?: return
         try {
-            audioManager.clearPreferredMixerAttributes(current.attributes, device)
+            if (audioManager.getPreferredMixerAttributes(attrs, device) != null) {
+                audioManager.clearPreferredMixerAttributes(attrs, device)
+                Log.i(TAG, "cleared a leftover mixer preference on ${device.productName}")
+            }
         } catch (e: RuntimeException) {
             Log.w(TAG, "clearPreferredMixerAttributes failed", e)
         }
