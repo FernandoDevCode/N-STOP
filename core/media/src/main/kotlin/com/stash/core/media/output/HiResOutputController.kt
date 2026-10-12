@@ -57,18 +57,25 @@ class OutputPlan internal constructor(
 
     /**
      * Two plans with equal keys configure the hardware identically. Only what
-     * the hardware does counts: every shared plan writing the same track format
-     * shares a key whatever its [MixerDecision.Shared.reason] (STANDARD → MATCH
-     * on the speaker changes the reason, not the output, and must not rebuild
-     * the stream). The reason stays on [decision] for the signal path.
+     * the hardware does counts: every shared plan shares one key, whatever its
+     * [MixerDecision.Shared.reason] (STANDARD → MATCH on the speaker changes the
+     * reason, not the output, and must not rebuild the stream) and whatever its
+     * track format (a shared stream opens in the source's own format and Android
+     * converts it, so the planned and the live format can differ; keying on it
+     * rebuilt the stream on every recheck). The reason stays on [decision] for
+     * the signal path.
      */
     val key: String = when (decision) {
         is MixerDecision.Configure ->
             "cfg:${device?.id}:${decision.option.index}:${decision.option.sampleRate}:$trackFormat"
-        is MixerDecision.Shared -> "shared:$trackFormat"
+        is MixerDecision.Shared -> "shared"
     }
 
     private val isRejected: Boolean get() = decision == MixerDecision.Shared(MixerDecision.Reason.REJECTED)
+
+    /** Same plan, but the AudioTrack opens in [format] (a shared plan follows the source's own format). */
+    internal fun withTrackFormat(format: SampleFormat): OutputPlan =
+        OutputPlan(decision, format, device, platformMixer)
 
     /**
      * This plan's stream degraded to the shared mixer after Android or the DAC
@@ -261,7 +268,7 @@ class HiResOutputController @Inject constructor(
             val attributes = output.platformAttributes
             val ok = when (plan.decision) {
                 is MixerDecision.Configure -> applyMixer(device, attributes, plan.platformMixer!!)
-                is MixerDecision.Shared -> { clearMixer(device); true }
+                is MixerDecision.Shared -> { clearMixer(device, attributes); true }
             }
             if (!ok) {
                 refusals.remember(plan)
@@ -412,10 +419,15 @@ class HiResOutputController @Inject constructor(
     }
 
     @RequiresApi(34)
-    private fun clearMixer(device: AudioDeviceInfo) {
-        val current = applied.remove(device.id) ?: return
+    private fun clearMixer(device: AudioDeviceInfo, attributes: AudioAttributes? = null) {
+        val current = applied.remove(device.id)
+        // Not tracked (the app restarted since it was set): still clear whatever Android holds.
+        val attrs = current?.attributes ?: attributes ?: return
         try {
-            audioManager.clearPreferredMixerAttributes(current.attributes, device)
+            if (audioManager.getPreferredMixerAttributes(attrs, device) != null) {
+                audioManager.clearPreferredMixerAttributes(attrs, device)
+                Log.i(TAG, "cleared a leftover mixer preference on ${device.productName}")
+            }
         } catch (e: RuntimeException) {
             Log.w(TAG, "clearPreferredMixerAttributes failed", e)
         }

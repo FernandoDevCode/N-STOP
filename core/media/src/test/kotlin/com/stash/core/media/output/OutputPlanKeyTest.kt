@@ -46,9 +46,18 @@ class OutputPlanKeyTest {
             .isEqualTo(MixerDecision.Reason.RATE_UNSUPPORTED_BY_DAC)
     }
 
-    @Test fun `a different track format is a different set-up`() {
+    @Test fun `on the shared mixer the track format is not part of the set-up`() {
+        // A shared stream opens in the source's own format (Android converts it),
+        // so the planner's format and the live track's can differ: keying on it
+        // made every recheck rebuild the stream.
         assertThat(shared(MixerDecision.Reason.MODE_STANDARD).key)
-            .isNotEqualTo(shared(MixerDecision.Reason.MODE_STANDARD, SampleFormat.INT24).key)
+            .isEqualTo(shared(MixerDecision.Reason.MODE_STANDARD, SampleFormat.INT16).key)
+    }
+
+    @Test fun `a configured mixer in a different format is a different set-up`() {
+        val option = MixerOption(SampleFormat.INT16, 96_000, 2, bitPerfect = false, index = 1)
+        val pcm16 = OutputPlan(MixerDecision.Configure(option, SampleFormat.INT16), SampleFormat.INT16, device(7), Any())
+        assertThat(configured().key).isNotEqualTo(pcm16.key)
     }
 
     @Test fun `going to or from a configured USB mixer rebuilds`() {
@@ -58,9 +67,15 @@ class OutputPlanKeyTest {
         assertThat(configured.needsRebuildFor(shared)).isTrue()
     }
 
-    @Test fun `a rejected stream follows once the refusal no longer stands`() {
-        // Only a refusal that still stands keeps a stream in its non-float format.
+    @Test fun `a rejected stream already on the shared mixer is not rebuilt for its format`() {
+        // Refused, the stream fell back to the shared mixer in the refused format;
+        // a plain shared plan changes nothing the hardware does, so no re-seek.
         val live = configured().rejected()
-        assertThat(live.needsRebuildFor(shared(MixerDecision.Reason.MODE_STANDARD))).isTrue()
+        assertThat(live.needsRebuildFor(shared(MixerDecision.Reason.MODE_STANDARD))).isFalse()
+    }
+
+    @Test fun `a rejected stream still follows a configured mixer that is offered again`() {
+        val live = configured().rejected()
+        assertThat(live.needsRebuildFor(configured())).isTrue()
     }
 }

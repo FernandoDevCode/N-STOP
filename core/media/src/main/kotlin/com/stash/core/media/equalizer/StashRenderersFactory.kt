@@ -4,6 +4,8 @@ package com.stash.core.media.equalizer
 import android.content.Context
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.common.MimeTypes
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector  
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.AudioTrackAudioOutputProvider
@@ -14,6 +16,18 @@ import com.stash.core.media.output.HiResOutputController
 import com.stash.core.media.output.OutputSession
 import com.stash.core.media.output.StashAudioOutputProvider
 
+
+/** Samsung's c2.sec FLAC decoder mislabels 16-bit/44.1 output when float is requested. */
+@OptIn(UnstableApi::class)
+private val flacSafeSelector = MediaCodecSelector { mimeType, secure, tunneling ->
+    val all = MediaCodecSelector.DEFAULT.getDecoderInfos(mimeType, secure, tunneling)
+    if (mimeType == MimeTypes.AUDIO_FLAC) {
+        val safe = all.filterNot { it.name.startsWith("c2.sec.") || it.name.startsWith("OMX.sec.") }
+        if (safe.isNotEmpty()) safe else all
+    } else {
+        all
+    }
+}
 /**
  * RenderersFactory that builds Stash's audio sink: Media3's [DefaultAudioSink]
  * in float, feeding Stash's own output stage
@@ -55,6 +69,9 @@ class StashRenderersFactory(
 
     /** This factory's player's facts for its output stage (fed by the service's analytics listener). */
     val outputSession = OutputSession(mainPlayback)
+    init {
+        setMediaCodecSelector(flacSafeSelector)
+    }
 
     override fun buildAudioSink(
         context: Context,
