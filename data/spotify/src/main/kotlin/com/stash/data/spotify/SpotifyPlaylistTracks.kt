@@ -28,12 +28,19 @@ import com.stash.data.spotify.model.SpotifyTrackItem
  *                         mirror it skipped would then stay short. False when
  *                         the response carried no count (the Web API prong
  *                         never asks for one).
+ * @property revisionId    The playlist's version as the walk's first page
+ *                         reported it (`playlistV2.revisionId`), null when it
+ *                         carried none (the Web API prong). The sync stamps a
+ *                         playlist only when this equals the revision the
+ *                         library listing gave before the fetch, so a playlist
+ *                         that changed between the two reads is read again.
  */
 data class SpotifyPlaylistTracks(
     val tracks: List<SpotifyTrackItem>,
     val partial: Boolean = false,
     val partialReason: String? = null,
     val countVerified: Boolean = false,
+    val revisionId: String? = null,
 )
 
 /**

@@ -1024,6 +1024,8 @@ class SpotifyApiClient @Inject constructor(
         var rawItemsWalked = 0
         var totalCount: Int? = null
         var partialReason: String? = null
+        // The first page's: the version the walk started from.
+        var revisionId: String? = null
 
         while (true) {
             val variables = buildJsonObject {
@@ -1055,6 +1057,7 @@ class SpotifyApiClient @Inject constructor(
             )
 
             allTracks.addAll(page.tracks)
+            if (currentOffset == 0) revisionId = page.revisionId
             rawItemsWalked += page.rawItemCount
             page.totalCount?.let { totalCount = it }
 
@@ -1082,6 +1085,7 @@ class SpotifyApiClient @Inject constructor(
             partial = partialReason != null,
             partialReason = partialReason,
             countVerified = partialReason == null && expected != null && rawItemsWalked >= expected,
+            revisionId = revisionId,
         )
     }
 
@@ -1472,10 +1476,12 @@ class SpotifyApiClient @Inject constructor(
      */
     private fun parsePlaylistTracksGraphQLResponse(responseJson: JsonObject): PlaylistTracksPage? {
         return try {
-            val content = responseJson["data"]
-                ?.jsonObject?.get("playlistV2")
-                ?.jsonObject?.get("content")
-                ?.jsonObject
+            val playlistV2 = responseJson["data"]
+                ?.jsonObject?.get("playlistV2") as? JsonObject
+            val content = playlistV2?.get("content") as? JsonObject
+            // Soft: a shape change costs only the skip, never the page.
+            val revisionId = (playlistV2?.get("revisionId") as? JsonPrimitive)
+                ?.contentOrNull?.takeIf { it.isNotBlank() }
             val items = content?.get("items")?.jsonArray
 
             if (items == null) {
@@ -1577,7 +1583,7 @@ class SpotifyApiClient @Inject constructor(
                     TAG,
                     "parsePlaylistTracksGraphQLResponse: parsed ${parsed.size}/$rawItemCount tracks",
                 )
-                PlaylistTracksPage(parsed, rawItemCount, totalCount)
+                PlaylistTracksPage(parsed, rawItemCount, totalCount, revisionId)
             }
         } catch (e: Exception) {
             Log.e(TAG, "parsePlaylistTracksGraphQLResponse: failed to parse response", e)
@@ -1592,12 +1598,14 @@ class SpotifyApiClient @Inject constructor(
      * `tracks.size < pageSize` mis-fires whenever an item gets filtered
      * by the parser (local tracks, podcast episodes, non-Track URIs).
      * [totalCount] is the playlist size Spotify reports alongside the page
-     * (`playlistV2.content.totalCount`), null when absent.
+     * (`playlistV2.content.totalCount`), null when absent; [revisionId] the
+     * playlist's version (`playlistV2.revisionId`), null when absent.
      */
     private data class PlaylistTracksPage(
         val tracks: List<SpotifyTrackItem>,
         val rawItemCount: Int,
         val totalCount: Int? = null,
+        val revisionId: String? = null,
     )
 
 }
