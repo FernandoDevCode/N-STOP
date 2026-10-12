@@ -23,7 +23,7 @@ import com.stash.data.spotify.model.SpotifyPlaylistItem
  *  - [digest]: the playlist's rows here (live, removed and added-here memberships, their order)
  *    and its stored song count, as [com.stash.core.data.db.dao.PlaylistDao.mirrorDigest] sums them.
  *    Any change to them, by any code path, makes the next sync read the playlist again. That is
- *    why removing, deleting, blocking, the orphan sweep and a backup merge need no hook of their
+ *    why removing a song, deleting one, blocking one and the orphan sweep need no hook of their
  *    own, and why a path added later can't forget one.
  *  - [syncMode]: Refresh or Accumulate, which decides what a re-read would do.
  *  - [recordedAtMs]: when the mirror was made. Older than [MAX_AGE_MS] and the playlist is read

@@ -975,13 +975,19 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     syncLog.warn("Hid $hidden Spotify playlist(s) no longer in your account")
                 }
             }
+            // The skips ride along as a note (as Liked Songs' studio filter does), so
+            // a shared diagnostics bundle shows how many playlists weren't re-read.
+            val skippedNote = if (skippedUnchanged > 0) "$skippedUnchanged unchanged since the last sync, not re-read" else null
             diagnostics.add(
                 SyncStepResult(
                     "SPOTIFY",
                     "getUserPlaylists",
                     if (inventoryComplete) StepStatus.SUCCESS else StepStatus.ERROR,
                     userPlaylistCount,
-                    errorMessage = if (inventoryComplete) null else "inventory incomplete — a page/folder/track fetch failed mid-walk",
+                    errorMessage = listOfNotNull(
+                        if (inventoryComplete) null else "inventory incomplete — a page/folder/track fetch failed mid-walk",
+                        skippedNote,
+                    ).joinToString("; ").ifEmpty { null },
                 )
             )
         } catch (e: SpotifyApiException) {

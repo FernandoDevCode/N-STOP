@@ -188,6 +188,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
         val step = userPlaylistsStep(syncId)
         assertEquals("a skipped playlist is still a synced one", 1, step.itemCount)
         assertEquals(StepStatus.SUCCESS, step.status)
+        assertEquals("shown in a shared diagnostics bundle", "1 unchanged since the last sync, not re-read", step.errorMessage)
     }
 
     @Test fun `an unchanged playlist comes out of the whole sync exactly as it went in`() = runBlocking {
@@ -230,6 +231,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
         assertEquals("read before the tracks, so never newer than them", revision, snapshot.snapshotId)
         assertFalse(snapshot.partial)
         assertEquals(2, db.remoteSnapshotDao().getTrackSnapshotsBySyncId(syncId).size)
+        assertNull("nothing skipped, nothing noted", userPlaylistsStep(syncId).errorMessage)
     }
 
     @Test fun `a playlist the listing gives no revision for is read`() = runBlocking {
