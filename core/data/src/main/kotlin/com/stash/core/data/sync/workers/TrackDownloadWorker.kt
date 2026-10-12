@@ -263,6 +263,8 @@ class TrackDownloadWorker @AssistedInject constructor(
                         downloadJobs.register(queueItem.id, itemJob)
                         itemJob.invokeOnCompletion { downloadJobs.unregister(queueItem.id, itemJob) }
                         if (downloadQueueDao.getStatusById(queueItem.id) == DownloadStatus.SKIPPED) {
+                            // Cancelled as it was claimed: a replacement keeps its file.
+                            fileReplacement.restoreAfterStop(queueItem.trackId)
                             return@launch
                         }
                         // The track's file before this download, read before it
@@ -536,6 +538,13 @@ class TrackDownloadWorker @AssistedInject constructor(
                             val userCancelled = withContext(NonCancellable) {
                                 downloadQueueDao.getStatusById(queueItem.id) == DownloadStatus.SKIPPED
                             }
+                            // Either way, a track handed back for a better copy
+                            // (markForReplacement) that stopped before its row
+                            // recorded a new file gets its kept file back as its
+                            // download: before, it only did on FAILED or after a
+                            // commit, and one stopped mid-download dropped out of
+                            // the Library. A no-op for every other track.
+                            fileReplacement.restoreAfterStop(queueItem.trackId)
                             if (userCancelled) {
                                 return@launch
                             }
@@ -799,6 +808,9 @@ class TrackDownloadWorker @AssistedInject constructor(
             downloadClaimed(entry, track)
         } catch (ce: kotlinx.coroutines.CancellationException) {
             withContext(NonCancellable) { downloadQueueDao.releaseClaim(entry.id) } // no-op unless IN_PROGRESS
+            // A replacement stopped before its row recorded a new file keeps its
+            // file as its download (see the chain-mode cancel branch).
+            fileReplacement.restoreAfterStop(entry.trackId)
             throw ce
         }
     }
@@ -809,6 +821,8 @@ class TrackDownloadWorker @AssistedInject constructor(
         track: com.stash.core.model.Track,
     ): Result {
         if (downloadQueueDao.getStatusById(entry.id) == DownloadStatus.SKIPPED) {
+            // Cancelled as it was claimed: a replacement keeps its file.
+            fileReplacement.restoreAfterStop(entry.trackId)
             return Result.success()
         }
 
@@ -827,6 +841,8 @@ class TrackDownloadWorker @AssistedInject constructor(
                 downloadQueueDao.getStatusById(entry.id) == DownloadStatus.SKIPPED
             }
             if (userCancelled) {
+                // runSingleTrackMode restores after a rethrow; this return skips it.
+                fileReplacement.restoreAfterStop(entry.trackId)
                 return Result.success()
             }
             throw ce

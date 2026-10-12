@@ -3,6 +3,7 @@ package com.stash.data.download
 import android.util.Log
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.data.files.LocalFileOps
 import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.lastfm.LastFmCredentials
 import com.stash.core.data.mapper.toDomain
@@ -135,6 +136,8 @@ class DownloadManager @Inject constructor(
      */
     private val audioDurationExtractor: AudioDurationExtractor,
     private val losslessHealthGate: LosslessSourceHealthGate,
+    /** Checks each fetched temp file before the commit ([acceptBeforeCommit]). */
+    private val localFileOps: LocalFileOps,
 ) {
     /**
      * Test/build seam for the debug-build lossy-fallback carve-out below.
@@ -436,6 +439,13 @@ class DownloadManager @Inject constructor(
             }
         }
 
+        // The message TrackDownloaderImpl gave the same junk when it found it
+        // after the commit, so the worker classifies and retries it as before.
+        if (!acceptBeforeCommit(downloadedFile, effectiveTrack, "yt-dlp")) {
+            emitProgress(track.id, 0f, DownloadStatus.FAILED)
+            return TrackDownloadResult.Failed("Downloaded file too small — discarded as a failed download")
+        }
+
         // From here until the commit moves it into the library, the temp file
         // is this attempt's alone: every attempt names its own, so one that a
         // failed commit or a cancel left behind was never reused or cleaned,
@@ -490,6 +500,22 @@ class DownloadManager @Inject constructor(
         lyricsFetchTrigger.enqueueFor(track.id)
         emitProgress(track.id, 1f, DownloadStatus.COMPLETED)
         return TrackDownloadResult.Success(committed.filePath)
+    }
+
+    /**
+     * Checks [file], a fetched temp file, BEFORE it is committed. A
+     * "successful" fetch can still be junk (a ~274-byte yt-dlp error body, an
+     * error page saved as audio). Committed first, it took the place of the
+     * song's own library file whenever it landed on the same name (a
+     * re-download or upgrade usually does), and the check after the commit
+     * (TrackDownloaderImpl) then deleted the very file the row records, so the
+     * song had none. [LocalFileOps.acceptDownloadOrDelete] deletes the junk.
+     * Search and the wrong-match swap check their temp file the same way.
+     */
+    private fun acceptBeforeCommit(file: File, track: Track, source: String): Boolean {
+        if (localFileOps.acceptDownloadOrDelete(file.absolutePath)) return true
+        Log.w(TAG, "$source: discarded too-small download for '${track.artist} - ${track.title}': ${file.name}")
+        return false
     }
 
     /**
@@ -558,6 +584,7 @@ class DownloadManager @Inject constructor(
             runCatching { tempFile.delete() }
             return null
         }
+        if (!acceptBeforeCommit(fetched, track, "JioSaavn")) return null
 
         val metadata = audioDurationExtractor.extract(fetched.absolutePath)
         val durationTolerance = maxOf(
@@ -684,6 +711,9 @@ class DownloadManager @Inject constructor(
             runCatching { tempFile.delete() }
             return null
         }
+        // A junk body probes as "unknown length", which the duration backstop
+        // lets through, so it is checked here. A failed fetch, like the one above.
+        if (!acceptBeforeCommit(fetched, track, "lossless")) return null
 
         // Duration backstop (degradation detection): a degraded source can
         // serve a 30s preview whose URL lacked the `range=` marker the

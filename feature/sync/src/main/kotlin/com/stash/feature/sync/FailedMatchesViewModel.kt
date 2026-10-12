@@ -718,6 +718,16 @@ class FailedMatchesViewModel @Inject constructor(
             Log.w(TAG, "Background download failed for ${candidate.title}: $result")
             return false
         }
+        // Reject a too-small "successful" download (failed
+        // yt-dlp run leaving a tiny error body): delete it +
+        // leave the track not-downloaded (streamable). Checked while
+        // it's a temp file: committed first, it could replace the
+        // track's own file at the same name, and rejecting it then
+        // deleted the file the row records.
+        if (!localFileOps.acceptDownloadOrDelete(result.file.absolutePath)) {
+            Log.w(TAG, "resync: discarded too-small download for ${candidate.title}: ${result.file.name}")
+            return false
+        }
         val track = trackDao.getById(trackId)
         val artist = track?.artist ?: candidate.artist
         val title = track?.title ?: candidate.title
@@ -730,13 +740,6 @@ class FailedMatchesViewModel @Inject constructor(
             format = result.file.extension,
             trackId = trackId,
         )
-        // Reject a too-small "successful" download (failed
-        // yt-dlp run leaving a tiny error body): delete it +
-        // leave the track not-downloaded (streamable).
-        if (!localFileOps.acceptDownloadOrDelete(committed.filePath)) {
-            Log.w(TAG, "resync: discarded too-small download for ${candidate.title}: ${committed.filePath}")
-            return false
-        }
         trackDao.markAsDownloaded(trackId, committed.filePath, committed.sizeBytes)
         return true
     }

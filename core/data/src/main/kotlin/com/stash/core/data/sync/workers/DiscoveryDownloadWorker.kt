@@ -169,6 +169,11 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
                     if (!skipped) downloadQueueDao.releaseClaim(queueItem.id)
                     skipped
                 }
+                // Either way, a track handed back for a better copy
+                // (markForReplacement) that stopped before its row recorded a
+                // new file gets its kept file back as its download, or it drops
+                // out of the Library. A no-op for every other track.
+                fileReplacement.restoreAfterStop(queueItem.trackId)
                 if (!userCancelled) {
                     throw cancelled
                 }
@@ -195,7 +200,11 @@ class DiscoveryDownloadWorker @AssistedInject constructor(
             val itemJob = currentCoroutineContext().job
             downloadJobs.register(queueItem.id, itemJob)
             itemJob.invokeOnCompletion { downloadJobs.unregister(queueItem.id, itemJob) }
-            if (downloadQueueDao.getStatusById(queueItem.id) == DownloadStatus.SKIPPED) return@async false
+            if (downloadQueueDao.getStatusById(queueItem.id) == DownloadStatus.SKIPPED) {
+                // Cancelled as it was claimed: a replacement keeps its file.
+                fileReplacement.restoreAfterStop(queueItem.trackId)
+                return@async false
+            }
 
             val trackEntity = trackDao.getById(queueItem.trackId) ?: return@async false
             if (blocklistGuard.isBlocked(
