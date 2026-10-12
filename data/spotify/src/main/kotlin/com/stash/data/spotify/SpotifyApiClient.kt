@@ -369,7 +369,9 @@ class SpotifyApiClient @Inject constructor(
                 if (webApiTracks != null) {
                     Log.d(TAG, "getPlaylistTracks: got ${webApiTracks.size} tracks via Web API")
                     // All-or-nothing: any failed Web API page returns null above
-                    // and the whole playlist is re-fetched via GraphQL.
+                    // and the whole playlist is re-fetched via GraphQL. This prong
+                    // asks for no track count, so its result is never
+                    // countVerified: the sync just reads such a playlist again.
                     return SyncResult.Success(SpotifyPlaylistTracks(webApiTracks))
                 }
             } else {
@@ -1072,10 +1074,14 @@ class SpotifyApiClient @Inject constructor(
         }
 
         if (allTracks.isEmpty()) return null
+        // Every item Spotify counts was walked: the proof the sync needs before
+        // it lets a later run skip this playlist (see SpotifyPlaylistTracks).
+        val expected = totalCount
         return SpotifyPlaylistTracks(
             tracks = allTracks,
             partial = partialReason != null,
             partialReason = partialReason,
+            countVerified = partialReason == null && expected != null && rawItemsWalked >= expected,
         )
     }
 

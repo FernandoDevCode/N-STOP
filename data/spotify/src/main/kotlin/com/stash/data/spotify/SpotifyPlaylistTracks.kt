@@ -19,11 +19,21 @@ import com.stash.data.spotify.model.SpotifyTrackItem
  *                         are missing. Callers must not treat the list as the
  *                         complete playlist.
  * @property partialReason Human-readable diagnostics for [partial]; null when complete.
+ * @property countVerified True only when the walk saw every item Spotify's own
+ *                         count (`content.totalCount`) says the playlist holds,
+ *                         with no failed page. Stricter than "not [partial]",
+ *                         whose 95% tolerance is right for deciding a mirror but
+ *                         not for proving one complete: the sync lets the next
+ *                         run skip a playlist only on this proof, since a short
+ *                         mirror it skipped would then stay short. False when
+ *                         the response carried no count (the Web API prong
+ *                         never asks for one).
  */
 data class SpotifyPlaylistTracks(
     val tracks: List<SpotifyTrackItem>,
     val partial: Boolean = false,
     val partialReason: String? = null,
+    val countVerified: Boolean = false,
 )
 
 /**
