@@ -23,13 +23,15 @@ class SpotifyMirrorStampTest {
     private val now = 1_800_000_000_000L
     private val revision = "AAAAAMv6SY4RNBP4lRibleC3UcWweCUH"
     private val digest = "9f2c1d0b7a4e6f8812ab34cd56ef7890"
+    private val appVersion = 150L
 
     private fun stamp(
         revision: String = this.revision,
         syncMode: SyncMode = SyncMode.REFRESH,
         recordedAtMs: Long = now - 60_000,
         digest: String = this.digest,
-    ) = SpotifyMirrorStamp(revision, syncMode, recordedAtMs, digest).encode()
+        appVersion: Long = this.appVersion,
+    ) = SpotifyMirrorStamp(revision, syncMode, recordedAtMs, digest, appVersion).encode()
 
     private fun skipOn(
         stored: String?,
@@ -37,12 +39,13 @@ class SpotifyMirrorStampTest {
         currentDigest: String? = digest,
         syncMode: SyncMode? = SyncMode.REFRESH,
         nowMs: Long = now,
-    ) = stampToSkipOn(listRevision, stored, currentDigest, syncMode, nowMs)
+        appVersion: Long = this.appVersion,
+    ) = stampToSkipOn(listRevision, stored, currentDigest, syncMode, nowMs, appVersion)
 
     // ── Encoding ─────────────────────────────────────────────────────────
 
     @Test fun `a stamp reads back exactly as written`() {
-        val written = SpotifyMirrorStamp(revision, SyncMode.ACCUMULATE, 1234L, digest)
+        val written = SpotifyMirrorStamp(revision, SyncMode.ACCUMULATE, 1234L, digest, 150L)
 
         assertEquals(written, SpotifyMirrorStamp.decode(written.encode()))
     }
@@ -53,7 +56,7 @@ class SpotifyMirrorStampTest {
             null,
             "",
             revision, // a bare revision, as a fetched snapshot carries it
-            good.replaceFirst("v1|", "v0|"),
+            good.replaceFirst("v2|", "v1|"),
             good.replace("|REFRESH|", "|SOMETIMES|"),
             good.replace("|${now - 60_000}|", "|yesterday|"),
             "$good|extra",
@@ -111,6 +114,10 @@ class SpotifyMirrorStampTest {
         assertNull(skipOn(atTheLimit))
     }
 
+    @Test fun `an app update reads every playlist once`() {
+        assertNull(skipOn(stamp(appVersion = 149L), appVersion = 150L))
+    }
+
     @Test fun `a stamp from the future is not trusted`() {
         // The clock went back since it was written: its age can't be told.
         assertNull(skipOn(stamp(recordedAtMs = now + 60_000)))
@@ -118,10 +125,10 @@ class SpotifyMirrorStampTest {
 
     @Test fun `a candidate is judged without the fingerprint, which is computed only for it`() {
         val stored = stamp()
-        assertEquals(SpotifyMirrorStamp.decode(stored), skipCandidate(revision, stored, SyncMode.REFRESH, now))
-        assertNull(skipCandidate("AAAAAOther", stored, SyncMode.REFRESH, now))
-        assertNull(skipCandidate(revision, stored, SyncMode.ACCUMULATE, now))
-        assertNull(skipCandidate(revision, stamp(recordedAtMs = now - SpotifyMirrorStamp.MAX_AGE_MS), SyncMode.REFRESH, now))
+        assertEquals(SpotifyMirrorStamp.decode(stored), skipCandidate(revision, stored, SyncMode.REFRESH, now, appVersion))
+        assertNull(skipCandidate("AAAAAOther", stored, SyncMode.REFRESH, now, appVersion))
+        assertNull(skipCandidate(revision, stored, SyncMode.ACCUMULATE, now, appVersion))
+        assertNull(skipCandidate(revision, stamp(recordedAtMs = now - SpotifyMirrorStamp.MAX_AGE_MS), SyncMode.REFRESH, now, appVersion))
     }
 
     // ── revisionToRecord: only a verified fetch of the listed revision is stamped ──

@@ -745,7 +745,7 @@ class DatabaseBackupMergeTest {
         val untouched = live.playlistDao().insert(playlist("Mine", "sp-live", lastSynced = Instant.ofEpochMilli(1)))
         val stampOf = { pid: Long, digest: String ->
             com.stash.core.data.sync.workers.SpotifyMirrorStamp(
-                "liveRev", com.stash.core.model.SyncMode.REFRESH, System.currentTimeMillis(), digest,
+                "liveRev", com.stash.core.model.SyncMode.REFRESH, System.currentTimeMillis(), digest, 1L,
             ).encode()
         }
         live.playlistDao().updateSnapshotId(touched, stampOf(touched, live.playlistDao().mirrorDigest(touched)!!))
@@ -758,7 +758,7 @@ class DatabaseBackupMergeTest {
             backup.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = bP1, trackId = bShared, position = 0))
             backup.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = bP1, trackId = bNew, position = 1))
             val bPid = backup.playlistDao().insert(playlist("From Backup", "sp-backup", lastSynced = Instant.ofEpochMilli(1)))
-            backup.playlistDao().updateSnapshotId(bPid, "v1|backupRev|REFRESH|1|0123456789abcdef0123456789abcdef")
+            backup.playlistDao().updateSnapshotId(bPid, "v2|backupRev|REFRESH|1|1|0123456789abcdef0123456789abcdef")
         }
 
         val result = manager.importDatabase(uri, BackupImportScope.LIBRARY_MERGE)
@@ -777,7 +777,7 @@ class DatabaseBackupMergeTest {
     fun `a replace-restore makes the restored library's first sync read every playlist`() = runTest {
         val uri = buildBackupZip { backup ->
             val bPid = backup.playlistDao().insert(playlist("From Backup", "sp-backup", lastSynced = Instant.ofEpochMilli(1)))
-            backup.playlistDao().updateSnapshotId(bPid, "v1|backupRev|REFRESH|1|0123456789abcdef0123456789abcdef")
+            backup.playlistDao().updateSnapshotId(bPid, "v2|backupRev|REFRESH|1|1|0123456789abcdef0123456789abcdef")
         }
         val liveFile = context.getDatabasePath(StashDatabase.DATABASE_NAME)
         liveFile.parentFile?.mkdirs()

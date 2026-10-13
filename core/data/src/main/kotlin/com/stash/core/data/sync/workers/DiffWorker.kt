@@ -237,7 +237,11 @@ class DiffWorker @AssistedInject constructor(
             // pass. Per-source (not global) as of v0.5 — the user picks
             // REFRESH/ACCUMULATE independently for Spotify and YouTube in
             // the Sync Preferences cards.
-            val spotifySyncMode = syncPreferencesManager.spotifySyncMode.first()
+            // Spotify: the mode the fetch decided its skips by, when it handed one on,
+            // so one sync runs in one mode even if the setting changes mid-sync.
+            val spotifySyncMode = inputData.getString(PlaylistFetchWorker.KEY_SPOTIFY_SYNC_MODE)
+                ?.let { name -> SyncMode.entries.firstOrNull { it.name == name } }
+                ?: syncPreferencesManager.spotifySyncMode.first()
             val youtubeSyncMode = syncPreferencesManager.youtubeSyncMode.first()
 
             // Read the streaming-mode toggle ONCE up front. When on, new
@@ -1005,8 +1009,9 @@ class DiffWorker @AssistedInject constructor(
             // Stamping it would make the next sync skip this playlist as
             // "unchanged" and the missing tracks would never re-sync; stamping
             // trackSnapshots.size would show a lying track count over retained
-            // content. Leave both as they were: an older stamp stops matching
-            // the rows this pass merged into, so the next sync reads it again.
+            // content. Leave the count as it was, and an older stamp too: it no
+            // longer matches this pass's merged rows unless nothing was merged,
+            // and then the mirror it vouches for still stands.
             return
         }
         playlistDao.updateTrackCount(localPlaylist.id, trackSnapshots.size)
@@ -1046,17 +1051,23 @@ class DiffWorker @AssistedInject constructor(
         localPlaylist: PlaylistEntity,
         syncMode: SyncMode,
     ) {
-        // A Spotify-generated playlist or a row filed as a mix is always read (isStampable).
-        if (!isStampable(localPlaylist.sourceId, localPlaylist.type)) return
+        // A Spotify-generated playlist or a row filed as a mix is always read
+        // (isStampable); so is a mirror with no verified revision to stamp. An
+        // older stamp must not outlive this mirror and vouch for it: dropped.
         val revision = playlistSnapshot.snapshotId
             ?.takeIf { SpotifyMirrorStamp.isUsableRevision(it) }
-            ?: return
-        val digest = playlistDao.mirrorDigest(localPlaylist.id) ?: return
+            ?.takeIf { isStampable(localPlaylist.sourceId, localPlaylist.type) }
+        val digest = revision?.let { playlistDao.mirrorDigest(localPlaylist.id) }
+        if (revision == null || digest == null) {
+            playlistDao.forgetMirrorStamp(localPlaylist.id)
+            return
+        }
         val stamp = SpotifyMirrorStamp(
             revision = revision,
             syncMode = syncMode,
             recordedAtMs = System.currentTimeMillis(),
             digest = digest,
+            appVersion = appVersionCode(applicationContext),
         )
         playlistDao.updateSnapshotId(localPlaylist.id, stamp.encode())
     }

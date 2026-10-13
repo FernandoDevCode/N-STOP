@@ -127,6 +127,7 @@ class DiffWorkerRevisionSkipTest {
         syncMode = mode,
         recordedAtMs = System.currentTimeMillis() - 60 * 60 * 1000,
         digest = db.playlistDao().mirrorDigest(playlistId)!!,
+        appVersion = appVersionCode(context),
     ).encode()
 
     private fun stubSnapshots(snapshot: RemotePlaylistSnapshotEntity, tracks: List<RemoteTrackSnapshotEntity> = emptyList()) {
@@ -204,7 +205,7 @@ class DiffWorkerRevisionSkipTest {
         // row really goes through the diff rather than the switched-off skip.
         coEvery { streamingPreference.current() } returns true
         stubSnapshots(
-            unchangedSpotifyPlaylistSnapshot(listed(), SpotifyMirrorStamp(revision, SyncMode.REFRESH, 1L, "0123456789abcdef0123456789abcdef").encode(), syncId = 1L)
+            unchangedSpotifyPlaylistSnapshot(listed(), SpotifyMirrorStamp(revision, SyncMode.REFRESH, 1L, "0123456789abcdef0123456789abcdef", appVersionCode(context)).encode(), syncId = 1L)
                 .copy(id = 1L),
         )
 
@@ -283,7 +284,7 @@ class DiffWorkerRevisionSkipTest {
         assertEquals(
             "the next fetch skips it while nothing changes",
             stored,
-            stampToSkipOn(revision, stored, digestNow, SyncMode.REFRESH, System.currentTimeMillis()),
+            stampToSkipOn(revision, stored, digestNow, SyncMode.REFRESH, System.currentTimeMillis(), appVersionCode(context)),
         )
     }
 
@@ -300,11 +301,12 @@ class DiffWorkerRevisionSkipTest {
         val stored = db.playlistDao().getSnapshotId(playlistId)
         assertEquals(SyncMode.ACCUMULATE, SpotifyMirrorStamp.decode(stored)!!.syncMode)
         val digestNow = db.playlistDao().mirrorDigest(playlistId)
-        assertNull(stampToSkipOn(revision, stored, digestNow, SyncMode.REFRESH, System.currentTimeMillis()))
+        assertNull(stampToSkipOn(revision, stored, digestNow, SyncMode.REFRESH, System.currentTimeMillis(), appVersionCode(context)))
     }
 
     @Test fun `a mirror with no verified revision is not stamped`() = runBlocking {
-        val playlistId = seedMirroredPlaylist(stamped = false)
+        // Stamped before: the old stamp must not outlive this mirror and vouch for it.
+        val playlistId = seedMirroredPlaylist(stamped = true)
         stubSnapshots(
             spotifyLibraryPlaylistSnapshot(listed(), syncId = 1L, partial = false, snapshotId = null).copy(id = 1L),
             trackSnapshots("A", "B"),

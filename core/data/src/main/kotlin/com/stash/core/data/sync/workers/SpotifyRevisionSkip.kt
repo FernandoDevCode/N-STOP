@@ -20,17 +20,21 @@ import com.stash.data.spotify.model.SpotifyPlaylistItem
  *  - [revision]: the playlist's `revisionId` from the library listing, read BEFORE its tracks were
  *    fetched, so it is never newer than the tracks mirrored. A change on Spotify mid-fetch only
  *    means the next sync reads the playlist again.
- *  - [digest]: an exact fingerprint of the playlist's rows here (live, removed and added-here
- *    memberships, their positions), its stored song count, and its songs' copies in the library
- *    (rows with the same canonical words, downloaded or not; [com.stash.core.data.db.dao.mirrorDigestOf]).
+ *  - [digest]: an exact fingerprint of everything here a full diff reads for the playlist
+ *    ([com.stash.core.data.db.dao.mirrorDigestOf]): its rows (live, removed and added-here
+ *    memberships, their positions, whether a song's download failed), its stored song count, and
+ *    its songs' copies in the library (rows with the same canonical words: downloaded, dismissed,
+ *    title, Spotify and YouTube ids).
  *    Any change to them, by any code path, makes the next sync read the playlist again. That is
  *    why removing a song, deleting one and the orphan sweep need no hook of their own, why a
  *    path added later can't forget one, and why a song downloaded elsewhere still reaches the
  *    playlist at once: the full read's diff links that copy in, as it always did.
  *  - [syncMode]: Refresh or Accumulate, which decides what a re-read would do.
  *  - [recordedAtMs]: when the mirror was made. Older than [MAX_AGE_MS] and the playlist is read
- *    again anyway: what the stamp can't see (a fix to the diff in an app update, a new cover or
- *    video id for a song from Spotify's side) still reaches every playlist within a week.
+ *    again anyway: what the stamp can't see (a remote change that doesn't move the revision,
+ *    such as a song taken down or relinked, a new cover) still reaches every playlist within
+ *    a week.
+ *  - [appVersion]: an app update reads every playlist once (a fix to the diff reaches them all).
  *
  * What it can't see by the rows, a hook forgets: a block (a twin row of the song in another
  * playlist is filtered by a full sync) and an unblock (which playlists hold it on Spotify isn't
@@ -39,22 +43,25 @@ import com.stash.data.spotify.model.SpotifyPlaylistItem
  * ([com.stash.core.data.db.dao.SyncUndoDao.forgetSnapshotIdsSyncedSince]). Only a library
  * playlist the user saved is ever stamped ([isStampable]).
  *
- * Bump [VERSION] when a change to the diff must reach every playlist at once: every stamp written
- * before stops matching, so the next sync reads everything.
+ * [appVersion] is the app's version code when the mirror was made: every app update makes the
+ * next sync read every playlist once, so a change to the diff reaches them all at once with no
+ * one remembering to. Bump [VERSION] only when the stamp's own format changes.
  */
 internal data class SpotifyMirrorStamp(
     val revision: String,
     val syncMode: SyncMode,
     val recordedAtMs: Long,
     val digest: String,
+    val appVersion: Long,
 ) {
     /** The text stored in `playlists.snapshot_id`; [decode] reads it back. */
     fun encode(): String =
-        listOf(VERSION, revision, syncMode.name, recordedAtMs.toString(), digest).joinToString(SEPARATOR)
+        listOf(VERSION, revision, syncMode.name, recordedAtMs.toString(), appVersion.toString(), digest)
+            .joinToString(SEPARATOR)
 
     companion object {
-        /** Format and diff generation; see the class KDoc for when to bump it. */
-        const val VERSION = "v1"
+        /** The stamp's format; see the class KDoc. */
+        const val VERSION = "v2"
 
         /** Never in a base64 revision id, nor in a digest (hex). */
         private const val SEPARATOR = "|"
@@ -77,34 +84,38 @@ internal data class SpotifyMirrorStamp(
          */
         fun decode(value: String?): SpotifyMirrorStamp? {
             val parts = value?.split(SEPARATOR) ?: return null
-            if (parts.size != 5 || parts[0] != VERSION) return null
+            if (parts.size != 6 || parts[0] != VERSION) return null
             val revision = parts[1].takeIf(::isUsableRevision) ?: return null
             val syncMode = SyncMode.entries.firstOrNull { it.name == parts[2] } ?: return null
             val recordedAtMs = parts[3].toLongOrNull() ?: return null
-            val digest = parts[4].takeIf { it.isNotBlank() } ?: return null
-            return SpotifyMirrorStamp(revision, syncMode, recordedAtMs, digest)
+            val appVersion = parts[4].toLongOrNull() ?: return null
+            val digest = parts[5].takeIf { it.isNotBlank() } ?: return null
+            return SpotifyMirrorStamp(revision, syncMode, recordedAtMs, digest, appVersion)
         }
     }
 }
 
 /**
  * The stored stamp, decoded, when everything but the playlist's fingerprint already vouches
- * for skipping: the same revision on Spotify ([listRevision]), the same [syncMode], and
- * recorded within [SpotifyMirrorStamp.MAX_AGE_MS] of [nowMs] (a stamp from the future, the
- * clock having gone back, doesn't count). Null means read the playlist. The fetch step checks
- * this first and computes the fingerprint (a few queries) only for a candidate.
+ * for skipping: the same revision on Spotify ([listRevision]), the same [syncMode], the same
+ * [appVersion], and recorded within [SpotifyMirrorStamp.MAX_AGE_MS] of [nowMs] (a stamp from
+ * the future, the clock having gone back, doesn't count). Null means read the playlist. The
+ * fetch step checks this first and computes the fingerprint (a few queries) only for a candidate.
  */
 internal fun skipCandidate(
     listRevision: String?,
     stored: String?,
     syncMode: SyncMode?,
     nowMs: Long,
+    appVersion: Long,
 ): SpotifyMirrorStamp? {
     if (!SpotifyMirrorStamp.isUsableRevision(listRevision) || syncMode == null) return null
     val stamp = SpotifyMirrorStamp.decode(stored) ?: return null
     val age = nowMs - stamp.recordedAtMs
     val fresh = age >= 0 && age < SpotifyMirrorStamp.MAX_AGE_MS
-    return stamp.takeIf { it.revision == listRevision && it.syncMode == syncMode && fresh }
+    return stamp.takeIf {
+        it.revision == listRevision && it.syncMode == syncMode && it.appVersion == appVersion && fresh
+    }
 }
 
 /**
@@ -121,8 +132,9 @@ internal fun stampToSkipOn(
     currentDigest: String?,
     syncMode: SyncMode?,
     nowMs: Long,
+    appVersion: Long,
 ): String? {
-    val stamp = skipCandidate(listRevision, stored, syncMode, nowMs) ?: return null
+    val stamp = skipCandidate(listRevision, stored, syncMode, nowMs, appVersion) ?: return null
     return if (currentDigest != null && stamp.digest == currentDigest) stored else null
 }
 
@@ -197,3 +209,17 @@ internal fun unchangedSpotifyPlaylistSnapshot(
     syncId: Long,
 ): RemotePlaylistSnapshotEntity =
     spotifyLibraryPlaylistSnapshot(playlist, syncId, partial = true, snapshotId = stamp)
+
+/**
+ * This app's version code, for [SpotifyMirrorStamp.appVersion]; -1 when it can't be read (then
+ * the same -1 on both sides of a sync, so skipping still works within one install).
+ */
+internal fun appVersionCode(context: android.content.Context): Long = runCatching {
+    val info = context.packageManager.getPackageInfo(context.packageName, 0)
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+        info.longVersionCode
+    } else {
+        @Suppress("DEPRECATION")
+        info.versionCode.toLong()
+    }
+}.getOrDefault(-1L)

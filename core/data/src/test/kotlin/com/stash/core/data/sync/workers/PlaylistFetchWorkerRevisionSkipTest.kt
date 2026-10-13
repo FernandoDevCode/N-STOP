@@ -156,6 +156,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
             syncMode = stampMode,
             recordedAtMs = System.currentTimeMillis() - ageMs,
             digest = db.playlistDao().mirrorDigest(playlistId)!!,
+            appVersion = appVersionCode(context),
         ).encode()
         db.playlistDao().updateSnapshotId(playlistId, stamp)
         return playlistId
@@ -272,6 +273,22 @@ class PlaylistFetchWorkerRevisionSkipTest {
         coVerify(exactly = 1) { spotify.getPlaylistTracks("pl1") }
     }
 
+    @Test fun `an app update reads every playlist once`() = runBlocking {
+        val playlistId = seedMirroredPlaylist()
+        val stamp = SpotifyMirrorStamp.decode(db.playlistDao().getSnapshotId(playlistId))!!
+        db.playlistDao().updateSnapshotId(playlistId, stamp.copy(appVersion = stamp.appVersion - 1).encode())
+
+        runFetch()
+
+        coVerify(exactly = 1) { spotify.getPlaylistTracks("pl1") }
+    }
+
+    @Test fun `the fetch hands its Spotify mode to the diff`() = runBlocking {
+        val output = runFetchOutput()
+
+        assertEquals("REFRESH", output.getString(PlaylistFetchWorker.KEY_SPOTIFY_SYNC_MODE))
+    }
+
     @Test fun `a switch between Accumulate and Refresh reads every playlist again`() = runBlocking {
         seedMirroredPlaylist(stampMode = SyncMode.ACCUMULATE)
 
@@ -334,7 +351,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
         )
         db.playlistDao().updateSnapshotId(
             pid,
-            SpotifyMirrorStamp(revision, SyncMode.REFRESH, System.currentTimeMillis(), db.playlistDao().mirrorDigest(pid)!!).encode(),
+            SpotifyMirrorStamp(revision, SyncMode.REFRESH, System.currentTimeMillis(), db.playlistDao().mirrorDigest(pid)!!, appVersionCode(context)).encode(),
         )
 
         runFetch()
@@ -445,7 +462,11 @@ class PlaylistFetchWorkerRevisionSkipTest {
     // ── Runners ──────────────────────────────────────────────────────────
 
     /** Runs the fetch step; returns its sync id. */
-    private suspend fun runFetch(): Long {
+    private suspend fun runFetch(): Long =
+        runFetchOutput().getLong(PlaylistFetchWorker.KEY_SYNC_ID, -1L)
+
+    /** Runs the fetch step; returns its output data. */
+    private suspend fun runFetchOutput(): androidx.work.Data {
         val result = TestListenableWorkerBuilder<PlaylistFetchWorker>(context)
             .setWorkerFactory(object : WorkerFactory() {
                 override fun createWorker(
@@ -474,7 +495,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
             .build()
             .doWork()
         assertTrue("fetch must succeed: $result", result is ListenableWorker.Result.Success)
-        return (result as ListenableWorker.Result.Success).outputData.getLong(PlaylistFetchWorker.KEY_SYNC_ID, -1L)
+        return (result as ListenableWorker.Result.Success).outputData
     }
 
     private suspend fun runDiff(syncId: Long): ListenableWorker.Result =

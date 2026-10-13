@@ -180,6 +180,14 @@ class PlaylistFetchWorker @AssistedInject constructor(
         const val KEY_SYNC_ID = "sync_id"
         const val KEY_YOUTUBE_INVENTORY_COMPLETE = "youtube_inventory_complete"
 
+        /**
+         * Output: the Spotify sync mode (a [SyncMode] name) this fetch decided its
+         * skips by. The diff mirrors Spotify in this same mode, so a mode switched
+         * mid-sync can't skip a playlist under one mode and mirror under another.
+         * Absent when the Spotify library walk didn't run or couldn't read it.
+         */
+        const val KEY_SPOTIFY_SYNC_MODE = "spotify_sync_mode"
+
         /** Input: the [SyncTrigger] name of what started this sync; absent = MANUAL. */
         const val KEY_TRIGGER = "sync_trigger"
         private const val TAG = "StashSync"
@@ -229,6 +237,10 @@ class PlaylistFetchWorker @AssistedInject constructor(
     * "missing" and DiffWorker hides them (#post-343 YouTube analogue).
     */
     private val youtubeInventoryComplete = java.util.concurrent.atomic.AtomicBoolean(true)
+
+    /** The Spotify sync mode this run read, handed to the diff ([KEY_SPOTIFY_SYNC_MODE]). */
+    @Volatile
+    private var spotifySyncModeThisRun: SyncMode? = null
 
     private fun markYoutubeIncomplete(reason: String) {
         if (youtubeInventoryComplete.compareAndSet(true, false)) {
@@ -417,10 +429,11 @@ class PlaylistFetchWorker @AssistedInject constructor(
             }
 
             return Result.success(
-                workDataOf(
-                    KEY_SYNC_ID to syncId,
-                    KEY_YOUTUBE_INVENTORY_COMPLETE to youtubeComplete,
-                )
+                androidx.work.Data.Builder()
+                    .putLong(KEY_SYNC_ID, syncId)
+                    .putBoolean(KEY_YOUTUBE_INVENTORY_COMPLETE, youtubeComplete)
+                    .apply { spotifySyncModeThisRun?.let { putString(KEY_SPOTIFY_SYNC_MODE, it.name) } }
+                    .build()
             )
         } catch (e: SpotifyApiException) {
             // Transient Spotify API failure (e.g. 429 rate limit exhausted) --
@@ -842,6 +855,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
             val spotifySyncMode = runCatching { syncPreferencesManager.spotifySyncMode.first() }
                 .onFailure { if (it is CancellationException) throw it }
                 .getOrNull()
+            spotifySyncModeThisRun = spotifySyncMode
+            val appVersion = appVersionCode(applicationContext)
             val skipCheckedAtMs = System.currentTimeMillis()
             var skippedUnchanged = 0
 
@@ -849,12 +864,12 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 try {
                     val trustedStamp = mirrorStamps[playlist.id]
                         ?.takeIf { isStampable(playlist.id, PlaylistType.CUSTOM) }
-                        ?.takeIf { skipCandidate(playlist.revisionId, it.stamp, spotifySyncMode, skipCheckedAtMs) != null }
+                        ?.takeIf { skipCandidate(playlist.revisionId, it.stamp, spotifySyncMode, skipCheckedAtMs, appVersion) != null }
                         ?.let { row ->
-                            // Revision, mode and age match: only now the fingerprint.
+                            // Revision, mode, version and age match: only now the fingerprint.
                             stampToSkipOn(
-                                playlist.revisionId, row.stamp, playlistDao.mirrorDigest(row.id),
-                                spotifySyncMode, skipCheckedAtMs,
+                                playlist.revisionId, row.stamp, fingerprintOrNull(row.id),
+                                spotifySyncMode, skipCheckedAtMs, appVersion,
                             )
                         }
                     if (trustedStamp != null) {
@@ -1018,6 +1033,20 @@ class PlaylistFetchWorker @AssistedInject constructor(
         }
 
         Log.d(TAG, "fetchSpotifyPlaylists: completed -- $dailyMixCount daily mixes, $likedSongCount liked songs, $userPlaylistCount user playlists")
+    }
+
+    /**
+     * [PlaylistDao.mirrorDigest] for a skip candidate, or null when it can't be
+     * computed. Null reads the playlist in full, as if nothing were stamped: a
+     * failure here must cost the skip, never the playlist's update or this run's
+     * inventory.
+     */
+    private suspend fun fingerprintOrNull(playlistId: Long): String? = try {
+        playlistDao.mirrorDigest(playlistId)
+    } catch (e: Exception) {
+        if (e is CancellationException) throw e
+        Log.w(TAG, "fetchSpotifyPlaylists: couldn't fingerprint playlist $playlistId, reading it in full", e)
+        null
     }
 
     /**
