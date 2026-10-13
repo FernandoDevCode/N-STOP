@@ -179,7 +179,7 @@ class PlaylistDaoMirrorDigestTest {
     // ── Exact, not summed: changes that sums let cancel out ──────────────
 
     private fun rows(vararg trackAtPosition: Pair<Long, Int>) =
-        trackAtPosition.map { (track, position) -> MirrorRow(1L, track, position, removed = false, locallyAdded = false) }
+        trackAtPosition.map { (track, position) -> MirrorRow(1L, track, position, removed = false, locallyAdded = false, failed = false) }
 
     @Test fun `a re-order that keeps every sum still moves the digest`() {
         // Tracks (11, 10, 12) vs (10, 12, 11) at positions 0..2: same count, sum
@@ -284,6 +284,55 @@ class PlaylistDaoMirrorDigestTest {
         copyOf(1, downloaded = false)
 
         assertNotEquals(before, digest())
+    }
+
+    @Test fun `a song's download failing moves the digest`() = runTest {
+        // The full diff closes it when a downloaded copy is linked.
+        val queued = db.downloadQueueDao().insert(
+            com.stash.core.data.db.entity.DownloadQueueEntity(trackId = trackIds[0], searchQuery = "Artist - Song 0"),
+        )
+        val before = digest()
+
+        db.downloadQueueDao().updateStatus(id = queued, status = com.stash.core.model.DownloadStatus.FAILED)
+
+        assertNotEquals(before, digest())
+    }
+
+    @Test fun `a dismissed match moves the digest`() = runTest {
+        val before = digest()
+
+        trackDao.dismissMatch(trackIds[0])
+
+        assertNotEquals("the full diff stops linking its copy", before, digest())
+    }
+
+    @Test fun `a copy's newly resolved Spotify id moves the digest`() = runTest {
+        val copy = copyOf(0, downloaded = true)
+        val before = digest()
+
+        // CrossPlatformLikeResolver: the diff's by-words matching reads the ids.
+        trackDao.updateSpotifyUri(copy, "spotify:track:resolved")
+
+        assertNotEquals(before, digest())
+    }
+
+    @Test fun `a copy retitled moves the digest`() = runTest {
+        val copy = copyOf(0, downloaded = true)
+        val before = digest()
+
+        // A title the version check reads (YtLibraryCanonicalizer rewrites titles in place).
+        db.openHelper.writableDatabase.execSQL("UPDATE tracks SET title = 'Song 0 (Live)' WHERE id = $copy")
+
+        assertNotEquals(before, digest())
+    }
+
+    @Test fun `a title can't forge a field boundary`() {
+        fun copy(title: String, uri: String?) =
+            MirrorCopy(1L, downloaded = true, hasFile = true, matchDismissed = false, title = title, spotifyUri = uri, youtubeId = null)
+        assertNotEquals(
+            mirrorDigestOf(0, emptyList(), listOf(copy("a,1:b", null))),
+            mirrorDigestOf(0, emptyList(), listOf(copy("a", "b"))),
+        )
     }
 
     @Test fun `a library change to other songs keeps the digest`() = runTest {

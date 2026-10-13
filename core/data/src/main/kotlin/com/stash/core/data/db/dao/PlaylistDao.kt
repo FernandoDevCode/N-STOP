@@ -56,74 +56,6 @@ data class PlaylistDiagnosticsRow(
 )
 
 /**
- * A Spotify playlist that carries a mirror stamp, for the fetch step's skip
- * decision. See [PlaylistDao.stampedSpotifyPlaylists].
- */
-data class StampedSpotifyPlaylist(
-    val id: Long,
-    val sourceId: String,
-    val stamp: String,
-    val trackCount: Int,
-)
-
-/** One `playlist_tracks` row as the mirror digest sees it. See [mirrorDigestOf]. */
-data class MirrorRow(
-    val playlistId: Long,
-    val trackId: Long,
-    val position: Int,
-    val removed: Boolean,
-    val locallyAdded: Boolean,
-)
-
-/**
- * One library row sharing a canonical (title, artist) key with a song of the
- * playlist (the songs themselves included), as the mirror digest sees it. See
- * [PlaylistDao.mirrorCopies].
- */
-data class MirrorCopy(
-    val id: Long,
-    val downloaded: Boolean,
-    val hasFile: Boolean,
-)
-
-/**
- * A playlist's state as one short fingerprint, for the mirror stamp
- * ([com.stash.core.data.sync.workers.SpotifyMirrorStamp]): SHA-256, cut to 128
- * bits of hex, over
- *  - its stored song count;
- *  - every `playlist_tracks` row (live, removed, added here), each as its exact
- *    (track, position, removed, added here), in track id order;
- *  - its songs' copies ([MirrorCopy]: every library row with the same canonical
- *    words as one of its songs) as (id, downloaded, has a file), in id order.
- *
- * Any add, removal, deleted or blocked song, re-order or recount changes the
- * rows; a song's copy downloaded or un-downloaded elsewhere, or a new copy,
- * changes the copies, which is what the full diff's downloaded-copy linking
- * acts on. Either way the stamp stops matching and the next sync reads the
- * playlist in full, so the normal diff does exactly what it always did. Exact,
- * not summed: sums let a re-order or a matching remove-and-add cancel out. The
- * inputs' order doesn't matter.
- */
-fun mirrorDigestOf(trackCount: Int, rows: List<MirrorRow>, copies: List<MirrorCopy>): String {
-    val text = buildString {
-        append(trackCount)
-        rows.sortedBy { it.trackId }.forEach { r ->
-            append(';').append(r.trackId).append(',').append(r.position)
-                .append(',').append(if (r.removed) 1 else 0)
-                .append(',').append(if (r.locallyAdded) 1 else 0)
-        }
-        append('|')
-        copies.distinctBy { it.id }.sortedBy { it.id }.forEach { c ->
-            append(';').append(c.id)
-                .append(',').append(if (c.downloaded) 1 else 0)
-                .append(',').append(if (c.hasFile) 1 else 0)
-        }
-    }
-    val hash = java.security.MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8))
-    return hash.take(16).joinToString("") { "%02x".format(it) }
-}
-
-/**
  * Data-access object for [PlaylistEntity] and the
  * [PlaylistTrackCrossRef] join table.
  */
@@ -620,11 +552,18 @@ interface PlaylistDao {
     )
     suspend fun stampedSpotifyPlaylists(): List<StampedSpotifyPlaylist>
 
+    /**
+     * [playlistId]'s rows for [mirrorDigestOf], each with whether its song has a
+     * FAILED download: the full diff closes that download when a downloaded copy
+     * of the song is linked, so a download that failed since the stamp must
+     * make the next sync read the playlist.
+     */
     @Query(
         """
-        SELECT playlist_id AS playlistId, track_id AS trackId, position,
-               (removed_at IS NOT NULL) AS removed, locally_added AS locallyAdded
-        FROM playlist_tracks WHERE playlist_id = :playlistId
+        SELECT pt.playlist_id AS playlistId, pt.track_id AS trackId, pt.position AS position,
+               (pt.removed_at IS NOT NULL) AS removed, pt.locally_added AS locallyAdded,
+               EXISTS(SELECT 1 FROM download_queue dq WHERE dq.track_id = pt.track_id AND dq.status = 'FAILED') AS failed
+        FROM playlist_tracks pt WHERE pt.playlist_id = :playlistId
         """
     )
     suspend fun mirrorRows(playlistId: Long): List<MirrorRow>
@@ -632,7 +571,9 @@ interface PlaylistDao {
     /**
      * The library rows sharing canonical words with any song of [playlistId]
      * (live or removed), the songs themselves included: what the full diff's
-     * downloaded-copy linking looks at. Songs with blank words are left out, as
+     * downloaded-copy linking and its by-words matching look at (downloaded,
+     * dismissed, title for the version check, ids for SameSongRule). Songs
+     * with blank words are left out, as
      * the diff leaves them out (a blank key would match every local import).
      * Index-backed: playlist_tracks by its key, then tracks by id and by
      * (canonical_title, canonical_artist), the index from schema 55. The bare
@@ -640,7 +581,9 @@ interface PlaylistDao {
      */
     @Query(
         """
-        SELECT DISTINCT c.id AS id, c.is_downloaded AS downloaded, (c.file_path IS NOT NULL) AS hasFile
+        SELECT DISTINCT c.id AS id, c.is_downloaded AS downloaded, (c.file_path IS NOT NULL) AS hasFile,
+               c.match_dismissed AS matchDismissed, c.title AS title,
+               c.spotify_uri AS spotifyUri, c.youtube_id AS youtubeId
         FROM playlist_tracks pt
         INNER JOIN tracks m ON m.id = pt.track_id
         INNER JOIN tracks c ON c.canonical_title = m.canonical_title AND c.canonical_artist = m.canonical_artist
@@ -652,6 +595,14 @@ interface PlaylistDao {
 
     @Query("SELECT track_count FROM playlists WHERE id = :playlistId")
     suspend fun trackCountOf(playlistId: Long): Int?
+
+    /**
+     * Drops [playlistId]'s mirror stamp, if it has one: a complete mirror that
+     * couldn't be stamped (see DiffWorker.recordMirrorStamp) must not leave an
+     * older stamp vouching for it.
+     */
+    @Query("UPDATE playlists SET snapshot_id = NULL WHERE id = :playlistId AND snapshot_id IS NOT NULL")
+    suspend fun forgetMirrorStamp(playlistId: Long): Int
 
     /**
      * Forgets every Spotify playlist's mirror stamp, so the next sync reads
