@@ -50,7 +50,7 @@ Either way, a playlist's own Download button keeps that playlist on your phone.
 
 ## Lossless
 
-There's no Qobuz account or token inside the app. (The official build does carry Last.fm API keys.) FLAC comes from the first of these that can serve the song:
+There's no Qobuz account or token inside the app. FLAC comes from the first of these that can serve the song:
 
 - **Your own Qobuz account** — connect it in Settings › Audio & Quality. Connecting asks for your Qobuz email and password, which are sent once to Qobuz to mint a token; Stash stores the token, not the password. It then streams and downloads from your own subscription, the same catalog your Qobuz app sees.
 - **Your own relay endpoint** — if you run a Qobuz relay, paste its URL into the custom-endpoint field (under Advanced on the same screen) and Stash routes through it.
