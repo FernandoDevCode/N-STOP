@@ -16,7 +16,8 @@ import vinyl from '../../assets/brand/vinyl.png';
 <GateShell title="Web player early access" path="/access" wide>
   <header class="intro">
     <Image src={vinyl} alt="" width={72} height={72} densities={[1, 2]} loading="eager" class="record" />
-    <p class="overline">Web player · Early access</p>
+    <p class="overline" data-if="not-open">Web player · Early access</p>
+    <p class="overline" data-if="open">Web player · Open to everyone for 48 hours</p>
     <h1>The same great Stash, in your browser</h1>
     <p class="gate-lead">Streaming only, with nothing to install. The <a href="/">Android app</a> is free for everyone.</p>
   </header>
@@ -24,7 +25,8 @@ import vinyl from '../../assets/brand/vinyl.png';
   <div class="cards">
     <div class="gate-card glass signin">
       <h2>Sign in</h2>
-      <p>Supporters are on the list as a thank‑you. Enter the email you supported with, and we'll send you a code.</p>
+      <p data-if="not-open">Supporters are on the list as a thank‑you. Enter the email you supported with, and we'll send you a code.</p>
+      <p data-if="open">Open to everyone until <span data-fill="open-until">the end of the window</span>. Enter your email and we'll send you a code.</p>
       <form method="post" action="/access">
         <input type="hidden" name="next" value="" data-value="next" />
         <input type="hidden" name="signin" value="" data-value="signin" />
@@ -44,7 +46,7 @@ import vinyl from '../../assets/brand/vinyl.png';
           <button type="submit" class="button button-primary">Email me a code</button>
         </div>
       </form>
-      <p class="gate-small">Not on the list? <a href="/request">Request access</a>.</p>
+      <p class="gate-small" data-if="not-open">Not on the list? <a href="/request">Request access</a>.</p>
     </div>
 
     <div class="gate-card glass month">

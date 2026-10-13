@@ -56,6 +56,26 @@ import GoalBar from '../../components/gate/GoalBar.astro';
       </form>
     </section>
 
+    <section class="gate-card glass open-window" aria-labelledby="open-title">
+      <h2 id="open-title">Open window <span class="count" data-fill="open-count">0 signed up in the open window</span></h2>
+      <p data-fill="open-status">Not set.</p>
+      <p>
+        Everyone already on the list keeps access. People who signed up while it was open keep it too, until you
+        keep or remove them here.
+      </p>
+      <div class="admin-actions" data-if="has-open-signups">
+        <form method="post" action="/admin">
+          <input type="hidden" name="action" value="keep-open" />
+          <button type="submit" class="button button-primary button-small">Keep them all</button>
+        </form>
+        <form method="post" action="/admin">
+          <input type="hidden" name="action" value="remove-open" />
+          <button type="submit" class="button button-secondary button-small">Remove them all</button>
+        </form>
+      </div>
+      <p class="gate-small">To remove just one person, use Remove access with their email.</p>
+    </section>
+
     <section class="gate-card glass month" aria-labelledby="goal-title">
       <h2 id="goal-title">Goal for <span data-fill="month">this month</span></h2>
       <p class="exact" data-fill="goal-exact">$0.00 of $100.00</p>

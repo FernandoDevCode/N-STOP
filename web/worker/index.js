@@ -5,7 +5,8 @@
  *   GET  /               the home page, with the goal: its web player section has the sign-in form, or (signed in)
  *                        a button to /player, and only a signed-in visitor gets the footer's Sign out button
  *   GET  /access         the early-access sign-in page (signed in: back to /)
- *   POST /access         email in -> a sign-in code by email, if that email has access. The same answer either way,
+ *   POST /access         email in -> a sign-in code by email, if that email has access (or the window is open,
+ *                        open.js). The same answer either way,
  *                        with the stash_signin cookie that ties the code to this browser (session.js).
  *   POST /access/verify  email + code, from the browser that asked -> the stash_access cookie, then back to /
  *   GET  /request        the request-access form;  POST /request  stores the request (same answer either way)
@@ -22,7 +23,8 @@
  * Nothing on these pages reveals who has access: sending a code, a wrong code and requesting access answer
  * the same whether or not the email is on the list, and the KV writes and email behind them (issuing a code,
  * counting a wrong try, storing a request) run after the response, in ctx.waitUntil. What's left before the
- * response is the same for every email: the rate limits, one KV read and an HMAC.
+ * response is the same for every email: the rate limits, two KV reads (the access list and the open-window
+ * sign-ups, open.js) and an HMAC.
  *
  * Without its bindings, SESSION_SECRET and EMAIL_PEPPER (a Preview gets none: wrangler.jsonc "previews"), the
  * gate says signing in isn't working, and /admin refuses everyone; the pages themselves still load.
@@ -35,6 +37,7 @@ import { codeEmail, sendEmail } from "./email.js";
 import { currentGoal, goalTarget, goalView } from "./goal.js";
 import { clientKey, readForm, sameOrigin } from "./http.js";
 import { KEYS } from "./keys.js";
+import { grantOpenAccess, isOpen, openFills, openSendAllowed } from "./open.js";
 import { fetchAsset, fill, gatePage, personal, withSecurityHeaders } from "./pages.js";
 import { authUrl, mintTicket, playerNext, playerOrigin, playerPath, playerReturn, playerSub, ticketKey } from "./player.js";
 import {
@@ -44,6 +47,7 @@ import {
     cookieValue,
     currentSession,
     hasAccess,
+    isListed,
     newSigninId,
     readSession,
     rememberAccess,
@@ -182,7 +186,14 @@ async function front(env, url, back = null) {
  */
 async function home(env, url, signedIn) {
     const res = await fetchAsset(env, url, "/");
-    return personal(fill(res, { goal: await goalFor(env), text: { signin: newSigninId() }, flags: { "signed-in": signedIn, "signed-out": !signedIn } }));
+    const open = openFills(env);
+    return personal(
+        fill(res, {
+            goal: await goalFor(env),
+            text: { ...open.text, signin: newSigninId() },
+            flags: { ...open.flags, "signed-in": signedIn, "signed-out": !signedIn },
+        }),
+    );
 }
 
 function problem(env, url, status, message, title = "Something went wrong") {
@@ -239,9 +250,14 @@ async function sendCode(request, env, url, later) {
     // Silent: at most one code email a minute per address. Counted for every email, so it costs the same either way.
     const mayEmail = (await env.CODE_SEND_RL.limit({ key: h })).success;
     const browser = signinId(request) ?? asSigninId(form.signin) ?? newSigninId();
-    if ((await env.ACCESS_KV.get(KEYS.access(h))) && mayEmail) {
+    // Both lists are read for every email (session.js isListed), so the work before the response is the same for all.
+    const listed = await isListed(env, h);
+    if ((listed || isOpen(env)) && mayEmail) {
         later(
             (async () => {
+                // On neither list: only the open window lets this code out, within its caps (open.js), so a script
+                // can't turn the window into a way to mail anyone. Decided after the response: the page is the same.
+                if (!listed && !(await openSendAllowed(env))) return;
                 const code = await issueCode(env, secret, h, browser);
                 if (code) await sendEmail(env, { to: email, ...codeEmail(code) });
             })().catch((err) => console.error("code not sent:", err && err.message)),
@@ -276,7 +292,12 @@ async function verify(request, env, url, later) {
     if (!code) return failed();
     if (!(await checkCode(env, secret, h, browser, code, later))) return failed();
     rememberAccess(h, undefined);
-    if (!(await hasAccess(env, h))) return failed(); // removed while the code was on its way
+    if (!(await hasAccess(env, h))) {
+        // Not on the list: removed while the code was on its way, or someone the open window let in (open.js).
+        if (!isOpen(env)) return failed();
+        await grantOpenAccess(env, h);
+        rememberAccess(h, true);
+    }
     return seeOther(back || "/", [sessionCookie(await signSession(secret, h)), clearedSigninCookie]);
 }
 
@@ -291,7 +312,7 @@ async function requestAccess(request, env, url, later) {
     later(
         (async () => {
             const h = await hashEmail(email, env.EMAIL_PEPPER);
-            if (await env.ACCESS_KV.get(KEYS.access(h))) return; // already in: nothing to ask for
+            if (await isListed(env, h)) return; // already in: nothing to ask for
             const at = new Date(clock.now()).toISOString();
             // The time in metadata too, so the admin page can sort every request without reading each one.
             await env.ACCESS_KV.put(KEYS.request(h), JSON.stringify({ email, note, at }), { expirationTtl: REQUEST_TTL_S, metadata: { at } });

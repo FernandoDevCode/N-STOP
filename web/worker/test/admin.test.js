@@ -295,3 +295,112 @@ test("a pepper mismatch between the tip jar and the site shows a warning", async
     const differs = env({ EMAIL_PEPPER: "a-pepper", ACCESS_KV: fakeKV({ "meta:hashcheck": plainCheck }) });
     assert.match(await (await adminGet(await jwt(), differs)).text(), /HASH MISMATCH/);
 });
+
+/** A window that's open for another day, as a plain UTC time. */
+const openForADay = () => new Date(Date.now() + 24 * 3600 * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
+
+/**
+ * Two Ko-fi supporters (one of whom also signed up in the window), two open-window sign-ups, and one sign-up in the
+ * older format (an access:<h> tagged "open" in its metadata).
+ */
+async function listWithOpenSignups(over = {}) {
+    const h = {};
+    for (const n of ["a", "b", "x", "y", "z"]) h[n] = await hashEmail(`${n}@example.com`);
+    const at = "2026-10-13T12:00:00.000Z";
+    const entries = {
+        [`access:${h.a}`]: { source: "kofi" },
+        [`access:${h.b}`]: { source: "kofi" },
+        [`open:${h.b}`]: { value: JSON.stringify({ at }), metadata: { at } },
+        [`open:${h.x}`]: { value: JSON.stringify({ at }), metadata: { at } },
+        [`open:${h.y}`]: { value: JSON.stringify({ at }), metadata: { at } },
+        [`access:${h.z}`]: { value: JSON.stringify({ source: "open", at }), metadata: { source: "open", at } },
+    };
+    return { h, e: env({ ACCESS_KV: fakeKV(entries), OPEN_UNTIL: openForADay(), ...over }) };
+}
+
+test("the admin page counts open-window sign-ups, old and new, and says the window is open", async () => {
+    const { e } = await listWithOpenSignups();
+    const page = await (await adminGet(await jwt(), e)).text();
+    assert.match(page, /4 signed up in the open window/);
+    assert.match(page, /Open to everyone until [A-Z][a-z]{2} \d{1,2} [A-Z][a-z]{2}, \d{2}:\d{2} UTC\./);
+    assert.match(page, /OPEN SIGNUP BUTTONS/);
+});
+
+test("Remove them all removes only the sign-ups: a supporter who also signed up keeps their access", async () => {
+    const { e, h } = await listWithOpenSignups();
+    const res = await adminPost({ action: "remove-open" }, e);
+    assert.equal(res.status, 303);
+    assert.match(res.headers.get("location"), /done=open-removed/);
+    for (const n of ["b", "x", "y"]) assert.equal(await e.ACCESS_KV.get(`open:${h[n]}`), null);
+    assert.equal(await e.ACCESS_KV.get(`access:${h.z}`), null, "the older-format sign-up is removed too");
+    assert.deepEqual(e.ACCESS_KV.json(`access:${h.b}`), { source: "kofi" }, "the supporter's own entry is untouched");
+    forgetAllAccess();
+    assert.equal(await hasAccess(e, h.a), true);
+    assert.equal(await hasAccess(e, h.b), true);
+    assert.equal(await hasAccess(e, h.x), false);
+    assert.equal(await hasAccess(e, h.z), false);
+});
+
+test("Keep them all puts the sign-ups on the list as approved via the window, and leaves a supporter's entry alone", async () => {
+    const { e, h } = await listWithOpenSignups();
+    const res = await adminPost({ action: "keep-open" }, e);
+    assert.match(res.headers.get("location"), /done=open-kept/);
+    for (const n of ["x", "y", "z"]) {
+        const rec = e.ACCESS_KV.json(`access:${h[n]}`);
+        assert.equal(rec.source, "approved");
+        assert.equal(rec.via, "open");
+        assert.equal(rec.by, "owner@example.com");
+        assert.equal(e.ACCESS_KV.map.get(`access:${h[n]}`).opts.metadata, undefined, "no longer tagged as a sign-up");
+        assert.equal(await e.ACCESS_KV.get(`open:${h[n]}`), null);
+    }
+    assert.deepEqual(e.ACCESS_KV.json(`access:${h.b}`), { source: "kofi" });
+    assert.equal(await e.ACCESS_KV.get(`open:${h.b}`), null);
+    const page = await (await adminGet(await jwt(), e)).text();
+    assert.match(page, /0 signed up in the open window/);
+    assert.doesNotMatch(page, /OPEN SIGNUP BUTTONS/);
+});
+
+test("the other bulk button is refused for two minutes, so a lagging list can't undo what just happened", async () => {
+    const { e, h } = await listWithOpenSignups();
+    assert.match((await adminPost({ action: "remove-open" }, e)).headers.get("location"), /done=open-removed/);
+    // A late listing that still shows a removed sign-up must not bring it back.
+    const res = await adminPost({ action: "keep-open" }, e);
+    assert.match(res.headers.get("location"), /done=open-wait/);
+    assert.equal(await e.ACCESS_KV.get(`access:${h.x}`), null);
+    // The same button again is fine.
+    assert.match((await adminPost({ action: "remove-open" }, e)).headers.get("location"), /done=open-removed/);
+});
+
+test("a sign-up already gone by the time its batch runs is skipped, not brought back", async () => {
+    const { e, h } = await listWithOpenSignups();
+    // The listing still names y, but y was removed a moment ago (KV listings lag behind deletes).
+    const realList = e.ACCESS_KV.list.bind(e.ACCESS_KV);
+    e.ACCESS_KV.list = async (opts) => {
+        const res = await realList(opts);
+        if (opts.prefix === "open:" && !res.keys.some((k) => k.name === `open:${h.y}`)) res.keys.push({ name: `open:${h.y}`, metadata: {} });
+        return res;
+    };
+    await e.ACCESS_KV.delete(`open:${h.y}`);
+    await adminPost({ action: "keep-open" }, e);
+    assert.equal(await e.ACCESS_KV.get(`access:${h.y}`), null);
+});
+
+test("more sign-ups than one batch: the first press does a batch and says so, the next finishes", async () => {
+    const at = "2026-10-13T12:00:00.000Z";
+    const entries = {};
+    for (let i = 0; i < 260; i++) entries[`open:${String(i).padStart(64, "0")}`] = { value: JSON.stringify({ at }), metadata: { at } };
+    const e = env({ ACCESS_KV: fakeKV(entries), OPEN_UNTIL: openForADay() });
+    assert.match((await adminPost({ action: "remove-open" }, e)).headers.get("location"), /done=open-more/);
+    assert.match((await adminPost({ action: "remove-open" }, e)).headers.get("location"), /done=open-removed/);
+    assert.equal([...e.ACCESS_KV.map.keys()].filter((k) => k.startsWith("open:")).length, 0);
+});
+
+test("Remove access takes someone off both lists", async () => {
+    const { e, h } = await listWithOpenSignups();
+    const res = await adminPost({ action: "remove", email: "b@example.com" }, e);
+    assert.match(res.headers.get("location"), /done=removed/);
+    assert.equal(await e.ACCESS_KV.get(`access:${h.b}`), null);
+    assert.equal(await e.ACCESS_KV.get(`open:${h.b}`), null);
+    assert.match((await adminPost({ action: "remove", email: "x@example.com" }, e)).headers.get("location"), /done=removed/);
+    assert.equal(await e.ACCESS_KV.get(`open:${h.x}`), null);
+});

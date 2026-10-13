@@ -19,7 +19,8 @@ import Icon from '../Icon.astro';
       <span class="kind"><Icon name="android" size="18px" class="android" />Android app</span>
       <span class="sep" aria-hidden="true"></span>
       <span class="kind"><Icon name="computer" size="18px" class="web" />Web player</span>
-      <span class="early">Early access</span>
+      <span class="early" data-if="not-open">Early access</span>
+      <span class="early" data-if="open">Open for 48 hours</span>
     </p>
     <h1 id="hero-title">
       Your music, <span class="gradient">your&nbsp;way.</span>
@@ -28,7 +29,8 @@ import Icon from '../Icon.astro';
     <DownloadCta>
       <a slot="secondary" class="button button-secondary" href="#early-access" data-if="signed-out">
         <Icon name="computer" size="20px" />
-        Web player: early access
+        <span data-if="not-open">Web player: early access</span>
+        <span data-if="open">Web player: open to everyone</span>
       </a>
       <a slot="secondary" class="button button-secondary" href="/player" data-if="signed-in">
         <Icon name="play-circle" size="20px" />

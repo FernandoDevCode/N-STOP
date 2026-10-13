@@ -1,5 +1,5 @@
 /**
- * /admin: the owner's and Evo's page for access requests, the access list and the goal. Cloudflare Access
+ * /admin: the owner's and Evo's page for access requests, the access list, the open window (open.js) and the goal. Cloudflare Access
  * guards it, and every request is checked again here (access-jwt.js). Every change is a form POST to /admin
  * with an `action`, answered with a redirect back to /admin?done=<what happened> (so a reload never repeats it).
  */
@@ -10,6 +10,7 @@ import { sendEmail, welcomeEmail } from "./email.js";
 import { addManualEntry, exactDollars, goalTarget, goalView, monthKey, parseDollars, readGoal, removeManualEntry } from "./goal.js";
 import { readForm, sameOrigin } from "./http.js";
 import { HASHCHECK_EMAIL, KEYS } from "./keys.js";
+import { isOpen, OPEN_SOURCE, openSignups, openUntilText } from "./open.js";
 import { esc, gatePage } from "./pages.js";
 import { rememberAccess } from "./session.js";
 
@@ -17,6 +18,16 @@ const REQUESTS_PER_PAGE = 25;
 /** Pending requests are listed in pages of 1,000 keys; past this many, the count says "N+". */
 const MAX_REQUEST_LIST_PAGES = 10;
 const MAX_SOURCE = 60;
+/** Open-window sign-ups handled per click (each is up to 3 KV calls; a Worker request may make 1,000). */
+const OPEN_BATCH = 250;
+/** How many of them run at once. */
+const OPEN_CHUNK = 50;
+/**
+ * After "Keep them all" or "Remove them all", the other one is refused for this long. KV's key listings can lag
+ * about a minute behind its writes, so an older listing could otherwise bring back people just removed, or remove
+ * people just kept.
+ */
+const OPEN_ACTION_GAP_MS = 2 * 60 * 1000;
 
 /** What each ?done= says. Anything not listed shows nothing. */
 const DONE = {
@@ -35,6 +46,10 @@ const DONE = {
     "bad-amount": "Enter the amount in US dollars, like 5 or 12.50.",
     "bad-source": "Say where the donation came from, like \"GitHub Sponsors\".",
     "bad-form": "That form didn't come through. Try again.",
+    "open-kept": "Kept: everyone who signed up in the open window is on the list for good. The count takes a minute to catch up.",
+    "open-removed": "Removed everyone who signed up in the open window (supporters among them keep their access). Their sign-in stops working within a few minutes; the count takes a minute to catch up.",
+    "open-more": "Done with a batch. Some are left: wait a minute (the list takes that long to catch up), then press it again.",
+    "open-wait": "The other button ran less than two minutes ago. Wait a couple of minutes, so the list has caught up, then try again.",
     "no-pepper": "EMAIL_PEPPER isn't set on this Worker, so emails can't be added or removed (they'd be hashed differently from the tip jar's).",
 };
 
@@ -98,12 +113,15 @@ async function adminPage(env, url, admin) {
     const kv = env.ACCESS_KV;
     const month = monthKey(new Date(clock.now()));
     const page = Number.parseInt(url.searchParams.get("page") ?? "1", 10) || 1;
-    const [requests, goal, tipjarCheck, ourCheck] = await Promise.all([
+    const [requests, goal, tipjarCheck, ourCheck, openKeys] = await Promise.all([
         pendingRequests(kv, page),
         readGoal(kv, month),
         kv.get(KEYS.hashCheck),
         hashEmail(HASHCHECK_EMAIL, env.EMAIL_PEPPER),
+        openSignups(kv),
     ]);
+    const until = openUntilText(env);
+    const openStatus = isOpen(env) ? `Open to everyone until ${until}.` : until ? `Closed (it ran until ${until}).` : "Not set (OPEN_UNTIL in wrangler.jsonc).";
     const target = goalTarget(env);
     const done = url.searchParams.get("done");
     const code = url.searchParams.get("code");
@@ -117,6 +135,8 @@ async function adminPage(env, url, admin) {
             month: monthName,
             "goal-exact": `${exactDollars(goal.cents)} of ${exactDollars(target)}`,
             "request-count": `${requests.total}${requests.more ? "+" : ""} waiting`,
+            "open-status": openStatus,
+            "open-count": `${openKeys.length} signed up in the open window`,
         },
         html: {
             requests: requests.rows.map(requestItem).join(""),
@@ -130,6 +150,7 @@ async function adminPage(env, url, admin) {
             "has-requests": requests.total > 0,
             "no-entries": goal.entries.length === 0,
             "has-entries": goal.entries.length > 0,
+            "has-open-signups": openKeys.length > 0,
         },
         goal: goalView(goal, target),
     });
@@ -145,6 +166,36 @@ const back = (url, done, code) => {
 async function welcome(env, url, email) {
     const mail = welcomeEmail(url.origin);
     return sendEmail(env, { to: email, ...mail });
+}
+
+/**
+ * Keeps one open-window sign-up: it joins the access list as approved (via "open"), unless it's already on it (a
+ * supporter keeps their own entry). Each key is read again first: a listing can be a minute out of date.
+ */
+async function keepSignup(kv, { h, legacy }, by, at) {
+    const kept = JSON.stringify({ source: "approved", by, at, via: "open" });
+    if (legacy) {
+        const { metadata } = await kv.getWithMetadata(KEYS.access(h));
+        if (metadata?.source === OPEN_SOURCE) await kv.put(KEYS.access(h), kept);
+        return;
+    }
+    if ((await kv.get(KEYS.open(h))) === null) return; // already kept or removed
+    if ((await kv.get(KEYS.access(h))) === null) await kv.put(KEYS.access(h), kept);
+    await kv.delete(KEYS.open(h));
+}
+
+/**
+ * Removes one open-window sign-up. Only the sign-up goes: a supporter who also signed up keeps their access:<h>.
+ * The cached answer is forgotten, not set to "no", for the same reason.
+ */
+async function removeSignup(kv, { h, legacy }) {
+    if (legacy) {
+        const { metadata } = await kv.getWithMetadata(KEYS.access(h));
+        if (metadata?.source === OPEN_SOURCE) await kv.delete(KEYS.access(h));
+    } else {
+        await kv.delete(KEYS.open(h));
+    }
+    rememberAccess(h, undefined);
 }
 
 async function act(request, env, url, admin) {
@@ -189,11 +240,26 @@ async function act(request, env, url, admin) {
             const email = normalizeEmail(form.email);
             if (!validEmail(email)) return back(url, "bad-email");
             const h = await hashOf(email);
-            const listed = (await kv.get(KEYS.access(h))) !== null;
-            await kv.delete(KEYS.access(h));
+            const [onList, signedUp] = await Promise.all([kv.get(KEYS.access(h)), kv.get(KEYS.open(h))]);
+            const listed = onList !== null || signedUp !== null;
+            await Promise.all([kv.delete(KEYS.access(h)), kv.delete(KEYS.open(h))]);
             await clearCodes(env, h);
             rememberAccess(h, false);
             return back(url, listed ? "removed" : "not-listed");
+        }
+        case "keep-open":
+        case "remove-open": {
+            const keep = form.action === "keep-open";
+            const last = await kv.get(KEYS.openAction, "json");
+            if (last && last.action !== form.action && clock.now() - Date.parse(last.at) < OPEN_ACTION_GAP_MS) return back(url, "open-wait");
+            await kv.put(KEYS.openAction, JSON.stringify({ action: form.action, at }), { expirationTtl: 600 });
+            const all = await openSignups(kv);
+            const batch = all.slice(0, OPEN_BATCH);
+            for (let i = 0; i < batch.length; i += OPEN_CHUNK) {
+                await Promise.all(batch.slice(i, i + OPEN_CHUNK).map((s) => (keep ? keepSignup(kv, s, admin.email, at) : removeSignup(kv, s))));
+            }
+            if (all.length > OPEN_BATCH) return back(url, "open-more");
+            return back(url, keep ? "open-kept" : "open-removed");
         }
         case "donation": {
             const cents = parseDollars(form.amount);
