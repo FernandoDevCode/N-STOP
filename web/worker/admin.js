@@ -1,5 +1,5 @@
 /**
- * /admin: the owner's and Evo's page for access requests, the access list and the goal. Cloudflare Access
+ * /admin: the owner's and Evo's page for access requests, the access list, the open window (open.js) and the goal. Cloudflare Access
  * guards it, and every request is checked again here (access-jwt.js). Every change is a form POST to /admin
  * with an `action`, answered with a redirect back to /admin?done=<what happened> (so a reload never repeats it).
  */
@@ -10,6 +10,7 @@ import { sendEmail, welcomeEmail } from "./email.js";
 import { addManualEntry, exactDollars, goalTarget, goalView, monthKey, parseDollars, readGoal, removeManualEntry } from "./goal.js";
 import { readForm, sameOrigin } from "./http.js";
 import { HASHCHECK_EMAIL, KEYS } from "./keys.js";
+import { isOpen, openSignupKeys, openUntilText } from "./open.js";
 import { esc, gatePage } from "./pages.js";
 import { rememberAccess } from "./session.js";
 
@@ -17,6 +18,8 @@ const REQUESTS_PER_PAGE = 25;
 /** Pending requests are listed in pages of 1,000 keys; past this many, the count says "N+". */
 const MAX_REQUEST_LIST_PAGES = 10;
 const MAX_SOURCE = 60;
+/** Open-window sign-ups handled per click (each is a KV write or two; a Worker request may make 1,000). */
+const OPEN_BATCH = 400;
 
 /** What each ?done= says. Anything not listed shows nothing. */
 const DONE = {
@@ -35,6 +38,9 @@ const DONE = {
     "bad-amount": "Enter the amount in US dollars, like 5 or 12.50.",
     "bad-source": "Say where the donation came from, like \"GitHub Sponsors\".",
     "bad-form": "That form didn't come through. Try again.",
+    "open-kept": "Kept: everyone who signed up in the open window is on the list for good.",
+    "open-removed": "Removed everyone who signed up in the open window. Their sign-in stops working within a few minutes.",
+    "open-more": "Done with a batch. Some are left: press the button again.",
     "no-pepper": "EMAIL_PEPPER isn't set on this Worker, so emails can't be added or removed (they'd be hashed differently from the tip jar's).",
 };
 
@@ -98,12 +104,15 @@ async function adminPage(env, url, admin) {
     const kv = env.ACCESS_KV;
     const month = monthKey(new Date(clock.now()));
     const page = Number.parseInt(url.searchParams.get("page") ?? "1", 10) || 1;
-    const [requests, goal, tipjarCheck, ourCheck] = await Promise.all([
+    const [requests, goal, tipjarCheck, ourCheck, openKeys] = await Promise.all([
         pendingRequests(kv, page),
         readGoal(kv, month),
         kv.get(KEYS.hashCheck),
         hashEmail(HASHCHECK_EMAIL, env.EMAIL_PEPPER),
+        openSignupKeys(kv),
     ]);
+    const until = openUntilText(env);
+    const openStatus = isOpen(env) ? `Open to everyone until ${until}.` : until ? `Closed (it ran until ${until}).` : "Not set (OPEN_UNTIL in wrangler.jsonc).";
     const target = goalTarget(env);
     const done = url.searchParams.get("done");
     const code = url.searchParams.get("code");
@@ -117,6 +126,8 @@ async function adminPage(env, url, admin) {
             month: monthName,
             "goal-exact": `${exactDollars(goal.cents)} of ${exactDollars(target)}`,
             "request-count": `${requests.total}${requests.more ? "+" : ""} waiting`,
+            "open-status": openStatus,
+            "open-count": `${openKeys.length} signed up in the open window`,
         },
         html: {
             requests: requests.rows.map(requestItem).join(""),
@@ -130,6 +141,7 @@ async function adminPage(env, url, admin) {
             "has-requests": requests.total > 0,
             "no-entries": goal.entries.length === 0,
             "has-entries": goal.entries.length > 0,
+            "has-open-signups": openKeys.length > 0,
         },
         goal: goalView(goal, target),
     });
@@ -194,6 +206,20 @@ async function act(request, env, url, admin) {
             await clearCodes(env, h);
             rememberAccess(h, false);
             return back(url, listed ? "removed" : "not-listed");
+        }
+        case "keep-open": {
+            // Re-filed as approved, without the "open" tag: on the list like anyone the admin page let in.
+            const keys = (await openSignupKeys(kv)).slice(0, OPEN_BATCH);
+            for (const key of keys) await kv.put(key, JSON.stringify({ source: "approved", by: admin.email, at }));
+            return back(url, (await openSignupKeys(kv)).length ? "open-more" : "open-kept");
+        }
+        case "remove-open": {
+            const keys = (await openSignupKeys(kv)).slice(0, OPEN_BATCH);
+            for (const key of keys) {
+                await kv.delete(key);
+                rememberAccess(key.slice("access:".length), false);
+            }
+            return back(url, (await openSignupKeys(kv)).length ? "open-more" : "open-removed");
         }
         case "donation": {
             const cents = parseDollars(form.amount);

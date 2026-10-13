@@ -278,7 +278,7 @@ email hash above.
 
 | Key | Written by | Value | Kept |
 | --- | --- | --- | --- |
-| `access:<hash>` | tip jar webhook, the import script, the website's admin page | `{source: "kofi", firstAt, lastAt}`, or `{source: "approved" or "manual", by, at}`; `by` is the maintainer who added it | Until removed on the admin page |
+| `access:<hash>` | tip jar webhook, the import script, the website's admin page, the website's open window | `{source: "kofi", firstAt, lastAt}`, or `{source: "approved" or "manual", by, at}`; `by` is the maintainer who added it. An open-window sign-up (`web/worker/open.js`) is `{source: "open", at}` with the same in metadata; a Ko-fi donation overwrites it as a supporter | Until removed on the admin page |
 | `goal:<YYYY-MM>:kofi:<id>` | tip jar webhook | One Ko-fi donation; metadata `{cents, source, at, orig?}` | Forever |
 | `goal:<YYYY-MM>:manual:<id>` | the website's admin page | One donation added by hand; metadata `{cents, source, at, by}` | Until removed on the admin page |
 | `meta:hashcheck` | tip jar webhook (when it changes), the import script | The hash of `hashcheck@stashfm.app`, to spot a pepper mismatch | Until replaced |

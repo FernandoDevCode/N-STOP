@@ -295,3 +295,49 @@ test("a pepper mismatch between the tip jar and the site shows a warning", async
     const differs = env({ EMAIL_PEPPER: "a-pepper", ACCESS_KV: fakeKV({ "meta:hashcheck": plainCheck }) });
     assert.match(await (await adminGet(await jwt(), differs)).text(), /HASH MISMATCH/);
 });
+
+/** An access list with two Ko-fi supporters and three open-window sign-ups. */
+async function listWithOpenSignups() {
+    const entries = {};
+    for (const email of ["a@example.com", "b@example.com"]) entries[`access:${await hashEmail(email)}`] = { source: "kofi" };
+    const open = [];
+    for (const email of ["x@example.com", "y@example.com", "z@example.com"]) {
+        const key = `access:${await hashEmail(email)}`;
+        const meta = { source: "open", at: "2026-10-13T12:00:00.000Z" };
+        entries[key] = { value: JSON.stringify(meta), metadata: meta };
+        open.push(key);
+    }
+    return { e: env({ ACCESS_KV: fakeKV(entries), OPEN_UNTIL: "2099-01-01T00:00:00Z" }), open };
+}
+
+test("the admin page counts open-window sign-ups and says the window is open", async () => {
+    const { e } = await listWithOpenSignups();
+    const page = await (await adminGet(await jwt(), e)).text();
+    assert.match(page, /3 signed up in the open window/);
+    assert.match(page, /Open to everyone until Thu 1 Jan, 00:00 UTC\./);
+    assert.match(page, /OPEN SIGNUP BUTTONS/);
+});
+
+test("Remove them all takes off only the open-window sign-ups; supporters stay", async () => {
+    const { e, open } = await listWithOpenSignups();
+    const res = await adminPost({ action: "remove-open" }, e);
+    assert.equal(res.status, 303);
+    assert.match(res.headers.get("location"), /done=open-removed/);
+    for (const key of open) assert.equal(await e.ACCESS_KV.get(key), null);
+    assert.equal(await hasAccess(e, await hashEmail("a@example.com")), true);
+    assert.equal(await hasAccess(e, await hashEmail("x@example.com")), false);
+});
+
+test("Keep them all files them as approved: no longer open-window sign-ups, still on the list", async () => {
+    const { e, open } = await listWithOpenSignups();
+    const res = await adminPost({ action: "keep-open" }, e);
+    assert.match(res.headers.get("location"), /done=open-kept/);
+    for (const key of open) {
+        const rec = JSON.parse(await e.ACCESS_KV.get(key));
+        assert.equal(rec.source, "approved");
+        assert.equal(rec.by, "owner@example.com");
+    }
+    const page = await (await adminGet(await jwt(), e)).text();
+    assert.match(page, /0 signed up in the open window/);
+    assert.doesNotMatch(page, /OPEN SIGNUP BUTTONS/);
+});

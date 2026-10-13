@@ -9,7 +9,10 @@
  *   data-goal="..."    the goal bar: "raised", "target" (text), "bar" (ARIA values), "fill" (width)
  *
  * /gate/* itself is never served as is (index.js answers 404 there).
+ *
+ * Every gate page also gets the open window's flags and text (open.js), so its wording can follow it.
  */
+import { openFills } from "./open.js";
 
 /** Same policy as public/_headers, which covers the pages Cloudflare serves without the Worker. Keep them equal. */
 export const CSP =
@@ -113,7 +116,9 @@ export async function gatePage(env, url, name, { status = 200, headers = {}, ...
         console.error(`gate page missing: /gate/${name} (${res.status})`);
         res = new Response(FALLBACK(fills.text?.title || "Stash"), { headers: { "content-type": "text/html; charset=utf-8" } });
     }
-    const out = personal(fill(res, fills), status);
+    const open = openFills(env);
+    const merged = { ...fills, text: { ...open.text, ...fills.text }, flags: { ...open.flags, ...fills.flags } };
+    const out = personal(fill(res, merged), status);
     for (const [k, v] of Object.entries(headers)) out.headers.append(k, v);
     return out;
 }

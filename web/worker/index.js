@@ -5,7 +5,8 @@
  *   GET  /               the home page, with the goal: its web player section has the sign-in form, or (signed in)
  *                        a button to /player, and only a signed-in visitor gets the footer's Sign out button
  *   GET  /access         the early-access sign-in page (signed in: back to /)
- *   POST /access         email in -> a sign-in code by email, if that email has access. The same answer either way,
+ *   POST /access         email in -> a sign-in code by email, if that email has access (or the window is open,
+ *                        open.js). The same answer either way,
  *                        with the stash_signin cookie that ties the code to this browser (session.js).
  *   POST /access/verify  email + code, from the browser that asked -> the stash_access cookie, then back to /
  *   GET  /request        the request-access form;  POST /request  stores the request (same answer either way)
@@ -35,6 +36,7 @@ import { codeEmail, sendEmail } from "./email.js";
 import { currentGoal, goalTarget, goalView } from "./goal.js";
 import { clientKey, readForm, sameOrigin } from "./http.js";
 import { KEYS } from "./keys.js";
+import { grantOpenAccess, isOpen, openFills } from "./open.js";
 import { fetchAsset, fill, gatePage, personal, withSecurityHeaders } from "./pages.js";
 import { authUrl, mintTicket, playerNext, playerOrigin, playerPath, playerReturn, playerSub, ticketKey } from "./player.js";
 import {
@@ -182,7 +184,14 @@ async function front(env, url, back = null) {
  */
 async function home(env, url, signedIn) {
     const res = await fetchAsset(env, url, "/");
-    return personal(fill(res, { goal: await goalFor(env), text: { signin: newSigninId() }, flags: { "signed-in": signedIn, "signed-out": !signedIn } }));
+    const open = openFills(env);
+    return personal(
+        fill(res, {
+            goal: await goalFor(env),
+            text: { ...open.text, signin: newSigninId() },
+            flags: { ...open.flags, "signed-in": signedIn, "signed-out": !signedIn },
+        }),
+    );
 }
 
 function problem(env, url, status, message, title = "Something went wrong") {
@@ -239,7 +248,9 @@ async function sendCode(request, env, url, later) {
     // Silent: at most one code email a minute per address. Counted for every email, so it costs the same either way.
     const mayEmail = (await env.CODE_SEND_RL.limit({ key: h })).success;
     const browser = signinId(request) ?? asSigninId(form.signin) ?? newSigninId();
-    if ((await env.ACCESS_KV.get(KEYS.access(h))) && mayEmail) {
+    // While the window is open (open.js), anyone gets a code; the one KV read still runs for every email.
+    const listed = (await env.ACCESS_KV.get(KEYS.access(h))) !== null;
+    if ((listed || isOpen(env)) && mayEmail) {
         later(
             (async () => {
                 const code = await issueCode(env, secret, h, browser);
@@ -276,7 +287,12 @@ async function verify(request, env, url, later) {
     if (!code) return failed();
     if (!(await checkCode(env, secret, h, browser, code, later))) return failed();
     rememberAccess(h, undefined);
-    if (!(await hasAccess(env, h))) return failed(); // removed while the code was on its way
+    if (!(await hasAccess(env, h))) {
+        // Not on the list: removed while the code was on its way, or someone the open window let in (open.js).
+        if (!isOpen(env)) return failed();
+        await grantOpenAccess(env, h);
+        rememberAccess(h, true);
+    }
     return seeOther(back || "/", [sessionCookie(await signSession(secret, h)), clearedSigninCookie]);
 }
 

@@ -130,6 +130,9 @@
   ],
 
   "vars": {
+    // The open window (worker/open.js): until this time anyone can sign in to the web player, and the pages say so.
+    // An ISO time in UTC. Past, empty or not a time = early access as usual; it closes by itself, no deploy needed.
+    "OPEN_UNTIL": "",
     // The monthly goal, in US cents: $100.
     "GOAL_CENTS": "10000",
     // Where sign-in codes come from (the send_email binding above allows only this address).

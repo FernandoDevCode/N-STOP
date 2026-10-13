@@ -5,7 +5,10 @@
  * Change both together.
  */
 export const KEYS = {
-    /** On the access list: { source: "kofi", firstAt, lastAt } or { source: "approved" | "manual", by, at }. */
+    /**
+     * On the access list: { source: "kofi", firstAt, lastAt }, { source: "approved" | "manual", by, at }, or an open-window
+     * sign-up { source: "open", at } with metadata { source: "open", at } (open.js) until the admin page keeps or removes it.
+     */
     access: (h) => `access:${h}`,
     /**
      * Up to 3 live sign-in codes one browser asked for, and that browser's wrong tries: { codes: [{ c: HMAC, exp }], n }.
