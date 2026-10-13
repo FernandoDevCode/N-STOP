@@ -55,10 +55,9 @@ enum class SortOrder { RECENT, ALPHABETICAL, MOST_PLAYED, DURATION }
  * because the user-facing question is the same — "show me some subset
  * of my tracks". When selected, only lossless-codec files (flac, alac,
  * wav, etc.) survive. [NON_FLAC] is the inverse — downloaded tracks
-* [DOWNLOADED] and [ONLINE] split by whether the file is on this phone.
  * still on a lossy codec, i.e. the batch-upgrade worklist.
  */
-enum class SourceFilter { ALL, YOUTUBE, SPOTIFY, FLAC, NON_FLAC, DOWNLOADED, ONLINE }
+enum class SourceFilter { ALL, YOUTUBE, SPOTIFY, FLAC, NON_FLAC }
 
 /**
  * @property name           Display name of the artist.
