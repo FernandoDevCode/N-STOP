@@ -41,6 +41,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.data.prefs.StartTab
 import com.stash.core.model.ThemeMode
+import com.stash.core.model.UiScale
+import com.stash.core.ui.theme.LocalUiScaleMax
 import com.stash.core.ui.theme.StashBackground
 import com.stash.core.ui.theme.StashBackgroundLight
 import com.stash.core.ui.theme.StashPurple
@@ -72,8 +74,12 @@ fun SettingsAppearanceScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val startTab by viewModel.startTab.collectAsStateWithLifecycle()
     val uiScale by viewModel.uiScale.collectAsStateWithLifecycle()
-    // Dragging only moves the draft: committing live would resize the slider under the finger.
-    var draftScale by remember(uiScale) { mutableFloatStateOf(uiScale) }
+    // This window's top of the range: a narrow phone can't take 1.6x (see UiScale.maxFor). A
+    // choice above it, made on a wider window, shows (and applies) as the cap.
+    val maxScale = LocalUiScaleMax.current
+    // Dragging only moves the draft: committing live would lay the whole app out again under the
+    // finger. The store gets the value once, on release (or Reset).
+    var draftScale by remember(uiScale, maxScale) { mutableFloatStateOf(minOf(uiScale, maxScale)) }
 
     SettingsScaffold(title = "Appearance", onBack = onBack, modifier = modifier) {
         SettingsSectionLabel("Theme")
@@ -123,10 +129,15 @@ fun SettingsAppearanceScreen(
             valueLabel = String.format(java.util.Locale.US, "%.2fx", draftScale),
             subtitle = "Resizes text and layout across the whole app. Applies when you let go.",
             value = draftScale,
-            onValueChange = { draftScale = Math.round(it * 100) / 100f },
+            onValueChange = { draftScale = UiScale.snap(it).coerceAtMost(maxScale) },
             onValueChangeFinished = { viewModel.onUiScaleChanged(draftScale) },
-            valueRange = 0.8f..1.6f,
-            steps = 0, // continuous; the draft snaps to 0.01 in onValueChange
+            valueRange = UiScale.MIN..maxScale,
+            steps = UiScale.sliderSteps(maxScale), // a detent every 0.05, 1.00 among them
+            onReset = {
+                draftScale = UiScale.DEFAULT
+                viewModel.onUiScaleChanged(UiScale.DEFAULT)
+            },
+            resetEnabled = draftScale != UiScale.DEFAULT,
         )
 
         Spacer(Modifier.height(20.dp))

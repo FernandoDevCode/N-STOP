@@ -52,13 +52,15 @@ class SettingsViewModelTest {
     private val homeSectionsPreference = mockk<HomeSectionsPreference>(relaxed = true)
     private val storagePreference = mockk<com.stash.core.data.prefs.StoragePreference>(relaxed = true)
 
+    private var themePreference: com.stash.core.data.prefs.ThemePreference = mockk(relaxed = true)
+
     private fun newVm(losslessConfigured: Boolean = true) = SettingsViewModel(
         appContext = mockk(relaxed = true),
         tokenManager = mockk(relaxed = true),
         musicRepository = mockk(relaxed = true),
         librarySizeHolder = librarySizeHolder,
         qualityPreference = mockk(relaxed = true),
-        themePreference = mockk(relaxed = true),
+        themePreference = themePreference,
         storagePreference = storagePreference,
         downloadNetworkPreference = mockk(relaxed = true),
         moveLibraryCoordinator = mockk(relaxed = true),
@@ -104,6 +106,49 @@ class SettingsViewModelTest {
         discordRpcCoordinator = mockk(relaxed = true),
         syncStateManager = com.stash.core.data.sync.SyncStateManager(),
     )
+
+    // -- Display size (UI scale) ---------------------------------------------
+
+    @Test fun `the UI scale starts at the applied scale, not 1_00, before the store answers`() {
+        // A store that hasn't emitted yet: the first frame must still show the real scale.
+        themePreference = mockk(relaxed = true) {
+            every { uiScaleNow } returns 1.3f
+            every { uiScale } returns kotlinx.coroutines.flow.emptyFlow()
+        }
+
+        assertThat(newVm().uiScale.value).isEqualTo(1.3f)
+    }
+
+    @Test fun `an off-grid snapshot seeds as a value the slider can show`() {
+        themePreference = mockk(relaxed = true) {
+            every { uiScaleNow } returns 0.5f
+            every { uiScale } returns kotlinx.coroutines.flow.emptyFlow()
+        }
+
+        assertThat(newVm().uiScale.value).isEqualTo(0.85f)
+    }
+
+    @Test fun `the store's value replaces the seed once it lands`() = runTest {
+        themePreference = mockk(relaxed = true) {
+            every { uiScaleNow } returns 1.3f
+            every { uiScale } returns flowOf(1.1f)
+        }
+        val vm = newVm()
+        val job = launch { vm.uiScale.collect {} }
+        advanceUntilIdle()
+
+        assertThat(vm.uiScale.value).isEqualTo(1.1f)
+        job.cancel()
+    }
+
+    @Test fun `committing a scale hands it to the store`() = runTest {
+        val vm = newVm()
+
+        vm.onUiScaleChanged(1.25f)
+        advanceUntilIdle()
+
+        coVerify(exactly = 1) { themePreference.setUiScale(1.25f) }
+    }
 
     @Test fun `refreshStorageUsage requests a fresh filesystem calculation`() {
         val vm = newVm()

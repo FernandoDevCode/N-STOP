@@ -7,11 +7,22 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 
-/** Title + value label over a [Slider]. Pure presentation; the caller owns state. */
+/**
+ * Title + value label over a [Slider]. Pure presentation; the caller owns state.
+ *
+ * TalkBack reads the slider as [title] and [valueLabel] ("UI scale, 1.25x") rather than its own
+ * default, a percentage of the track ("25 percent"), which means nothing for a value like a scale.
+ *
+ * [onReset], when given, adds a "Reset" button beside the value, enabled while [resetEnabled].
+ */
 @Composable
 fun SettingsSliderRow(
     title: String,
@@ -23,6 +34,8 @@ fun SettingsSliderRow(
     steps: Int,
     modifier: Modifier = Modifier,
     subtitle: String? = null,
+    onReset: (() -> Unit)? = null,
+    resetEnabled: Boolean = true,
 ) {
     Column(
         modifier = modifier
@@ -44,6 +57,9 @@ fun SettingsSliderRow(
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (onReset != null) {
+                TextButton(onClick = onReset, enabled = resetEnabled) { Text("Reset") }
+            }
         }
         if (subtitle != null) {
             Text(
@@ -58,6 +74,10 @@ fun SettingsSliderRow(
             onValueChangeFinished = onValueChangeFinished,
             valueRange = valueRange,
             steps = steps,
+            modifier = Modifier.semantics {
+                contentDescription = title
+                stateDescription = valueLabel
+            },
         )
     }
 }
