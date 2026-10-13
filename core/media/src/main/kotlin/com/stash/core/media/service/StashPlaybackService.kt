@@ -134,9 +134,24 @@ class StashPlaybackService : MediaLibraryService() {
          */
         const val COMMAND_SET_SHUFFLE_ORDER = "com.stash.SET_SHUFFLE_ORDER"
         const val EXTRA_SHUFFLE_ORDER = "com.stash.extra.SHUFFLE_ORDER"
+
+        /**
+         * "Play next" under shuffle: inserts the MediaItem in [EXTRA_PLAY_NEXT_ITEM] after the current
+         * song and the Play next songs already behind it, in the timeline AND in the master's real
+         * shuffle order, in one step ([com.stash.core.media.PlayNext.insert]); a controller only sees a
+         * masked, unshuffled order right after an edit. The result's extras say where it went
+         * ([EXTRA_PLAY_NEXT_INDEX], [EXTRA_PLAY_NEXT_AFTER_ID], [EXTRA_PLAY_NEXT_AFTER_COPY]); an error
+         * result means nothing was inserted. This app only: the item's URI is opened with Stash's own
+         * file access.
+         */
         const val COMMAND_PLAY_NEXT_SHUFFLED = "com.stash.PLAY_NEXT_SHUFFLED"
         const val EXTRA_PLAY_NEXT_ITEM = "com.stash.extra.PLAY_NEXT_ITEM"
-        const val EXTRA_PLAY_NEXT_AHEAD = "com.stash.extra.PLAY_NEXT_AHEAD"
+        const val EXTRA_PLAY_NEXT_INDEX = "com.stash.extra.PLAY_NEXT_INDEX"
+        const val EXTRA_PLAY_NEXT_AFTER_ID = "com.stash.extra.PLAY_NEXT_AFTER_ID"
+        const val EXTRA_PLAY_NEXT_AFTER_COPY = "com.stash.extra.PLAY_NEXT_AFTER_COPY"
+
+        /** MediaMetadata extras flag on a song queued with "Play next" (see [com.stash.core.media.PlayNext]). */
+        const val EXTRA_PLAY_NEXT = "stash_play_next"
 
         /** Custom command action for cycling repeat mode. */
         const val COMMAND_CYCLE_REPEAT = "com.stash.CYCLE_REPEAT"
@@ -2307,7 +2322,7 @@ class StashPlaybackService : MediaLibraryService() {
                 session.isMediaNotificationController(controller) ||
                 session.isAutoCompanionController(controller) ||
                 session.isAutomotiveController(controller)
-            val customCommands = grantedCustomActions(privileged).map {
+            val customCommands = grantedCustomActions(privileged, ownApp = controller.packageName == packageName).map {
                 SessionCommand(it, /* extras = */ android.os.Bundle.EMPTY)
             }
             // FULL library command set — not DEFAULT_SESSION_COMMANDS plus a
@@ -2340,6 +2355,48 @@ class StashPlaybackService : MediaLibraryService() {
                 .build()
         }
 
+        /**
+         * The master ExoPlayer when it holds the session's queue: the session's own player, or the
+         * one behind the cast wrapper, which forwards queue edits to it and casts its order
+         * ([com.stash.core.media.cast.CastSessionPlayer]). Null in Listen Together, whose player
+         * holds the room's one song.
+         */
+        @OptIn(UnstableApi::class)
+        private fun queuePlayer(session: MediaSession): ExoPlayer? {
+            val master = crossfadeEngine?.masterPlayer ?: return null
+            val player = session.player
+            val casting = castPlayer?.takeIf { it.isAttached }
+            return master.takeIf { player === master || (casting != null && player === casting) }
+        }
+
+        /** [COMMAND_PLAY_NEXT_SHUFFLED]: an error result whenever nothing was inserted. */
+        @OptIn(UnstableApi::class)
+        private fun playNextShuffled(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            args: android.os.Bundle,
+        ): SessionResult {
+            // The item goes straight onto the player, past resolveMediaItem's local-URI check, so only
+            // this app may send one (the grant is this app's alone too, see onConnect).
+            if (controller.packageName != packageName) {
+                return SessionResult(SessionResult.RESULT_ERROR_PERMISSION_DENIED)
+            }
+            val master = queuePlayer(session)
+            // Shuffle went off meanwhile: the repository then inserts through its controller, in timeline order.
+            if (master == null || !master.shuffleModeEnabled) {
+                return SessionResult(SessionResult.RESULT_ERROR_INVALID_STATE)
+            }
+            val item = args.getBundle(EXTRA_PLAY_NEXT_ITEM)
+                ?.let { runCatching { MediaItem.fromBundle(it) }.getOrNull() }
+                ?: return SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE)
+            val plan = com.stash.core.media.PlayNext.insert(master, item) { order ->
+                master.setShuffleOrder(
+                    androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder(order, android.os.SystemClock.elapsedRealtime()),
+                )
+            } ?: return SessionResult(SessionResult.RESULT_ERROR_INVALID_STATE)
+            return SessionResult(SessionResult.RESULT_SUCCESS, com.stash.core.media.PlayNext.toResultExtras(plan))
+        }
+
         override fun onCustomCommand(
             session: MediaSession,
             controller: MediaSession.ControllerInfo,
@@ -2354,10 +2411,10 @@ class StashPlaybackService : MediaLibraryService() {
                     com.stash.core.media.listen.ListenTogetherController.Command.Leave,
                 )
                 COMMAND_SET_SHUFFLE_ORDER -> {
-                    // Only on the master ExoPlayer (not a Listen Together or cast player), and only a permutation of its timeline.
+                    // Only on the master ExoPlayer holding the queue (not Listen Together's), and only a permutation of its timeline.
                     val order = args.getIntArray(EXTRA_SHUFFLE_ORDER)
-                    val master = crossfadeEngine?.masterPlayer
-                    if (order != null && master != null && session.player === master &&
+                    val master = queuePlayer(session)
+                    if (order != null && master != null &&
                         order.size == master.mediaItemCount && order.sorted() == order.indices.toList()
                     ) {
                         master.setShuffleOrder(androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder(order, android.os.SystemClock.elapsedRealtime()))
@@ -2365,41 +2422,7 @@ class StashPlaybackService : MediaLibraryService() {
                         android.util.Log.w("StashPlayback", "shuffle order refused (${order?.size} for ${master?.mediaItemCount})")
                     }
                 }
-                COMMAND_PLAY_NEXT_SHUFFLED -> {
-                    val master = crossfadeEngine?.masterPlayer
-                    val itemBundle = args.getBundle(EXTRA_PLAY_NEXT_ITEM)
-                    val ahead = args.getInt(EXTRA_PLAY_NEXT_AHEAD, 0)
-                    if (master != null && session.player === master && itemBundle != null) {
-                        val item = MediaItem.fromBundle(itemBundle)
-                        val cur = master.currentMediaItemIndex
-                        val count = master.mediaItemCount
-                        val timeline = master.currentTimeline
-                        // The real play order BEFORE the insert (null when shuffle is off).
-                        val walk: List<Int>? = if (master.shuffleModeEnabled && !timeline.isEmpty) {
-                            val out = ArrayList<Int>(count)
-                            var i = timeline.getFirstWindowIndex(true)
-                            while (i != C.INDEX_UNSET && out.size < count) {
-                                out.add(i)
-                                i = timeline.getNextWindowIndex(i, Player.REPEAT_MODE_OFF, true)
-                            }
-                            out
-                        } else null
-
-                        val at = if (walk != null) cur + 1 else (cur + 1 + ahead).coerceAtMost(count)
-                        master.addMediaItem(at, item)
-
-                        if (walk != null && walk.size == count) {
-                            val shifted = walk.map { if (it >= at) it + 1 else it }
-                            val pos = (walk.indexOf(cur).coerceAtLeast(0) + ahead).coerceAtMost(shifted.size - 1)
-                            val order = shifted.subList(0, pos + 1) + at + shifted.subList(pos + 1, shifted.size)
-                            master.setShuffleOrder(
-                                androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder(
-                                    order.toIntArray(), android.os.SystemClock.elapsedRealtime(),
-                                ),
-                            )
-                        }
-                    }
-                }
+                COMMAND_PLAY_NEXT_SHUFFLED -> return Futures.immediateFuture(playNextShuffled(session, controller, args))
                 COMMAND_TOGGLE_SHUFFLE -> {
                     val player = session.player
                     player.shuffleModeEnabled = !player.shuffleModeEnabled
@@ -2567,9 +2590,10 @@ private val LOCAL_URI_SCHEMES = setOf("file", "content", "android.resource")
  * controller has. A like (a Room write that can mirror to the user's Spotify
  * or YouTube account), the shuffle order and leaving a Listen Together room
  * change Stash's own state, so only a [privileged] controller (see onConnect)
- * gets them.
+ * gets them. Play next under shuffle puts a MediaItem, URI and all, straight onto
+ * the player, so only this app itself ([ownApp]) gets it.
  */
-internal fun grantedCustomActions(privileged: Boolean): List<String> = buildList {
+internal fun grantedCustomActions(privileged: Boolean, ownApp: Boolean = false): List<String> = buildList {
     add(StashPlaybackService.COMMAND_TOGGLE_SHUFFLE)
     add(StashPlaybackService.COMMAND_CYCLE_REPEAT)
     add(StashPlaybackService.COMMAND_STOP_SLEEP_TIMER)
@@ -2577,8 +2601,8 @@ internal fun grantedCustomActions(privileged: Boolean): List<String> = buildList
         add(StashPlaybackService.COMMAND_TOGGLE_LIKE)
         add(StashPlaybackService.COMMAND_LEAVE_SESSION)
         add(StashPlaybackService.COMMAND_SET_SHUFFLE_ORDER)
-        add(StashPlaybackService.COMMAND_PLAY_NEXT_SHUFFLED)
     }
+    if (ownApp) add(StashPlaybackService.COMMAND_PLAY_NEXT_SHUFFLED)
 }
 
 /**
