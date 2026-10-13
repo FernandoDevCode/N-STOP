@@ -11,8 +11,10 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.stash.core.model.ThemeMode
+import com.stash.core.model.UiScale
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -65,20 +67,21 @@ class ThemePreferencesManager @Inject constructor(
 
     private val uiScaleKey = floatPreferencesKey("ui_scale")
 
-    /** Emits the UI scale multiplier, defaulting to 1.0 and clamped on read so a bad restore can't brick the layout. */
+    /**
+     * Emits the UI scale, defaulting to 1.0. Snapped on read as well as on write, so a value from
+     * a restore or an older build can't put the layout off the range. Deduped: this store
+     * re-emits on every theme write, and `MainActivity` recreates when the scale changes.
+     */
     override val uiScale: Flow<Float> = context.themeDataStore.data.map { prefs ->
-        (prefs[uiScaleKey] ?: 1f).coerceIn(UI_SCALE_MIN, UI_SCALE_MAX)
-    }
+        UiScale.snap(prefs[uiScaleKey] ?: UiScale.DEFAULT)
+    }.distinctUntilChanged()
 
-    /** Persists the UI scale, clamped to the supported range. */
+    override val uiScaleNow: Float get() = ThemeSnapshot.readUiScale(context)
+
+    /** Persists the UI scale, clamped to the range and snapped to the 0.05 grid. */
     override suspend fun setUiScale(scale: Float) {
         context.themeDataStore.edit { prefs ->
-            prefs[uiScaleKey] = scale.coerceIn(UI_SCALE_MIN, UI_SCALE_MAX)
+            prefs[uiScaleKey] = UiScale.snap(scale)
         }
-    }
-
-    private companion object {
-        const val UI_SCALE_MIN = 0.8f
-        const val UI_SCALE_MAX = 1.6f
     }
 }
