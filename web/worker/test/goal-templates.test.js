@@ -157,7 +157,10 @@ test("every Worker route is in run_worker_first, and the public files aren't", (
     assert.doesNotMatch(raw, /"d"\s*:/, "no private JWK in wrangler.jsonc");
     assert.deepEqual(config.routes, [{ pattern: "stashfm.app/*", zone_name: "stashfm.app" }], "the site takes the rest of stashfm.app; the share Worker keeps its own, more specific routes");
     const ids = config.ratelimits.map((r) => Number(r.namespace_id));
-    assert.ok(ids.every((id) => id >= 2010 && id <= 2015), "2001-2009 belong to the share Worker");
+    assert.ok(ids.every((id) => id >= 2010 && id <= 2016), "2001-2009 belong to the share Worker");
     assert.equal(new Set(ids).size, ids.length);
-    assert.deepEqual(config.ratelimits.map((r) => r.name).sort(), ["CODE_SEND_RL", "REQUEST_IP_RL", "SEND_EMAIL_RL", "SEND_IP_RL", "VERIFY_EMAIL_RL", "VERIFY_IP_RL"]);
+    assert.deepEqual(config.ratelimits.map((r) => r.name).sort(), ["CODE_SEND_RL", "OPEN_SEND_RL", "REQUEST_IP_RL", "SEND_EMAIL_RL", "SEND_IP_RL", "VERIFY_EMAIL_RL", "VERIFY_IP_RL"]);
+    // The open window (worker/open.js): a plain UTC time and a positive daily cap on codes to strangers.
+    assert.match(config.vars.OPEN_UNTIL, /^$|^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?Z$/);
+    assert.ok(Number.parseInt(config.vars.OPEN_DAILY_CODES, 10) > 0);
 });

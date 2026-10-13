@@ -36,6 +36,12 @@ export function fakeKV(initial = {}) {
             const t = typeof type === "object" ? type?.type : type;
             return t === "json" ? JSON.parse(e.value) : e.value;
         },
+        async getWithMetadata(key, type) {
+            const e = live(key);
+            if (!e) return { value: null, metadata: null };
+            const t = typeof type === "object" ? type?.type : type;
+            return { value: t === "json" ? JSON.parse(e.value) : e.value, metadata: e.opts.metadata ?? null };
+        },
         held: null,
         holdPuts(match) {
             let release;

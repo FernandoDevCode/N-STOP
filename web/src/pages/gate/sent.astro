@@ -17,9 +17,13 @@ import CodeForm from '../../components/gate/CodeForm.astro';
       A code is on its way to <strong data-fill="email">that email</strong>. It works for 10 minutes, in this browser.
     </p>
     <CodeForm />
-    <p class="gate-small">
+    <p class="gate-small" data-if="not-open">
       Nothing after a few minutes? Check your spam folder, or <a href="/access">try again</a>. Not on the list?
       <a href="/request">Request access</a>.
+    </p>
+    <p class="gate-small" data-if="open">
+      Nothing after a few minutes? Check your spam folder. Lots of people are signing up, so if it still hasn't come,
+      <a href="/access">try again</a> a little later.
     </p>
   </div>
 </GateShell>

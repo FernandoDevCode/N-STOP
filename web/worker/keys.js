@@ -6,10 +6,22 @@
  */
 export const KEYS = {
     /**
-     * On the access list: { source: "kofi", firstAt, lastAt }, { source: "approved" | "manual", by, at }, or an open-window
-     * sign-up { source: "open", at } with metadata { source: "open", at } (open.js) until the admin page keeps or removes it.
+     * On the access list: { source: "kofi", firstAt, lastAt } or { source: "approved" | "manual", by, at, via? }; via: "open"
+     * marks someone kept from an open window. Open-window sign-ups made before 2026-10-13 ~02:00 UTC are here too, as
+     * { source: "open", at } with metadata { source: "open", at } (open.js), until the admin page keeps or removes them.
      */
     access: (h) => `access:${h}`,
+    accessPrefix: "access:",
+    /**
+     * An open-window sign-up (open.js): { at }, metadata { at }. Beside the access list, never in it, so keeping or
+     * removing sign-ups can't touch a supporter. Until the admin page keeps or removes it.
+     */
+    open: (h) => `open:${h}`,
+    openPrefix: "open:",
+    /** Codes sent on one UTC day to emails on neither list, while a window is open: { n }. 2 days. */
+    openSends: (day) => `opensends:${day}`,
+    /** The admin page's last "Keep them all" / "Remove them all": { action, at }. 10 minutes. */
+    openAction: "meta:openaction",
     /**
      * Up to 3 live sign-in codes one browser asked for, and that browser's wrong tries: { codes: [{ c: HMAC, exp }], n }.
      * [browser] is its stash_signin id (worker/session.js). 10 minutes after the newest code.

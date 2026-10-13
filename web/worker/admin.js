@@ -10,7 +10,7 @@ import { sendEmail, welcomeEmail } from "./email.js";
 import { addManualEntry, exactDollars, goalTarget, goalView, monthKey, parseDollars, readGoal, removeManualEntry } from "./goal.js";
 import { readForm, sameOrigin } from "./http.js";
 import { HASHCHECK_EMAIL, KEYS } from "./keys.js";
-import { isOpen, openSignupKeys, openUntilText } from "./open.js";
+import { isOpen, OPEN_SOURCE, openSignups, openUntilText } from "./open.js";
 import { esc, gatePage } from "./pages.js";
 import { rememberAccess } from "./session.js";
 
@@ -18,8 +18,16 @@ const REQUESTS_PER_PAGE = 25;
 /** Pending requests are listed in pages of 1,000 keys; past this many, the count says "N+". */
 const MAX_REQUEST_LIST_PAGES = 10;
 const MAX_SOURCE = 60;
-/** Open-window sign-ups handled per click (each is a KV write or two; a Worker request may make 1,000). */
-const OPEN_BATCH = 400;
+/** Open-window sign-ups handled per click (each is up to 3 KV calls; a Worker request may make 1,000). */
+const OPEN_BATCH = 250;
+/** How many of them run at once. */
+const OPEN_CHUNK = 50;
+/**
+ * After "Keep them all" or "Remove them all", the other one is refused for this long. KV's key listings can lag
+ * about a minute behind its writes, so an older listing could otherwise bring back people just removed, or remove
+ * people just kept.
+ */
+const OPEN_ACTION_GAP_MS = 2 * 60 * 1000;
 
 /** What each ?done= says. Anything not listed shows nothing. */
 const DONE = {
@@ -38,9 +46,10 @@ const DONE = {
     "bad-amount": "Enter the amount in US dollars, like 5 or 12.50.",
     "bad-source": "Say where the donation came from, like \"GitHub Sponsors\".",
     "bad-form": "That form didn't come through. Try again.",
-    "open-kept": "Kept: everyone who signed up in the open window is on the list for good.",
-    "open-removed": "Removed everyone who signed up in the open window. Their sign-in stops working within a few minutes.",
-    "open-more": "Done with a batch. Some are left: press the button again.",
+    "open-kept": "Kept: everyone who signed up in the open window is on the list for good. The count takes a minute to catch up.",
+    "open-removed": "Removed everyone who signed up in the open window (supporters among them keep their access). Their sign-in stops working within a few minutes; the count takes a minute to catch up.",
+    "open-more": "Done with a batch. Some are left: wait a minute (the list takes that long to catch up), then press it again.",
+    "open-wait": "The other button ran less than two minutes ago. Wait a couple of minutes, so the list has caught up, then try again.",
     "no-pepper": "EMAIL_PEPPER isn't set on this Worker, so emails can't be added or removed (they'd be hashed differently from the tip jar's).",
 };
 
@@ -109,7 +118,7 @@ async function adminPage(env, url, admin) {
         readGoal(kv, month),
         kv.get(KEYS.hashCheck),
         hashEmail(HASHCHECK_EMAIL, env.EMAIL_PEPPER),
-        openSignupKeys(kv),
+        openSignups(kv),
     ]);
     const until = openUntilText(env);
     const openStatus = isOpen(env) ? `Open to everyone until ${until}.` : until ? `Closed (it ran until ${until}).` : "Not set (OPEN_UNTIL in wrangler.jsonc).";
@@ -159,6 +168,36 @@ async function welcome(env, url, email) {
     return sendEmail(env, { to: email, ...mail });
 }
 
+/**
+ * Keeps one open-window sign-up: it joins the access list as approved (via "open"), unless it's already on it (a
+ * supporter keeps their own entry). Each key is read again first: a listing can be a minute out of date.
+ */
+async function keepSignup(kv, { h, legacy }, by, at) {
+    const kept = JSON.stringify({ source: "approved", by, at, via: "open" });
+    if (legacy) {
+        const { metadata } = await kv.getWithMetadata(KEYS.access(h));
+        if (metadata?.source === OPEN_SOURCE) await kv.put(KEYS.access(h), kept);
+        return;
+    }
+    if ((await kv.get(KEYS.open(h))) === null) return; // already kept or removed
+    if ((await kv.get(KEYS.access(h))) === null) await kv.put(KEYS.access(h), kept);
+    await kv.delete(KEYS.open(h));
+}
+
+/**
+ * Removes one open-window sign-up. Only the sign-up goes: a supporter who also signed up keeps their access:<h>.
+ * The cached answer is forgotten, not set to "no", for the same reason.
+ */
+async function removeSignup(kv, { h, legacy }) {
+    if (legacy) {
+        const { metadata } = await kv.getWithMetadata(KEYS.access(h));
+        if (metadata?.source === OPEN_SOURCE) await kv.delete(KEYS.access(h));
+    } else {
+        await kv.delete(KEYS.open(h));
+    }
+    rememberAccess(h, undefined);
+}
+
 async function act(request, env, url, admin) {
     const form = await readForm(request);
     if (!form) return back(url, "bad-form");
@@ -201,25 +240,26 @@ async function act(request, env, url, admin) {
             const email = normalizeEmail(form.email);
             if (!validEmail(email)) return back(url, "bad-email");
             const h = await hashOf(email);
-            const listed = (await kv.get(KEYS.access(h))) !== null;
-            await kv.delete(KEYS.access(h));
+            const [onList, signedUp] = await Promise.all([kv.get(KEYS.access(h)), kv.get(KEYS.open(h))]);
+            const listed = onList !== null || signedUp !== null;
+            await Promise.all([kv.delete(KEYS.access(h)), kv.delete(KEYS.open(h))]);
             await clearCodes(env, h);
             rememberAccess(h, false);
             return back(url, listed ? "removed" : "not-listed");
         }
-        case "keep-open": {
-            // Re-filed as approved, without the "open" tag: on the list like anyone the admin page let in.
-            const keys = (await openSignupKeys(kv)).slice(0, OPEN_BATCH);
-            for (const key of keys) await kv.put(key, JSON.stringify({ source: "approved", by: admin.email, at }));
-            return back(url, (await openSignupKeys(kv)).length ? "open-more" : "open-kept");
-        }
+        case "keep-open":
         case "remove-open": {
-            const keys = (await openSignupKeys(kv)).slice(0, OPEN_BATCH);
-            for (const key of keys) {
-                await kv.delete(key);
-                rememberAccess(key.slice("access:".length), false);
+            const keep = form.action === "keep-open";
+            const last = await kv.get(KEYS.openAction, "json");
+            if (last && last.action !== form.action && clock.now() - Date.parse(last.at) < OPEN_ACTION_GAP_MS) return back(url, "open-wait");
+            await kv.put(KEYS.openAction, JSON.stringify({ action: form.action, at }), { expirationTtl: 600 });
+            const all = await openSignups(kv);
+            const batch = all.slice(0, OPEN_BATCH);
+            for (let i = 0; i < batch.length; i += OPEN_CHUNK) {
+                await Promise.all(batch.slice(i, i + OPEN_CHUNK).map((s) => (keep ? keepSignup(kv, s, admin.email, at) : removeSignup(kv, s))));
             }
-            return back(url, (await openSignupKeys(kv)).length ? "open-more" : "open-removed");
+            if (all.length > OPEN_BATCH) return back(url, "open-more");
+            return back(url, keep ? "open-kept" : "open-removed");
         }
         case "donation": {
             const cents = parseDollars(form.amount);

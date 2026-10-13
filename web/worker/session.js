@@ -3,7 +3,7 @@
  * where payload is {"h": <email hash>, "exp": <unix seconds>}. It holds no email, only the hash the
  * access list is keyed by, and lasts 90 days.
  *
- * A signed-in request also needs access:<h> to still exist, so removing someone on the admin page signs
+ * A signed-in request also needs access:<h> (or an open-window sign-up's open:<h>) to still exist, so removing someone on the admin page signs
  * them out. That lookup is cached in memory for ACCESS_CACHE_MS per Worker instance, and KV itself can
  * take up to a minute to show a delete everywhere, so a removal takes effect within about 6 minutes.
  * Signing out deletes the cookie from that browser; it doesn't revoke a copy of it, which keeps working until
@@ -90,12 +90,21 @@ export function rememberAccess(h, ok) {
 /** Empties the cache (tests). */
 export const forgetAllAccess = () => accessCache.clear();
 
-/** Is this hash on the access list? Cached for a few minutes. */
+/**
+ * Whether this hash may sign in: on the access list, or an open-window sign-up (open.js). Always reads both keys,
+ * so the answer costs the same whoever asks.
+ */
+export async function isListed(env, h) {
+    const [listed, open] = await Promise.all([env.ACCESS_KV.get(KEYS.access(h)), env.ACCESS_KV.get(KEYS.open(h))]);
+    return listed !== null || open !== null;
+}
+
+/** Is this hash on the access list (or an open-window sign-up)? Cached for a few minutes. */
 export async function hasAccess(env, h) {
     const hit = accessCache.get(h);
     if (hit && hit.until > clock.now()) return hit.ok;
     if (!env.ACCESS_KV) return false; // a Preview: no access list, so nobody is signed in
-    const ok = (await env.ACCESS_KV.get(KEYS.access(h))) !== null;
+    const ok = await isListed(env, h);
     if (accessCache.size > 5000) accessCache.clear();
     rememberAccess(h, ok);
     return ok;

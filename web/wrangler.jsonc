@@ -106,7 +106,7 @@
 
   // Rate limits, per Cloudflare location. Each binding carries one fixed limit (periods
   // can only be 10 or 60 seconds). Per-IP limits key IPv6 by its /48 (worker/http.js).
-  // The ids are account-wide: the share Worker uses 2001-2009, this Worker 2010-2015.
+  // The ids are account-wide: the share Worker uses 2001-2009, this Worker 2010-2016.
   "ratelimits": [
     // Code emails asked for, per IP.
     { "name": "SEND_IP_RL", "namespace_id": "2010", "simple": { "limit": 5, "period": 60 } },
@@ -126,13 +126,20 @@
     // (worker/codes.js), each try at most 3 in 100 million.
     { "name": "VERIFY_EMAIL_RL", "namespace_id": "2014", "simple": { "limit": 5, "period": 60 } },
     // Access requests, per IP.
-    { "name": "REQUEST_IP_RL", "namespace_id": "2013", "simple": { "limit": 3, "period": 60 } }
+    { "name": "REQUEST_IP_RL", "namespace_id": "2013", "simple": { "limit": 3, "period": 60 } },
+    // While a window is open (worker/open.js): codes to emails on neither list, all of them together, per
+    // location. Silent, and checked after the response; supporters' codes never count against it.
+    { "name": "OPEN_SEND_RL", "namespace_id": "2016", "simple": { "limit": 20, "period": 60 } }
   ],
 
   "vars": {
     // The open window (worker/open.js): until this time anyone can sign in to the web player, and the pages say so.
-    // An ISO time in UTC. Past, empty or not a time = early access as usual; it closes by itself, no deploy needed.
+    // A plain UTC time (2026-10-15T01:00:00Z). Past, empty, not that format, or more than 31 days away = early access
+    // as usual. It closes by itself, no deploy needed; to close it early, set a past time in the dashboard.
     "OPEN_UNTIL": "2026-10-15T01:00:00Z",
+    // While it's open, codes a UTC day to emails on neither list (open.js), so a flood can't use up the email
+    // service's daily sending for supporters. Change it in the dashboard if real sign-ups hit it.
+    "OPEN_DAILY_CODES": "1500",
     // The monthly goal, in US cents: $100.
     "GOAL_CENTS": "10000",
     // Where sign-in codes come from (the send_email binding above allows only this address).
