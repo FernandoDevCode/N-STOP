@@ -1,6 +1,8 @@
 package com.stash.app
 
+import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
@@ -16,19 +18,20 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.Density
 import androidx.core.content.IntentCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.stash.app.navigation.StashScaffold
 import com.stash.core.data.prefs.HomeSectionsPreference
 import com.stash.core.data.prefs.ThemePreference
+import com.stash.core.data.prefs.ThemeSnapshot
 import com.stash.core.data.share.ShareApiClient
 import com.stash.core.data.share.ShareResult
 import com.stash.core.data.weblink.SyncKeys
 import com.stash.core.model.ThemeMode
+import com.stash.core.model.UiScale
 import com.stash.core.model.share.ShareLinks
 import com.stash.core.model.share.SharedTrack
 import com.stash.core.media.listen.ListenTogetherController
@@ -36,6 +39,7 @@ import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.ui.components.ListenTogetherRole
 import com.stash.core.ui.components.LocalCreateTrackLink
 import com.stash.core.ui.components.LocalListenTogetherRole
+import com.stash.core.ui.theme.LocalUiScaleMax
 import com.stash.core.ui.theme.StashTheme
 import com.stash.data.download.files.LocalImportCoordinator
 import com.stash.data.download.lossless.squid.CaptchaExpiredNotifier
@@ -43,9 +47,11 @@ import dagger.hilt.android.AndroidEntryPoint
 import com.stash.core.data.social.LikeCoordinator
 import com.stash.core.media.PlayerRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -68,10 +74,27 @@ class MainActivity : ComponentActivity() {
         private const val MAX_WEB_LINK = 512
 
         /** Last theme the app rendered, read synchronously for the first frame; see [onCreate]. */
-        private const val THEME_SNAPSHOT_PREFS = "theme_snapshot"
+        private const val THEME_SNAPSHOT_PREFS = ThemeSnapshot.PREFS_NAME
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_AMOLED_DARK = "amoled_dark"
-        private const val KEY_UI_SCALE = "ui_scale"
+
+        /**
+         * The configuration delta that lays a window out at [scale]: a higher density, and the
+         * screen sizes restated in the new dp so `LocalConfiguration` agrees with the layout.
+         * Built from an empty [Configuration], whose fields all start "undefined", so it only
+         * replaces these four values and every other one (night mode, font scale, locale) keeps
+         * following the system. Null at 1.0, or when [base] has no density to scale.
+         */
+        internal fun uiScaleOverride(base: Configuration, scale: Float): Configuration? {
+            if (scale == UiScale.DEFAULT || base.densityDpi <= 0) return null
+            val dpi = UiScale.scaledDensityDpi(base.densityDpi, scale)
+            return Configuration().apply {
+                densityDpi = dpi
+                screenWidthDp = UiScale.rescaleDp(base.screenWidthDp, base.densityDpi, dpi)
+                screenHeightDp = UiScale.rescaleDp(base.screenHeightDp, base.densityDpi, dpi)
+                smallestScreenWidthDp = UiScale.rescaleDp(base.smallestScreenWidthDp, base.densityDpi, dpi)
+            }
+        }
     }
 
     @Inject
@@ -114,6 +137,55 @@ class MainActivity : ComponentActivity() {
      */
     private val pendingDeepLink = mutableStateOf<String?>(null)
 
+    /** The window's smallest width before any UI scale, captured in [attachBaseContext]. */
+    private var unscaledSmallestWidthDp = 0
+
+    /** The UI scale this instance is laid out at (the user's choice, capped for the window). */
+    private var appliedUiScale = UiScale.DEFAULT
+
+    /** Set once [recreate] is asked for, so a second change landing first can't ask twice. */
+    private var recreatingForUiScale = false
+
+    /**
+     * Settings › Appearance › Display size. The scale goes into the activity's own configuration
+     * rather than Compose's `LocalDensity`, because Dialogs, Popups, dropdown menus and bottom
+     * sheets each get their own window, and each window's root re-reads the density from the
+     * context it was made with. An override here reaches all of them, and `LocalConfiguration`'s
+     * screen sizes come out in the same dp the layout uses.
+     *
+     * The value comes from [ThemeSnapshot], not the DataStore: this runs before the first frame
+     * and before Hilt injects anything. `newBase` is always the system's unscaled configuration
+     * (each recreate builds a fresh one), so the scale is never applied on top of itself.
+     * Notifications, widgets and services use the application context and stay at system size.
+     */
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(newBase)
+        val base = newBase.resources.configuration
+        unscaledSmallestWidthDp = base.smallestScreenWidthDp
+        appliedUiScale = UiScale.effective(ThemeSnapshot.readUiScale(newBase), unscaledSmallestWidthDp)
+        uiScaleOverride(base, appliedUiScale)?.let(::applyOverrideConfiguration)
+    }
+
+    /**
+     * Keeps the launch snapshot in step with the stored scale, and lays the app out again when the
+     * scale this window should have changes. Settings commits on release, not mid-drag, so this
+     * fires once per change. It also heals a stale snapshot after a backup restore brought back a
+     * different scale: one recreate on the first launch after it, then the two agree.
+     *
+     * The comparison is on the capped value: a choice above this window's cap that still caps to
+     * the same scale only updates the snapshot, so this can never recreate in a loop.
+     */
+    private fun onUiScalePreference(chosen: Float) {
+        if (chosen != ThemeSnapshot.readUiScale(this)) ThemeSnapshot.writeUiScale(this, chosen)
+        val wanted = UiScale.effective(chosen, unscaledSmallestWidthDp)
+        if (wanted != appliedUiScale && !recreatingForUiScale) {
+            recreatingForUiScale = true
+            // ViewModels, the nav back stack and saved UI state all survive a recreate, as they do
+            // a rotation; playback lives in the service and doesn't notice.
+            recreate()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
@@ -130,17 +202,23 @@ class MainActivity : ComponentActivity() {
             ?.let { name -> ThemeMode.entries.firstOrNull { it.name == name } }
             ?: ThemeMode.SYSTEM
         val initialAmoledDark = themeSnapshot.getBoolean(KEY_AMOLED_DARK, false)
-        val initialUiScale = themeSnapshot.getFloat(KEY_UI_SCALE, 1f)
+
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                themePreference.uiScale
+                    // A store that can't be read leaves the scale as launched; never crash over it.
+                    .catch { Log.w("UiScale", "UI scale unreadable; keeping $appliedUiScale", it) }
+                    .collect { onUiScalePreference(it) }
+            }
+        }
 
         setContent {
             val themeMode by themeModeFlow.collectAsState(initial = initialThemeMode)
             val amoledDark by themePreference.amoledDark.collectAsState(initial = initialAmoledDark)
-            val uiScale by themePreference.uiScale.collectAsState(initial = initialUiScale)
-            LaunchedEffect(themeMode, amoledDark, uiScale) {
+            LaunchedEffect(themeMode, amoledDark) {
                 themeSnapshot.edit()
                     .putString(KEY_THEME_MODE, themeMode.name)
                     .putBoolean(KEY_AMOLED_DARK, amoledDark)
-                    .putFloat(KEY_UI_SCALE, uiScale)
                     .apply()
             }
             val systemDark = isSystemInDarkTheme()
@@ -183,11 +261,9 @@ class MainActivity : ComponentActivity() {
             // Open Stash on (#428): the tab the NavHost starts on. Saved across recreation so a
             // restored back stack always sits on the graph it was saved with.
             val startTab = rememberSaveable { homeSectionsPreference.startTabNow }
-            val baseDensity = LocalDensity.current
             StashTheme(darkTheme = darkTheme, amoled = amoledDark) {
                 CompositionLocalProvider(
-                    // Scaling density (not just fontScale) resizes dp and sp together.
-                    LocalDensity provides Density(baseDensity.density * uiScale, baseDensity.fontScale),
+                    LocalUiScaleMax provides UiScale.maxFor(unscaledSmallestWidthDp),
                     LocalListenTogetherRole provides role,
                     LocalCreateTrackLink provides createTrackLink,
                 ) {
