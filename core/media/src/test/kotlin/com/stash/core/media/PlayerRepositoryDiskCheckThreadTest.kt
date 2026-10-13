@@ -1,6 +1,7 @@
 package com.stash.core.media
 
 import android.os.Looper
+import androidx.media3.common.MediaItem
 import androidx.media3.session.MediaController
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
@@ -62,6 +63,9 @@ class PlayerRepositoryDiskCheckThreadTest {
         )
         every { controller.isConnected } returns true
         every { controller.mediaItemCount } returns 1
+        // One real song playing: Play next reads the queue's items to place the new one.
+        every { controller.currentMediaItemIndex } returns 0
+        every { controller.getMediaItemAt(0) } returns MediaItem.Builder().setMediaId("1").build()
         repo.controllerDeferred = controller
         shadowOf(Looper.getMainLooper()).idle()
         repo.controllerDeferred = controller // the bus's initial "not alive" released the seam

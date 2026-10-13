@@ -209,25 +209,58 @@ class QueueDisplayTest {
     assertThat(target).isEqualTo(2)
   }
 
-  // ---- walkWithInserted ----
+  // ---- playNextSlot ("Play next": first in, first out) ----
 
   @Test
-  fun `Play next lands right after the current song in the walk`() {
-    // Walk 2 -> 0 -> 3 -> 1, slot 2 playing, one song inserted at slot 3.
-    assertThat(QueueDisplay.walkWithInserted(listOf(2, 0, 3, 1), at = 3, count = 1, currentIndex = 2, afterCurrent = true))
-      .containsExactly(2, 3, 0, 4, 1).inOrder()
+  fun `Play next lands right after the current song in the timeline and the walk`() {
+    // Walk 2 -> 0 -> 3 -> 1, slot 2 playing, nothing queued with Play next yet.
+    val slot = QueueDisplay.playNextSlot(4, currentIndex = 2, walk = listOf(2, 0, 3, 1)) { false }
+    assertThat(slot.at).isEqualTo(3)
+    assertThat(slot.walk).containsExactly(2, 3, 0, 4, 1).inOrder()
   }
 
   @Test
+  fun `a second Play next goes after the first, in the timeline and the walk`() {
+    // Timeline [1, 2, 3, P, 4] with P (slot 3) a Play next; walk 2 -> 3 -> 0 -> 4 -> 1.
+    val slot = QueueDisplay.playNextSlot(5, currentIndex = 2, walk = listOf(2, 3, 0, 4, 1)) { it == 3 }
+    assertThat(slot.at).isEqualTo(4)
+    assertThat(slot.walk).containsExactly(2, 3, 4, 0, 5, 1).inOrder()
+  }
+
+  @Test
+  fun `shuffle off, Play next skips the run of Play next songs only`() {
+    // Slots 1 and 2 are Play nexts, slot 3 isn't, slot 4 is again (queued after a jump back).
+    val slot = QueueDisplay.playNextSlot(6, currentIndex = 0, walk = null) { it in setOf(1, 2, 4) }
+    assertThat(slot.at).isEqualTo(3)
+    assertThat(slot.walk).isNull()
+  }
+
+  @Test
+  fun `the service's walk is used even when it is the identity order`() {
+    // On the player itself an identity walk is a real order, not a mask: one song queued, shuffle on.
+    val slot = QueueDisplay.playNextSlot(1, currentIndex = 0, walk = listOf(0)) { false }
+    assertThat(slot.at).isEqualTo(1)
+    assertThat(slot.walk).containsExactly(0, 1).inOrder()
+  }
+
+  @Test
+  fun `a walk that doesn't cover the timeline is not placed`() {
+    val slot = QueueDisplay.playNextSlot(4, currentIndex = 1, walk = listOf(1, 0)) { false }
+    assertThat(slot.at).isEqualTo(2)
+    assertThat(slot.walk).isNull()
+  }
+
+  // ---- walkWithAppended ----
+
+  @Test
   fun `Add to queue lands at the end of the walk, in tap order`() {
-    assertThat(QueueDisplay.walkWithInserted(listOf(2, 0, 3, 1), at = 4, count = 2, currentIndex = 2, afterCurrent = false))
+    assertThat(QueueDisplay.walkWithAppended(listOf(2, 0, 3, 1), at = 4, count = 2))
       .containsExactly(2, 0, 3, 1, 4, 5).inOrder()
   }
 
   @Test
   fun `an unshuffled walk is a masking timeline, not a shuffle - nothing is sent`() {
-    assertThat(QueueDisplay.walkWithInserted(listOf(0, 1, 2, 3), at = 2, count = 1, currentIndex = 1, afterCurrent = true))
-      .isNull()
+    assertThat(QueueDisplay.walkWithAppended(listOf(0, 1, 2, 3), at = 4, count = 1)).isNull()
   }
 
   // ---- walkWithInsertedAt (the queue sheet's Undo) ----
