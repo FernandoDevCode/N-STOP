@@ -24,6 +24,7 @@ import com.stash.core.data.youtube.YouTubeScrobblerState
 import com.stash.core.data.sync.workers.StashDiscoveryWorker
 import com.stash.core.data.sync.workers.TagEnrichmentWorker
 import com.stash.core.model.DownloadNetworkMode
+import com.stash.core.model.UiScale
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.stash.core.data.lastfm.LastFmApiClient
 import com.stash.core.data.lastfm.LastFmCredentials
@@ -1567,6 +1568,25 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             themePreference.setAmoledDark(enabled)
         }
+    }
+
+    /**
+     * App-wide UI scale (Settings › Appearance › Display size). Seeded with the scale the app is
+     * laid out at, read synchronously, so the label doesn't show 1.00x for a frame before the
+     * DataStore read lands.
+     */
+    val uiScale: StateFlow<Float> = themePreference.uiScale.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        UiScale.snap(themePreference.uiScaleNow),
+    )
+
+    /**
+     * Stores a new UI scale (snapped to the grid by the store). Called when the slider is let go
+     * or Reset is tapped, never mid-drag: `MainActivity` lays the whole app out again on a change.
+     */
+    fun onUiScaleChanged(scale: Float) {
+        viewModelScope.launch { themePreference.setUiScale(scale) }
     }
 
     /**

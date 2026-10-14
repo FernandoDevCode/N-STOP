@@ -26,4 +26,21 @@ interface ThemePreference {
 
     /** Persists the pure-black dark preference. */
     suspend fun setAmoledDark(enabled: Boolean)
+
+    /**
+     * Settings › Appearance › Display size: the app-wide UI scale the user chose, on the
+     * [com.stash.core.model.UiScale] grid, default 1.0. A small window may lay out at less (see
+     * [com.stash.core.model.UiScale.maxFor]).
+     */
+    val uiScale: Flow<Float>
+
+    /**
+     * The same, read synchronously: the scale the open activity was laid out with, before any
+     * per-window cap. Lets a screen show the right value on its first frame instead of 1.0
+     * until the DataStore read lands.
+     */
+    val uiScaleNow: Float
+
+    /** Persists the UI scale, clamped to the range and snapped to the 0.05 grid. */
+    suspend fun setUiScale(scale: Float)
 }

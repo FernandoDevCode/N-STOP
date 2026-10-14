@@ -7,11 +7,14 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.stash.core.model.ThemeMode
+import com.stash.core.model.UiScale
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -59,6 +62,26 @@ class ThemePreferencesManager @Inject constructor(
     override suspend fun setAmoledDark(enabled: Boolean) {
         context.themeDataStore.edit { prefs ->
             prefs[amoledKey] = enabled
+        }
+    }
+
+    private val uiScaleKey = floatPreferencesKey("ui_scale")
+
+    /**
+     * Emits the UI scale, defaulting to 1.0. Snapped on read as well as on write, so a value from
+     * a restore or an older build can't put the layout off the range. Deduped: this store
+     * re-emits on every theme write, and `MainActivity` recreates when the scale changes.
+     */
+    override val uiScale: Flow<Float> = context.themeDataStore.data.map { prefs ->
+        UiScale.snap(prefs[uiScaleKey] ?: UiScale.DEFAULT)
+    }.distinctUntilChanged()
+
+    override val uiScaleNow: Float get() = ThemeSnapshot.readUiScale(context)
+
+    /** Persists the UI scale, clamped to the range and snapped to the 0.05 grid. */
+    override suspend fun setUiScale(scale: Float) {
+        context.themeDataStore.edit { prefs ->
+            prefs[uiScaleKey] = UiScale.snap(scale)
         }
     }
 }
