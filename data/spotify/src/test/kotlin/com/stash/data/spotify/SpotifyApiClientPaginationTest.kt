@@ -14,6 +14,7 @@ import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -110,6 +111,76 @@ class SpotifyApiClientPaginationTest {
         assertFalse(result.data.partial)
     }
 
+    // ── countVerified: the proof the sync needs to skip a playlist later ──
+
+    @Test fun `a walk that saw every item Spotify counts is count-verified`() = runBlocking {
+        pages["fetchPlaylist" to 0] = 200 to playlistPage(range = 0 until 100, totalCount = 130)
+        pages["fetchPlaylist" to 100] = 200 to playlistPage(range = 100 until 130, totalCount = 130)
+
+        val result = client.getPlaylistTracks("pl") as SyncResult.Success
+
+        assertTrue(result.data.countVerified)
+    }
+
+    @Test fun `a filtered item still counts toward the verified walk`() = runBlocking {
+        // A local file is dropped by the parser but was walked: the raw count matches Spotify's.
+        pages["fetchPlaylist" to 0] = 200 to playlistPage(range = 0 until 100, totalCount = 150, localAt = 7)
+        pages["fetchPlaylist" to 100] = 200 to playlistPage(range = 100 until 150, totalCount = 150)
+
+        val result = client.getPlaylistTracks("pl") as SyncResult.Success
+
+        assertTrue(result.data.countVerified)
+    }
+
+    @Test fun `a walk inside the 95 percent tolerance is complete but not count-verified`() = runBlocking {
+        // 97 of 100: fine to mirror (not partial), not proof enough to skip next time.
+        pages["fetchPlaylist" to 0] = 200 to playlistPage(range = 0 until 97, totalCount = 100)
+
+        val result = client.getPlaylistTracks("pl") as SyncResult.Success
+
+        assertFalse(result.data.partial)
+        assertFalse(result.data.countVerified)
+    }
+
+    @Test fun `a walk with no count from Spotify is not count-verified`() = runBlocking {
+        pages["fetchPlaylist" to 0] = 200 to playlistPage(range = 0 until 30, totalCount = null)
+
+        val result = client.getPlaylistTracks("pl") as SyncResult.Success
+
+        assertFalse(result.data.partial)
+        assertFalse(result.data.countVerified)
+    }
+
+    @Test fun `a partial walk is never count-verified`() = runBlocking {
+        pages["fetchPlaylist" to 0] = 200 to playlistPage(range = 0 until 100, totalCount = 200)
+        // offset 100 is unlisted: HTTP 500 → the walk is partial.
+
+        val result = client.getPlaylistTracks("pl") as SyncResult.Success
+
+        assertTrue(result.data.partial)
+        assertFalse(result.data.countVerified)
+    }
+
+    // ── revisionId: what the sync cross-checks against the listing's ─────
+
+    @Test fun `the walk reports the revision its first page carried`() = runBlocking {
+        pages["fetchPlaylist" to 0] = 200 to playlistPage(range = 0 until 100, totalCount = 130, revisionId = "AAAAAFirst")
+        pages["fetchPlaylist" to 100] = 200 to playlistPage(range = 100 until 130, totalCount = 130, revisionId = "AAAAALater")
+
+        val result = client.getPlaylistTracks("pl") as SyncResult.Success
+
+        assertEquals("the version the walk started from", "AAAAAFirst", result.data.revisionId)
+    }
+
+    @Test fun `a page with no revision reports none`() = runBlocking {
+        pages["fetchPlaylist" to 0] = 200 to playlistPage(range = 0 until 30, totalCount = 30)
+
+        val result = client.getPlaylistTracks("pl") as SyncResult.Success
+
+        assertNull(result.data.revisionId)
+        assertTrue("the page itself still parses", result.data.countVerified)
+    }
+
     @Test fun `a failed first page is still an error`() = runBlocking {
         // Nothing listed: every page answers HTTP 500.
         assertTrue(client.getPlaylistTracks("pl") is SyncResult.Error)
@@ -156,11 +227,17 @@ class SpotifyApiClientPaginationTest {
             """"artists":{"items":[{"uri":"spotify:artist:a$i","profile":{"name":"Artist $i"}}]}}"""
     }
 
-    private fun playlistPage(range: IntRange, totalCount: Int, localAt: Int? = null): String {
+    /**
+     * A `fetchPlaylist` page; [totalCount] null leaves the count out, as an older
+     * shape would, and [revisionId] null leaves the playlist's version out.
+     */
+    private fun playlistPage(range: IntRange, totalCount: Int?, localAt: Int? = null, revisionId: String? = null): String {
         val items = range.joinToString(",") { i ->
             """{"itemV2":{"data":${trackData(i, local = i == localAt)}}}"""
         }
-        return """{"data":{"playlistV2":{"content":{"totalCount":$totalCount,"items":[$items]}}}}"""
+        val count = totalCount?.let { """"totalCount":$it,""" }.orEmpty()
+        val revision = revisionId?.let { """"revisionId":"$it",""" }.orEmpty()
+        return """{"data":{"playlistV2":{$revision"content":{$count"items":[$items]}}}}"""
     }
 
     private fun likedPage(

@@ -531,6 +531,89 @@ interface PlaylistDao {
     @Query("UPDATE playlists SET snapshot_id = :snapshotId WHERE id = :playlistId")
     suspend fun updateSnapshotId(playlistId: Long, snapshotId: String?)
 
+    /**
+     * [playlistId]'s [mirrorDigestOf] now; null when there is no such
+     * playlist. The diff stamps it after its last write to the playlist, so it
+     * describes exactly what that mirror left; the fetch step computes it only
+     * for a playlist whose revision and mode already match its stamp.
+     */
+    @Transaction
+    suspend fun mirrorDigest(playlistId: Long): String? {
+        val trackCount = trackCountOf(playlistId) ?: return null
+        return mirrorDigestOf(trackCount, mirrorRows(playlistId), mirrorCopies(playlistId))
+    }
+
+    /** Every Spotify playlist that carries a mirror stamp: the fetch step's skip candidates. */
+    @Query(
+        """
+        SELECT id, source_id AS sourceId, snapshot_id AS stamp, track_count AS trackCount
+        FROM playlists WHERE source = 'SPOTIFY' AND snapshot_id IS NOT NULL
+        """
+    )
+    suspend fun stampedSpotifyPlaylists(): List<StampedSpotifyPlaylist>
+
+    /**
+     * [playlistId]'s rows for [mirrorDigestOf], each with whether its song has a
+     * FAILED download: the full diff closes that download when a downloaded copy
+     * of the song is linked, so a download that failed since the stamp must
+     * make the next sync read the playlist.
+     */
+    @Query(
+        """
+        SELECT pt.playlist_id AS playlistId, pt.track_id AS trackId, pt.position AS position,
+               (pt.removed_at IS NOT NULL) AS removed, pt.locally_added AS locallyAdded,
+               EXISTS(SELECT 1 FROM download_queue dq WHERE dq.track_id = pt.track_id AND dq.status = 'FAILED') AS failed
+        FROM playlist_tracks pt WHERE pt.playlist_id = :playlistId
+        """
+    )
+    suspend fun mirrorRows(playlistId: Long): List<MirrorRow>
+
+    /**
+     * The library rows sharing canonical words with any song of [playlistId]
+     * (live or removed), the songs themselves included: what the full diff's
+     * downloaded-copy linking and its by-words matching look at (downloaded,
+     * dismissed, title for the version check, ids for SameSongRule). Songs
+     * with blank words are left out, as
+     * the diff leaves them out (a blank key would match every local import).
+     * Index-backed: playlist_tracks by its key, then tracks by id and by
+     * (canonical_title, canonical_artist), the index from schema 55. The bare
+     * columns are compared, as the diff's own lookup does.
+     */
+    @Query(
+        """
+        SELECT DISTINCT c.id AS id, c.is_downloaded AS downloaded, (c.file_path IS NOT NULL) AS hasFile,
+               c.match_dismissed AS matchDismissed, c.title AS title,
+               c.spotify_uri AS spotifyUri, c.youtube_id AS youtubeId
+        FROM playlist_tracks pt
+        INNER JOIN tracks m ON m.id = pt.track_id
+        INNER JOIN tracks c ON c.canonical_title = m.canonical_title AND c.canonical_artist = m.canonical_artist
+        WHERE pt.playlist_id = :playlistId
+          AND TRIM(m.canonical_title) != '' AND TRIM(m.canonical_artist) != ''
+        """
+    )
+    suspend fun mirrorCopies(playlistId: Long): List<MirrorCopy>
+
+    @Query("SELECT track_count FROM playlists WHERE id = :playlistId")
+    suspend fun trackCountOf(playlistId: Long): Int?
+
+    /**
+     * Drops [playlistId]'s mirror stamp, if it has one: a complete mirror that
+     * couldn't be stamped (see DiffWorker.recordMirrorStamp) must not leave an
+     * older stamp vouching for it.
+     */
+    @Query("UPDATE playlists SET snapshot_id = NULL WHERE id = :playlistId AND snapshot_id IS NOT NULL")
+    suspend fun forgetMirrorStamp(playlistId: Long): Int
+
+    /**
+     * Forgets every Spotify playlist's mirror stamp, so the next sync reads
+     * them all in full. For a change the stamps' digests can't see in the
+     * playlists' own rows: a block (a twin of the song in another playlist is
+     * filtered by a full sync) and an unblock (which playlists hold it on
+     * Spotify isn't known here). Returns rows changed.
+     */
+    @Query("UPDATE playlists SET snapshot_id = NULL WHERE source = 'SPOTIFY' AND snapshot_id IS NOT NULL")
+    suspend fun forgetSpotifyMirrorStamps(): Int
+
     /** All active playlists from a specific music source. */
     @Query("SELECT * FROM playlists WHERE source = :source AND is_active = 1 ORDER BY name ASC")
     suspend fun getActivePlaylistsBySource(source: MusicSource): List<PlaylistEntity>

@@ -7,6 +7,7 @@ import com.stash.data.spotify.model.SpotifyPlaylistItem
 import com.stash.data.spotify.model.SpotifyTracksRef
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
@@ -143,17 +144,25 @@ fun parseLibraryPage(responseJson: JsonObject): SpotifyLibraryPage {
                     ?.get("totalCount")
                     ?.jsonPrimitive?.intOrNull ?: 0
 
+                // Soft cast like `images`: a shape change here must cost only
+                // the skip (the playlist is then read in full), never the row
+                // and with it the inventory's completeness.
+                val revisionId = (data["revisionId"] as? JsonPrimitive)
+                    ?.contentOrNull
+                    ?.takeIf { it.isNotBlank() }
+
                 playlists += SpotifyPlaylistItem(
                     id = playlistId,
                     name = name,
                     owner = SpotifyOwner(id = ownerUsername),
                     images = images,
                     tracks = SpotifyTracksRef(total = totalCount),
+                    revisionId = revisionId,
                 ).also {
                     Log.d(
                         TAG,
                         "parseLibraryPage: playlist '${it.name}' " +
-                            "(id=${it.id}, owner=${it.owner.id}, tracks=$totalCount)",
+                            "(id=${it.id}, owner=${it.owner.id}, tracks=$totalCount, revision=${it.revisionId})",
                     )
                 }
             } catch (e: Exception) {

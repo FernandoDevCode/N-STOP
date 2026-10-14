@@ -213,6 +213,7 @@ class DiagnosticsBundleBuilder @Inject constructor(
                                 "http=${step.httpCode} · items=${step.itemCount}",
                         )
                         step.errorMessage?.let { append(" · $it") }
+                        step.note?.let { append(" · $it") }
                         appendLine()
                     }
                 }

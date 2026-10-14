@@ -4,6 +4,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -79,6 +80,47 @@ class SpotifyLibraryParserTest {
         assertTrue(page.playlists.isEmpty())
         assertTrue(page.folderUris.isEmpty())
         assertFalse(page.isComplete)
+    }
+
+    // ── revisionId (the sync's skip-unchanged-playlists key) ─────────────
+    //
+    // Fixture shaped like a live libraryV3 capture (2026-10-12): the Liked
+    // Songs pseudo-row first (count/name/uri, no revisionId), then playlist
+    // rows carrying item.data.revisionId among the other captured fields.
+
+    @Test
+    fun `reads each playlist's revisionId from the library listing`() {
+        val page = parseFixture("libraryv3_revision_ids.json")
+
+        val road = page.playlists.single { it.name == "Road Trip" }
+        assertEquals("6wyGbrLCQHiRK1pESUTo8Z", road.id)
+        assertEquals("AAAAAMv6SY4RNBP4lRibleC3UcWweCUH", road.revisionId)
+        // The rest of the row is unchanged by the new field.
+        assertEquals("testuser", road.owner.id)
+        assertEquals("https://i.scdn.co/image/road", road.images?.firstOrNull()?.url)
+    }
+
+    @Test
+    fun `a playlist with no usable revisionId parses with a null one, never dropped`() {
+        val page = parseFixture("libraryv3_revision_ids.json")
+
+        // Absent, JSON null, and an unexpected object shape all read as "no
+        // revision": that playlist is then simply read in full by the sync.
+        assertNull(page.playlists.single { it.name == "No Revision Yet" }.revisionId)
+        assertNull(page.playlists.single { it.name == "Null Revision" }.revisionId)
+        assertNull(page.playlists.single { it.name == "Odd Revision Shape" }.revisionId)
+        // An odd revision shape must not cost the row, or the inventory's
+        // completeness, which gates hiding playlists the account no longer has.
+        assertEquals(4, page.playlists.size)
+        assertEquals(5, page.rawItemCount)
+        assertTrue(page.isComplete)
+    }
+
+    @Test
+    fun `the Liked Songs pseudo-row still never parses as a playlist`() {
+        val page = parseFixture("libraryv3_revision_ids.json")
+
+        assertTrue(page.playlists.none { it.name == "Liked Songs" })
     }
 
     @Test

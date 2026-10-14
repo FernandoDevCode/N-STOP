@@ -14,6 +14,7 @@ import com.stash.core.data.library.CanonicalRecomputeState
 import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.coVerifyOrder
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
@@ -175,5 +176,53 @@ class BlocklistGuardTest {
     fun `unblock asks for a fresh re-key, so songs saved while blocked get the shared words`() = runTest {
         guard.unblock("arctic monkeys|505")
         coVerify(exactly = 1) { canonicalRecompute.rearm() }
+    }
+
+    /**
+     * The song goes back into every Spotify playlist that holds it, and which
+     * ones those are isn't known here: a playlist unchanged since its last sync
+     * would otherwise be skipped (SpotifyMirrorStamp) and never get it back.
+     */
+    /** Holds the transaction's body without running it, so a test can see what runs inside. */
+    private fun captureTransaction(): io.mockk.CapturingSlot<suspend () -> Any> {
+        val body = slot<suspend () -> Any>()
+        coEvery { database.withTransaction(capture(body)) } returns Unit
+        return body
+    }
+
+    @Test
+    fun `unblock forgets every Spotify playlist's stamp inside the unblock's transaction`() = runTest {
+        val body = captureTransaction()
+
+        guard.unblock("arctic monkeys|505")
+        coVerify(exactly = 0) { playlistDao.forgetSpotifyMirrorStamps() }
+
+        body.captured.invoke()
+        coVerifyOrder {
+            blocklistDao.deleteByKey("arctic monkeys|505")
+            playlistDao.forgetSpotifyMirrorStamps()
+        }
+    }
+
+    /**
+     * A full sync filters the blocked song by its key everywhere, a twin row of
+     * it in another playlist included; that playlist's rows didn't move, so its
+     * stamp would still match and a skip would keep the twin.
+     */
+    @Test
+    fun `block forgets every Spotify playlist's stamp inside the block's transaction`() = runTest {
+        val track = TrackEntity(
+            id = 7, title = "505", artist = "Arctic Monkeys",
+            source = MusicSource.SPOTIFY, spotifyUri = "spotify:track:single",
+        )
+        val body = slot<suspend () -> Any>()
+        // The block reads the transaction's result (the playlists that held the song).
+        coEvery { database.withTransaction(capture(body)) } coAnswers { emptyList<Long>() }
+
+        guard.block(track, BlockSource.CONTEXT_MENU)
+        coVerify(exactly = 0) { playlistDao.forgetSpotifyMirrorStamps() }
+
+        body.captured.invoke()
+        coVerify(exactly = 1) { playlistDao.forgetSpotifyMirrorStamps() }
     }
 }

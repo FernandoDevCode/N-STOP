@@ -727,4 +727,74 @@ class DatabaseBackupMergeTest {
         val merged = live.playlistDao().findBySourceId("backup-own")!!
         assertNull(live.sharedMixDao().forPlaylist(merged.id))
     }
+
+    // ── Remote version stamps (SpotifyMirrorStamp) ──────────────────────
+    //
+    // A stamp lets a sync skip reading a Spotify playlist unchanged since its
+    // last full sync. It vouches for the library it was written in, so a
+    // backup's never arrives; and a live playlist the merge adds rows to is
+    // read again because its rows no longer match its stamp's digest.
+
+    // Kept short: Robolectric puts the test name in a temp path, and a long one
+    // passes Windows' path limit (SQLITE_CANTOPEN, as two older tests here do).
+    @Test
+    fun `merge drops foreign stamps`() = runTest {
+        val shared = live.trackDao().insert(track("Same Song", spotifyUri = "spotify:track:same"))
+        val touched = live.playlistDao().insert(playlist("Road Trip", "sp-p1", lastSynced = Instant.ofEpochMilli(1)))
+        addMember(touched, shared, position = 0)
+        val untouched = live.playlistDao().insert(playlist("Mine", "sp-live", lastSynced = Instant.ofEpochMilli(1)))
+        val stampOf = { pid: Long, digest: String ->
+            com.stash.core.data.sync.workers.SpotifyMirrorStamp(
+                "liveRev", com.stash.core.model.SyncMode.REFRESH, System.currentTimeMillis(), digest, 1L,
+            ).encode()
+        }
+        live.playlistDao().updateSnapshotId(touched, stampOf(touched, live.playlistDao().mirrorDigest(touched)!!))
+        val untouchedStamp = stampOf(untouched, live.playlistDao().mirrorDigest(untouched)!!)
+        live.playlistDao().updateSnapshotId(untouched, untouchedStamp)
+        val uri = buildBackupZip { backup ->
+            val bShared = backup.trackDao().insert(track("Same Song", spotifyUri = "spotify:track:same"))
+            val bNew = backup.trackDao().insert(track("Only Backup", spotifyUri = "spotify:track:y"))
+            val bP1 = backup.playlistDao().insert(playlist("Road Trip", "sp-p1", lastSynced = Instant.ofEpochMilli(1)))
+            backup.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = bP1, trackId = bShared, position = 0))
+            backup.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = bP1, trackId = bNew, position = 1))
+            val bPid = backup.playlistDao().insert(playlist("From Backup", "sp-backup", lastSynced = Instant.ofEpochMilli(1)))
+            backup.playlistDao().updateSnapshotId(bPid, "v2|backupRev|REFRESH|1|1|0123456789abcdef0123456789abcdef")
+        }
+
+        val result = manager.importDatabase(uri, BackupImportScope.LIBRARY_MERGE)
+
+        assertTrue("merge failed: ${result.exceptionOrNull()}", result.isSuccess)
+        assertNull("a backup's stamp never arrives", live.playlistDao().findBySourceId("sp-backup")!!.snapshotId)
+        val touchedStamp = com.stash.core.data.sync.workers.SpotifyMirrorStamp.decode(live.playlistDao().getSnapshotId(touched))
+        assertTrue(
+            "the playlist the merge added a song to no longer matches its stamp",
+            touchedStamp != null && touchedStamp.digest != live.playlistDao().mirrorDigest(touched),
+        )
+        assertEquals("a playlist the merge didn't touch keeps its stamp", untouchedStamp, live.playlistDao().getSnapshotId(untouched))
+    }
+
+    @Test
+    fun `a replace-restore makes the restored library's first sync read every playlist`() = runTest {
+        val uri = buildBackupZip { backup ->
+            val bPid = backup.playlistDao().insert(playlist("From Backup", "sp-backup", lastSynced = Instant.ofEpochMilli(1)))
+            backup.playlistDao().updateSnapshotId(bPid, "v2|backupRev|REFRESH|1|1|0123456789abcdef0123456789abcdef")
+        }
+        val liveFile = context.getDatabasePath(StashDatabase.DATABASE_NAME)
+        liveFile.parentFile?.mkdirs()
+        try {
+            val result = manager.importDatabase(uri, BackupImportScope.LIBRARY_REPLACE)
+
+            assertTrue("restore failed: ${result.exceptionOrNull()}", result.isSuccess)
+            val stamps = android.database.sqlite.SQLiteDatabase.openDatabase(
+                liveFile.path, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY,
+            ).use { restored ->
+                restored.rawQuery("SELECT source_id, snapshot_id FROM playlists", null).use { c ->
+                    buildList { while (c.moveToNext()) add(c.getString(0) to c.getString(1)) }
+                }
+            }
+            assertEquals(listOf("sp-backup" to null), stamps)
+        } finally {
+            listOf("", "-journal", "-wal", "-shm", ".rollback").forEach { File(liveFile.path + it).delete() }
+        }
+    }
 }

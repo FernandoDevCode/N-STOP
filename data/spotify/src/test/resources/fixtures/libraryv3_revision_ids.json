@@ -1,0 +1,120 @@
+{
+  "data": {
+    "me": {
+      "libraryV3": {
+        "totalCount": 5,
+        "items": [
+          {
+            "addedAt": { "isoString": "2024-02-11T09:12:44Z" },
+            "depth": 0,
+            "pinnable": true,
+            "pinned": true,
+            "playedAt": null,
+            "item": {
+              "__typename": "LibraryPseudoPlaylistResponseWrapper",
+              "_uri": "spotify:collection:tracks",
+              "data": {
+                "count": 1173,
+                "name": "Liked Songs",
+                "uri": "spotify:collection:tracks"
+              }
+            }
+          },
+          {
+            "addedAt": { "isoString": "2025-06-03T18:40:02Z" },
+            "depth": 0,
+            "pinnable": true,
+            "pinned": false,
+            "playedAt": { "isoString": "2026-10-11T21:05:13Z" },
+            "item": {
+              "__typename": "PlaylistResponseWrapper",
+              "_uri": "spotify:playlist:6wyGbrLCQHiRK1pESUTo8Z",
+              "data": {
+                "__typename": "Playlist",
+                "uri": "spotify:playlist:6wyGbrLCQHiRK1pESUTo8Z",
+                "name": "Road Trip",
+                "description": "",
+                "format": "",
+                "attributes": [
+                  { "key": "created_from", "value": "desktop" }
+                ],
+                "currentUserCapabilities": { "canEditItems": true, "canView": true },
+                "ownerV2": {
+                  "data": {
+                    "__typename": "User",
+                    "id": "testuser",
+                    "name": "Test User",
+                    "uri": "spotify:user:testuser",
+                    "username": "testuser"
+                  }
+                },
+                "images": {
+                  "items": [
+                    { "sources": [ { "url": "https://i.scdn.co/image/road", "width": 640, "height": 640 } ] }
+                  ]
+                },
+                "revisionId": "AAAAAMv6SY4RNBP4lRibleC3UcWweCUH"
+              }
+            }
+          },
+          {
+            "addedAt": { "isoString": "2023-01-20T07:00:00Z" },
+            "depth": 0,
+            "pinnable": true,
+            "pinned": false,
+            "playedAt": null,
+            "item": {
+              "__typename": "PlaylistResponseWrapper",
+              "_uri": "spotify:playlist:2v6l94wkQJwa2EU3rcJf0n",
+              "data": {
+                "__typename": "Playlist",
+                "uri": "spotify:playlist:2v6l94wkQJwa2EU3rcJf0n",
+                "name": "No Revision Yet",
+                "ownerV2": { "data": { "__typename": "User", "username": "otheruser" } },
+                "images": null
+              }
+            }
+          },
+          {
+            "addedAt": { "isoString": "2023-01-21T07:00:00Z" },
+            "depth": 0,
+            "pinnable": true,
+            "pinned": false,
+            "playedAt": null,
+            "item": {
+              "__typename": "PlaylistResponseWrapper",
+              "_uri": "spotify:playlist:1nullRevisionPlaylist00",
+              "data": {
+                "__typename": "Playlist",
+                "uri": "spotify:playlist:1nullRevisionPlaylist00",
+                "name": "Null Revision",
+                "ownerV2": { "data": { "__typename": "User", "username": "testuser" } },
+                "images": null,
+                "revisionId": null
+              }
+            }
+          },
+          {
+            "addedAt": { "isoString": "2023-01-22T07:00:00Z" },
+            "depth": 1,
+            "pinnable": true,
+            "pinned": false,
+            "playedAt": null,
+            "item": {
+              "__typename": "PlaylistResponseWrapper",
+              "_uri": "spotify:playlist:3oddShapedRevision00000",
+              "data": {
+                "__typename": "Playlist",
+                "uri": "spotify:playlist:3oddShapedRevision00000",
+                "name": "Odd Revision Shape",
+                "ownerV2": { "data": { "__typename": "User", "username": "testuser" } },
+                "images": null,
+                "revisionId": { "value": "AAAAAQ" }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

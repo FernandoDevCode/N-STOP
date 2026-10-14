@@ -39,6 +39,17 @@ data class SpotifyPlaylistItem(
     val owner: SpotifyOwner,
     val images: List<SpotifyImage>? = null,
     val tracks: SpotifyTracksRef? = null,
+    /**
+     * Spotify's version of this playlist, as the GraphQL library listing
+     * (`libraryV3`, `item.data.revisionId`) reports it: an opaque string that
+     * moves whenever the playlist changes on Spotify. The sync uses it to skip
+     * re-reading a playlist it already mirrored at this version.
+     *
+     * Null when the listing carries none (the Liked Songs pseudo-playlist,
+     * home-feed mixes, an older response shape): such a playlist is always
+     * read in full.
+     */
+    val revisionId: String? = null,
 )
 
 @Serializable

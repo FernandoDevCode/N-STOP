@@ -14,6 +14,12 @@ data class SyncStepResult(
     val itemCount: Int = 0,
     val errorMessage: String? = null,
     val httpCode: Int? = null,
+    /**
+     * What a step did that is worth knowing but is no error, e.g. how many
+     * Spotify playlists weren't re-read because nothing changed. Diagnostics
+     * only; null for most steps, and left out of the JSON then.
+     */
+    val note: String? = null,
 )
 
 /**
