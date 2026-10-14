@@ -902,9 +902,18 @@ class NowPlayingViewModel @Inject constructor(
         viewModelScope.launch { playerRepository.skipNext() }
     }
 
-    /** Return to the previous track (or restart current). */
+    /** The Back button: return to the previous track, or restart the current one a few seconds in. */
     fun onSkipPrevious() {
         viewModelScope.launch { playerRepository.skipPrevious() }
+    }
+
+    /**
+     * A swipe to the previous track (the art, the mini player) and the "Previous song"
+     * accessibility action that stands in for it: always the previous track. A restart would send
+     * the art off the side and spring it back with the same song.
+     */
+    fun onSwipePrevious() {
+        viewModelScope.launch { playerRepository.skipToPreviousSong() }
     }
 
     /**

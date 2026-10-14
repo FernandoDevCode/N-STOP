@@ -8,8 +8,10 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.session.MediaController
+import androidx.media3.session.SessionResult
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
+import com.google.common.util.concurrent.Futures
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
@@ -173,22 +175,42 @@ class PlayerRepositoryShuffleQueueTest {
     }
 
     /**
-     * ExoPlayer drops an inserted item at a random point of the shuffle walk, so a "Play next"
-     * could land behind the current song and never play. The repository sends the walk with the
-     * new item where the user asked.
+     * Under shuffle the repository doesn't insert itself: the service inserts the song and places
+     * it in the real shuffle order in one step (a controller only sees a masked, unshuffled order
+     * right after an edit), then answers which song it follows, and the logical queue follows suit.
      */
     @Test
-    fun `Play next under shuffle places the song right after the current one in the walk`() = runTest {
+    fun `Play next under shuffle hands the insert and the walk placement to the service`() = runTest {
+        every {
+            controller.sendCustomCommand(
+                match { it.customAction == StashPlaybackService.COMMAND_PLAY_NEXT_SHUFFLED },
+                any(),
+            )
+        } returns Futures.immediateFuture(
+            SessionResult(
+                SessionResult.RESULT_SUCCESS,
+                Bundle().apply {
+                    putInt(StashPlaybackService.EXTRA_PLAY_NEXT_INDEX, 3)
+                    putLong(StashPlaybackService.EXTRA_PLAY_NEXT_AFTER_ID, 3L)
+                    putInt(StashPlaybackService.EXTRA_PLAY_NEXT_AFTER_COPY, 0)
+                },
+            ),
+        )
+
         repo.addNext(track(9))
 
-        // Walk 2 → 0 → 3 → 1, track 3 (slot 2) playing; the song goes in at slot 3, so the old
-        // slot 3 becomes 4 and the new one follows slot 2 in the walk.
         verify(exactly = 1) {
             controller.sendCustomCommand(
-                match { it.customAction == StashPlaybackService.COMMAND_SET_SHUFFLE_ORDER },
-                match { it.getIntArray(StashPlaybackService.EXTRA_SHUFFLE_ORDER)?.toList() == listOf(2, 3, 0, 4, 1) },
+                match { it.customAction == StashPlaybackService.COMMAND_PLAY_NEXT_SHUFFLED },
+                match { args ->
+                    args.getBundle(StashPlaybackService.EXTRA_PLAY_NEXT_ITEM)
+                        ?.let { PlayNext.isTagged(MediaItem.fromBundle(it)) } == true
+                },
             )
         }
+        verify(exactly = 0) { controller.addMediaItem(any<Int>(), any<MediaItem>()) }
+        // After track 3 (the playing one), as in the timeline.
+        assertThat(repo.currentQueueTracks.map { it.id }).containsExactly(1L, 2L, 3L, 9L, 4L).inOrder()
     }
 
     @Test

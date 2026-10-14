@@ -118,8 +118,17 @@ interface PlayerRepository {
     /** Skip to the next track in the queue. */
     suspend fun skipNext()
 
-    /** Skip to the previous track (or restart current track based on position). */
+    /**
+     * The Back button: restart the current track when it has played more than a few seconds
+     * (as the notification's and a headset's Previous do), else go to the previous track.
+     */
     suspend fun skipPrevious()
+
+    /**
+     * A swipe to the previous track (Now Playing's art, the mini player) and its accessibility
+     * action: always the previous track, never a restart, which would spring the swiped art back.
+     */
+    suspend fun skipToPreviousSong() = skipPrevious()
 
     /** Seek to the given [positionMs] within the current track. */
     suspend fun seekTo(positionMs: Long)

@@ -876,7 +876,7 @@ fun NowPlayingScreen(
                                         positionMs = { playerPosition.value },
                                         durationMs = uiState.durationMs,
                                         onNext = viewModel::onSkipNext,
-                                        onPrevious = viewModel::onSkipPrevious,
+                                        onPrevious = viewModel::onSwipePrevious,
                                         onSeekTo = viewModel::onSeekTo,
                                         modifier = artShared,
                                     ) { swipeModifier ->

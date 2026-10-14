@@ -92,20 +92,6 @@ internal object QueueDisplay {
   }
 
   /**
-   * Timeline insertion index for a queue-sheet drag committed against the
-   * logical queue. [newLogical] is the logical queue AFTER the move,
-   * [toIndex] the moved track's new logical position, and
-   * [timelineIdsWithoutMoved] the timeline's track ids in timeline order
-   * with the moved item excluded (i.e. the list the insert happens into —
-   * matching Media3's moveMediaItem remove-then-insert semantics).
-   *
-   * The timeline holds a subsequence of the logical queue in the same
-   * relative order, so the right slot is simply "after every timeline item
-   * that is logically before the new position". Counted per copy: with a
-   * song queued twice, only as many of its timeline copies as sit before the
-   * new position in the logical queue count (an id set counted them all).
-   */
-  /**
    * Timeline window indices in shuffle play order: from [first], following [next]
    * until it answers an index outside 0 until count or one already visited. The
    * visited guard matters: a mocked or degenerate timeline that keeps answering
@@ -124,35 +110,94 @@ internal object QueueDisplay {
   }
 
   /**
-   * The shuffle walk (timeline indexes in play order) after [count] items were inserted at
-   * timeline index [at]: the old [walk]'s indexes shifted past the insert, with the new ones, in
-   * order, right after [currentIndex] (pre-insert) when [afterCurrent] ("Play next"), else at
-   * the end ("Add to queue"). Null when [walk] is the identity order: right after any queue
-   * change the MediaController's masking timeline answers an UNSHUFFLED order until the
-   * session's real one arrives, and building on that would unshuffle the queue.
+   * The shuffle walk (timeline indexes in play order) after [count] items were appended at timeline
+   * index [at] ("Add to queue"): the old [walk]'s indexes shifted past the insert, with the new ones,
+   * in order, at the end. Null when [walk] is the identity order: right after any queue change the
+   * MediaController's masking timeline answers an UNSHUFFLED order until the session's real one
+   * arrives, and building on that would unshuffle the queue.
    */
-  fun walkWithInserted(walk: List<Int>, at: Int, count: Int, currentIndex: Int, afterCurrent: Boolean): List<Int>? {
-    if (walk.withIndex().all { (i, v) -> i == v }) return null
-    val shifted = walk.map { if (it >= at) it + count else it }
-    val inserted = (at until at + count).toList()
-    val pos = if (afterCurrent) walk.indexOf(currentIndex) else -1
-    if (pos < 0) return shifted + inserted
-    return shifted.subList(0, pos + 1) + inserted + shifted.subList(pos + 1, shifted.size)
+  fun walkWithAppended(walk: List<Int>, at: Int, count: Int): List<Int>? {
+    if (isIdentity(walk)) return null
+    return insertIntoWalk(walk, at, count, walk.size)
   }
 
   /**
    * The shuffle walk after [count] items were inserted at timeline index [at], with the new items
    * at [position] of the play order (0 = the walk's first): the queue sheet's Undo puts a song back
    * on the row it was swiped from. [walk] is from before the insert; [position] is clamped to it.
-   * Null for an identity [walk], for the reason [walkWithInserted] gives.
+   * Null for an identity [walk], for the reason [walkWithAppended] gives.
    */
   fun walkWithInsertedAt(walk: List<Int>, at: Int, count: Int, position: Int): List<Int>? {
-    if (walk.withIndex().all { (i, v) -> i == v }) return null
+    if (isIdentity(walk)) return null
+    return insertIntoWalk(walk, at, count, position)
+  }
+
+  /**
+   * [walk] (from before the insert) with every index at or past [at] shifted by [count] and the
+   * [count] new indexes, in order, at play-order [position] (clamped). No identity guard: callers
+   * that read the walk from the player itself (the service) see the real order, never a mask.
+   */
+  fun insertIntoWalk(walk: List<Int>, at: Int, count: Int, position: Int): List<Int> {
     val shifted = walk.map { if (it >= at) it + count else it }
     val pos = position.coerceIn(0, shifted.size)
     return shifted.subList(0, pos) + (at until at + count).toList() + shifted.subList(pos, shifted.size)
   }
 
+  private fun isIdentity(walk: List<Int>) = walk.withIndex().all { (i, v) -> i == v }
+
+  /**
+   * Where one "Play next" goes: timeline slot [at], and the shuffle walk with it placed ([walk], null
+   * when shuffle is off or the walk doesn't cover the timeline).
+   */
+  data class PlayNextSlot(val at: Int, val walk: List<Int>?)
+
+  /**
+   * "Play next" queues songs first in, first out: a second one plays after the first, not before it.
+   * The songs queued that way carry a tag ([isPlayNext] answers it for a timeline slot), so the new
+   * one goes after the run of tagged songs right behind the current one: in the timeline (the order
+   * shuffle off plays, and the logical queue mirrors) and, under shuffle, in the play order [walk]
+   * (timeline indexes, from before the insert). Counting the run, rather than keeping a count, means
+   * a jump, a skip or a queue replaced by another controller can't leave a stale number behind.
+   *
+   * Both runs normally hold the same songs, since every Play next goes in at both places; counting
+   * each in its own order keeps "in the order added" true in each even if they ever differ.
+   */
+  fun playNextSlot(count: Int, currentIndex: Int, walk: List<Int>?, isPlayNext: (Int) -> Boolean): PlayNextSlot {
+    if (count <= 0 || currentIndex !in 0 until count) return PlayNextSlot(count.coerceAtLeast(0), null)
+    var at = currentIndex + 1
+    while (at < count && isPlayNext(at)) at++
+    val placed = walk?.takeIf { it.size == count }?.let { w ->
+      val cur = w.indexOf(currentIndex)
+      if (cur < 0) return@let null
+      var pos = cur + 1
+      while (pos < w.size && isPlayNext(w[pos])) pos++
+      insertIntoWalk(w, at, 1, pos)
+    }
+    return PlayNextSlot(at, placed)
+  }
+
+  /** How many earlier entries of [ids] equal entry [index] (its copy ordinal, as [copyOrdinal] for ids). */
+  fun copyOrdinalOfId(ids: List<Long>, index: Int): Int {
+    val id = ids.getOrNull(index) ?: return 0
+    var copies = 0
+    for (i in 0 until index) if (ids[i] == id) copies++
+    return copies
+  }
+
+  /**
+   * Timeline insertion index for a queue-sheet drag committed against the
+   * logical queue. [newLogical] is the logical queue AFTER the move,
+   * [toIndex] the moved track's new logical position, and
+   * [timelineIdsWithoutMoved] the timeline's track ids in timeline order
+   * with the moved item excluded (i.e. the list the insert happens into —
+   * matching Media3's moveMediaItem remove-then-insert semantics).
+   *
+   * The timeline holds a subsequence of the logical queue in the same
+   * relative order, so the right slot is simply "after every timeline item
+   * that is logically before the new position". Counted per copy: with a
+   * song queued twice, only as many of its timeline copies as sit before the
+   * new position in the logical queue count (an id set counted them all).
+   */
   fun moveTimelineTarget(
     newLogical: List<Track>,
     toIndex: Int,

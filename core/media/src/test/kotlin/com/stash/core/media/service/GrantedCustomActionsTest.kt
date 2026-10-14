@@ -31,4 +31,14 @@ class GrantedCustomActionsTest {
             StashPlaybackService.COMMAND_LEAVE_SESSION,
         )
     }
+
+    /** It puts a MediaItem, URI and all, straight onto the player, past resolveMediaItem's local-URI check. */
+    @Test fun `only the app itself can queue a song with Play next under shuffle`() {
+        assertThat(grantedCustomActions(privileged = true, ownApp = true))
+            .contains(StashPlaybackService.COMMAND_PLAY_NEXT_SHUFFLED)
+        assertThat(grantedCustomActions(privileged = true, ownApp = false))
+            .doesNotContain(StashPlaybackService.COMMAND_PLAY_NEXT_SHUFFLED)
+        assertThat(grantedCustomActions(privileged = false))
+            .doesNotContain(StashPlaybackService.COMMAND_PLAY_NEXT_SHUFFLED)
+    }
 }

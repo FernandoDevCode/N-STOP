@@ -148,7 +148,7 @@ fun MiniPlayer(
             canNext = canNext,
             canPrevious = canPrevious,
             onNext = viewModel::onSkipNext,
-            onPrevious = viewModel::onSkipPrevious,
+            onPrevious = viewModel::onSwipePrevious,
         )
         Box(
             modifier = modifier
@@ -162,7 +162,7 @@ fun MiniPlayer(
                 .semantics {
                     if (!isListener && canPrevious) {
                         customActions = listOf(
-                            CustomAccessibilityAction("Previous song") { viewModel.onSkipPrevious(); true },
+                            CustomAccessibilityAction("Previous song") { viewModel.onSwipePrevious(); true },
                         )
                     }
                 }
