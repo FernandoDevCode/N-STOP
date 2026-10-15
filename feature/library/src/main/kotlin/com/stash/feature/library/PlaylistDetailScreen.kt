@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
@@ -47,6 +48,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Snackbar
@@ -693,143 +696,51 @@ private fun PlaylistHeader(
     onSetImage: () -> Unit,
 ) {
     val playlist = state.playlist ?: return
-    val extendedColors = StashTheme.extendedColors
+    val mayEditCover = playlist.type == PlaylistType.CUSTOM && !readOnly
+    var actionsExpanded by remember { mutableStateOf(false) }
 
-    Column(modifier = Modifier.fillMaxWidth()) {
-        // -- Artwork with back button and gradient scrim --
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(1f),
-        ) {
-            // Album art or gradient placeholder
-            if (playlist.artUrl != null) {
-                AsyncImage(
-                    model = playlist.artUrl,
-                    contentDescription = "${playlist.name} artwork",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                )
-            } else {
-                // Gradient placeholder with music icon
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.linearGradient(
-                                colors = listOf(
-                                    MaterialTheme.colorScheme.primaryContainer,
-                                    MaterialTheme.colorScheme.tertiary.copy(alpha = 0.6f),
-                                ),
-                            ),
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.MusicNote,
-                        contentDescription = null,
-                        modifier = Modifier.size(72.dp),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f),
-                    )
-                }
-            }
-
-            // Gradient scrim at the bottom for text readability
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(160.dp)
-                    .align(Alignment.BottomCenter)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                MaterialTheme.colorScheme.background,
-                            ),
-                        ),
-                    ),
-            )
-
-            // Back button — statusBarsPadding ensures it sits below the system bar
-            IconButton(
-                onClick = onBack,
-                modifier = Modifier
-                    .statusBarsPadding()
-                    .padding(start = 8.dp, top = 8.dp)
-                    .align(Alignment.TopStart)
-                    .size(48.dp)
-                    .background(
-                        color = extendedColors.glassBackground,
-                        shape = CircleShape,
-                    ),
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
-                    tint = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-        }
-
-        // -- Playlist info below artwork --
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = HeaderGutter),
-        ) {
-            // Playlist name
-            Text(
-                text = playlist.name,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Source indicator + track count + total duration
+    NonstopCollectionHero(
+        title = playlist.name,
+        subtitle = null,
+        artwork = playlist.artUrl,
+        fallbackIcon = Icons.Default.MusicNote,
+        onBack = onBack,
+        metadata = {
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 SourceIndicator(source = playlist.source, size = 8.dp, showLabel = true)
-
                 Text(
-                    text = "\u2022",
+                    text = "•",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-
                 val trackCount = state.tracks.size
                 Text(
                     text = "$trackCount track${if (trackCount != 1) "s" else ""}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-
-                val totalDuration = state.tracks.sumOf { it.durationMs }
-                if (totalDuration > 0) {
+                val duration = state.tracks.sumOf { it.durationMs }
+                if (duration > 0) {
                     Text(
-                        text = "\u2022",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = formatTotalDuration(totalDuration),
+                        text = "• ${formatTotalDuration(duration)}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Action buttons: Play All + Shuffle
+        },
+        actions = {
+            // Play and shuffle no longer compete with three icon buttons on
+            // small phones. Search, share and editable cover live in a real
+            // overflow menu, keeping every original action one extra tap away.
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(9.dp),
             ) {
                 BulkPlayButtonBox(
                     modifier = Modifier.weight(1f),
@@ -838,13 +749,18 @@ private fun PlaylistHeader(
                     Button(
                         onClick = onPlayAll,
                         modifier = Modifier.fillMaxWidth(),
-                        contentPadding = PaddingValues(vertical = 12.dp),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(24.dp),
+                        contentPadding = PaddingValues(vertical = 12.dp, horizontal = 6.dp),
                     ) {
-                        IconLabel(Icons.Default.PlayArrow, "Play All")
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(21.dp),
+                        )
+                        Spacer(Modifier.width(5.dp))
+                        Text("Play", maxLines = 1, style = MaterialTheme.typography.labelLarge)
                     }
                 }
-
                 BulkPlayButtonBox(
                     modifier = Modifier.weight(1f),
                     showProgress = bulkPlayInFlight == BulkPlayAction.SHUFFLE_ALL,
@@ -852,68 +768,51 @@ private fun PlaylistHeader(
                     OutlinedButton(
                         onClick = onShuffle,
                         modifier = Modifier.fillMaxWidth(),
-                        contentPadding = PaddingValues(vertical = 12.dp),
-                        shape = RoundedCornerShape(12.dp),
-                    ) {
-                        IconLabel(Icons.Default.Shuffle, "Shuffle")
-                    }
-                }
-
-                Spacer(modifier = Modifier.width(8.dp))
-                IconButton(
-                    onClick = onToggleSearch,
-                    modifier = Modifier
-                        .size(48.dp)
-                        .background(
-                            color = extendedColors.glassBackground,
-                            shape = RoundedCornerShape(12.dp),
-                        ),
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Filter tracks",
-                        tint = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-
-                IconButton(
-                    onClick = onShare,
-                    modifier = Modifier
-                        .size(48.dp)
-                        .background(
-                            color = extendedColors.glassBackground,
-                            shape = RoundedCornerShape(12.dp),
-                        ),
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Share,
-                        contentDescription = "Share mix",
-                        tint = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-
-                if (playlist.type == PlaylistType.CUSTOM && !readOnly) {
-                    IconButton(
-                        onClick = onSetImage,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(
-                                color = extendedColors.glassBackground,
-                                shape = RoundedCornerShape(12.dp),
-                            ),
+                        shape = RoundedCornerShape(24.dp),
+                        contentPadding = PaddingValues(vertical = 12.dp, horizontal = 6.dp),
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Image,
-                            contentDescription = "Set cover image",
-                            tint = MaterialTheme.colorScheme.onSurface,
+                            imageVector = Icons.Default.Shuffle,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
                         )
+                        Spacer(Modifier.width(5.dp))
+                        Text("Shuffle", maxLines = 1, style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+                Box {
+                    IconButton(onClick = { actionsExpanded = true }) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "More playlist actions",
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = actionsExpanded,
+                        onDismissRequest = { actionsExpanded = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Search tracks") },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                            onClick = { actionsExpanded = false; onToggleSearch() },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Share playlist") },
+                            leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
+                            onClick = { actionsExpanded = false; onShare() },
+                        )
+                        if (mayEditCover) {
+                            DropdownMenuItem(
+                                text = { Text("Change cover") },
+                                leadingIcon = { Icon(Icons.Default.Image, contentDescription = null) },
+                                onClick = { actionsExpanded = false; onSetImage() },
+                            )
+                        }
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-    }
+        },
+    )
 }
 
 /**
