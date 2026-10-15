@@ -8,13 +8,13 @@
     <string name="nostop_home_updated_daily">Updated daily</string>
     <string name="nostop_home_your_mix">Your mix</string>
     <string name="nostop_home_discover">Discover</string>
-    <string name="nostop_home_playlists">Your playlists</string>
+    <string name="nostop_home_playlists">Back to listening</string>
     <string name="nostop_home_new_releases">New Releases</string>
     <string name="nostop_home_qobuz">Qobuz Playlists</string>
     <string name="nostop_home_top_albums">Top Albums</string>
     <string name="nostop_home_made_for_you">Made for you</string>
     <string name="nostop_home_radios">Radios</string>
-    <string name="nostop_home_moods">Mood &amp; decades</string>
+    <string name="nostop_home_moods">Rediscovery</string>
     <string name="nostop_home_see_all">See all</string>
     <string name="nostop_home_show_less">Show less</string>
     <string name="nostop_home_show_all_count">Show all %1$d</string>
