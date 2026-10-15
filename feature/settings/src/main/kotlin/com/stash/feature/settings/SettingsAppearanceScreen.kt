@@ -1,5 +1,8 @@
 package com.stash.feature.settings
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -27,9 +30,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -81,7 +87,54 @@ fun SettingsAppearanceScreen(
     // finger. The store gets the value once, on release (or Reset).
     var draftScale by remember(uiScale, maxScale) { mutableFloatStateOf(minOf(uiScale, maxScale)) }
 
-    SettingsScaffold(title = "Appearance", onBack = onBack, modifier = modifier) {
+    val context = LocalContext.current
+    val languagePrefs = remember(context) {
+        context.getSharedPreferences("nostop_language", Context.MODE_PRIVATE)
+    }
+    var languageChoice by remember {
+        mutableIntStateOf(
+            when (languagePrefs.getString("language", "system")) {
+                "pt-BR" -> 1
+                "en" -> 2
+                else -> 0
+            }
+        )
+    }
+
+    SettingsScaffold(title = stringResource(R.string.nostop_appearance), onBack = onBack, modifier = modifier) {
+        SettingsSectionLabel(stringResource(R.string.nostop_language))
+        SettingsSegmented(
+            options = listOf(
+                stringResource(R.string.nostop_language_system),
+                "Português",
+                "English",
+            ),
+            selectedIndex = languageChoice,
+            onSelect = { selected ->
+                if (selected != languageChoice) {
+                    languageChoice = selected
+                    val tag = when (selected) {
+                        1 -> "pt-BR"
+                        2 -> "en"
+                        else -> "system"
+                    }
+                    languagePrefs.edit().putString("language", tag).apply()
+                    var host: Context = context
+                    while (host is ContextWrapper && host !is Activity) {
+                        host = host.baseContext
+                    }
+                    (host as? Activity)?.recreate()
+                }
+            },
+        )
+        Text(
+            text = stringResource(R.string.nostop_language_description),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 4.dp),
+        )
+        Spacer(Modifier.height(20.dp))
+
         SettingsSectionLabel("Theme")
 
         Row(
