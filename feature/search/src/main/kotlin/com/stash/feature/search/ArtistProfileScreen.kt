@@ -1,10 +1,24 @@
 package com.stash.feature.search
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -13,9 +27,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -27,6 +45,7 @@ import com.stash.core.ui.components.SectionHeader
 import com.stash.core.model.TrackItem
 import com.stash.data.ytmusic.model.AlbumSummary
 import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.launch
 import com.stash.core.ui.components.bottomChromePadding
 
 /**
@@ -49,7 +68,7 @@ import com.stash.core.ui.components.bottomChromePadding
  * Snackbar host — refresh failures show a one-liner but the cached data
  * keeps rendering underneath, matching §3.4's stale-while-revalidate UX.
  */
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ArtistProfileScreen(
     onBack: () -> Unit,
@@ -86,18 +105,29 @@ fun ArtistProfileScreen(
     val focus = remember(state.focusAlbum, state.albums, state.singles) {
         findAlbumFocus(state.focusAlbum, state.albums, state.singles)
     }
-    // Outer LazyColumn item index of the section header to reveal. Section
-    // order is fixed: hero(0); Popular header+row (if popular); Albums
-    // header+row; Singles header+row.
-    val sectionOuterIndex = remember(focus, state.popular, state.albums) {
-        if (focus == null) return@remember null
-        var idx = 1 // hero occupies index 0
-        if (state.popular.isNotEmpty()) idx += 2 // Popular header + row
-        when (focus.shelf) {
-            AlbumShelf.ALBUMS -> idx
-            AlbumShelf.SINGLES -> idx + if (state.albums.isNotEmpty()) 2 else 0
+    // The hero (0) and the artist's sticky navigation (1) are fixed.
+    // Each shelf contributes two LazyColumn items; count the optional ones
+    // centrally so "open this album" lands at the right section.
+    val positions = remember(
+        state.popular.isNotEmpty(), state.albums.isNotEmpty(),
+        state.singles.isNotEmpty(), state.related.isNotEmpty(), state.about != null,
+    ) {
+        artistSectionPositions(
+            hasSongs = state.popular.isNotEmpty(),
+            hasAlbums = state.albums.isNotEmpty(),
+            hasSingles = state.singles.isNotEmpty(),
+            hasRelated = state.related.isNotEmpty(),
+            hasAbout = state.about != null,
+        )
+    }
+    val sectionOuterIndex = remember(focus, positions) {
+        when (focus?.shelf) {
+            AlbumShelf.ALBUMS -> positions.albums
+            AlbumShelf.SINGLES -> positions.singles
+            null -> null
         }
     }
+    val scrollScope = rememberCoroutineScope()
     var focusHandled by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(sectionOuterIndex, state.status) {
         val target = sectionOuterIndex ?: return@LaunchedEffect
@@ -130,6 +160,25 @@ fun ArtistProfileScreen(
                     onStreamingClick = { showStreamingSheet = true },
                 )
             }
+            // Tabs are real jumps into the populated shelves, not decorative
+            // filters. The bar stays accessible after the large hero scrolls off.
+            stickyHeader(key = "artist-section-navigation") {
+                val tabs = listOfNotNull(
+                    positions.songs?.let { stringResource(R.string.nonstop_artist_music_tab) to it },
+                    positions.albums?.let { stringResource(R.string.nonstop_artist_albums_tab) to it },
+                    positions.singles?.let { stringResource(R.string.nonstop_artist_singles_tab) to it },
+                    positions.about?.let { stringResource(R.string.nonstop_artist_about_tab) to it },
+                )
+                ArtistSectionTabs(
+                    tabs = tabs,
+                    selectedIndex = tabs.lastOrNull { it.second <= listState.firstVisibleItemIndex }?.second
+                        ?: tabs.firstOrNull()?.second,
+                    onSelect = { index ->
+                        scrollScope.launch { listState.animateScrollToItem(index) }
+                    },
+                )
+            }
+
 
             when (val status = state.status) {
                 is ArtistProfileStatus.Error -> item {
@@ -290,5 +339,55 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
     if (about != null) {
         item { SectionHeader(title = "About") }
         item { AboutSection(about = about, avatarUrl = state.hero.avatarUrl) }
+    }
+}
+
+/**
+ * Small editorial chapter navigator. The page underneath still retains the
+ * familiar Spotify-style popular songs, albums, singles, related artists and
+ * about sections, so each label scrolls to real catalog content.
+ */
+@Composable
+private fun ArtistSectionTabs(
+    tabs: List<Pair<String, Int>>,
+    selectedIndex: Int?,
+    onSelect: (Int) -> Unit,
+) {
+    if (tabs.isEmpty()) return
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.background.copy(alpha = 0.97f))
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 11.dp),
+        horizontalArrangement = Arrangement.spacedBy(9.dp),
+    ) {
+        tabs.forEach { (title, targetIndex) ->
+            val selected = targetIndex == selectedIndex
+            val fill = if (selected) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.46f)
+            }
+            Surface(
+                onClick = { onSelect(targetIndex) },
+                shape = RoundedCornerShape(100.dp),
+                color = fill,
+                border = BorderStroke(
+                    1.dp,
+                    if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.36f)
+                    else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                ),
+            ) {
+                Text(
+                    text = title,
+                    modifier = Modifier.padding(horizontal = 15.dp, vertical = 10.dp),
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (selected) MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }
