@@ -26,7 +26,7 @@
     <string name="nonstop_filter_music">Music</string>
     <string name="nonstop_filter_podcasts">Podcasts</string>
     <string name="nonstop_filter_audiobooks">Audiobooks</string>
-    <string name="nonstop_media_coming_soon">Podcast and audiobook playback will arrive in a later checkpoint. Your music and library remain available.</string>
+    <string name="nonstop_media_coming_soon">Audiobook playback will arrive in a later checkpoint. Podcasts are already available in the Podcasts tab.</string>
     <string name="nonstop_explore_title">Explore</string>
     <string name="nonstop_explore_subtitle">New sounds, artists, and places to listen.</string>
     <string name="nonstop_explore_releases">New releases</string>
