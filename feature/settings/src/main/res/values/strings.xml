@@ -218,4 +218,24 @@
     <string name="nostop_storage_dismiss">Dismiss</string>
     <string name="nostop_storage_moving_progress">Moving %1$d of %2$d...</string>
     <string name="nostop_storage_downloads">Downloads</string>
+    <string name="nostop_storage_export_label_likes">Liked songs only</string>
+    <string name="nostop_storage_export_label_everything">Everything</string>
+    <string name="nostop_storage_export_label_library_only">Library only</string>
+    <string name="nostop_storage_export_label_settings_only">Settings only</string>
+    <string name="nostop_storage_export_desc_likes">Everything you liked and nothing else. Small file.</string>
+    <string name="nostop_storage_export_desc_everything">Library and settings. Logins cannot be restored.</string>
+    <string name="nostop_storage_export_desc_library_only">Songs, playlists and history. No settings.</string>
+    <string name="nostop_storage_export_desc_settings_only">Preferences without the library.</string>
+    <string name="nostop_storage_import_label_library_merge">Merge into library</string>
+    <string name="nostop_storage_import_label_library_replace">Replace library only</string>
+    <string name="nostop_storage_import_label_settings_replace">Restore settings only</string>
+    <string name="nostop_storage_import_label_everything_replace">Replace everything</string>
+    <string name="nostop_storage_import_desc_library_merge">Add missing songs and playlists; keep current files and settings.</string>
+    <string name="nostop_storage_import_desc_library_replace">Restore the backup library. Current settings remain.</string>
+    <string name="nostop_storage_import_desc_settings_replace">Restore settings from the backup. Keep your current library.</string>
+    <string name="nostop_storage_import_desc_everything_replace">Fully restore the backup, replacing the entire library and all settings.</string>
+    <string name="nostop_storage_import_confirm_library_merge">Merge</string>
+    <string name="nostop_storage_import_confirm_library_replace">Replace Library</string>
+    <string name="nostop_storage_import_confirm_settings_replace">Restore Settings</string>
+    <string name="nostop_storage_import_confirm_everything_replace">Overwrite All</string>
 </resources>
