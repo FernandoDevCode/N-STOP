@@ -60,4 +60,11 @@
     <string name="nostop_home_layout_description">Rearrange or hide Home sections. Discover stays at the top.</string>
     <string name="nostop_show_likes">Show Liked Songs on Home</string>
     <string name="nostop_show_likes_description">Show your liked songs from NØSTOP, Spotify and YouTube together in Your playlists.</string>
+    <string name="nostop_settings_title">Settings</string>
+    <string name="nostop_nav_playback">Playback</string>
+    <string name="nostop_nav_audio">Audio &amp; Quality</string>
+    <string name="nostop_nav_accounts">Accounts &amp; Sync</string>
+    <string name="nostop_nav_library">Library &amp; Storage</string>
+    <string name="nostop_nav_about">About &amp; Help</string>
+    <string name="nostop_search_empty">No settings found for "%1$s"</string>
 </resources>
