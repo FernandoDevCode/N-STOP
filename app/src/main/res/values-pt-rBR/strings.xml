@@ -9,4 +9,6 @@
     <string name="nostop_nav_search">Buscar</string>
     <string name="nostop_nav_sync">Sincronizar</string>
     <string name="nostop_nav_settings">Configurações</string>
+    <string name="nonstop_nav_explore">Explorar</string>
+    <string name="nonstop_nav_radio">Rádio</string>
 </resources>
