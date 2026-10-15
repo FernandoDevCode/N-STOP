@@ -127,4 +127,12 @@
     <string name="nostop_accounts_lastfm_offline">Couldn\'t reach Last.fm. Your plays remain queued and will be sent later.</string>
     <string name="nostop_accounts_lastfm_no_scrobbles">No new scrobbles to send.</string>
     <string name="nostop_accounts_lastfm_sent">Sent %1$d scrobbles to Last.fm.</string>
+    <string name="nostop_hub_stream_only">Stream only</string>
+    <string name="nostop_hub_cellular_on">Cellular on</string>
+    <string name="nostop_hub_cellular_off">Cellular off</string>
+    <string name="nostop_hub_pure_black">Pure black</string>
+    <string name="nostop_hub_lossless">Lossless</string>
+    <string name="nostop_hub_not_connected">Not connected</string>
+    <string name="nostop_hub_one_track">%1$d track</string>
+    <string name="nostop_hub_many_tracks">%1$d tracks</string>
 </resources>
