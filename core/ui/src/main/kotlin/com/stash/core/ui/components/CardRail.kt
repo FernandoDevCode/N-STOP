@@ -25,11 +25,11 @@ fun CardRail(
     content: LazyListScope.() -> Unit,
 ) {
     Column(modifier) {
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(18.dp))
         SectionHeader(title = title, actionText = actionText, onActionClick = onActionClick)
         LazyRow(
             contentPadding = PaddingValues(horizontal = 20.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
             content = content,
         )
     }
