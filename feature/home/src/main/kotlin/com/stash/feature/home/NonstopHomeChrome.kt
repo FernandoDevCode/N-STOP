@@ -6,7 +6,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,6 +50,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
+import com.stash.core.ui.ambient.rememberReducedMotion
 import com.stash.core.ui.theme.SpaceGrotesk
 
 private val brandPurple = Color(0xFFAF6AFF)
@@ -136,11 +138,14 @@ fun NonstopMediaFilters(
     var pulseId by remember { mutableIntStateOf(0) }
     val pulse = remember { Animatable(0f) }
     val dark = LocalIsDarkTheme.current
-    LaunchedEffect(pulseId) {
+    val reducedMotion = rememberReducedMotion()
+    LaunchedEffect(pulseId, reducedMotion) {
         if (pulseId > 0) {
             pulse.snapTo(0f)
-            pulse.animateTo(1f, tween(130))
-            pulse.animateTo(0f, tween(470))
+            if (!reducedMotion) {
+                pulse.animateTo(1f, tween(130))
+                pulse.animateTo(0f, tween(470))
+            }
         }
     }
     Row(
@@ -155,27 +160,14 @@ fun NonstopMediaFilters(
             val active = selected == value
             val prominence by animateFloatAsState(
                 targetValue = if (active) 1f else 0f,
-                animationSpec = tween(260),
+                animationSpec = tween(if (reducedMotion) 0 else 260),
                 label = "media filter selection",
             )
             val burst = if (lastTapped == value) pulse.value else 0f
             val shape = RoundedCornerShape(50)
             Row(
                 modifier = Modifier
-                    .drawBehind {
-                        if (active) {
-                            drawRoundRect(
-                                brush = Brush.horizontalGradient(
-                                    listOf(
-                                        brandPurple.copy(alpha = 0.10f + 0.18f * burst),
-                                        brandBlue.copy(alpha = 0.04f + 0.10f * burst),
-                                    ),
-                                ),
-                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2),
-                            )
-                        }
-                    }
-.background(
+                    .background(
                         if (!dark && active) {
                             Brush.horizontalGradient(
                                 listOf(
@@ -193,16 +185,33 @@ fun NonstopMediaFilters(
                         },
                         shape,
                     )
+                    .drawBehind {
+                        if (active) {
+                            drawRoundRect(
+                                brush = Brush.horizontalGradient(
+                                    listOf(
+                                        brandPurple.copy(alpha = 0.10f + 0.18f * burst),
+                                        brandBlue.copy(alpha = 0.04f + 0.10f * burst),
+                                    ),
+                                ),
+                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2),
+                            )
+                        }
+                    }
                     .border(
                         1.dp,
                         Color.White.copy(alpha = 0.12f + 0.21f * prominence + 0.19f * burst),
                         shape,
                     )
-                    .clickable {
-                        lastTapped = value
-                        pulseId += 1
-                        onSelect(value)
-                    }
+                    .selectable(
+                        selected = active,
+                        role = Role.Tab,
+                        onClick = {
+                            lastTapped = value
+                            pulseId += 1
+                            onSelect(value)
+                        },
+                    )
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(9.dp),
