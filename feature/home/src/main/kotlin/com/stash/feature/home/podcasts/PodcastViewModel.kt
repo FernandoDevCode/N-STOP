@@ -10,6 +10,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.stash.core.media.PlayerRepository
@@ -41,6 +42,9 @@ data class PodcastUiState(
     val error: String? = null,
     val playingId: String? = null,
     val playingTitle: String = "",
+    val playingPodcast: String = "",
+    val playingArtworkUrl: String? = null,
+    val playbackSpeed: Float = 1f,
     val isPlaying: Boolean = false,
     val foreground: Boolean = false,
     val positionMs: Long = 0,
@@ -221,7 +225,16 @@ class PodcastViewModel @Inject constructor(
         refreshPlayback()
     }
     fun jump(ms: Long) {
-        controller?.let { it.seekTo((it.currentPosition + ms).coerceAtLeast(0L)) }
+        controller?.let { player ->
+            val end = player.duration.takeIf { it > 0 && it != C.TIME_UNSET } ?: Long.MAX_VALUE
+            player.seekTo((player.currentPosition + ms).coerceIn(0L, end))
+        }
+        refreshPlayback()
+    }
+
+    fun setSpeed(speed: Float) {
+        if (speed !in listOf(1f, 1.25f, 1.5f, 2f)) return
+        controller?.setPlaybackParameters(PlaybackParameters(speed))
         refreshPlayback()
     }
 
@@ -238,6 +251,9 @@ class PodcastViewModel @Inject constructor(
             it.copy(
                 playingId = player.currentMediaItem?.mediaId,
                 playingTitle = player.currentMediaItem?.mediaMetadata?.title?.toString().orEmpty(),
+                playingPodcast = player.currentMediaItem?.mediaMetadata?.artist?.toString().orEmpty(),
+                playingArtworkUrl = player.currentMediaItem?.mediaMetadata?.artworkUri?.toString(),
+                playbackSpeed = player.playbackParameters.speed,
                 isPlaying = player.isPlaying,
                 foreground = it.foreground || (player.isPlaying && !musicPlayer.playerState.value.playWhenReady),
                 positionMs = player.currentPosition.coerceAtLeast(0),
