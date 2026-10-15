@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="nostop_np_end_everyone">End the session for everyone?</string>
+    <string name="nostop_np_end">End</string>
+    <string name="nostop_np_leave_session">Leave the session?</string>
+    <string name="nostop_np_new_host">%1$s will host, and the music keeps playing for everyone else.</string>
+    <string name="nostop_np_leave">Leave</string>
+    <string name="nostop_np_cancel">Cancel</string>
+    <string name="nostop_np_wrong_track">What\'s wrong with this song?</string>
+    <string name="nostop_np_wrong_track_hint">Choose what to do with \'%1$s\'.</string>
+    <string name="nostop_np_find_flac">Find in FLAC</string>
+    <string name="nostop_np_better_match">Find a better match</string>
+    <string name="nostop_np_delete">Delete from library</string>
+    <string name="nostop_np_delete_block">Delete and block forever</string>
+    <string name="nostop_np_open_artist">Open artist</string>
+    <string name="nostop_np_album_art">Album art</string>
+    <string name="nostop_np_shuffle">Shuffle</string>
+    <string name="nostop_np_previous">Previous</string>
+    <string name="nostop_np_next">Next</string>
+    <string name="nostop_np_repeat">Repeat</string>
+    <string name="nostop_np_streaming">Streaming</string>
+    <string name="nostop_np_sleep_timer">Sleep Timer</string>
+    <string name="nostop_np_sleep_timer_remaining">Music pauses in %1$s</string>
+    <string name="nostop_np_end_track_hint">End of track: music pauses when this song ends</string>
+    <string name="nostop_np_minutes">%1$d min</string>
+    <string name="nostop_np_custom">Custom</string>
+    <string name="nostop_np_end_track">End of Track</string>
+    <string name="nostop_np_cancel_timer">Cancel timer</string>
+    <string name="nostop_np_custom_sleep">Custom sleep timer</string>
+    <string name="nostop_np_minute_label">Minutes</string>
+    <string name="nostop_np_start">Start</string>
+    <string name="nostop_np_speed">Playback speed</string>
+    <string name="nostop_np_custom_speed">Custom speed</string>
+    <string name="nostop_np_speed_range">Speed (0.1 – 4.0)</string>
+    <string name="nostop_np_set">Set</string>
+</resources>
