@@ -39,4 +39,7 @@
     <string name="nostop_library_sort_filter">Sort and filter</string>
     <string name="nostop_library_clear_filter">Clear filter</string>
     <string name="nostop_library_showing_filter">Showing only %1$s</string>
+    <string name="nonstop_library_more">More options</string>
+    <string name="nonstop_library_sync">Sync</string>
+    <string name="nonstop_library_settings">Settings</string>
 </resources>
