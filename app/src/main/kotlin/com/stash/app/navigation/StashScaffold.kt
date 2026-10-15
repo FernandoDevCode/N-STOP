@@ -56,6 +56,9 @@ import com.stash.core.ui.theme.StashTheme
 import com.stash.data.download.lossless.squid.CaptchaExpiredNotifier
 import com.stash.feature.nowplaying.MiniPlayer
 import com.stash.feature.nowplaying.PlayerQueueSheet
+import com.stash.feature.home.podcasts.LocalPodcastViewModel
+import com.stash.feature.home.podcasts.PodcastMiniPlayer
+import com.stash.feature.home.podcasts.PodcastViewModel
 import com.stash.app.ambient.AlbumColorsViewModel
 import com.stash.core.ui.ambient.ProvideAlbumChrome
 import com.stash.core.ui.ambient.rememberReducedMotion
@@ -109,6 +112,10 @@ fun StashScaffold(
     // at the player level so it follows the song whether or not Now Playing is open.
     val albumColorsViewModel: AlbumColorsViewModel = hiltViewModel()
     val albumColors by albumColorsViewModel.colors.collectAsStateWithLifecycle()
+    // One activity-scoped podcast controller across tab changes. Media3 owns
+    // its session; the music and podcast transports never render together.
+    val podcastViewModel: PodcastViewModel = hiltViewModel()
+    val podcastUi by podcastViewModel.state.collectAsStateWithLifecycle()
 
     // The backdrop the bottom chrome frosts: the nav host, drawn under the bars.
     val hazeState = rememberHazeState()
@@ -213,7 +220,10 @@ fun StashScaffold(
     }
 
     ProvideAlbumChrome(albumColors) {
-    CompositionLocalProvider(LocalChromeHazeState provides hazeState) {
+    CompositionLocalProvider(
+        LocalChromeHazeState provides hazeState,
+        LocalPodcastViewModel provides podcastViewModel,
+    ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         // Use Scaffold's default safe-drawing insets so screens automatically
@@ -260,25 +270,28 @@ fun StashScaffold(
                         com.stash.feature.nowplaying.handoff.HandoffCard()
                         // "Chrome on Windows sent you 3 playlists and 40 likes." (link-sync spec §2.3): a dialog, shown once per send.
                         com.stash.feature.settings.weblink.InboxPrompt()
-                        MiniPlayer(
-                            onOpenQueue = { showQueue = true },
-                            onExpand = {
-                                // Return to an existing Now Playing entry instead
-                                // of pushing a duplicate. launchSingleTop only
-                                // guards a CONSECUTIVE dup — via NP → artist
-                                // profile → mini player, each expand used to
-                                // stack another NP entry, and every buried
-                                // entry's ViewModel keeps its 4Hz player combine
-                                // running forever (observed: 6 live VMs in a
-                                // heap dump). popBackStack returns false when NP
-                                // isn't in the stack — normal push in that case.
-                                if (!navController.popBackStack(NowPlayingRoute, inclusive = false)) {
-                                    navController.navigate(NowPlayingRoute) {
-                                        launchSingleTop = true
+                        if (podcastUi.foreground && podcastUi.playingId != null) {
+                            PodcastMiniPlayer(
+                                state = podcastUi,
+                                onExpand = {
+                                    podcastViewModel.requestOpenFromChrome()
+                                    navigateToTab(TopLevelDestination.HOME)
+                                },
+                                onPlayPause = podcastViewModel::togglePause,
+                            )
+                        } else {
+                            MiniPlayer(
+                                onOpenQueue = { showQueue = true },
+                                onExpand = {
+                                    // Return to the existing music Now Playing entry.
+                                    if (!navController.popBackStack(NowPlayingRoute, inclusive = false)) {
+                                        navController.navigate(NowPlayingRoute) {
+                                            launchSingleTop = true
+                                        }
                                     }
-                                }
-                            },
-                        )
+                                },
+                            )
+                        }
                       }
                     }
 
