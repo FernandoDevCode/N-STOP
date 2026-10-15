@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="nostop_playlist_save_to">Salvar em playlist</string>
+    <string name="nostop_playlist_create_new">Criar nova playlist</string>
+    <string name="nostop_playlist_one_track">%1$d faixa</string>
+    <string name="nostop_playlist_many_tracks">%1$d faixas</string>
+    <string name="nostop_playlist_create">Criar playlist</string>
+    <string name="nostop_playlist_name">Nome da playlist</string>
+    <string name="nostop_playlist_confirm">Criar</string>
+    <string name="nostop_playlist_cancel">Cancelar</string>
+</resources>
