@@ -38,4 +38,6 @@
     <string name="nostop_sync_blocked_count">%1$d blocked songs will not download again</string>
     <string name="nostop_sync_undoing">Undoing…</string>
     <string name="nostop_sync_undo_short">Undo</string>
+    <string name="nostop_sync_refresh_warning">Refresh replaces rotating playlist tracks with new recommendations and removes the downloads of rotated-out songs. Cleanup only starts when every source is set to Refresh; while any source accumulates, nothing is deleted. Manually added songs are kept.</string>
+    <string name="nostop_sync_undo_warning">The library returns to how it was before the last sync (%1$d playlists affected). Hidden playlists return, newly added playlists are hidden, and emptied playlists regain their original order.\n\nSongs you changed manually and download settings you adjusted remain unchanged. Previously deleted audio files cannot be recovered.\n\nAutomatic sync pauses until you tap Sync.</string>
 </resources>
