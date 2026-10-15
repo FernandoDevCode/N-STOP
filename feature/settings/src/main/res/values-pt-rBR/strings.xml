@@ -246,4 +246,17 @@
     <string name="nostop_storage_layout_single_folder_desc">Salvar todas as músicas em uma só pasta, como artista - título.</string>
     <string name="nostop_storage_layout_playlist_title">Por playlist</string>
     <string name="nostop_storage_layout_playlist_desc">Criar uma pasta para cada playlist. Músicas sem playlist ficam em Artista / Álbum.</string>
+    <string name="nostop_account_expired">Sessão expirada. Reconecte para continuar sincronizando.</string>
+    <string name="nostop_account_expired_named">A sessão de %1$s expirou. Reconecte para continuar sincronizando.</string>
+    <string name="nostop_account_connected_as">Conectado como %1$s</string>
+    <string name="nostop_account_connecting">Conectando…</string>
+    <string name="nostop_account_not_connected">Não conectado</string>
+    <string name="nostop_account_reconnect">Reconectar</string>
+    <string name="nostop_account_disconnect">Desconectar</string>
+    <string name="nostop_account_connect">Conectar</string>
+    <string name="nostop_disconnect_question">Desconectar %1$s?</string>
+    <string name="nostop_disconnect_warning">O NØSTOP desconectará %1$s deste celular e interromperá a sincronização. As músicas de %1$s que estiverem aguardando download serão removidas da fila.\n\nAs músicas já baixadas permanecerão na biblioteca. Você poderá reconectar quando quiser.</string>
+    <string name="nostop_mirror_question">Sincronizar curtidas com %1$s?</string>
+    <string name="nostop_mirror_warning">Curtir uma música no NØSTOP também a curtirá no %1$s; retirar a curtida fará o mesmo lá. Só as novas curtidas serão sincronizadas.\n\nEsse recurso utiliza interfaces privadas do %1$s, não uma API oficial. Ele pode deixar de funcionar ou, em casos raros, causar restrições na conta. Considere usar uma conta secundária.</string>
+    <string name="nostop_mirror_understand">Entendi</string>
 </resources>
