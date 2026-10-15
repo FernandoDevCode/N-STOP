@@ -1,6 +1,8 @@
 package com.stash.feature.search
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,6 +44,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.stash.core.ui.theme.StashTheme
 import com.stash.core.ui.util.formatTotalDuration
@@ -109,80 +112,68 @@ fun AlbumHero(
     val extendedColors = StashTheme.extendedColors
 
     Column(modifier = modifier.fillMaxWidth()) {
-        // -- Square artwork with back button + bottom scrim --
+        // Cover-first presentation, matching offline albums and playlists.
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(1f),
+                .height(330.dp)
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color(0xFF34244D),
+                        0.48f to Color(0xFF20213A),
+                        1f to MaterialTheme.colorScheme.background,
+                    ),
+                ),
         ) {
-            if (hero.thumbnailUrl != null) {
-                AsyncImage(
-                    model = hero.thumbnailUrl,
-                    contentDescription = "${hero.title} artwork",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                // Gradient placeholder with album icon
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.linearGradient(
-                                colors = listOf(
-                                    MaterialTheme.colorScheme.primaryContainer,
-                                    MaterialTheme.colorScheme.tertiary.copy(alpha = 0.6f),
-                                ),
-                            ),
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(top = 35.dp)
+                    .size(235.dp)
+                    .shadow(
+                        elevation = 24.dp,
+                        shape = RoundedCornerShape(14.dp),
+                        ambientColor = Color(0xFF9F6BFF).copy(alpha = 0.34f),
+                        spotColor = Color(0xFF4DD8DE).copy(alpha = 0.20f),
+                    )
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(
+                        Brush.linearGradient(
+                            listOf(Color(0xFF48346D), Color(0xFF173F4D)),
                         ),
-                    contentAlignment = Alignment.Center,
-                ) {
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (hero.thumbnailUrl != null) {
+                    AsyncImage(
+                        model = hero.thumbnailUrl,
+                        contentDescription = "${hero.title} artwork",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
                     Icon(
                         imageVector = Icons.Default.Album,
                         contentDescription = null,
-                        modifier = Modifier.size(72.dp),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f),
+                        modifier = Modifier.size(76.dp),
+                        tint = Color.White.copy(alpha = 0.85f),
                     )
                 }
             }
-
-            // Bottom gradient scrim for text readability
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(160.dp)
-                    .align(Alignment.BottomCenter)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                MaterialTheme.colorScheme.background,
-                            ),
-                        ),
-                    ),
-            )
-
-            // Back button (glass-background circle, top-left)
             IconButton(
                 onClick = onBack,
                 modifier = Modifier
                     .statusBarsPadding()
-                    .padding(8.dp)
+                    .padding(start = 12.dp, top = 8.dp)
                     .align(Alignment.TopStart)
-                    .size(48.dp)
-                    .background(
-                        color = extendedColors.glassBackground,
-                        shape = CircleShape,
-                    ),
+                    .background(Color(0xA80A0C18), CircleShape),
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Back",
-                    tint = MaterialTheme.colorScheme.onSurface,
+                    tint = Color.White,
                 )
             }
-
-            // Top-right Online/Offline chip — flip playback mode from the album page.
             if (com.stash.core.common.constants.StashConstants.STREAMING_ENGINE_ENABLED) {
                 com.stash.core.ui.components.streaming.StreamingModeChip(
                     streamingEnabled = streamingEnabled,
@@ -196,11 +187,13 @@ fun AlbumHero(
         }
 
         // -- Metadata + action chips --
-        Column(modifier = Modifier.padding(horizontal = 20.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 22.dp)) {
             Text(
                 text = hero.title,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
+                fontSize = 30.sp,
+                lineHeight = 34.sp,
+                letterSpacing = (-0.8).sp,
+                fontWeight = FontWeight.ExtraBold,
                 color = MaterialTheme.colorScheme.onBackground,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -242,14 +235,14 @@ fun AlbumHero(
             Spacer(Modifier.height(16.dp))
 
             FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(9.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Button(
                     onClick = onPlayAlbum,
                     enabled = actionsEnabled,
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(24.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Default.PlayArrow,
@@ -266,7 +259,7 @@ fun AlbumHero(
                     onClick = onAddToQueue,
                     enabled = actionsEnabled,
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(24.dp),
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
@@ -283,7 +276,7 @@ fun AlbumHero(
                     onClick = onSave,
                     enabled = actionsEnabled,
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(24.dp),
                 ) {
                     Icon(
                         imageVector = if (isSaved) Icons.Default.LibraryAddCheck else Icons.Default.LibraryAdd,
@@ -300,7 +293,7 @@ fun AlbumHero(
                     OutlinedButton(
                         onClick = onShuffle,
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(24.dp),
                     ) {
                         Icon(
                             imageVector = Icons.Default.Shuffle,
@@ -319,7 +312,7 @@ fun AlbumHero(
                         onClick = onDownloadAll,
                         enabled = actionsEnabled,
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(24.dp),
                     ) {
                         Icon(
                             imageVector = Icons.Default.Download,
