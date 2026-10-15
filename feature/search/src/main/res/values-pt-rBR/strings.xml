@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="nostop_search_title">Buscar</string>
+    <string name="nostop_search_placeholder">Músicas, artistas, álbuns…</string>
+    <string name="nostop_search_clear">Limpar busca</string>
+    <string name="nostop_search_recent">RECENTES</string>
+    <string name="nostop_search_clear_short">Limpar</string>
+    <string name="nostop_search_failed">Falha na busca</string>
+    <string name="nostop_search_retry">Tentar novamente</string>
+    <string name="nostop_search_no_results">Nenhum resultado encontrado</string>
+    <string name="nostop_search_try_another">Tente buscar por outro termo</string>
+    <string name="nostop_search_youtube">Buscar no YouTube Music</string>
+    <string name="nostop_search_empty_hint">Encontre músicas ou artistas e baixe para sua biblioteca</string>
+</resources>
