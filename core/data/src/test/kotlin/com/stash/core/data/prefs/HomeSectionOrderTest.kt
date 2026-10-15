@@ -37,9 +37,9 @@ class HomeSectionOrderTest {
             listOf(
                 HomeSection.RADIOS, HomeSection.TOP_ALBUMS,
                 // appended in default order:
-                HomeSection.YOUR_PLAYLISTS, HomeSection.NEW_RELEASES,
-                HomeSection.QOBUZ_PLAYLISTS, HomeSection.MADE_FOR_YOU,
-                HomeSection.MOOD_DECADES, HomeSection.COMMUNITY,
+                HomeSection.YOUR_PLAYLISTS, HomeSection.MOOD_DECADES,
+                HomeSection.MADE_FOR_YOU, HomeSection.NEW_RELEASES,
+                HomeSection.QOBUZ_PLAYLISTS, HomeSection.COMMUNITY,
             ),
             resolveHomeSectionOrder(saved),
         )
