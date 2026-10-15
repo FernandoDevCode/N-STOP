@@ -108,6 +108,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -427,11 +428,11 @@ fun LibraryScreen(
                         Spacer(modifier = Modifier.width(4.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Also block these songs from future syncs",
+                                text = stringResource(R.string.nostop_library_block_songs),
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                             Text(
-                                text = "Blocked songs never re-download. Unblock them in Settings later.",
+                                text = stringResource(R.string.nostop_library_block_hint),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -454,7 +455,7 @@ fun LibraryScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showBatchDelete = false }) { Text("Cancel") }
+                TextButton(onClick = { showBatchDelete = false }) { Text(stringResource(R.string.nostop_library_cancel)) }
             },
         )
     }
@@ -476,7 +477,7 @@ fun LibraryScreen(
         }
         AlertDialog(
             onDismissRequest = { showFlacConfirm = false },
-            title = { Text("Upgrade to FLAC?") },
+            title = { Text(stringResource(R.string.nostop_library_upgrade_flac)) },
             text = {
                 Column {
                     Text(
@@ -508,10 +509,10 @@ fun LibraryScreen(
                         showFlacConfirm = false
                         selection.clear()
                     },
-                ) { Text("Upgrade") }
+                ) { Text(stringResource(R.string.nostop_library_upgrade)) }
             },
             dismissButton = {
-                TextButton(onClick = { showFlacConfirm = false }) { Text("Cancel") }
+                TextButton(onClick = { showFlacConfirm = false }) { Text(stringResource(R.string.nostop_library_cancel)) }
             },
         )
     }
@@ -624,7 +625,7 @@ private fun LibraryContent(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "Library",
+                text = stringResource(R.string.nostop_library_title),
                 style = MaterialTheme.typography.headlineLarge,
                 color = MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier.weight(1f),
@@ -637,12 +638,12 @@ private fun LibraryContent(
             IconButton(onClick = if (likedTabActive) onShuffleLiked else onShuffleLibrary) {
                 Icon(
                     Icons.Filled.Shuffle,
-                    contentDescription = if (likedTabActive) "Shuffle liked songs" else "Shuffle library",
+                    contentDescription = if (likedTabActive) stringResource(R.string.nostop_library_shuffle_liked) else stringResource(R.string.nostop_library_shuffle),
                     tint = MaterialTheme.colorScheme.primary,
                 )
             }
             IconButton(onClick = { importPicker.launch(arrayOf("audio/*")) }) {
-                Icon(Icons.Filled.Add, contentDescription = "Import tracks")
+                Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.nostop_library_import_tracks))
             }
             // Closing the search clears it: it used to only hide the field, leaving every tab
             // silently filtered by a query the user could no longer see.
@@ -650,10 +651,10 @@ private fun LibraryContent(
                 if (searchOpen) onSearchQueryChanged("")
                 searchOpen = !searchOpen
             }) {
-                Icon(Icons.Filled.Search, contentDescription = "Search library")
+                Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.nostop_library_search))
             }
             IconButton(onClick = { sortFilterOpen = true }) {
-                Icon(Icons.Filled.Tune, contentDescription = "Sort and filter")
+                Icon(Icons.Filled.Tune, contentDescription = stringResource(R.string.nostop_library_sort_filter))
             }
         }
 
@@ -692,11 +693,11 @@ private fun LibraryContent(
             androidx.compose.material3.InputChip(
                 selected = true,
                 onClick = { onSourceFilterChanged(SourceFilter.ALL) },
-                label = { Text("Showing $activeFilterLabel only") },
+                label = { Text(stringResource(R.string.nostop_library_showing_filter, activeFilterLabel)) },
                 trailingIcon = {
                     Icon(
                         imageVector = Icons.Default.Close,
-                        contentDescription = "Clear filter",
+                        contentDescription = stringResource(R.string.nostop_library_clear_filter),
                         modifier = Modifier.size(18.dp),
                     )
                 },
@@ -706,11 +707,11 @@ private fun LibraryContent(
 
         // -- Category chips (pinned): Songs / Playlists / Artists / Albums --
         val chipTabs = listOf(
-            "Songs" to LibraryTab.TRACKS,
-            "Liked" to LibraryTab.LIKED,
-            "Playlists" to LibraryTab.PLAYLISTS,
-            "Artists" to LibraryTab.ARTISTS,
-            "Albums" to LibraryTab.ALBUMS,
+            stringResource(R.string.nostop_library_songs) to LibraryTab.TRACKS,
+            stringResource(R.string.nostop_library_liked) to LibraryTab.LIKED,
+            stringResource(R.string.nostop_library_playlists) to LibraryTab.PLAYLISTS,
+            stringResource(R.string.nostop_library_artists) to LibraryTab.ARTISTS,
+            stringResource(R.string.nostop_library_albums) to LibraryTab.ALBUMS,
         )
         com.stash.core.ui.components.CrispChipRow(
             chips = chipTabs.map { it.first },
@@ -882,7 +883,7 @@ private fun RecentlyDownloadedRail(
 ) {
     Column {
         Text(
-            text = "RECENTLY DOWNLOADED",
+            text = stringResource(R.string.nostop_library_recent),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.secondary,
             modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 8.dp),
@@ -1081,11 +1082,11 @@ private fun LikedTab(
                         Spacer(modifier = Modifier.width(4.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Also block this song from future syncs",
+                                text = stringResource(R.string.nostop_library_block_song),
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                             Text(
-                                text = "Blocked songs never re-download. Unblock them in Settings later.",
+                                text = stringResource(R.string.nostop_library_block_hint),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -1108,7 +1109,7 @@ private fun LikedTab(
             },
             dismissButton = {
                 TextButton(onClick = { trackToDelete = null }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.nostop_library_cancel))
                 }
             },
         )
@@ -1209,7 +1210,7 @@ private fun LocalImportStrip(
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     androidx.compose.material3.TextButton(onClick = onCancel) {
-                        Text("Cancel")
+                        Text(stringResource(R.string.nostop_library_cancel))
                     }
                 }
                 androidx.compose.material3.LinearProgressIndicator(
@@ -1241,7 +1242,7 @@ private fun LocalImportStrip(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 androidx.compose.material3.TextButton(onClick = onDismiss) {
-                    Text("Dismiss")
+                    Text(stringResource(R.string.nostop_library_dismiss))
                 }
             }
         }
@@ -1256,7 +1257,7 @@ private fun LocalImportStrip(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Import failed",
+                        text = stringResource(R.string.nostop_library_import_failed),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error,
                     )
@@ -1267,7 +1268,7 @@ private fun LocalImportStrip(
                     )
                 }
                 androidx.compose.material3.TextButton(onClick = onDismiss) {
-                    Text("Dismiss")
+                    Text(stringResource(R.string.nostop_library_dismiss))
                 }
             }
         }
@@ -1511,7 +1512,7 @@ private fun PlaylistsGrid(
 
             BottomSheetActionRow(
                 icon = if (playlist.pinned) Icons.Default.PushPin else Icons.Outlined.PushPin,
-                label = if (playlist.pinned) "Unpin Playlist" else "Pin Playlist",
+                label = if (playlist.pinned) stringResource(R.string.nostop_library_unpin_playlist) else stringResource(R.string.nostop_library_pin_playlist),
                 onClick = {
                     onTogglePlaylistPinned(playlist)
                     selectedPlaylist = null
@@ -1520,7 +1521,7 @@ private fun PlaylistsGrid(
 
             BottomSheetActionRow(
                 icon = if (playlist.pinnedToHomeAt != null) Icons.Filled.Home else Icons.Outlined.Home,
-                label = if (playlist.pinnedToHomeAt != null) "Remove from Home" else "Show on Home",
+                label = if (playlist.pinnedToHomeAt != null) stringResource(R.string.nostop_library_remove_home) else stringResource(R.string.nostop_library_show_home),
                 onClick = {
                     onTogglePlaylistOnHome(playlist)
                     selectedPlaylist = null
@@ -1529,7 +1530,7 @@ private fun PlaylistsGrid(
 
             BottomSheetActionRow(
                 icon = Icons.Default.PlayArrow,
-                label = "Play All",
+                label = stringResource(R.string.nostop_library_play_all),
                 onClick = {
                     onPlayPlaylist(playlist)
                     selectedPlaylist = null
@@ -1545,7 +1546,7 @@ private fun PlaylistsGrid(
             )
             BottomSheetActionRow(
                 icon = Icons.Default.Share,
-                label = "Share mix",
+                label = stringResource(R.string.nostop_library_share_mix),
                 onClick = {
                     sharePlaylistId = playlist.id
                     selectedPlaylist = null
@@ -1557,7 +1558,7 @@ private fun PlaylistsGrid(
             if (playlist.type == PlaylistType.CUSTOM && !followed) {
                 BottomSheetActionRow(
                     icon = Icons.Default.Image,
-                    label = if (playlist.artUrl != null) "Change Image" else "Add Image",
+                    label = if (playlist.artUrl != null) stringResource(R.string.nostop_library_change_image) else stringResource(R.string.nostop_library_add_image),
                     onClick = {
                         playlistForImagePick = playlist
                         selectedPlaylist = null
@@ -1571,7 +1572,7 @@ private fun PlaylistsGrid(
                 if (playlist.artUrl != null) {
                     BottomSheetActionRow(
                         icon = Icons.Default.ImageNotSupported,
-                        label = "Remove Image",
+                        label = stringResource(R.string.nostop_library_remove_image),
                         onClick = {
                             onRemovePlaylistImage(playlist.id)
                             selectedPlaylist = null
@@ -1585,7 +1586,7 @@ private fun PlaylistsGrid(
                 var confirmUnfollow by remember(playlist.id) { mutableStateOf(false) }
                 BottomSheetActionRow(
                     icon = Icons.Default.RemoveCircleOutline,
-                    label = if (confirmUnfollow) "Tap again to unfollow" else "Unfollow",
+                    label = if (confirmUnfollow) stringResource(R.string.nostop_library_unfollow_confirm) else stringResource(R.string.nostop_library_unfollow),
                     tint = MaterialTheme.colorScheme.error,
                     onClick = {
                         if (confirmUnfollow) {
@@ -1599,7 +1600,7 @@ private fun PlaylistsGrid(
             } else {
                 BottomSheetActionRow(
                     icon = Icons.Default.RemoveCircleOutline,
-                    label = "Remove Playlist",
+                    label = stringResource(R.string.nostop_library_remove_playlist),
                     // Confirmed like its neighbours (Delete's dialog, Unfollow's second tap): a
                     // removed custom playlist can't be brought back, and its shared link dies too.
                     onClick = {
@@ -1609,7 +1610,7 @@ private fun PlaylistsGrid(
                 )
                 BottomSheetActionRow(
                     icon = Icons.Default.Delete,
-                    label = "Delete Playlist & Songs",
+                    label = stringResource(R.string.nostop_library_delete_playlist_songs),
                     tint = MaterialTheme.colorScheme.error,
                     onClick = {
                         playlistToDelete = playlist
@@ -1650,7 +1651,7 @@ private fun PlaylistsGrid(
             },
             dismissButton = {
                 TextButton(onClick = { playlistToRemove = null }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.nostop_library_cancel))
                 }
             },
         )
@@ -1705,11 +1706,11 @@ private fun PlaylistsGrid(
                         Spacer(modifier = Modifier.width(4.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Also block these songs from future syncs",
+                                text = stringResource(R.string.nostop_library_block_songs),
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                             Text(
-                                text = "Blocked songs never re-download. Unblock them in Settings later.",
+                                text = stringResource(R.string.nostop_library_block_hint),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -1732,7 +1733,7 @@ private fun PlaylistsGrid(
             },
             dismissButton = {
                 TextButton(onClick = { playlistToDelete = null }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.nostop_library_cancel))
                 }
             },
         )
@@ -1921,11 +1922,11 @@ private fun TracksTab(
                         Spacer(modifier = Modifier.width(4.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Also block this song from future syncs",
+                                text = stringResource(R.string.nostop_library_block_song),
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                             Text(
-                                text = "Blocked songs never re-download. Unblock them in Settings later.",
+                                text = stringResource(R.string.nostop_library_block_hint),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -1948,7 +1949,7 @@ private fun TracksTab(
             },
             dismissButton = {
                 TextButton(onClick = { trackToDelete = null }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.nostop_library_cancel))
                 }
             },
         )
@@ -2200,7 +2201,7 @@ private fun ArtistsGrid(
             },
             dismissButton = {
                 androidx.compose.material3.TextButton(onClick = { artistToDelete = null }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.nostop_library_cancel))
                 }
             },
         )
@@ -2591,7 +2592,7 @@ private fun EmptyTabMessage(message: String, onClear: (() -> Unit)? = null) {
             )
             // Emptied by the user's own search/filter (see noMatchMessage): one tap undoes it.
             if (onClear != null) {
-                TextButton(onClick = onClear) { Text("Show everything") }
+                TextButton(onClick = onClear) { Text(stringResource(R.string.nostop_library_show_all)) }
             }
         }
     }
@@ -2635,7 +2636,7 @@ private fun LibraryEmptyState(
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            text = "Your library is empty",
+            text = stringResource(R.string.nostop_library_empty),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onBackground,
@@ -2667,11 +2668,11 @@ private fun LibraryEmptyState(
                 modifier = Modifier.size(18.dp),
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Find songs in Search")
+            Text(stringResource(R.string.nostop_library_find_music))
         }
         Spacer(modifier = Modifier.height(4.dp))
         TextButton(onClick = onImport) {
-            Text("Import from this phone")
+            Text(stringResource(R.string.nostop_library_import_phone))
         }
     }
 }
