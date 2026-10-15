@@ -42,4 +42,10 @@
     <string name="nonstop_library_more">Mais opções</string>
     <string name="nonstop_library_sync">Sincronização</string>
     <string name="nonstop_library_settings">Configurações</string>
+    <string name="nonstop_collection_play">Tocar</string>
+    <string name="nonstop_collection_shuffle">Aleatório</string>
+    <string name="nonstop_collection_search">Buscar músicas</string>
+    <string name="nonstop_collection_share">Compartilhar playlist</string>
+    <string name="nonstop_collection_cover">Alterar capa</string>
+    <string name="nonstop_collection_more">Mais opções da playlist</string>
 </resources>
