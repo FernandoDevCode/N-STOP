@@ -163,7 +163,16 @@ class MainActivity : ComponentActivity() {
         val base = newBase.resources.configuration
         unscaledSmallestWidthDp = base.smallestScreenWidthDp
         appliedUiScale = UiScale.effective(ThemeSnapshot.readUiScale(newBase), unscaledSmallestWidthDp)
-        uiScaleOverride(base, appliedUiScale)?.let(::applyOverrideConfiguration)
+        val displayOverride = uiScaleOverride(base, appliedUiScale)
+        val preferredLanguage = newBase.getSharedPreferences("nostop_language", Context.MODE_PRIVATE)
+            .getString("language", "system")
+        if (preferredLanguage == "pt-BR" || preferredLanguage == "en") {
+            val configuration = displayOverride ?: Configuration()
+            configuration.setLocale(java.util.Locale.forLanguageTag(preferredLanguage))
+            applyOverrideConfiguration(configuration)
+        } else {
+            displayOverride?.let(::applyOverrideConfiguration)
+        }
     }
 
     /**
