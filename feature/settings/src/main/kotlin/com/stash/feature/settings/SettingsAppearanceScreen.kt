@@ -135,14 +135,14 @@ fun SettingsAppearanceScreen(
         )
         Spacer(Modifier.height(20.dp))
 
-        SettingsSectionLabel("Theme")
+        SettingsSectionLabel(stringResource(R.string.nostop_theme))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             ThemeThumbnail(
-                label = "Dark",
+                label = stringResource(R.string.nostop_dark),
                 selected = uiState.themeMode == ThemeMode.DARK,
                 darkPalette = true,
                 followSystem = false,
@@ -150,7 +150,7 @@ fun SettingsAppearanceScreen(
                 modifier = Modifier.weight(1f),
             )
             ThemeThumbnail(
-                label = "Light",
+                label = stringResource(R.string.nostop_light),
                 selected = uiState.themeMode == ThemeMode.LIGHT,
                 darkPalette = false,
                 followSystem = false,
@@ -158,7 +158,7 @@ fun SettingsAppearanceScreen(
                 modifier = Modifier.weight(1f),
             )
             ThemeThumbnail(
-                label = "Follow system",
+                label = stringResource(R.string.nostop_follow_system),
                 selected = uiState.themeMode == ThemeMode.SYSTEM,
                 darkPalette = false,
                 followSystem = true,
@@ -168,19 +168,19 @@ fun SettingsAppearanceScreen(
         }
 
         Text(
-            text = "Follow system matches your device's day/night setting.",
+            text = stringResource(R.string.nostop_theme_description),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 4.dp),
         )
 
         Spacer(Modifier.height(20.dp))
-        SettingsSectionLabel("Display size")
+        SettingsSectionLabel(stringResource(R.string.nostop_display_size))
 
         SettingsSliderRow(
-            title = "UI scale",
+            title = stringResource(R.string.nostop_ui_scale),
             valueLabel = String.format(java.util.Locale.US, "%.2fx", draftScale),
-            subtitle = "Resizes text and layout across the whole app. Applies when you let go.",
+            subtitle = stringResource(R.string.nostop_ui_scale_description),
             value = draftScale,
             onValueChange = { draftScale = UiScale.snap(it).coerceAtMost(maxScale) },
             onValueChangeFinished = { viewModel.onUiScaleChanged(draftScale) },
@@ -194,43 +194,43 @@ fun SettingsAppearanceScreen(
         )
 
         Spacer(Modifier.height(20.dp))
-        SettingsSectionLabel("Dark theme")
+        SettingsSectionLabel(stringResource(R.string.nostop_dark_theme))
 
         SettingsToggleRow(
-            title = "Pure black (AMOLED)",
-            subtitle = "True-black backgrounds whenever dark theme is active — OLED pixels switch off",
+            title = stringResource(R.string.nostop_amoled),
+            subtitle = stringResource(R.string.nostop_amoled_description),
             checked = uiState.amoledDark,
             onCheckedChange = viewModel::onAmoledDarkChanged,
         )
 
         Spacer(Modifier.height(20.dp))
-        SettingsSectionLabel("Now Playing")
+        SettingsSectionLabel(stringResource(R.string.nostop_now_playing))
 
         SettingsToggleRow(
-            title = "Ambient motion",
-            subtitle = "Animated color wash behind Now Playing — switch off for a still backdrop that saves battery",
+            title = stringResource(R.string.nostop_ambient_motion),
+            subtitle = stringResource(R.string.nostop_ambient_description),
             checked = uiState.ambientAnimationEnabled,
             onCheckedChange = viewModel::onAmbientAnimationEnabledChanged,
         )
 
         Text(
-            text = "Ambient style",
+            text = stringResource(R.string.nostop_ambient_style),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (uiState.ambientAnimationEnabled) 1f else 0.38f),
             // Lines up with the switch rows' titles above.
             modifier = Modifier.padding(start = com.stash.feature.settings.components.SettingsRowPadH, end = com.stash.feature.settings.components.SettingsRowPadH, top = 4.dp, bottom = 8.dp),
         )
         SettingsSegmented(
-            options = listOf("Soft glow", "Classic"), // AmbientStyle order
+            options = listOf(stringResource(R.string.nostop_soft_glow), stringResource(R.string.nostop_classic)), // AmbientStyle order
             selectedIndex = uiState.ambientStyle.ordinal,
             onSelect = { viewModel.onAmbientStyleChanged(com.stash.core.data.prefs.AmbientStyle.entries[it]) },
             enabled = uiState.ambientAnimationEnabled,
         )
         Text(
             text = if (uiState.ambientAnimationEnabled) {
-                "Soft glow drifts gently, like the web player. Classic is the original look."
+                stringResource(R.string.nostop_ambient_style_description)
             } else {
-                "Turn on Ambient motion to choose a style."
+                stringResource(R.string.nostop_ambient_disabled)
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -238,23 +238,23 @@ fun SettingsAppearanceScreen(
         )
 
         Spacer(Modifier.height(20.dp))
-        SettingsSectionLabel("Open Stash on")
+        SettingsSectionLabel(stringResource(R.string.nostop_start_tab))
         SettingsSegmented(
-            options = listOf("Home", "Library", "Search"), // StartTab order
+            options = listOf(stringResource(R.string.nostop_home), stringResource(R.string.nostop_library), stringResource(R.string.nostop_search)), // StartTab order
             selectedIndex = startTab.ordinal,
             onSelect = { viewModel.onStartTabChanged(StartTab.entries[it]) },
         )
         Text(
-            text = "The tab Stash opens on when you start it.",
+            text = stringResource(R.string.nostop_start_tab_description),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 4.dp),
         )
 
         Spacer(Modifier.height(20.dp))
-        SettingsSectionLabel("Home layout")
+        SettingsSectionLabel(stringResource(R.string.nostop_home_layout))
         Text(
-            text = "Arrange Home's sections or hide the ones you don't use. The Discover hero stays on top.",
+            text = stringResource(R.string.nostop_home_layout_description),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
@@ -277,8 +277,8 @@ fun SettingsAppearanceScreen(
         }
 
         SettingsToggleRow(
-            title = "Show Liked Songs on Home",
-            subtitle = "Your Stash, Spotify and YouTube likes as one card in Your playlists",
+            title = stringResource(R.string.nostop_show_likes),
+            subtitle = stringResource(R.string.nostop_show_likes_description),
             checked = uiState.showLikedOnHome,
             onCheckedChange = viewModel::onShowLikedOnHomeChanged,
             // Hiding the whole section above overrides this switch — grey it
