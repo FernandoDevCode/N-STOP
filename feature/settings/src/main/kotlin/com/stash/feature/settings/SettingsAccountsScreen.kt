@@ -17,6 +17,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -148,7 +149,7 @@ fun SettingsAccountsScreen(
         )
     }
 
-    SettingsScaffold(title = "Accounts & Sync", onBack = onBack, modifier = modifier) {
+    SettingsScaffold(title = stringResource(R.string.nostop_nav_accounts), onBack = onBack, modifier = modifier) {
         // Like-mirroring opt-in ack. Rendered at the top of the scaffold so it
         // overlays the content. Confirming writes the pref; dismissing leaves
         // mirroring off (no writes without this ack).
@@ -160,7 +161,7 @@ fun SettingsAccountsScreen(
             )
         }
 
-        SettingsSectionLabel("Connections")
+        SettingsSectionLabel(stringResource(R.string.nostop_accounts_connections))
 
         // Disconnecting a source also drops its queued downloads, so each asks
         // first (as Discord's connect does). Saveable, like showDiscordRisk, so
@@ -251,16 +252,10 @@ fun SettingsAccountsScreen(
                 onDismissRequest = { showDiscordRisk = false },
                 containerColor = MaterialTheme.colorScheme.surface,
                 shape = MaterialTheme.shapes.large,
-                title = { Text("Before you connect Discord") },
+                title = { Text(stringResource(R.string.nostop_accounts_discord_title)) },
                 text = {
                     Text(
-                        "Discord has no official way for a phone app to set your status, " +
-                            "so Stash signs in as you and uses your account's own session. " +
-                            "Discord's rules call that a self-bot and allow them to action " +
-                            "the account.\n\nEnforcement goes after spam rather than status " +
-                            "updates, so this is unlikely — but it is your account, so it is " +
-                            "your call.\n\nDisconnecting clears your status and deletes the " +
-                            "token from this phone.",
+                        stringResource(R.string.nostop_accounts_discord_warning),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -269,10 +264,10 @@ fun SettingsAccountsScreen(
                     TextButton(onClick = {
                         showDiscordRisk = false
                         viewModel.onConnectDiscord()
-                    }) { Text("Connect anyway") }
+                    }) { Text(stringResource(R.string.nostop_accounts_connect_anyway)) }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showDiscordRisk = false }) { Text("Cancel") }
+                    TextButton(onClick = { showDiscordRisk = false }) { Text(stringResource(R.string.nostop_accounts_cancel)) }
                 },
             )
         }
@@ -288,7 +283,7 @@ fun SettingsAccountsScreen(
                 viewModel.onDisconnectDiscord()
             },
             needsAction = discordNeedsConsent,
-            needsActionLabel = "Finish connecting",
+            needsActionLabel = stringResource(R.string.nostop_accounts_finish_connect),
             onNeedsAction = {
                 viewModel.onDiscordFinishConnecting { url ->
                     runCatching { discordUriHandler.openUri(url) }.isSuccess
@@ -319,11 +314,11 @@ fun SettingsAccountsScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = when {
-                        !result.sessionPresent -> "Connect Last.fm first."
+                        !result.sessionPresent -> stringResource(R.string.nostop_accounts_lastfm_first)
                         result.held && result.submitted == 0 ->
-                            "Couldn't reach Last.fm. Your plays stay queued and will be sent later."
-                        result.submitted == 0 -> "No new scrobbles to send."
-                        else -> "Sent ${result.submitted} scrobble${if (result.submitted == 1) "" else "s"} to Last.fm."
+                            stringResource(R.string.nostop_accounts_lastfm_offline)
+                        result.submitted == 0 -> stringResource(R.string.nostop_accounts_lastfm_no_scrobbles)
+                        else -> stringResource(R.string.nostop_accounts_lastfm_sent, result.submitted)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
@@ -353,7 +348,7 @@ fun SettingsAccountsScreen(
             )
         }
 
-        SettingsSectionLabel("Sync your likes", beta = true)
+        SettingsSectionLabel(stringResource(R.string.nostop_accounts_mirror_likes), beta = true)
 
         GlassCard {
             val mirrorLastFm by viewModel.mirrorLikesLastFm.collectAsStateWithLifecycle()
