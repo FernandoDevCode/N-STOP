@@ -47,4 +47,21 @@
     <string name="nonstop_radio_empty">Suas estações vão aparecer aqui quando houver músicas suficientes para recomendar.</string>
     <string name="nonstop_mix_building">Preparando</string>
     <string name="nonstop_mix_empty">Ainda sem faixas</string>
+    <string name="podcast_title">Podcasts</string>
+    <string name="podcast_source_notice">Encontre programas pelo catálogo Apple Podcasts. Os episódios tocam pelo RSS público original.</string>
+    <string name="podcast_search_hint">Buscar podcast ou colar link RSS HTTPS</string>
+    <string name="podcast_search_button">Buscar</string>
+    <string name="podcast_back">Voltar</string>
+    <string name="podcast_episodes">Episódios</string>
+    <string name="podcast_follow">Seguir</string>
+    <string name="podcast_unfollow">Deixar de seguir</string>
+    <string name="podcast_no_episodes">Nenhum episódio reproduzível encontrado neste feed RSS.</string>
+    <string name="podcast_following">Seguindo</string>
+    <string name="podcast_results">Resultados da busca</string>
+    <string name="podcast_empty_search">Busque um podcast acima ou cole o endereço RSS público.</string>
+    <string name="podcast_play">Ouvir</string>
+    <string name="podcast_pause">Pausar</string>
+    <string name="podcast_delete">Excluir arquivo</string>
+    <string name="podcast_download">Baixar</string>
+    <string name="podcast_downloading">Baixando %1$d%%</string>
 </resources>
