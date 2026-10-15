@@ -759,6 +759,10 @@ fun HomeScreen(
         }
 
 
+        } else if (selectedMediaTab == 1) {
+            item(key = "nonstop_podcasts") {
+                com.stash.feature.home.podcasts.PodcastSection()
+            }
         } else {
             item(key = "nonstop_other_media") {
                 NonstopOtherMediaNotice(selectedMediaTab)
