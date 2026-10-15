@@ -21,11 +21,13 @@ internal object PodcastHttp {
             .followSslRedirects(false)
             .connectTimeout(java.time.Duration.ofSeconds(20))
             .readTimeout(java.time.Duration.ofSeconds(40))
-            .dns(Dns { hostname ->
-                check(validPodcastUrl("https://$hostname/")) { "Invalid podcast host" }
-                Dns.SYSTEM.lookup(hostname).also { addresses ->
-                    check(addresses.isNotEmpty() && addresses.all(::isPublicAddress)) {
-                        "Podcast host resolves to a restricted address"
+            .dns(object : Dns {
+                override fun lookup(hostname: String): List<InetAddress> {
+                    check(validPodcastUrl("https://$hostname/")) { "Invalid podcast host" }
+                    return Dns.SYSTEM.lookup(hostname).also { addresses ->
+                        check(addresses.isNotEmpty() && addresses.all(::isPublicAddress)) {
+                            "Podcast host resolves to a restricted address"
+                        }
                     }
                 }
             })
