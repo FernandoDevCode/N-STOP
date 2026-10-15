@@ -63,6 +63,8 @@ import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Tune
@@ -160,6 +162,7 @@ fun LibraryScreen(
     onNavigateToSync: () -> Unit = {},
     onNavigateToSearch: () -> Unit = {},
     onNavigateToAccounts: () -> Unit = {},
+    onNavigateToSettings: () -> Unit = {},
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -298,6 +301,7 @@ fun LibraryScreen(
             onOpenSync = onNavigateToSync,
             onOpenSearch = onNavigateToSearch,
             onOpenAccounts = onNavigateToAccounts,
+            onOpenSettings = onNavigateToSettings,
         )
 
         // ── Selection chrome — meaningful on the Tracks and Liked tabs. Selection
@@ -574,6 +578,7 @@ private fun LibraryContent(
     onOpenSync: () -> Unit = {},
     onOpenSearch: () -> Unit = {},
     onOpenAccounts: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -655,6 +660,28 @@ private fun LibraryContent(
             }
             IconButton(onClick = { sortFilterOpen = true }) {
                 Icon(Icons.Filled.Tune, contentDescription = stringResource(R.string.nostop_library_sort_filter))
+            }
+            // Sync and Settings remain one tap away after the five-tab NØNStop redesign.
+            var toolsExpanded by remember { mutableStateOf(false) }
+            Box {
+                IconButton(onClick = { toolsExpanded = true }) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = "Mais opções")
+                }
+                androidx.compose.material3.DropdownMenu(
+                    expanded = toolsExpanded,
+                    onDismissRequest = { toolsExpanded = false },
+                ) {
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text("Sincronização") },
+                        leadingIcon = { Icon(Icons.Filled.Sync, contentDescription = null) },
+                        onClick = { toolsExpanded = false; onOpenSync() },
+                    )
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text("Configurações") },
+                        leadingIcon = { Icon(Icons.Filled.Settings, contentDescription = null) },
+                        onClick = { toolsExpanded = false; onOpenSettings() },
+                    )
+                }
             }
         }
 
