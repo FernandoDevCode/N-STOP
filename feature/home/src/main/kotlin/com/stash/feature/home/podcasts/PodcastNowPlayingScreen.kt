@@ -91,7 +91,7 @@ fun PodcastNowPlayingScreen(
             } else {
                 Spacer(Modifier.weight(0.5f))
                 BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    val artSize = maxWidth.coerceAtMost(320.dp)
+                    val artSize = maxWidth.coerceAtMost(260.dp)
                     Box(
                         modifier = Modifier.size(artSize).clip(RoundedCornerShape(20.dp))
                             .background(surface),
@@ -172,13 +172,13 @@ fun PodcastNowPlayingScreen(
                     Text(stringResource(R.string.podcast_speed),
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.width(8.dp))
-                    listOf(1f, 1.25f, 1.5f, 2f).forEach { speed ->
-                        TextButton(onClick = { viewModel.setSpeed(speed) }) {
-                            Text(speed.toString() + "×",
-                                fontWeight = if (state.playbackSpeed == speed)
-                                    FontWeight.Bold else FontWeight.Normal,
-                                color = if (state.playbackSpeed == speed) accent else ink)
-                        }
+                    val speeds = listOf(1f, 1.25f, 1.5f, 2f)
+                    val current = speeds.indexOf(state.playbackSpeed).coerceAtLeast(0)
+                    TextButton(onClick = {
+                        viewModel.setSpeed(speeds[(current + 1) % speeds.size])
+                    }) {
+                        Text(state.playbackSpeed.toString() + "×",
+                            fontWeight = FontWeight.Bold, color = accent)
                     }
                 }
                 Spacer(Modifier.weight(0.6f))
