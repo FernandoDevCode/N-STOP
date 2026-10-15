@@ -74,7 +74,36 @@ fun SettingsHubScreen(
         }.getOrNull() ?: "0.3.5-beta.1"
     }
 
-    val summaries = settingsHubSummaries(uiState, versionName, streamingEnabled, streamOnCellular)
+    // Keep the pure summary function unchanged for its JVM tests; localize only
+    // the presentation text here, where activity resources follow the selected locale.
+    val baseSummaries = settingsHubSummaries(uiState, versionName, streamingEnabled, streamOnCellular)
+    val summaries = if (context.resources.configuration.locales[0].language == "pt") {
+        val mode = if (streamingEnabled) stringResource(R.string.nostop_hub_stream_only)
+                   else stringResource(R.string.nostop_download)
+        val network = if (streamOnCellular) stringResource(R.string.nostop_hub_cellular_on)
+                      else stringResource(R.string.nostop_hub_cellular_off)
+        val theme = when (uiState.themeMode) {
+            com.stash.core.model.ThemeMode.LIGHT -> stringResource(R.string.nostop_light)
+            com.stash.core.model.ThemeMode.DARK -> stringResource(R.string.nostop_dark)
+            com.stash.core.model.ThemeMode.SYSTEM -> stringResource(R.string.nostop_follow_system)
+        }
+        val suffix = if (uiState.amoledDark && uiState.themeMode != com.stash.core.model.ThemeMode.LIGHT) {
+            " · " + stringResource(R.string.nostop_hub_pure_black)
+        } else ""
+        baseSummaries.copy(
+            playback = "$mode · $network",
+            audioQuality = if (uiState.losslessEnabled) {
+                baseSummaries.audioQuality.replaceFirst("Lossless", stringResource(R.string.nostop_hub_lossless))
+            } else baseSummaries.audioQuality,
+            accounts = if (baseSummaries.accounts == "Not connected") stringResource(R.string.nostop_hub_not_connected)
+                       else baseSummaries.accounts,
+            libraryStorage = stringResource(
+                if (uiState.totalTracks == 1) R.string.nostop_hub_one_track else R.string.nostop_hub_many_tracks,
+                uiState.totalTracks,
+            ) + " · " + baseSummaries.libraryStorage.substringAfter(" · "),
+            appearance = theme + suffix,
+        )
+    } else baseSummaries
 
     var searchQuery by remember { mutableStateOf("") }
     val searchIndex = listOf(
