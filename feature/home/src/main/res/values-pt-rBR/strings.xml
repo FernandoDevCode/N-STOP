@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="nostop_home_report_issue">Relatar um problema</string>
+    <string name="nostop_home_report_hint">Coletar diagnóstico e abrir o GitHub</string>
+    <string name="nostop_home_translate">Ajude a traduzir</string>
+    <string name="nostop_home_crowdin">Entre no Crowdin e solicite acesso</string>
+    <string name="nostop_home_request_access">Solicitar acesso de tradutor</string>
+    <string name="nostop_home_updated_daily">Atualizado diariamente</string>
+    <string name="nostop_home_your_mix">Seu mix</string>
+    <string name="nostop_home_discover">Descobrir</string>
+    <string name="nostop_home_playlists">Suas playlists</string>
+    <string name="nostop_home_new_releases">Novos lançamentos</string>
+    <string name="nostop_home_qobuz">Playlists do Qobuz</string>
+    <string name="nostop_home_top_albums">Álbuns em destaque</string>
+    <string name="nostop_home_made_for_you">Feito para você</string>
+    <string name="nostop_home_radios">Rádios</string>
+    <string name="nostop_home_moods">Estilos e décadas</string>
+    <string name="nostop_home_see_all">Ver tudo</string>
+    <string name="nostop_home_show_less">Mostrar menos</string>
+    <string name="nostop_home_show_all_count">Mostrar todos os %1$d</string>
+    <string name="nostop_home_lossless">Experimente áudio sem perdas</string>
+    <string name="nostop_home_lossless_hint">Baixe músicas em FLAC com qualidade de estúdio pelo Qobuz. Toque para configurar.</string>
+    <string name="nostop_home_setup">Configurar →</string>
+    <string name="nostop_home_no_lossless">Áudio sem perdas indisponível no momento</string>
+    <string name="nostop_home_connect">Conectar →</string>
+</resources>
