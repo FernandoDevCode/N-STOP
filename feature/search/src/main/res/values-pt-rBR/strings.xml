@@ -11,4 +11,8 @@
     <string name="nostop_search_try_another">Tente buscar por outro termo</string>
     <string name="nostop_search_youtube">Buscar no YouTube Music</string>
     <string name="nostop_search_empty_hint">Encontre músicas ou artistas e baixe para sua biblioteca</string>
+    <string name="nonstop_artist_music_tab">Músicas</string>
+    <string name="nonstop_artist_albums_tab">Álbuns</string>
+    <string name="nonstop_artist_singles_tab">Singles</string>
+    <string name="nonstop_artist_about_tab">Sobre</string>
 </resources>
