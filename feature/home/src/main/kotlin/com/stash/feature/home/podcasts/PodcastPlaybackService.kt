@@ -6,6 +6,7 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
@@ -53,7 +54,7 @@ class PodcastPlaybackService : MediaSessionService() {
             .setUserAgent("N0NStop-Podcasts/1.0")
         val sourceFactory = CacheDataSource.Factory()
             .setCache(cache)
-            .setUpstreamDataSourceFactory(http)
+            .setUpstreamDataSourceFactory(DefaultDataSource.Factory(this, http))
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
         audio = ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(sourceFactory))
