@@ -238,4 +238,16 @@
     <string name="nostop_storage_import_confirm_library_replace">Replace Library</string>
     <string name="nostop_storage_import_confirm_settings_replace">Restore Settings</string>
     <string name="nostop_storage_import_confirm_everything_replace">Overwrite All</string>
+    <string name="nostop_storage_network_charging_title">Wi-Fi + charging</string>
+    <string name="nostop_storage_network_charging_desc">Download only on Wi-Fi while the phone is charging.</string>
+    <string name="nostop_storage_network_wifi_title">Wi-Fi any time</string>
+    <string name="nostop_storage_network_wifi_desc">Download on Wi-Fi even without a charger.</string>
+    <string name="nostop_storage_network_any_title">Any network</string>
+    <string name="nostop_storage_network_any_desc">Also download over cellular. Uses mobile data.</string>
+    <string name="nostop_storage_layout_artist_album_title">Artist / Album</string>
+    <string name="nostop_storage_layout_artist_album_desc">Create artist folders with album subfolders.</string>
+    <string name="nostop_storage_layout_single_folder_title">Single folder</string>
+    <string name="nostop_storage_layout_single_folder_desc">Keep every song directly in one folder, named artist - title.</string>
+    <string name="nostop_storage_layout_playlist_title">Per playlist</string>
+    <string name="nostop_storage_layout_playlist_desc">Create a folder per playlist. Songs without playlists use Artist / Album.</string>
 </resources>
