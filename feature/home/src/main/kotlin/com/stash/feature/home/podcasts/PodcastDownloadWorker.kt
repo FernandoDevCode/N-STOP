@@ -5,14 +5,12 @@ import android.net.Uri
 import androidx.work.Constraints
 import androidx.work.NetworkType
 import androidx.work.CoroutineWorker
-import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkerParameters
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import java.io.File
-import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -23,6 +21,8 @@ import kotlin.coroutines.coroutineContext
 /** Permanent podcast downloads live apart from music and from the evictable streaming cache. */
 internal object PodcastFiles {
     private const val PREFS = "nonstop_podcasts"
+    private val publicationLock = Any()
+    fun workName(id: String) = "podcast_download_$id"
     private val acceptedExt = setOf("mp3", "m4a", "mp4", "ogg", "opus", "aac", "wav", "flac")
 
     fun extension(url: String): String {
@@ -43,14 +43,30 @@ internal object PodcastFiles {
             .putString("download_$id", ext).apply()
     }
 
-    fun remove(context: Context, id: String) {
+    fun remove(context: Context, id: String) = synchronized(publicationLock) {
         downloaded(context, id)?.delete()
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .remove("download_$id").apply()
+            .remove("download_$id").commit()
     }
 
-    fun enqueue(context: Context, episode: PodcastEpisode): UUID {
+    fun commitIfRunning(
+        context: Context, id: String, ext: String, part: File,
+        canCommit: () -> Boolean,
+    ): Boolean = synchronized(publicationLock) {
+        if (!canCommit()) return@synchronized false
+        val target = File(context.filesDir, "podcasts/$id.$ext")
+        if (target.exists() && target.length() > 0L) {
+            part.delete()
+        } else if (!part.renameTo(target)) {
+            return@synchronized false
+        }
+        markDownloaded(context, id, ext)
+        true
+    }
+
+    fun enqueue(context: Context, episode: PodcastEpisode) {
         require(validPodcastUrl(episode.audioUrl))
+        require(episode.id.matches(Regex("[a-f0-9]{32}")))
         val request = OneTimeWorkRequestBuilder<PodcastDownloadWorker>()
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .setInputData(workDataOf(
@@ -58,11 +74,11 @@ internal object PodcastFiles {
                 PodcastDownloadWorker.KEY_URL to episode.audioUrl,
             ))
             .addTag("podcast_download")
+            .addTag("podcast_id_${episode.id}")
             .build()
         WorkManager.getInstance(context).enqueueUniqueWork(
-            "podcast_download_${episode.id}", ExistingWorkPolicy.KEEP, request,
+            workName(episode.id), ExistingWorkPolicy.KEEP, request,
         )
-        return request.id
     }
 }
 
@@ -87,11 +103,8 @@ class PodcastDownloadWorker(context: Context, params: WorkerParameters) : Corout
         val folder = File(applicationContext.filesDir, "podcasts")
         if (!folder.exists() && !folder.mkdirs()) return@withContext Result.failure()
         val ext = PodcastFiles.extension(url)
-        val target = File(folder, "$id.$ext")
         val partial = File(folder, "$id.${UUID.randomUUID()}.part")
-        val client = OkHttpClient.Builder().followSslRedirects(false)
-            .connectTimeout(java.time.Duration.ofSeconds(20))
-            .readTimeout(java.time.Duration.ofSeconds(40)).build()
+        val client = PodcastHttp.client
         try {
             client.newCall(Request.Builder().url(url)
                 .header("User-Agent", "N0NStop-Podcasts/1.0")
@@ -127,19 +140,14 @@ class PodcastDownloadWorker(context: Context, params: WorkerParameters) : Corout
                 }
                 if (bytes < 1024 || (total >= 0 && total != bytes)) return@withContext Result.failure()
             }
-            // Never replace an already saved file; this worker uniquely owns the temp.
-            if (target.exists()) {
-                if (target.length() == 0L) target.delete()
-                else {
-                    PodcastFiles.markDownloaded(applicationContext, id, ext)
-                    return@withContext Result.success()
-                }
+            if (!PodcastFiles.commitIfRunning(applicationContext, id, ext, partial) { !isStopped }) {
+                return@withContext Result.failure()
             }
-            if (!partial.renameTo(target)) return@withContext Result.failure()
-            PodcastFiles.markDownloaded(applicationContext, id, ext)
             Result.success()
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
+        } catch (_: java.io.IOException) {
+            if (runAttemptCount < 3 && !isStopped) Result.retry() else Result.failure()
         } catch (_: Exception) {
             Result.failure()
         } finally {
