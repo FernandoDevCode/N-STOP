@@ -42,4 +42,10 @@
     <string name="nonstop_library_more">More options</string>
     <string name="nonstop_library_sync">Sync</string>
     <string name="nonstop_library_settings">Settings</string>
+    <string name="nonstop_collection_play">Play</string>
+    <string name="nonstop_collection_shuffle">Shuffle</string>
+    <string name="nonstop_collection_search">Search tracks</string>
+    <string name="nonstop_collection_share">Share playlist</string>
+    <string name="nonstop_collection_cover">Change cover</string>
+    <string name="nonstop_collection_more">More playlist actions</string>
 </resources>
