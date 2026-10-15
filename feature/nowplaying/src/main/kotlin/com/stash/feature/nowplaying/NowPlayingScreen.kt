@@ -916,26 +916,8 @@ fun NowPlayingScreen(
                                     onLikeTap = viewModel::onLikeTap,
                                 )
 
-                                // Quality line — codec + bit-depth/sample-rate + bitrate, when known.
-                                // Sized smaller than the artist/album line; degrades gracefully when
-                                // some fields are missing (returns a partial line, not nothing).
-                                // When the active MediaItem is sourced from an http(s) URI (Kennyy
-                                // stream rather than a local file), a small wifi glyph prefixes
-                                // the line so the user knows playback is using their connection.
-                                if (track != null) {
-                                    val qualityText = trackQualityText(track)
-                                    if (qualityText != null) {
-                                        Spacer(modifier = Modifier.height(StackRhythm.ArtistToQuality))
-                                        // The live verdict ("Bit-perfect", "Hi-Res", "Resampled")
-                                        // rides on the end; tapping opens the full signal path.
-                                        val badge = signalVerdict?.let { with(com.stash.feature.nowplaying.ui.SignalPathBadge) { it.badge() } }
-                                        QualityLine(
-                                            qualityText = if (badge != null) "$qualityText \u00B7 $badge" else qualityText,
-                                            isStreaming = uiState.isStreaming,
-                                            onClick = { showSignalPath = true },
-                                        )
-                                    }
-                                }
+                                // The approved player keeps codec/bitrate off the main canvas.
+                                // Diagnostic quality helpers remain available in the signal path UI.
 
                                 if (room != null) com.stash.feature.nowplaying.listen.PickLine(room)
 
