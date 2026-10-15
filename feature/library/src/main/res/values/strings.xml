@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="nostop_library_title">Library</string>
+    <string name="nostop_library_recent">RECENTLY DOWNLOADED</string>
+    <string name="nostop_library_empty">Your library is empty</string>
+    <string name="nostop_library_find_music">Find songs in Search</string>
+    <string name="nostop_library_import_phone">Import from this phone</string>
+    <string name="nostop_library_songs">Songs</string>
+    <string name="nostop_library_liked">Liked</string>
+    <string name="nostop_library_playlists">Playlists</string>
+    <string name="nostop_library_artists">Artists</string>
+    <string name="nostop_library_albums">Albums</string>
+    <string name="nostop_library_cancel">Cancel</string>
+    <string name="nostop_library_dismiss">Dismiss</string>
+    <string name="nostop_library_upgrade">Upgrade</string>
+    <string name="nostop_library_upgrade_flac">Upgrade to FLAC?</string>
+    <string name="nostop_library_block_songs">Also block these songs from future syncs</string>
+    <string name="nostop_library_block_song">Also block this song from future syncs</string>
+    <string name="nostop_library_block_hint">Blocked songs will not be downloaded again. Unblock them later in Settings.</string>
+    <string name="nostop_library_show_all">Show everything</string>
+    <string name="nostop_library_import_failed">Import failed</string>
+    <string name="nostop_library_play_all">Play All</string>
+    <string name="nostop_library_share_mix">Share mix</string>
+    <string name="nostop_library_remove_image">Remove Image</string>
+    <string name="nostop_library_remove_playlist">Remove Playlist</string>
+    <string name="nostop_library_delete_playlist_songs">Delete Playlist &amp; Songs</string>
+    <string name="nostop_library_unpin_playlist">Unpin Playlist</string>
+    <string name="nostop_library_pin_playlist">Pin Playlist</string>
+    <string name="nostop_library_remove_home">Remove from Home</string>
+    <string name="nostop_library_show_home">Show on Home</string>
+    <string name="nostop_library_change_image">Change Image</string>
+    <string name="nostop_library_add_image">Add Image</string>
+    <string name="nostop_library_unfollow_confirm">Tap again to unfollow</string>
+    <string name="nostop_library_unfollow">Unfollow</string>
+    <string name="nostop_library_shuffle_liked">Shuffle liked songs</string>
+    <string name="nostop_library_shuffle">Shuffle library</string>
+    <string name="nostop_library_import_tracks">Import tracks</string>
+    <string name="nostop_library_search">Search library</string>
+    <string name="nostop_library_sort_filter">Sort and filter</string>
+    <string name="nostop_library_clear_filter">Clear filter</string>
+    <string name="nostop_library_showing_filter">Showing only %1$s</string>
+</resources>
