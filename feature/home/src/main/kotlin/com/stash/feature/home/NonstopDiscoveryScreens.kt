@@ -1,8 +1,8 @@
 package com.stash.feature.home
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -19,7 +20,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Radio
-import androidx.compose.material.icons.filled.Album
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -28,17 +28,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil3.compose.AsyncImage
+import com.stash.core.ui.components.AlbumSquareCard
 import com.stash.core.ui.components.CrispChipRow
 import com.stash.core.ui.components.bottomChromePadding
 import com.stash.data.ytmusic.model.AlbumSummary
@@ -83,7 +81,7 @@ fun NonstopExploreScreen(
                     contentPadding = PaddingValues(horizontal = 20.dp),
                 ) {
                     items(state.newReleases, key = { it.id }) { album ->
-                        DiscoveryAlbumTile(album, onClick = { onOpenAlbum(album) })
+                        AlbumSquareCard(title = album.title, artist = album.artist, thumbnailUrl = album.thumbnailUrl, year = null, onClick = { onOpenAlbum(album) })
                     }
                 }
             }
@@ -97,7 +95,7 @@ fun NonstopExploreScreen(
                     contentPadding = PaddingValues(horizontal = 20.dp),
                 ) {
                     items(state.topAlbums, key = { it.id }) { album ->
-                        DiscoveryAlbumTile(album, onClick = { onOpenAlbum(album) })
+                        AlbumSquareCard(title = album.title, artist = album.artist, thumbnailUrl = album.thumbnailUrl, year = null, onClick = { onOpenAlbum(album) })
                     }
                 }
             }
@@ -121,6 +119,12 @@ fun NonstopExploreScreen(
                     }
                 }
             }
+        }
+        // Show a quiet placeholder until the initial catalog request resolves.
+        if (state.isLoading && state.newReleases.isEmpty() &&
+            state.topAlbums.isEmpty() && state.moodDecades.isEmpty()
+        ) {
+            item { DiscoveryLoadingRail(squareArtwork = true) }
         }
         if (!state.isLoading && state.newReleases.isEmpty() &&
             state.topAlbums.isEmpty() && state.moodDecades.isEmpty()
@@ -192,6 +196,9 @@ fun NonstopRadioScreen(
                 }
             }
         }
+        if (state.isLoading && state.radios.isEmpty() && state.madeForYou.isEmpty()) {
+            item { DiscoveryLoadingRail(squareArtwork = false) }
+        }
         if (!state.isLoading && state.radios.isEmpty() && state.madeForYou.isEmpty()) {
             item {
                 DiscoveryEmptyMessage(
@@ -253,44 +260,51 @@ private fun DiscoverySectionLabel(title: String, subtitle: String) {
     }
 }
 
+/**
+ * Static, decorative placeholders for initial Explore/Radio loading.
+ * They reveal no fabricated catalog data and honor reduced-motion preferences.
+ */
 @Composable
-private fun DiscoveryAlbumTile(album: AlbumSummary, onClick: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .size(width = 152.dp, height = 198.dp)
-            .clickable(onClick = onClick),
-    ) {
-        if (album.thumbnailUrl != null) {
-            AsyncImage(
-                model = album.thumbnailUrl,
-                contentDescription = album.title,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.size(152.dp).clip(RoundedCornerShape(10.dp)),
-            )
-        } else {
-            androidx.compose.foundation.layout.Box(
-                modifier = Modifier
-                    .size(152.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(
-                        Brush.linearGradient(
-                            listOf(DiscoveryViolet.copy(alpha = 0.65f), DiscoveryCyan.copy(alpha = 0.45f)),
-                        ),
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Filled.Album, contentDescription = null, tint = Color.White)
+private fun DiscoveryLoadingRail(squareArtwork: Boolean) {
+    val tileWidth = if (squareArtwork) 152.dp else 158.dp
+    val tileHeight = if (squareArtwork) 152.dp else 188.dp
+    val placeholder = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
+    Column(modifier = Modifier.clearAndSetSemantics {}) {
+        Box(
+            Modifier.padding(horizontal = 20.dp)
+                .size(width = 154.dp, height = 19.dp)
+                .clip(RoundedCornerShape(7.dp))
+                .background(placeholder),
+        )
+        Spacer(Modifier.height(14.dp))
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            items(3) {
+                Column(Modifier.width(tileWidth)) {
+                    Box(
+                        Modifier.size(width = tileWidth, height = tileHeight)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(placeholder),
+                    )
+                    if (squareArtwork) {
+                        Spacer(Modifier.height(9.dp))
+                        Box(
+                            Modifier.size(width = 112.dp, height = 12.dp)
+                                .clip(RoundedCornerShape(5.dp))
+                                .background(placeholder),
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Box(
+                            Modifier.size(width = 74.dp, height = 10.dp)
+                                .clip(RoundedCornerShape(5.dp))
+                                .background(placeholder),
+                        )
+                    }
+                }
             }
         }
-        Spacer(Modifier.height(7.dp))
-        Text(album.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-        Text(
-            album.artist,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
