@@ -385,30 +385,6 @@ fun HomeScreen(
         }
         if (selectedMediaTab == 0) {
 
-        // ── Supporter pill (full row) ─────────────────────────────────
-        // v0.9.13: live data from TipJarRepository. Tap → ko-fi.
-        item {
-            val tipJar = uiState.tipJar
-            val pillSupporters = remember(tipJar) {
-                val live = tipJar.supporters.map {
-                    Supporter(name = it.name, amount = "$${it.amountUsd}", message = it.message)
-                }
-                // Legacy donors pre-date the Ko-fi webhook and exist nowhere
-                // in the Worker's KV — they always ride the tape (deduped in
-                // case they ever re-donate through the live pipeline).
-                val liveNames = live.map { it.name.lowercase() }.toSet()
-                live + LEGACY_SUPPORTERS.filter { it.name.lowercase() !in liveNames }
-            }
-            // Edge-to-edge: the ticker runs the full screen width, no card
-            // chrome — maximum runway for the scrolling messages.
-            SupporterTicker(
-                supporters = pillSupporters,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 12.dp),
-            )
-        }
-
         // ── Lossless connect nudge ───────────────────────────────────
         // Shown when the user has lossless toggled OFF and hasn't
         // dismissed. Tap routes to Settings; X dismisses forever.
@@ -461,6 +437,37 @@ fun HomeScreen(
                     onFinishedAcknowledged = viewModel::onMetadataBackfillFinishedAcknowledged,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
+            }
+        }
+
+        // The approved Home leads with the user's own playlists rather than a generic hero.
+        // Only lift this rail when it is the FIRST user-arranged section; custom
+        // arrangements that move it elsewhere continue to be respected.
+        val recentLeading = uiState.sections.firstOrNull() == HomeSection.YOUR_PLAYLISTS
+        if (recentLeading && (uiState.yourPlaylists.isNotEmpty() || uiState.likedCard != null)) {
+            item(key = "section_your_playlists_leading") {
+                CardRail(title = stringResource(R.string.nostop_home_playlists)) {
+                    uiState.likedCard?.let { liked ->
+                        item(key = "liked_leading") {
+                            LikedHomeCard(
+                                trackCount = liked.trackCount,
+                                onClick = {
+                                    viewModel.requestLibraryLikedFocus()
+                                    onNavigateToLibrary()
+                                },
+                            )
+                        }
+                    }
+                    items(uiState.yourPlaylists.railCut(HOME_RAIL_LIMIT), key = { it.id }) { p ->
+                        MixRailCard(
+                            title = p.title,
+                            artUrl = p.artUrl,
+                            source = p.source,
+                            onClick = { onNavigateToPlaylist(p.id) },
+                            onLongPress = { pinnedSheetPlaylistId = p.id },
+                        )
+                    }
+                }
             }
         }
 
@@ -592,7 +599,7 @@ fun HomeScreen(
             }
             when (section) {
                 HomeSection.YOUR_PLAYLISTS ->
-                    if (uiState.yourPlaylists.isNotEmpty() || uiState.likedCard != null) {
+                    if (!recentLeading && (uiState.yourPlaylists.isNotEmpty() || uiState.likedCard != null)) {
                         item(key = "section_your_playlists") {
                             CardRail(title = stringResource(R.string.nostop_home_playlists)) {
                                 uiState.likedCard?.let { liked ->
@@ -725,6 +732,31 @@ fun HomeScreen(
                 HomeSection.COMMUNITY -> item(key = "section_community") { communitySection() }
             }
         }
+
+        // ── Supporter pill (full row) ─────────────────────────────────
+        // v0.9.13: live data from TipJarRepository. Tap → ko-fi.
+        item {
+            val tipJar = uiState.tipJar
+            val pillSupporters = remember(tipJar) {
+                val live = tipJar.supporters.map {
+                    Supporter(name = it.name, amount = "${it.amountUsd}", message = it.message)
+                }
+                // Legacy donors pre-date the Ko-fi webhook and exist nowhere
+                // in the Worker's KV — they always ride the tape (deduped in
+                // case they ever re-donate through the live pipeline).
+                val liveNames = live.map { it.name.lowercase() }.toSet()
+                live + LEGACY_SUPPORTERS.filter { it.name.lowercase() !in liveNames }
+            }
+            // Edge-to-edge: the ticker runs the full screen width, no card
+            // chrome — maximum runway for the scrolling messages.
+            SupporterTicker(
+                supporters = pillSupporters,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
+            )
+        }
+
 
         } else {
             item(key = "nonstop_other_media") {
