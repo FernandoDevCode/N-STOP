@@ -77,11 +77,7 @@ fun SettingsHubScreen(
     val summaries = settingsHubSummaries(uiState, versionName, streamingEnabled, streamOnCellular)
 
     var searchQuery by remember { mutableStateOf("") }
-    val searchIndex = remember(
-        onOpenPlayback, onOpenAudioQuality, onOpenAccounts,
-        onOpenLibraryStorage, onOpenAppearance, onOpenAbout,
-    ) {
-        listOf(
+    val searchIndex = listOf(
             SettingsSearchItem(
                 title = stringResource(R.string.nostop_nav_playback),
                 subtitle = "Sleep timer, autoplay radio, crossfade, gapless",
@@ -125,7 +121,6 @@ fun SettingsHubScreen(
                 onSelect = onOpenAbout,
             ),
         )
-    }
     val searchResults = remember(searchQuery, searchIndex) {
         if (searchQuery.isBlank()) {
             emptyList()
