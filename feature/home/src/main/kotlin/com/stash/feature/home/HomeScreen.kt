@@ -191,6 +191,7 @@ fun HomeScreen(
         onNavigateToPlaylist(id)
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    var selectedMediaTab by rememberSaveable { mutableIntStateOf(0) }
     val heroMinimized by viewModel.heroMinimized.collectAsStateWithLifecycle()
     // Master streaming-mode flag. Both the top-bar StreamingModeChip and
     // the sheet (StreamingModeSheet) render from this single source of
@@ -246,19 +247,7 @@ fun HomeScreen(
                 // One ink (owner, 2026-10-11): white on dark / aubergine on light, and while a song
                 // plays the contrast-checked tint of its mood colour, crossfading over 800 ms. Read
                 // at draw time, so the crossfade redraws the wordmark without recomposing the feed.
-                val chrome = LocalAlbumChrome.current
-                Text(
-                    text = "NØSTOP",
-                    style = TextStyle(
-                        fontFamily = SpaceGrotesk,
-                        fontWeight = FontWeight.Black,
-                        fontSize = 30.sp,
-                        letterSpacing = (-1.5).sp,
-                    ),
-                    color = chrome.wordmark,
-                    maxLines = 1,
-                    modifier = Modifier.semantics { contentDescription = "NØSTOP" },
-                )
+                NonstopWordmark()
                 Spacer(modifier = Modifier.weight(1f))
 
                 // Streaming-mode quick-access chip. Tap → opens the
@@ -386,6 +375,15 @@ fun HomeScreen(
                 }
             }
         }
+
+        item(key = "nonstop_media_filters") {
+            NonstopMediaFilters(
+                selected = selectedMediaTab,
+                onSelect = { selectedMediaTab = it },
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp),
+            )
+        }
+        if (selectedMediaTab == 0) {
 
         // ── Supporter pill (full row) ─────────────────────────────────
         // v0.9.13: live data from TipJarRepository. Tap → ko-fi.
@@ -728,6 +726,11 @@ fun HomeScreen(
             }
         }
 
+        } else {
+            item(key = "nonstop_other_media") {
+                NonstopOtherMediaNotice(selectedMediaTab)
+            }
+        }
     }
 
     // ── Streaming privacy disclosure (first-use only) ────────────────────
