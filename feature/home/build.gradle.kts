@@ -36,6 +36,13 @@ dependencies {
     // For LosslessRetryWorker enqueue from the deferred-banner "retry"
     // action (HomeViewModel.onRetryDeferredRequested).
     implementation(libs.work.runtime.ktx)
+    // Podcast RSS directory, isolated Media3 session and bounded audio cache.
+    implementation(libs.okhttp)
+    implementation(libs.media3.exoplayer)
+    implementation(libs.media3.session)
+    implementation(libs.media3.datasource)
+    implementation(libs.media3.database)
+    implementation(libs.kotlinx.coroutines.guava)
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
