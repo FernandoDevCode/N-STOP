@@ -31,6 +31,8 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.stash.core.ui.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -66,6 +68,7 @@ fun ShareTrackSheet(
     val sheetState = rememberModalBottomSheetState()
     val title = track.title
     val artist = track.artist
+    val shareTitle = stringResource(R.string.nostop_share_song_title, title)
     val spotifyUrl = spotifyShareUrl(track.spotifyUri)
     val youtubeUrl = youtubeShareUrl(track.youtubeId)
     val createLink = LocalCreateTrackLink.current
@@ -77,7 +80,7 @@ fun ShareTrackSheet(
             type = "text/plain"
             putExtra(Intent.EXTRA_TEXT, text)
         }
-        context.startActivity(Intent.createChooser(intent, "Share \"$title\""))
+        context.startActivity(Intent.createChooser(intent, shareTitle))
         onDismiss()
     }
 
@@ -93,7 +96,7 @@ fun ShareTrackSheet(
                 .padding(bottom = 8.dp),
         ) {
             Text(
-                text = "Share \"$title\"",
+                text = shareTitle,
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
@@ -111,7 +114,7 @@ fun ShareTrackSheet(
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
         ShareRow(
-            label = "Stash link",
+            label = stringResource(R.string.nostop_share_nostop_link),
             tint = MaterialTheme.colorScheme.primary,
             busy = linking,
             onClick = {
@@ -128,20 +131,21 @@ fun ShareTrackSheet(
         )
         if (spotifyUrl != null) {
             ShareRow(
-                label = "Spotify link",
+                label = stringResource(R.string.nostop_share_spotify_link),
                 tint = StashTheme.extendedColors.spotifyGreen,
                 onClick = { send("$artist — $title\n$spotifyUrl") },
             )
         }
         if (youtubeUrl != null) {
             ShareRow(
-                label = "YouTube Music link",
+                label = stringResource(R.string.nostop_share_youtube_link),
                 tint = StashTheme.extendedColors.youtubeRed,
                 onClick = { send("$artist — $title\n$youtubeUrl") },
             )
         }
         ShareRow(
-            label = "Song info only",
+            label = stringResource(R.string.nostop_share_info_only),
+            isInfoOnly = true,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             onClick = { send("$artist — $title") },
         )
@@ -156,6 +160,7 @@ private fun ShareRow(
     tint: androidx.compose.ui.graphics.Color,
     onClick: () -> Unit,
     busy: Boolean = false,
+    isInfoOnly: Boolean = false,
 ) {
     Row(
         modifier = Modifier
@@ -165,7 +170,7 @@ private fun ShareRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            imageVector = if (label.startsWith("Song")) Icons.Default.Share else Icons.Default.MusicNote,
+            imageVector = if (isInfoOnly) Icons.Default.Share else Icons.Default.MusicNote,
             contentDescription = null,
             tint = tint,
             modifier = Modifier.size(22.dp),
