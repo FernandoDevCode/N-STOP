@@ -23,10 +23,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.stash.core.ui.R
 
 /**
  * v0.9.13: Per-track override sheet. Pre-checked according to the
- * user's Settings defaults; subtitled with "✓ Already saved" for
+ * user's Settings defaults; subtitled with stringResource(R.string.nostop_like_already_saved) for
  * destinations whose `*_saved_at` timestamp is already populated.
  *
  * The selection is ephemeral — saving doesn't update Settings
@@ -56,22 +58,22 @@ fun LikeDestinationSheet(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                text = "Save to…",
+                text = stringResource(R.string.nostop_like_save_to),
                 style = MaterialTheme.typography.titleMedium,
             )
             Spacer(modifier = Modifier.height(8.dp))
 
             DestinationRow(
-                label = "Stash Liked Songs",
-                subtitle = if (state.stashAlreadySaved) "✓ Already saved" else null,
+                label = stringResource(R.string.nostop_like_nostop_songs),
+                subtitle = if (state.stashAlreadySaved) stringResource(R.string.nostop_like_already_saved) else null,
                 checked = stashChecked,
                 onCheckedChange = { stashChecked = it },
             )
 
             if (state.spotifyVisible) {
                 DestinationRow(
-                    label = "Spotify Liked Songs",
-                    subtitle = if (state.spotifyAlreadySaved) "✓ Already saved" else null,
+                    label = stringResource(R.string.nostop_like_spotify_songs),
+                    subtitle = if (state.spotifyAlreadySaved) stringResource(R.string.nostop_like_already_saved) else null,
                     checked = spotifyChecked,
                     onCheckedChange = { spotifyChecked = it },
                 )
@@ -79,8 +81,8 @@ fun LikeDestinationSheet(
 
             if (state.ytVisible) {
                 DestinationRow(
-                    label = "YouTube Music Liked Music",
-                    subtitle = if (state.ytAlreadySaved) "✓ Already saved" else null,
+                    label = stringResource(R.string.nostop_like_youtube_songs),
+                    subtitle = if (state.ytAlreadySaved) stringResource(R.string.nostop_like_already_saved) else null,
                     checked = ytChecked,
                     onCheckedChange = { ytChecked = it },
                 )
@@ -98,7 +100,7 @@ fun LikeDestinationSheet(
                 },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Save")
+                Text(stringResource(R.string.nostop_like_save))
             }
         }
     }
