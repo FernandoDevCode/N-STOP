@@ -30,6 +30,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
 import coil3.compose.AsyncImage
 import com.stash.core.common.ArtUrlUpgrader
 import com.stash.core.data.mix.MixBuildState
@@ -112,8 +113,8 @@ fun MixRailCard(
                 overflow = TextOverflow.Ellipsis,
             )
             val label = when (buildState) {
-                MixBuildState.BUILDING -> "Preparing"
-                MixBuildState.EMPTY -> "No tracks yet"
+                MixBuildState.BUILDING -> stringResource(R.string.nonstop_mix_building)
+                MixBuildState.EMPTY -> stringResource(R.string.nonstop_mix_empty)
                 MixBuildState.READY -> null
             }
             if (label != null) {
