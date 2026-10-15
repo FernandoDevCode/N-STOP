@@ -32,7 +32,7 @@ Branch: `nonstop`.
 - The donor ticker has been moved below the discovery feed to avoid competing for attention.
 - The local-library artist page now uses the same full-bleed real-image hero as online artist profiles.
 - Android 26+ adaptive launcher icon uses a native vector approximation of the N-shaped waveform brand mark, violet to cyan to mint; the default app name is NØNStop.
-- The pre-Android-26 PNG launcher icons still need production raster export (not included in this checkpoint).
+- Legacy pre-Android-26 PNG launcher icons remain in the source tree, but the app currently sets `minSdk = 26`. They are not used on supported devices and do not block a release; supported devices use the `mipmap-anydpi-v26` adaptive icon backed by the NØNStop vector.
 - This checkpoint does not yet include RSS podcasts/audiobook media support or a fully exported glow-accurate wordmark artwork.
 
 ## Navigation and locale finishing work
