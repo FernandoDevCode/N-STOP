@@ -1,10 +1,14 @@
 package com.stash.app.navigation
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.outlined.Radio
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Search
@@ -15,13 +19,22 @@ import kotlinx.serialization.Serializable
 
 enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon: ImageVector, val label: String, val route: Any) {
     HOME(Icons.Filled.Home, Icons.Outlined.Home, "Home", HomeRoute),
+    EXPLORE(Icons.Filled.Explore, Icons.Outlined.Explore, "Explore", ExploreRoute),
+    RADIO(Icons.Filled.Radio, Icons.Outlined.Radio, "Radio", RadioRoute),
     LIBRARY(Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic, "Library", LibraryRoute),
     SEARCH(Icons.Filled.Search, Icons.Outlined.Search, "Search", SearchRoute),
     SYNC(Icons.Filled.Sync, Icons.Outlined.Sync, "Sync", SyncRoute),
     SETTINGS(Icons.Filled.Settings, Icons.Outlined.Settings, "Settings", SettingsRoute),
+    ;
+    companion object {
+        /** Five approved navigation destinations. Sync and Settings stay routable from the Library. */
+        val bottomTabs = listOf(HOME, EXPLORE, RADIO, LIBRARY, SEARCH)
+    }
 }
 
 @Serializable data object HomeRoute
+@Serializable data object ExploreRoute
+@Serializable data object RadioRoute
 @Serializable data object LibraryRoute
 @Serializable data object SearchRoute
 @Serializable data object SyncRoute
