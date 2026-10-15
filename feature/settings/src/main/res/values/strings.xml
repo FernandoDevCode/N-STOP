@@ -95,4 +95,6 @@
     <string name="nostop_hub_library_hint">Storage location, backups, downloads</string>
     <string name="nostop_hub_appearance_hint">Theme, AMOLED, Home layout</string>
     <string name="nostop_hub_about_hint">Version, diagnostics, crash reports</string>
+    <string name="nostop_settings_search_placeholder">Search settings</string>
+    <string name="nostop_settings_search_clear">Clear search</string>
 </resources>
