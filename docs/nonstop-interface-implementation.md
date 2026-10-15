@@ -90,3 +90,14 @@ Branch: `nonstop`.
 - Explore and Radio empty states use theme-aware rounded surfaces and decorative category icons, preserving existing conditional rendering and honest empty-state text.
 - No catalog request, routing, media player, downloaded-content or permissions logic was touched.
 - Full CI is requested on this checkpoint via `[do test]`; keep intermediate APKs out of the manual installation path.
+
+## Podcast RSS MVP — 2026-10-15
+- Home > Podcasts now opens a working search surface, not the previous coming-soon notice.
+- The initial discovery directory is Apple Podcasts Search API (no secret embedded in the APK), returning publishers' public HTTPS RSS feeds. A user can also paste a direct public HTTPS RSS feed URL. This does **not** claim Spotify catalogue parity.
+- Shows can be followed locally; RSS episode listings are fetched from the original publisher feed. There are no fabricated episodes.
+- Playback uses a separate Android Media3 MediaSessionService, reusing the already-present playback technology without putting episodes in music TrackDao, music queues, scrobbles or recommendations.
+- A 300 MiB LRU cache in `cacheDir/podcast_stream` stores streaming data; finished explicit downloads are independent files in `filesDir/podcasts`, with a WorkManager transfer, atomic publication, and a size ceiling.
+- Episode resume points use private SharedPreferences. Direct RSS media URLs only; no Spotify/YouTube audio extraction. Streaming errors and compatibility still require physical-device validation.
+- Scope limitation: this MVP does not yet include OPML, episode bookmarks, playback speed presets, a unified music/podcast mini-player, download migration to external SAF storage, catalogue browse charts, or RSS auto-refresh notifications.
+- The legacy audiobook tab remains informational. No intermediate phone APK should be installed.
+- CI trigger below validates Kotlin compilation, unit tests and the debug assemble: `[do test]`.
