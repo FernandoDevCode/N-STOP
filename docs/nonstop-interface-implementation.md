@@ -41,3 +41,7 @@ Branch: `nonstop`.
 - Artist full-bleed heroes use dark scrims at the text edge in BOTH light and dark themes.
 - This iteration includes the CI-detected missing Compose Color import fix for the local-library artist hero.
 - Existing user-saved Home section arrangements continue to take precedence over the updated default order.
+
+## Home above-the-fold finishing adjustment
+- The genuine Daily Discover pager now follows the user's first four main music sections, rather than separating Back to Listening from Rediscovery. Its play/open/mix-building actions are preserved.
+- All of the above runs against existing real catalog and playlist data, not hardcoded showcase music.
