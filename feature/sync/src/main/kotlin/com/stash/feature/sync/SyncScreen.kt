@@ -656,7 +656,7 @@ private fun LibraryMaintenanceCard(
                     text = if (blockedCount > 0)
                         stringResource(R.string.nostop_sync_blocked_count, blockedCount)
                     else
-                        text = stringResource(R.string.nostop_sync_no_blocked),
+                        stringResource(R.string.nostop_sync_no_blocked),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
