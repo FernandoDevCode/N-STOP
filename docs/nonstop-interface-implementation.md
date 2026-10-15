@@ -34,3 +34,10 @@ Branch: `nonstop`.
 - Android 26+ adaptive launcher icon uses a native vector approximation of the N-shaped waveform brand mark, violet to cyan to mint; the default app name is NØNStop.
 - The pre-Android-26 PNG launcher icons still need production raster export (not included in this checkpoint).
 - This checkpoint does not yet include RSS podcasts/audiobook media support or a fully exported glow-accurate wordmark artwork.
+
+## Navigation and locale finishing work
+- Active tab illumination persists while a detail screen is pushed over a parent tab.
+- All newly introduced Explore/Radio copy and mix-card build states are localized in pt-BR and English.
+- Artist full-bleed heroes use dark scrims at the text edge in BOTH light and dark themes.
+- This iteration includes the CI-detected missing Compose Color import fix for the local-library artist hero.
+- Existing user-saved Home section arrangements continue to take precedence over the updated default order.
