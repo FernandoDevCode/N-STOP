@@ -18,6 +18,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.stash.feature.sync.R
 import com.stash.core.data.sync.AuthExpiryState
 
 /**
@@ -43,21 +45,21 @@ fun AuthExpiredBanner(
     val buttonText: String
     when {
         state.spotifyExpired && state.youtubeExpired -> {
-            headline = "Sign-ins expired"
-            body = "Both Spotify and YouTube need fresh sign-ins to resume sync."
-            buttonText = "Re-authenticate"
+            headline = stringResource(R.string.nostop_auth_expired_both)
+            body = stringResource(R.string.nostop_auth_expired_both_hint)
+            buttonText = stringResource(R.string.nostop_auth_reauth)
         }
         state.spotifyExpired -> {
             // Only Spotify is expired \u2014 any other connected source still syncs,
             // so this is NOT a full pause. Copy reflects partial sync.
-            headline = "Spotify session expired"
-            body = "Re-authenticate to include your Spotify library in sync."
-            buttonText = "Re-authenticate Spotify"
+            headline = stringResource(R.string.nostop_auth_expired_spotify)
+            body = stringResource(R.string.nostop_auth_expired_spotify_hint)
+            buttonText = stringResource(R.string.nostop_auth_reauth_spotify)
         }
         else -> {
-            headline = "YouTube session expired"
-            body = "Re-authenticate to include your YouTube library in sync."
-            buttonText = "Re-authenticate YouTube"
+            headline = stringResource(R.string.nostop_auth_expired_youtube)
+            body = stringResource(R.string.nostop_auth_expired_youtube_hint)
+            buttonText = stringResource(R.string.nostop_auth_reauth_youtube)
         }
     }
 
