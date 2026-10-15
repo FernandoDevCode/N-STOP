@@ -4,17 +4,53 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- NØSTOP: the slashed O as a deliberately minimal, recognizable mark. -->
+    <!-- NØNStop adaptive icon: the original equalizer-N brand motif.
+         Deliberately stays within the adaptive safe area (18..90 dp). -->
+    <!-- Violet waveform + first N stem. -->
     <path
         android:fillColor="@android:color/transparent"
-        android:strokeColor="#C6F58D"
-        android:strokeWidth="7"
+        android:strokeColor="#8E57F3"
+        android:strokeWidth="9"
         android:strokeLineCap="round"
-        android:pathData="M54,31 A23,23 0,1 1,54 77 A23,23 0,1 1,54 31" />
+        android:strokeLineJoin="round"
+        android:pathData="M37,74 L37,36" />
     <path
         android:fillColor="@android:color/transparent"
-        android:strokeColor="#E6FFC4"
-        android:strokeWidth="7"
+        android:strokeColor="#B66AFA"
+        android:strokeWidth="6"
         android:strokeLineCap="round"
-        android:pathData="M34,78 L74,30" />
+        android:pathData="M25,50 L25,61" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#B66AFA"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:pathData="M17,55 L17,57" />
+    <!-- The N is a melodic continuous sweep; cyan transition in the middle. -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#4FC8F9"
+        android:strokeWidth="9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M37,36 C45,36 61,75 70,74" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#4DEBC0"
+        android:strokeWidth="9"
+        android:strokeLineCap="round"
+        android:pathData="M70,74 L70,36" />
+    <!-- Mirrored mint waveform to convey audio, not a standalone N. -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#49E6BD"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"
+        android:pathData="M82,50 L82,61" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#55F0B9"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:pathData="M90,55 L90,57" />
 </vector>
