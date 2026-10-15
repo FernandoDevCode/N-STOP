@@ -25,6 +25,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.stash.feature.sync.R
 import com.stash.core.data.sync.DayOfWeekSet
 import com.stash.core.ui.components.GlassCard
 
@@ -54,7 +56,7 @@ fun ScheduleCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Auto-sync", style = MaterialTheme.typography.bodyLarge)
+                Text(stringResource(R.string.nostop_schedule_auto), style = MaterialTheme.typography.bodyLarge)
                 com.stash.core.ui.components.StashSwitch(
                     checked = autoSyncEnabled,
                     onCheckedChange = { onToggleAutoSync() },
@@ -65,28 +67,28 @@ fun ScheduleCard(
             Column(modifier = Modifier.alpha(if (autoSyncEnabled) 1f else 0.5f)) {
                 if (emptyDays) {
                     Text(
-                        text = "Not scheduled — pick at least one day",
+                        text = stringResource(R.string.nostop_schedule_no_days),
                         style = MaterialTheme.typography.bodyMedium,
                         color = errorColor,
                         modifier = Modifier.clickable { daysExpanded = true },
                     )
                 } else {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Sync ", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.nostop_schedule_sync) + " ", style = MaterialTheme.typography.bodyMedium)
                         ScheduleChip(
                             text = syncDays.presetLabel(),
                             active = daysExpanded,
                             onClick = { daysExpanded = !daysExpanded },
                         )
-                        Text(" at ", style = MaterialTheme.typography.bodyMedium)
+                        Text(" " + stringResource(R.string.nostop_schedule_at) + " ", style = MaterialTheme.typography.bodyMedium)
                         ScheduleChip(
                             text = formatTime(syncHour, syncMinute),
                             active = false,
                             onClick = { showTimeSheet = true },
                         )
-                        Text(" on ", style = MaterialTheme.typography.bodyMedium)
+                        Text(" " + stringResource(R.string.nostop_schedule_on) + " ", style = MaterialTheme.typography.bodyMedium)
                         ScheduleChip(
-                            text = if (wifiOnly) "Wi-Fi only" else "any network",
+                            text = if (wifiOnly) stringResource(R.string.nostop_schedule_wifi) else stringResource(R.string.nostop_schedule_any_network),
                             active = false,
                             onClick = { onToggleWifiOnly() },
                             muted = true,
@@ -104,7 +106,7 @@ fun ScheduleCard(
 
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "Tap any chip to change",
+                    text = stringResource(R.string.nostop_schedule_change_hint),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
