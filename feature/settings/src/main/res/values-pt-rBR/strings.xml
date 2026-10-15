@@ -24,4 +24,8 @@
     <string name="web_library_import_button">Importar do Stash na web</string>
     <string name="web_library_sent_title">Enviado</string>
     <string name="web_library_sent_body">%2$s, %3$s e %4$s enviados para %1$s. Uma confirmação será solicitada antes da importação.</string>
+    <string name="nostop_appearance">Aparência</string>
+    <string name="nostop_language">Idioma</string>
+    <string name="nostop_language_system">Sistema</string>
+    <string name="nostop_language_description">Escolha o idioma do aplicativo. Sistema segue o idioma do celular.</string>
 </resources>
