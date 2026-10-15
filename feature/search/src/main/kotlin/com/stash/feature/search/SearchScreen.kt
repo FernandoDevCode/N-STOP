@@ -63,6 +63,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -142,7 +143,7 @@ fun SearchScreen(
         ) {
             // Command hero: the page owns its name like Library/Sync do.
             Text(
-                text = "Search",
+                text = stringResource(R.string.nostop_search_title),
                 style = MaterialTheme.typography.headlineLarge,
                 color = MaterialTheme.colorScheme.onBackground,
                 fontWeight = FontWeight.Bold,
@@ -242,14 +243,14 @@ private fun SearchBar(
             .focusRequester(focusRequester),
         placeholder = {
             Text(
-                text = "Songs, artists, albums…",
+                text = stringResource(R.string.nostop_search_placeholder),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         },
         leadingIcon = {
             Icon(
                 imageVector = Icons.Default.Search,
-                contentDescription = "Search",
+                contentDescription = stringResource(R.string.nostop_search_title),
                 tint = plum,
             )
         },
@@ -262,7 +263,7 @@ private fun SearchBar(
                 IconButton(onClick = onClear) {
                     Icon(
                         imageVector = Icons.Default.Clear,
-                        contentDescription = "Clear search",
+                        contentDescription = stringResource(R.string.nostop_search_clear),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -328,12 +329,12 @@ private fun RecentSearches(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "RECENT",
+                    text = stringResource(R.string.nostop_search_recent),
                     style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.2.sp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
-                TextButton(onClick = onClearAll) { Text("Clear") }
+                TextButton(onClick = onClearAll) { Text(stringResource(R.string.nostop_search_clear_short)) }
             }
         }
         // By identity: two songs called "Intro" are two rows now, so the title alone would collide.
@@ -818,7 +819,7 @@ private fun ErrorMessage(message: String, onRetry: () -> Unit) {
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Search failed",
+                text = stringResource(R.string.nostop_search_failed),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onBackground,
             )
@@ -830,7 +831,7 @@ private fun ErrorMessage(message: String, onRetry: () -> Unit) {
             )
             Spacer(modifier = Modifier.height(8.dp))
             TextButton(onClick = onRetry) {
-                Text("Retry")
+                Text(stringResource(R.string.nostop_search_retry))
             }
         }
     }
@@ -853,13 +854,13 @@ private fun NoResultsMessage() {
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "No results found",
+                text = stringResource(R.string.nostop_search_no_results),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onBackground,
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Try a different search term",
+                text = stringResource(R.string.nostop_search_try_another),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -884,13 +885,13 @@ private fun EmptySearchPrompt() {
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Search YouTube Music",
+                text = stringResource(R.string.nostop_search_youtube),
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onBackground,
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Find any song or artist and download it to your library",
+                text = stringResource(R.string.nostop_search_empty_hint),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
