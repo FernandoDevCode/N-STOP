@@ -38,4 +38,6 @@
     <string name="nostop_sync_blocked_count">%1$d músicas bloqueadas não serão baixadas novamente</string>
     <string name="nostop_sync_undoing">Desfazendo…</string>
     <string name="nostop_sync_undo_short">Desfazer</string>
+    <string name="nostop_sync_refresh_warning">Atualizar troca as músicas das playlists rotativas por novas recomendações e exclui os downloads das faixas que saíram. A limpeza só começa quando todas as fontes estiverem em Atualizar; se alguma fonte continuar acumulando, nada será excluído. Músicas adicionadas manualmente permanecem.</string>
+    <string name="nostop_sync_undo_warning">A biblioteca volta ao estado anterior à última sincronização (%1$d playlists afetadas). Playlists ocultadas reaparecem, playlists recém-adicionadas são ocultadas e playlists esvaziadas recuperam sua ordem original.\n\nMúsicas alteradas manualmente e configurações de download modificadas permanecem como estão. Arquivos de áudio já excluídos não podem ser recuperados.\n\nA sincronização automática pausa até você tocar em Sincronizar.</string>
 </resources>
