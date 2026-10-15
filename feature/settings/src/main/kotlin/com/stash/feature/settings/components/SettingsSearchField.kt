@@ -24,6 +24,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.res.stringResource
+import com.stash.feature.settings.R
 import androidx.compose.ui.unit.dp
 import com.stash.core.ui.theme.StashTheme
 
@@ -60,7 +62,7 @@ fun SettingsSearchField(
         Box(modifier = Modifier.weight(1f)) {
             if (value.isEmpty()) {
                 Text(
-                    text = "Search settings",
+                    text = stringResource(R.string.nostop_settings_search_placeholder),
                     style = MaterialTheme.typography.bodyMedium,
                     color = extendedColors.textTertiary,
                 )
@@ -80,7 +82,7 @@ fun SettingsSearchField(
             Spacer(modifier = Modifier.width(8.dp))
             Icon(
                 imageVector = Icons.Rounded.Close,
-                contentDescription = "Clear search",
+                contentDescription = stringResource(R.string.nostop_settings_search_clear),
                 modifier = Modifier
                     .size(18.dp)
                     .clickable { onValueChange("") },
