@@ -30,6 +30,8 @@ import com.stash.feature.community.CommunityPostingHost
 import com.stash.feature.community.CommunityScreen
 import com.stash.feature.community.CommunitySection
 import com.stash.feature.community.rememberCommunityPosting
+import com.stash.feature.home.NonstopExploreScreen
+import com.stash.feature.home.NonstopRadioScreen
 import com.stash.feature.home.HomeScreen
 import com.stash.feature.home.MixBrowseScreen
 import com.stash.feature.home.MixRail
@@ -222,6 +224,33 @@ private fun StashNavGraph(
             AboveChrome {
                 MixBuilderScreen(onBack = { navController.popBackStack() })
             }
+        }
+        composable<ExploreRoute> {
+            NonstopExploreScreen(
+                onOpenAlbum = { album ->
+                    navController.navigate(
+                        SearchAlbumRoute(
+                            browseId = album.id,
+                            title = album.title,
+                            artist = album.artist,
+                            thumbnailUrl = album.thumbnailUrl,
+                            year = album.year,
+                            source = album.source,
+                            qobuzTrackCount = album.trackCount,
+                        ),
+                    )
+                },
+                onOpenMix = { playlistId ->
+                    navController.navigate(PlaylistDetailRoute(playlistId))
+                },
+            )
+        }
+        composable<RadioRoute> {
+            NonstopRadioScreen(
+                onOpenMix = { playlistId ->
+                    navController.navigate(PlaylistDetailRoute(playlistId))
+                },
+            )
         }
         composable<LibraryRoute> {
             LibraryScreen(
