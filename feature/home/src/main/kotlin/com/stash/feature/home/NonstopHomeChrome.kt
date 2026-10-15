@@ -38,6 +38,9 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.geometry.Offset
+import com.stash.core.ui.theme.LocalIsDarkTheme
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
@@ -62,6 +65,11 @@ private val brandWhite = Color(0xFFF6F5FA)
 @Composable
 fun NonstopWordmark(modifier: Modifier = Modifier) {
     val font = SpaceGrotesk
+    val dark = LocalIsDarkTheme.current
+    val neutral = if (dark) brandWhite else Color(0xFF211833)
+    val violet = if (dark) brandPurple else Color(0xFF7A42B2)
+    val blue = if (dark) brandBlue else Color(0xFF2469B1)
+    val mint = if (dark) brandMint else Color(0xFF127E76)
     val common = TextStyle(
         fontFamily = font,
         fontWeight = FontWeight.Bold,
@@ -73,7 +81,7 @@ fun NonstopWordmark(modifier: Modifier = Modifier) {
         verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(0.dp),
     ) {
-        Text("N", style = common, color = brandWhite)
+        Text("N", style = common, color = neutral)
         Box {
             // Equalizer is centred over Ø, not an extension of its diagonal.
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -95,7 +103,10 @@ fun NonstopWordmark(modifier: Modifier = Modifier) {
                 }
                 Text(
                     "Ø",
-                    style = common.copy(brush = Brush.linearGradient(listOf(brandPurple, brandBlue, brandMint))),
+                    style = common.copy(
+                        brush = Brush.linearGradient(listOf(violet, blue, mint)),
+                        shadow = if (dark) Shadow(brandBlue.copy(alpha = 0.45f), Offset.Zero, 10f) else null,
+                    ),
                 )
             }
         }
@@ -103,7 +114,8 @@ fun NonstopWordmark(modifier: Modifier = Modifier) {
         Text(
             "Stop",
             style = common.copy(
-                brush = Brush.horizontalGradient(listOf(brandPurple, brandBlue, brandMint)),
+                brush = Brush.horizontalGradient(listOf(violet, blue, mint)),
+                shadow = if (dark) Shadow(brandPurple.copy(alpha = 0.24f), Offset.Zero, 8f) else null,
                 fontWeight = FontWeight.Medium,
             ),
         )
@@ -124,6 +136,7 @@ fun NonstopMediaFilters(
     var lastTapped by remember { mutableIntStateOf(-1) }
     var pulseId by remember { mutableIntStateOf(0) }
     val pulse = remember { Animatable(0f) }
+    val dark = LocalIsDarkTheme.current
     LaunchedEffect(pulseId) {
         if (pulseId > 0) {
             pulse.snapTo(0f)
@@ -163,13 +176,22 @@ fun NonstopMediaFilters(
                             )
                         }
                     }
-                    .background(
-                        Brush.horizontalGradient(
-                            listOf(
-                                Color(0xFFAA79CF).copy(alpha = 0.09f + 0.25f * prominence + 0.16f * burst),
-                                Color(0xFF6A6996).copy(alpha = 0.09f + 0.14f * prominence),
-                            ),
-                        ),
+.background(
+                        if (!dark && active) {
+                            Brush.horizontalGradient(
+                                listOf(
+                                    Color(0xFF703C9C).copy(alpha = 0.94f),
+                                    Color(0xFF444F8A).copy(alpha = 0.92f),
+                                ),
+                            )
+                        } else {
+                            Brush.horizontalGradient(
+                                listOf(
+                                    Color(0xFFAA79CF).copy(alpha = 0.09f + 0.25f * prominence + 0.16f * burst),
+                                    Color(0xFF6A6996).copy(alpha = 0.09f + 0.14f * prominence),
+                                ),
+                            )
+                        },
                         shape,
                     )
                     .border(
