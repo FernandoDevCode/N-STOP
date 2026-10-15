@@ -112,4 +112,15 @@
     <string name="nostop_about_checking">Verificando atualizações…</string>
     <string name="nostop_about_checking_short">Verificando…</string>
     <string name="nostop_about_check_updates">Verificar atualizações</string>
+    <string name="nostop_accounts_connections">Conexões</string>
+    <string name="nostop_accounts_mirror_likes">Sincronizar suas curtidas</string>
+    <string name="nostop_accounts_discord_title">Antes de conectar o Discord</string>
+    <string name="nostop_accounts_discord_warning">O Discord não oferece um método oficial para aplicativos móveis atualizarem seu status. Por isso, o NØSTOP usa a sessão da sua conta. O Discord considera isso um self-bot e pode aplicar penalidades.\n\nA fiscalização costuma focar spam, mas ainda existe risco para a sua conta.\n\nAo desconectar, o status é limpo e o token é removido deste celular.</string>
+    <string name="nostop_accounts_connect_anyway">Conectar mesmo assim</string>
+    <string name="nostop_accounts_cancel">Cancelar</string>
+    <string name="nostop_accounts_finish_connect">Concluir conexão</string>
+    <string name="nostop_accounts_lastfm_first">Conecte o Last.fm primeiro.</string>
+    <string name="nostop_accounts_lastfm_offline">Não foi possível acessar o Last.fm. Suas reproduções continuam na fila para envio posterior.</string>
+    <string name="nostop_accounts_lastfm_no_scrobbles">Nenhuma reprodução nova para enviar.</string>
+    <string name="nostop_accounts_lastfm_sent">%1$d reproduções enviadas ao Last.fm.</string>
 </resources>
