@@ -192,6 +192,11 @@ fun HomeScreen(
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var selectedMediaTab by rememberSaveable { mutableIntStateOf(0) }
+    val podcastController = com.stash.feature.home.podcasts.LocalPodcastViewModel.current
+    val podcastOpenRequest = podcastController?.openRequests?.collectAsStateWithLifecycle()?.value ?: 0
+    LaunchedEffect(podcastOpenRequest) {
+        if (podcastOpenRequest > 0) selectedMediaTab = 1
+    }
     val heroMinimized by viewModel.heroMinimized.collectAsStateWithLifecycle()
     // Master streaming-mode flag. Both the top-bar StreamingModeChip and
     // the sheet (StreamingModeSheet) render from this single source of
