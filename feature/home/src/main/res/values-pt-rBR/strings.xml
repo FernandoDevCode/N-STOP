@@ -23,4 +23,8 @@
     <string name="nostop_home_setup">Configurar →</string>
     <string name="nostop_home_no_lossless">Áudio sem perdas indisponível no momento</string>
     <string name="nostop_home_connect">Conectar →</string>
+    <string name="nonstop_filter_music">Música</string>
+    <string name="nonstop_filter_podcasts">Podcasts</string>
+    <string name="nonstop_filter_audiobooks">Audiobooks</string>
+    <string name="nonstop_media_coming_soon">A reprodução de podcasts e audiobooks será integrada em uma próxima etapa. Sua música e biblioteca continuam disponíveis.</string>
 </resources>
