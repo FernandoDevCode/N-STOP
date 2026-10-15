@@ -68,19 +68,20 @@ class PodcastViewModel @Inject constructor(
     private var listJob: Job? = null
     private var controller: MediaController? = null
     private var pendingPlay: PodcastEpisode? = null
-    private val controllerFuture = MediaController.Builder(
-        context,
-        SessionToken(context, ComponentName(context, PodcastPlaybackService::class.java)),
-    ).buildAsync()
+    // Do not start a second MediaSessionService merely to show the music Home.
+    // Connect on first podcast play; reconnect on app launch only if previously used.
+    private var controllerFuture: com.google.common.util.concurrent.ListenableFuture<MediaController>? = null
 
-    private val listener = object : Player.Listener {
-        override fun onEvents(player: Player, events: Player.Events) = refreshPlayback()
-    }
-
-    init {
-        controllerFuture.addListener({
+    private fun connect() {
+        if (controllerFuture != null) return
+        val future = MediaController.Builder(
+            context,
+            SessionToken(context, ComponentName(context, PodcastPlaybackService::class.java)),
+        ).buildAsync()
+        controllerFuture = future
+        future.addListener({
             runCatching {
-                controller = controllerFuture.get()
+                controller = future.get()
                 controller?.addListener(listener)
                 refreshPlayback()
                 pendingPlay?.let { pending ->
@@ -88,9 +89,19 @@ class PodcastViewModel @Inject constructor(
                     play(pending)
                 }
             }.onFailure { error ->
+                controllerFuture = null
                 _state.update { it.copy(error = error.message ?: "Falha ao conectar o player") }
             }
         }, ContextCompat.getMainExecutor(context))
+    }
+
+    private val listener = object : Player.Listener {
+        override fun onEvents(player: Player, events: Player.Events) = refreshPlayback()
+    }
+
+    init {
+        if (context.getSharedPreferences("nonstop_podcasts", Context.MODE_PRIVATE)
+                .getBoolean("ever_played", false)) connect()
         viewModelScope.launch {
             catalog.followed.collect { shows -> _state.update { it.copy(followed = shows) } }
         }
@@ -163,6 +174,7 @@ class PodcastViewModel @Inject constructor(
         val player = controller
         if (player == null) {
             pendingPlay = episode
+            connect()
             return
         }
         viewModelScope.launch {
@@ -184,6 +196,8 @@ class PodcastViewModel @Inject constructor(
                 .build()
             val position = context.getSharedPreferences("nonstop_podcasts", Context.MODE_PRIVATE)
                 .getLong("position_${episode.id}", 0L)
+            context.getSharedPreferences("nonstop_podcasts", Context.MODE_PRIVATE)
+                .edit().putBoolean("ever_played", true).apply()
             player.setMediaItem(item, position)
             player.prepare()
             player.play()
@@ -225,6 +239,7 @@ class PodcastViewModel @Inject constructor(
                 playingId = player.currentMediaItem?.mediaId,
                 playingTitle = player.currentMediaItem?.mediaMetadata?.title?.toString().orEmpty(),
                 isPlaying = player.isPlaying,
+                foreground = it.foreground || (player.isPlaying && !musicPlayer.playerState.value.playWhenReady),
                 positionMs = player.currentPosition.coerceAtLeast(0),
                 durationMs = player.duration.takeIf { d -> d != C.TIME_UNSET && d > 0 } ?: 0,
             )
@@ -308,7 +323,7 @@ class PodcastViewModel @Inject constructor(
 
     override fun onCleared() {
         controller?.removeListener(listener)
-        MediaController.releaseFuture(controllerFuture)
+        controllerFuture?.let(MediaController::releaseFuture)
         super.onCleared()
     }
 }
