@@ -91,4 +91,6 @@
     <string name="nostop_hub_library_hint">Local dos arquivos, backups e downloads</string>
     <string name="nostop_hub_appearance_hint">Tema, AMOLED, idioma e organização do Início</string>
     <string name="nostop_hub_about_hint">Versão, diagnósticos e relatórios de falhas</string>
+    <string name="nostop_settings_search_placeholder">Buscar nas configurações</string>
+    <string name="nostop_settings_search_clear">Limpar busca</string>
 </resources>
