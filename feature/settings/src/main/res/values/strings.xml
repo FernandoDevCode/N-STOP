@@ -28,4 +28,8 @@
     <string name="web_library_sent_title">Sent</string>
     <!-- %1$s the browser, %2$s likes, %3$s playlists, %4$s plays. -->
     <string name="web_library_sent_body">Sent %2$s, %3$s and %4$s to %1$s. It asks there before adding anything.</string>
+    <string name="nostop_appearance">Appearance</string>
+    <string name="nostop_language">Language</string>
+    <string name="nostop_language_system">System</string>
+    <string name="nostop_language_description">Choose the app language. System follows your device language.</string>
 </resources>
