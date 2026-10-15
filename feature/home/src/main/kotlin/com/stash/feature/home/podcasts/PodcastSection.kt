@@ -32,7 +32,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -95,18 +94,6 @@ fun PodcastSection(viewModel: PodcastViewModel = LocalPodcastViewModel.current ?
                 style = MaterialTheme.typography.bodyMedium)
         }
         if (state.busy) CircularProgressIndicator(modifier = Modifier.size(28.dp))
-
-        if (state.playingId != null) {
-            PodcastPlaybackControls(
-                title = state.playingTitle,
-                isPlaying = state.isPlaying,
-                positionMs = state.positionMs,
-                durationMs = state.durationMs,
-                onTogglePause = viewModel::togglePause,
-                onJump = viewModel::jump,
-                onSeek = viewModel::seek,
-            )
-        }
 
         val show = state.selected
         if (show != null) {
@@ -263,41 +250,3 @@ private fun PodcastEpisodeRow(
     }
 }
 
-private fun formatMs(ms: Long): String {
-    val seconds = (ms.coerceAtLeast(0) / 1000)
-    return "%d:%02d".format(seconds / 60, seconds % 60)
-}
-
-@Composable
-private fun PodcastPlaybackControls(
-    title: String,
-    isPlaying: Boolean,
-    positionMs: Long,
-    durationMs: Long,
-    onTogglePause: () -> Unit,
-    onJump: (Long) -> Unit,
-    onSeek: (Float) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
-            maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Slider(
-            value = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f,
-            onValueChange = onSeek,
-            enabled = durationMs > 0,
-        )
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("${formatMs(positionMs)} / ${formatMs(durationMs)}",
-                style = MaterialTheme.typography.labelSmall)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { onJump(-15_000) }) { Text("-15s") }
-                IconButton(onClick = onTogglePause) {
-                    Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = stringResource(if (isPlaying) R.string.podcast_pause else R.string.podcast_play))
-                }
-                TextButton(onClick = { onJump(30_000) }) { Text("+30s") }
-            }
-        }
-    }
-}
