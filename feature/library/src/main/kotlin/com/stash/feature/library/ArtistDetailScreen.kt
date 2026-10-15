@@ -431,8 +431,8 @@ private fun ArtistDetailHeader(
                         Brush.verticalGradient(
                             0f to Color.Black.copy(alpha = 0.22f),
                             0.45f to Color.Transparent,
-                            0.72f to MaterialTheme.colorScheme.background.copy(alpha = 0.52f),
-                            1f to MaterialTheme.colorScheme.background,
+                            0.72f to Color(0xFF090B18).copy(alpha = 0.64f),
+                            1f to Color(0xFF090B18).copy(alpha = 0.93f),
                         ),
                     ),
             )
