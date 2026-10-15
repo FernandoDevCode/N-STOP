@@ -64,4 +64,9 @@
     <string name="podcast_delete">Delete file</string>
     <string name="podcast_download">Download</string>
     <string name="podcast_downloading">Downloading %1$d%%</string>
+    <string name="podcast_now_playing">NOW PLAYING · PODCAST</string>
+    <string name="podcast_collapse_player">Close podcast player</string>
+    <string name="podcast_cover_art">Episode cover art</string>
+    <string name="podcast_no_active_episode">Choose an episode to start listening.</string>
+    <string name="podcast_speed">Speed</string>
 </resources>
