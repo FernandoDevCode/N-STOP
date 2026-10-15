@@ -1237,114 +1237,90 @@ private fun TrackInfoBlock(
     isLiked: Boolean,
     onLikeTap: () -> Unit,
 ) {
-    Box(modifier = Modifier.fillMaxWidth()) {
+    val ink = npInk()
+    // Plexamp-inspired editorial composition: the track reads from the left,
+    // without squeezing the title between two floating actions. The entire
+    // information block still opens the artist, while the heart and sleep
+    // timer remain independent, accessible controls.
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 40.dp)
+                .weight(1f)
                 .then(
                     if (track != null) {
                         Modifier.clickable(enabled = !resolvingArtist) { onTrackInfoTapped() }
-                    } else {
-                        Modifier
-                    },
+                    } else Modifier,
                 ),
-            horizontalAlignment = Alignment.CenterHorizontally,
+            horizontalAlignment = Alignment.Start,
         ) {
+            Text(
+                text = track?.title ?: "Not Playing",
+                fontSize = 23.sp,
+                lineHeight = 27.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = (-0.5).sp,
+                color = ink,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Clip,
+                modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE),
+            )
+            Spacer(Modifier.height(StackRhythm.TitleToArtist))
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                // A long title scrolls instead of ending in "…": every
-                // character is worth more than an ellipsis here, and the
-                // width the format badge used to take beside it now
-                // belongs to the title — QualityLine below already says
-                // FLAC and the bit depth, so the badge said it twice.
+                val displayArtist = remember(track?.artist) { track?.artist?.primaryArtist().orEmpty() }
                 Text(
-                    text = track?.title ?: "Not Playing",
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = npInk(),
+                    text = buildString {
+                        append(displayArtist)
+                        if (track != null && track.album.isNotBlank()) {
+                            append("  •  ")
+                            append(track.album)
+                        }
+                    },
+                    fontSize = 14.sp,
+                    color = ink.copy(alpha = 0.73f),
                     maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Clip,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .weight(1f, fill = false)
-                        .basicMarquee(iterations = Int.MAX_VALUE),
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
                 )
                 if (track != null) {
-                    Spacer(modifier = Modifier.width(6.dp))
                     if (resolvingArtist) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
+                            modifier = Modifier.size(14.dp),
                             strokeWidth = 2.dp,
-                            color = npInk(),
+                            color = ink.copy(alpha = 0.65f),
                         )
                     } else {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                             contentDescription = stringResource(R.string.nostop_np_open_artist),
-                            tint = npInk().copy(alpha = 0.6f),
-                            modifier = Modifier.size(18.dp),
+                            tint = ink.copy(alpha = 0.55f),
+                            modifier = Modifier.size(17.dp),
                         )
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.height(StackRhythm.TitleToArtist))
-
-            // Collapse collaboration credits to the lead act
-            // ("Metro Boomin, Travis Scott" → "Metro Boomin"), and
-            // remember the split — this Text recomposes with every
-            // player-state change.
-            val displayArtist = remember(track) { track?.artist?.primaryArtist() }
-            Text(
-                text = buildString {
-                    if (track != null && displayArtist != null) {
-                        append(displayArtist)
-                        if (track.album.isNotBlank()) {
-                            append(" • ")
-                            append(track.album)
-                        }
-                    }
-                },
-                fontSize = 15.sp,
-                color = npInk().copy(alpha = 0.7f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
         }
-        // Sleep timer — floated to the leading edge, mirroring the
-        // Like heart's placement on the trailing edge. Accented
-        // while a timer is armed, with the time left under the moon
-        // ("23m", "0:45", "End"), so the state is visible at a
-        // glance without opening the sheet.
-        if (track != null) {
-            SleepTimerButton(
-                state = sleepTimerState,
-                onClick = onSleepTimerClick,
-                activeTint = accent,
-                idleTint = npInk().copy(alpha = 0.7f),
-                buttonSize = 26.dp,
-                iconSize = 20.dp,
-                modifier = Modifier.align(Alignment.CenterStart),
-            )
-        }
-
-        // Like heart — floated to the trailing edge and vertically centred
-        // against the title/artist block. The track's other actions live in
-        // the top row (pinned) or the ⋮ menu.
         if (track != null) {
             com.stash.core.ui.components.LikeButton(
                 isLiked = isLiked,
                 onTap = onLikeTap,
-                unlikedTint = npInk().copy(alpha = 0.7f),
-                size = 26.dp,
-                modifier = Modifier.align(Alignment.CenterEnd),
+                unlikedTint = ink.copy(alpha = 0.76f),
+                size = 28.dp,
+            )
+            SleepTimerButton(
+                state = sleepTimerState,
+                onClick = onSleepTimerClick,
+                activeTint = accent,
+                idleTint = ink.copy(alpha = 0.68f),
+                buttonSize = 28.dp,
+                iconSize = 20.dp,
             )
         }
     }
@@ -1383,10 +1359,10 @@ private fun AlbumArtSection(
                 .fillMaxSize()
                 .padding(10.dp)
                 .shadow(
-                    elevation = 40.dp,
-                    shape = RoundedCornerShape(20.dp),
-                    ambientColor = accentColor.copy(alpha = 0.25f),
-                    spotColor = accentColor.copy(alpha = 0.25f),
+                    elevation = 46.dp,
+                    shape = RoundedCornerShape(14.dp),
+                    ambientColor = accentColor.copy(alpha = 0.32f),
+                    spotColor = accentColor.copy(alpha = 0.28f),
                 ),
         )
 
@@ -1407,7 +1383,7 @@ private fun AlbumArtSection(
             },
             modifier = Modifier
                 .fillMaxSize()
-                .clip(RoundedCornerShape(20.dp)),
+                .clip(RoundedCornerShape(14.dp)),
         )
     }
 }
