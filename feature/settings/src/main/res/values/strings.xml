@@ -89,4 +89,10 @@
     <string name="nostop_lyrics_apple_description">Prefers Apple Music word-synced lyrics. Switching to LRC only removes stored word-synced lyrics; use Fetch lyrics in Library Health to fetch line-synced lyrics.</string>
     <string name="nostop_duration">Duration</string>
     <string name="nostop_duration_seconds">%1$d sec</string>
+    <string name="nostop_hub_playback_hint">Sleep timer, autoplay radio, crossfade, gapless</string>
+    <string name="nostop_hub_quality_hint">Streaming quality, lossless, download quality</string>
+    <string name="nostop_hub_accounts_hint">Spotify, YouTube Music, Last.fm</string>
+    <string name="nostop_hub_library_hint">Storage location, backups, downloads</string>
+    <string name="nostop_hub_appearance_hint">Theme, AMOLED, Home layout</string>
+    <string name="nostop_hub_about_hint">Version, diagnostics, crash reports</string>
 </resources>
