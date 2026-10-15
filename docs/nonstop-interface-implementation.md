@@ -119,3 +119,11 @@ Branch: `nonstop`.
 ### Kotlin compilation fixes after initial CI
 - First shared-chrome CI caught two narrowly scoped Kotlin errors: a removed UUID import still used by download temp naming, and OkHttp 4's Dns interface requiring an explicit object implementation. Both corrected without changing product scope.
 - Re-run all checks on current head: `[do test]`.
+
+## Full-screen podcast Now Playing — 2026-10-15
+- A global podcast mini-player tap now opens a dedicated PodcastNowPlayingRoute, rather than switching to Home and selecting Podcasts.
+- The route shares the same activity-scoped PodcastViewModel / MediaController; it does not create a second MediaSession or mutate music history.
+- Full-screen transport includes the current episode title, show name, artwork fallback, scrubber with commit-on-release, elapsed/total time supporting multi-hour episodes, 15-second rewind, play/pause, 30-second skip, and an adjustable playback-speed cycle (1×/1.25×/1.5×/2×).
+- The same slide-up/down transitions and chrome-hidden behavior as the music Now Playing route apply; Android Back and the downward arrow dismiss the podcast player without pausing audio.
+- Removed the duplicated in-list seek/player controls; episode play buttons and global mini-player remain available in the Podcasts Home tab.
+- Android compilation and all unit suites must validate this change: `[do test]`.
