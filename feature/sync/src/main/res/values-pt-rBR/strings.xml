@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="nostop_sync_title">Sincronizar</string>
+    <string name="nostop_sync_recommended">RECOMENDADAS</string>
+    <string name="nostop_sync_schedule">Programação</string>
+    <string name="nostop_sync_library">Biblioteca</string>
+    <string name="nostop_sync_recent">Sincronizações recentes</string>
+    <string name="nostop_sync_refresh_question">Mudar para Atualizar?</string>
+    <string name="nostop_sync_refresh">Mudar para Atualizar</string>
+    <string name="nostop_sync_cancel">Cancelar</string>
+    <string name="nostop_sync_undo_question">Desfazer última sincronização?</string>
+    <string name="nostop_sync_undo">Desfazer sincronização</string>
+    <string name="nostop_sync_undone">Sincronização desfeita</string>
+    <string name="nostop_sync_ok">OK</string>
+    <string name="nostop_sync_downloads">Downloads</string>
+    <string name="nostop_sync_downloads_hint">Ver downloads atuais, fila e histórico</string>
+    <string name="nostop_sync_open_downloads">Abrir downloads</string>
+    <string name="nostop_sync_blocked">Músicas bloqueadas</string>
+    <string name="nostop_sync_failed">Downloads com falha</string>
+    <string name="nostop_sync_log">REGISTRO DE SINCRONIZAÇÃO</string>
+    <string name="nostop_sync_copy">Copiar</string>
+    <string name="nostop_sync_paused">Sincronização automática pausada após desfazer. Toque em Sincronizar para retomar.</string>
+    <string name="nostop_sync_undo_last">Desfazer última sincronização</string>
+    <string name="nostop_sync_mix_mode">Modo de sincronização dos mixes</string>
+    <string name="nostop_sync_refresh_short">Atualizar</string>
+    <string name="nostop_sync_accumulate">Acumular</string>
+    <string name="nostop_sync_recommended_tracks">Faixas recomendadas</string>
+    <string name="nostop_sync_studio_only">Somente gravações de estúdio</string>
+    <string name="nostop_sync_studio_hint">Exclui covers, gravações ao vivo e vídeos enviados por usuários das suas músicas curtidas. Não afeta outras playlists do YouTube.</string>
+    <string name="nostop_sync_tracks_count">%1$d faixas</string>
+    <string name="nostop_sync_need_attention">%1$d faixas precisam de atenção</string>
+    <string name="nostop_sync_no_blocked">Nenhuma música bloqueada</string>
+    <string name="nostop_sync_undo_card_hint">Restaura as %1$s alteradas pela sincronização ao estado anterior (%2$s)</string>
+    <string name="nostop_sync_mode_refresh_hint">Os mixes recebem músicas novas a cada sincronização</string>
+    <string name="nostop_sync_mode_accumulate_hint">Músicas novas são adicionadas às existentes</string>
+    <string name="nostop_sync_lastfm_on">Mantém uma playlist de recomendações do Last.fm atualizada</string>
+    <string name="nostop_sync_lastfm_off">Desativado — não gera recomendações</string>
+    <string name="nostop_sync_blocked_count">%1$d músicas bloqueadas não serão baixadas novamente</string>
+    <string name="nostop_sync_undoing">Desfazendo…</string>
+    <string name="nostop_sync_undo_short">Desfazer</string>
+</resources>
