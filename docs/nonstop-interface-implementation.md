@@ -25,3 +25,12 @@ Branch: `nonstop`.
 - Main now-playing canvas no longer displays quality/bitrate text; audio diagnostics logic is still retained.
 - Global theme now follows brand violet/cyan/mint, with separate light-theme contrast colors.
 - Brand wordmark and resting filter selections adapt to light mode.
+
+## Final home/identity pass (post-second CI)
+- The music Home now prioritizes user library shortcuts ("Volte para isso"), rediscovery ("Redescoberta"), personalized mixes, and latest releases; saved custom ordering is retained.
+- Artwork-first mix cards use a cinematic image scrim and readable overlaid labels.
+- The donor ticker has been moved below the discovery feed to avoid competing for attention.
+- The local-library artist page now uses the same full-bleed real-image hero as online artist profiles.
+- Android 26+ adaptive launcher icon uses a native vector approximation of the N-shaped waveform brand mark, violet to cyan to mint; the default app name is NØNStop.
+- The pre-Android-26 PNG launcher icons still need production raster export (not included in this checkpoint).
+- This checkpoint does not yet include RSS podcasts/audiobook media support or a fully exported glow-accurate wordmark artwork.
