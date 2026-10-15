@@ -63,4 +63,26 @@
     <string name="nostop_nav_library">Biblioteca e armazenamento</string>
     <string name="nostop_nav_about">Sobre e ajuda</string>
     <string name="nostop_search_empty">Nenhuma configuração encontrada para "%1$s"</string>
+    <string name="nostop_playback_mode">Modo</string>
+    <string name="nostop_stream_only">Somente streaming</string>
+    <string name="nostop_download">Baixar</string>
+    <string name="nostop_streaming">Streaming</string>
+    <string name="nostop_cellular">Ouvir usando dados móveis</string>
+    <string name="nostop_cellular_desc">Permite ouvir usando dados móveis (5G/LTE). Desativado por padrão para evitar consumo inesperado.</string>
+    <string name="nostop_via_youtube">Reproduzir pelo YouTube</string>
+    <string name="nostop_via_youtube_desc">Ignora o Qobuz e reproduz pelo YouTube. Ative se o áudio sem perdas falhar ou tocar apenas trechos curtos.</string>
+    <string name="nostop_force_qobuz">Usar somente Qobuz (depuração)</string>
+    <string name="nostop_force_qobuz_desc">Somente para depuração. Transmite e baixa pelo Qobuz, sem alternativa pelo YouTube.</string>
+    <string name="nostop_stream_unavailable">Streaming indisponível nesta versão.</string>
+    <string name="nostop_autoplay">Reprodução automática</string>
+    <string name="nostop_autoplay_radio">Rádio automática</string>
+    <string name="nostop_autoplay_radio_desc">Quando a fila estiver acabando, reproduz músicas semelhantes automaticamente. Requer internet.</string>
+    <string name="nostop_crossfade">Transição entre músicas</string>
+    <string name="nostop_crossfade_desc">Diminui o volume da música atual enquanto aumenta o da próxima. Ao pular manualmente, a troca continua imediata.</string>
+    <string name="nostop_lyrics">Letras</string>
+    <string name="nostop_lrc_only">Somente LRC</string>
+    <string name="nostop_lyrics_lrc_description">A sincronização palavra por palavra está desativada. Para obtê-la novamente, volte para Apple Music e use Buscar letras em Saúde da biblioteca.</string>
+    <string name="nostop_lyrics_apple_description">Prefere letras sincronizadas palavra por palavra do Apple Music. Ao mudar para somente LRC, as letras armazenadas desse tipo são removidas; use Buscar letras em Saúde da biblioteca para obter letras sincronizadas por linha.</string>
+    <string name="nostop_duration">Duração</string>
+    <string name="nostop_duration_seconds">%1$d s</string>
 </resources>
