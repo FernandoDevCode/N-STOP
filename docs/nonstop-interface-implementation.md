@@ -19,3 +19,9 @@ Branch: `nonstop`.
 ## Validation
 - Push commit containing `[do test]` to run the repository's full CI matrix on this checkpoint.
 - Do not deliver or request per-checkpoint phone installs; wait until full implementation and final validation.
+
+## Second UI pass
+- Catalog artist hero upgraded to real full-bleed imagery with the existing playable action and social navigation.
+- Main now-playing canvas no longer displays quality/bitrate text; audio diagnostics logic is still retained.
+- Global theme now follows brand violet/cyan/mint, with separate light-theme contrast colors.
+- Brand wordmark and resting filter selections adapt to light mode.
