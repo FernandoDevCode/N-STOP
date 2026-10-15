@@ -2,6 +2,8 @@ package com.stash.feature.home.podcasts
 
 import android.content.Context
 import android.net.Uri
+import androidx.work.Constraints
+import androidx.work.NetworkType
 import androidx.work.CoroutineWorker
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
@@ -50,6 +52,7 @@ internal object PodcastFiles {
     fun enqueue(context: Context, episode: PodcastEpisode): UUID {
         require(validPodcastUrl(episode.audioUrl))
         val request = OneTimeWorkRequestBuilder<PodcastDownloadWorker>()
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .setInputData(workDataOf(
                 PodcastDownloadWorker.KEY_ID to episode.id,
                 PodcastDownloadWorker.KEY_URL to episode.audioUrl,
@@ -95,6 +98,9 @@ class PodcastDownloadWorker(context: Context, params: WorkerParameters) : Corout
                 .build()).execute().use { response ->
                 if (!response.isSuccessful) return@withContext Result.failure()
                 val body = response.body ?: return@withContext Result.failure()
+                val type = body.contentType()?.toString().orEmpty().lowercase()
+                if (type.startsWith("text/") || type.contains("json") || type.contains("xml") ||
+                    type.startsWith("video/")) return@withContext Result.failure()
                 val total = body.contentLength()
                 if (total > MAX_BYTES) return@withContext Result.failure()
                 var bytes = 0L
