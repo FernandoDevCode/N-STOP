@@ -17,6 +17,8 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.ui.res.stringResource
+import com.stash.core.ui.R
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -57,7 +59,7 @@ fun SearchFilterBar(
             .focusRequester(focusRequester),
         placeholder = {
             Text(
-                text = "Filter tracks...",
+                text = stringResource(R.string.nostop_filter_tracks),
                 style = MaterialTheme.typography.bodyMedium,
             )
         },
@@ -73,7 +75,7 @@ fun SearchFilterBar(
                 IconButton(onClick = onClear) {
                     Icon(
                         imageVector = Icons.Default.Close,
-                        contentDescription = "Clear search",
+                        contentDescription = stringResource(R.string.nostop_filter_clear),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
