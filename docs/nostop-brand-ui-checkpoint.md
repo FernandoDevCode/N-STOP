@@ -6,7 +6,7 @@ Branch: `nonstop` · Date: 2026-10-15
 
 - Android 26+ adaptive launcher artwork: original geometric slashed-ring mark, NØSTOP midnight graphite backdrop. Normal and round adaptive launcher resources now reference the new vector.
 - Home app wordmark replaced with a responsive `NØSTOP` text brand, using the existing Space Grotesk font and album-aware text color.
-- Replaced former purple/cyan main UI theme colors with NØSTOP graphite, botanical lime, muted mint and mineral-white light mode. Legacy `Stash*` Kotlin constant names remain as internal compatibility identifiers.
+- Replaced former purple/cyan main UI theme colors with NØSTOP graphite, botanical lime, muted mint and mineral-white light mode. Light mode uses separate darker accent ink for readable small labels. Legacy `Stash*` Kotlin constant names remain as internal compatibility identifiers.
 - Localized reusable UI in `core:ui`: like destinations, stream/download picker, search filter, track option menus, track sharing, and streaming mode description.
 - The sharing sheet now chooses the informational-share icon through a boolean parameter rather than inspecting English words, so Portuguese never changes this behavior.
 - Music streaming, downloaded file handling, Spotify/YouTube URLs, share-worker and OAuth callbacks were left unchanged intentionally.
