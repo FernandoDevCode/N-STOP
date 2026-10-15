@@ -214,11 +214,11 @@
     <string name="nostop_storage_dismiss">Fechar</string>
     <string name="nostop_storage_moving_progress">Movendo %1$d de %2$d...</string>
     <string name="nostop_storage_downloads">Downloads</string>
-    <string name="nostop_storage_export_label_likes">Somente músicas curtidas</string>
+    <string name="nostop_storage_export_label_likes_only">Somente músicas curtidas</string>
     <string name="nostop_storage_export_label_everything">Tudo</string>
     <string name="nostop_storage_export_label_library_only">Somente biblioteca</string>
     <string name="nostop_storage_export_label_settings_only">Somente configurações</string>
-    <string name="nostop_storage_export_desc_likes">Apenas suas músicas curtidas. Arquivo pequeno.</string>
+    <string name="nostop_storage_export_desc_likes_only">Apenas suas músicas curtidas. Arquivo pequeno.</string>
     <string name="nostop_storage_export_desc_everything">Biblioteca e configurações. Não é possível restaurar logins.</string>
     <string name="nostop_storage_export_desc_library_only">Músicas, playlists e histórico. Sem configurações.</string>
     <string name="nostop_storage_export_desc_settings_only">Preferências sem a biblioteca.</string>
