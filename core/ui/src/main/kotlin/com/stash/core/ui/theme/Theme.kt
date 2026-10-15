@@ -18,11 +18,11 @@ import androidx.core.view.WindowCompat
 
 val StashDarkColorScheme = darkColorScheme(
     primary = StashPurple,
-    onPrimary = Color(0xFF142015),
+    onPrimary = Color(0xFF1C112C),
     primaryContainer = StashPurpleDark,
     onPrimaryContainer = StashPurpleLight,
     secondary = StashCyan,
-    onSecondary = Color(0xFF102219),
+    onSecondary = Color(0xFF0B2827),
     secondaryContainer = StashCyanDark,
     onSecondaryContainer = StashCyanLight,
     tertiary = StashCyan,
@@ -40,14 +40,14 @@ val StashDarkColorScheme = darkColorScheme(
 )
 
 val StashLightColorScheme = lightColorScheme(
-    primary = Color(0xFF285D3F),                 // dark botanical green on light background
+    primary = Color(0xFF6638A8),                 // accessible deep violet on light background
     onPrimary = Color.White,
     primaryContainer = StashPurple,
-    onPrimaryContainer = Color(0xFF193321),
-    secondary = Color(0xFF2B6954),
+    onPrimaryContainer = Color(0xFF28193B),
+    secondary = Color(0xFF116E68),
     onSecondary = Color.White,
     secondaryContainer = StashCyanLight,
-    onSecondaryContainer = Color(0xFF173A2C),
+    onSecondaryContainer = Color(0xFF114D4A),
     tertiary = StashCyanDark,
     onTertiary = Color.White,
     background = StashBackgroundLight,
