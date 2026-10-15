@@ -24,6 +24,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -87,8 +89,8 @@ import com.stash.feature.nowplaying.ui.rememberSwipeToSkip
 
 /** shell.css `.mini`: height 60, radius 12, 8 px from the tab bar and the sides. */
 private val MiniHeight = 60.dp
-private val MiniShape = RoundedCornerShape(12.dp)
-val MiniPlayerMargin = 8.dp
+private val MiniShape = androidx.compose.ui.graphics.RectangleShape
+val MiniPlayerMargin = 0.dp
 
 /** box-shadow: 0 16px 32px -12px rgb(0 0 0 / .5). */
 private val MiniShadow = Shadow(
@@ -155,8 +157,7 @@ fun MiniPlayer(
                 .fillMaxWidth()
                 .padding(start = MiniPlayerMargin, end = MiniPlayerMargin, bottom = MiniPlayerMargin)
                 .pressScale(press)
-                .dropShadow(MiniShape, MiniShadow)
-                .chromeGlass(MiniShape)
+                .chromeGlass(MiniShape, ring = false)
                 .clickable(interactionSource = press, indication = ripple(), onClick = onExpand)
                 // The swipe's TalkBack equivalent. Next already has its button; Previous has none.
                 .semantics {
@@ -273,21 +274,15 @@ fun MiniPlayer(
 
                 room?.let { MiniSessionFaces(it) }
 
-                // The controls keep the web's visual sizes (36 / 40 / 36, 10dp apart) inside 48dp
-                // touch slots set edge to edge: half a slot's spare width on each side makes the
-                // same 10dp visual gap, so the targets meet but never overlap.
+                // Real local-library like toggle; queue/skip stay in the expanded player.
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Up next: the queue sheet over this screen. Hidden in a Listen Together room,
-                    // where the queue is the room's (as on Now Playing).
-                    if (room == null) {
-                        MiniIconButton(onClick = onOpenQueue) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                                contentDescription = "Up next",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(22.dp),
-                            )
-                        }
+                    MiniIconButton(onClick = viewModel::onLikeTap) {
+                        Icon(
+                            imageVector = if (track?.stashLikedAt != null) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                            contentDescription = if (track?.stashLikedAt != null) "Unlike song" else "Like song",
+                            tint = if (track?.stashLikedAt != null) chrome.vib else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(24.dp),
+                        )
                     }
 
                     // Play / pause: a 40dp circle in the album's vibrant colour, its ink on top;
@@ -324,14 +319,12 @@ fun MiniPlayer(
                             modifier = Modifier
                                 .size(40.dp)
                                 .pressScale(playPress)
-                                .clip(CircleShape)
-                                .drawBehind { drawRect(chrome.vib) }
-                                .indication(playPress, ripple(color = chrome.onVib)),
+                                .indication(playPress, ripple(color = MaterialTheme.colorScheme.onSurface)),
                             contentAlignment = Alignment.Center,
                         ) {
                             if (loading) {
                                 CircularProgressIndicator(
-                                    color = chrome.onVib,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                     strokeWidth = 2.dp,
                                     modifier = Modifier.size(20.dp),
                                 )
@@ -339,27 +332,14 @@ fun MiniPlayer(
                                 Icon(
                                     imageVector = if (wantsToPlay) Icons.Default.Pause else Icons.Default.PlayArrow,
                                     contentDescription = null,
-                                    tint = chrome.onVib,
-                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(30.dp),
                                 )
                             }
                         }
                     }
 
-                    // Skip next. A Listen Together listener can't skip the room's song: the slot stays, empty,
-                    // so play/pause doesn't move when the host role changes hands.
-                    if (LocalListenTogetherRole.current == ListenTogetherRole.LISTENER) {
-                        Spacer(Modifier.size(MiniTouchTarget))
-                    } else {
-                        MiniIconButton(onClick = viewModel::onSkipNext) {
-                            Icon(
-                                imageVector = Icons.Default.SkipNext,
-                                contentDescription = "Next",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(22.dp),
-                            )
-                        }
-                    }
+
                 }
             }
         }
