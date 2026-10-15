@@ -32,7 +32,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.stash.core.common.extensions.pluralize
+import androidx.compose.ui.res.stringResource
+import com.stash.core.ui.R
+
 
 /**
  * Lightweight model for the playlist picker. Keeps the UI component
@@ -67,7 +69,7 @@ fun SaveToPlaylistSheet(
         // Title + divider stay above the scroll region so the user always
         // knows what sheet they're on.
         Text(
-            text = "Save to Playlist",
+            text = stringResource(R.string.nostop_playlist_save_to),
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
@@ -100,7 +102,7 @@ fun SaveToPlaylistSheet(
                     )
                     Spacer(modifier = Modifier.width(16.dp))
                     Text(
-                        text = "Create New Playlist",
+                        text = stringResource(R.string.nostop_playlist_create_new),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.primary,
                     )
@@ -133,7 +135,7 @@ fun SaveToPlaylistSheet(
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                         Text(
-                            text = pluralize(playlist.trackCount, "track"),
+                            text = if (playlist.trackCount == 1) stringResource(R.string.nostop_playlist_one_track, playlist.trackCount) else stringResource(R.string.nostop_playlist_many_tracks, playlist.trackCount),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -166,12 +168,12 @@ fun CreatePlaylistDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Create Playlist") },
+        title = { Text(stringResource(R.string.nostop_playlist_create)) },
         text = {
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("Playlist name") },
+                label = { Text(stringResource(R.string.nostop_playlist_name)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -181,12 +183,12 @@ fun CreatePlaylistDialog(
                 onClick = { onConfirm(name.trim()) },
                 enabled = name.isNotBlank(),
             ) {
-                Text("Create")
+                Text(stringResource(R.string.nostop_playlist_confirm))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.nostop_playlist_cancel))
             }
         },
     )
