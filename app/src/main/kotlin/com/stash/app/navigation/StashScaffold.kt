@@ -96,7 +96,8 @@ fun StashScaffold(
         navController.currentBackStack.value
             .lastOrNull { it.destination.route in bottomTabRoutes }
             ?.destination?.route
-    val onNowPlaying = currentRoute == NowPlayingRoute::class.qualifiedName
+    val onNowPlaying = currentRoute == NowPlayingRoute::class.qualifiedName ||
+        currentRoute == PodcastNowPlayingRoute::class.qualifiedName
 
     // Whether a detail screen is currently in multi-select mode. Detail screens
     // signal this via `onSelectionModeChanged`; while it is true we hide the
