@@ -41,6 +41,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.stash.app.R
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -366,6 +368,13 @@ private fun StashBottomBar(
     ) {
         TopLevelDestination.entries.forEach { dest ->
             val isSelected = currentRoute == dest.route::class.qualifiedName
+            val destinationLabel = when (dest) {
+                TopLevelDestination.HOME -> stringResource(R.string.nostop_nav_home)
+                TopLevelDestination.LIBRARY -> stringResource(R.string.nostop_nav_library)
+                TopLevelDestination.SEARCH -> stringResource(R.string.nostop_nav_search)
+                TopLevelDestination.SYNC -> stringResource(R.string.nostop_nav_sync)
+                TopLevelDestination.SETTINGS -> stringResource(R.string.nostop_nav_settings)
+            }
             // Selected: the song's text ink while a song plays, the theme's neutral selected
             // colour otherwise (LocalAlbumChrome crossfades that over 800 ms); the change of
             // tab itself takes the web's 180 ms. Unselected tabs stay neutral. Only the
@@ -383,12 +392,12 @@ private fun StashBottomBar(
                 icon = {
                     Icon(
                         imageVector = if (isSelected) dest.selectedIcon else dest.unselectedIcon,
-                        contentDescription = dest.label,
+                        contentDescription = destinationLabel,
                         tint = ink,
                     )
                 },
                 label = {
-                    Text(text = dest.label, style = MaterialTheme.typography.labelSmall, color = ink)
+                    Text(text = destinationLabel, style = MaterialTheme.typography.labelSmall, color = ink)
                 },
                 colors = NavigationBarItemDefaults.colors(
                     indicatorColor = chrome.selectedTab.copy(alpha = 0.12f),
