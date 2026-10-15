@@ -423,14 +423,7 @@ fun SyncScreen(
             onDismissRequest = viewModel::cancelRefreshMode,
             title = { Text(stringResource(R.string.nostop_sync_refresh_question)) },
             text = {
-                Text(
-                    "Refresh pulls fresh tracks each sync — your auto-generated " +
-                        "daily mixes, weekly discovery, and other rotating playlists. " +
-                        "Tracks that rotate out are removed from the mix and their " +
-                        "downloads deleted to keep your library lean. Cleanup runs once " +
-                        "all sources are set to Refresh — while any source still " +
-                        "accumulates, nothing is deleted. Tracks you added manually are kept."
-                )
+                Text(stringResource(R.string.nostop_sync_refresh_warning))
             },
             confirmButton = {
                 TextButton(onClick = viewModel::confirmRefreshMode) { Text(stringResource(R.string.nostop_sync_refresh)) }
@@ -450,16 +443,7 @@ fun SyncScreen(
             onDismissRequest = { confirmUndo = false },
             title = { Text(stringResource(R.string.nostop_sync_undo_question)) },
             text = {
-                Text(
-                    "Your library goes back to how it was before the last sync: " +
-                        "playlists it hid come back, playlists it added are hidden, and " +
-                        "playlists it emptied are refilled in their original order" +
-                        (card?.let { " (${playlistsWord(it.changedPlaylists)})." } ?: ".") +
-                        "\n\nTracks you added or removed yourself, and Download switches you " +
-                        "changed, are kept. Downloaded files that were already deleted can't " +
-                        "be brought back." +
-                        "\n\nAuto-sync then pauses until you tap Sync, so it doesn't redo it."
-                )
+                Text(stringResource(R.string.nostop_sync_undo_warning, card?.changedPlaylists ?: 0))
             },
             confirmButton = {
                 TextButton(
