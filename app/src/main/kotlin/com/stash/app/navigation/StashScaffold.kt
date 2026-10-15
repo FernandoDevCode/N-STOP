@@ -366,10 +366,12 @@ private fun StashBottomBar(
         tonalElevation = 0.dp,
         windowInsets = WindowInsets.navigationBars,
     ) {
-        TopLevelDestination.entries.forEach { dest ->
+        TopLevelDestination.bottomTabs.forEach { dest ->
             val isSelected = currentRoute == dest.route::class.qualifiedName
             val destinationLabel = when (dest) {
                 TopLevelDestination.HOME -> stringResource(R.string.nostop_nav_home)
+                TopLevelDestination.EXPLORE -> stringResource(R.string.nonstop_nav_explore)
+                TopLevelDestination.RADIO -> stringResource(R.string.nonstop_nav_radio)
                 TopLevelDestination.LIBRARY -> stringResource(R.string.nostop_nav_library)
                 TopLevelDestination.SEARCH -> stringResource(R.string.nostop_nav_search)
                 TopLevelDestination.SYNC -> stringResource(R.string.nostop_nav_sync)
@@ -394,13 +396,22 @@ private fun StashBottomBar(
                         imageVector = if (isSelected) dest.selectedIcon else dest.unselectedIcon,
                         contentDescription = destinationLabel,
                         tint = ink,
+                        modifier = Modifier.drawBehind {
+                            if (selectedness > 0.001f) {
+                                drawCircle(
+                                    color = chrome.selectedTab.copy(alpha = 0.22f * selectedness),
+                                    radius = size.maxDimension * 0.85f,
+                                    center = center,
+                                )
+                            }
+                        },
                     )
                 },
                 label = {
                     Text(text = destinationLabel, style = MaterialTheme.typography.labelSmall, color = ink)
                 },
                 colors = NavigationBarItemDefaults.colors(
-                    indicatorColor = chrome.selectedTab.copy(alpha = 0.12f),
+                    indicatorColor = Color.Transparent,
                 ),
             )
         }
