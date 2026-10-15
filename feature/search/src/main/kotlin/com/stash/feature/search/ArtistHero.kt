@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -34,43 +33,29 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.stash.core.common.ArtUrlUpgrader
 import com.stash.data.ytmusic.model.SocialLink
 
-/**
- * Where the gold "♥ Support" chip sends people: the artist's Bandcamp when
- * MusicBrainz knows one (money actually reaches artists there), else their
- * official website; null hides the chip.
- */
+/** Artist support always opens the artist's Bandcamp or own site, never a fabricated follow. */
 internal fun supportUrl(socials: List<SocialLink>): String? =
     socials.firstOrNull {
         it.kind.equals("bandcamp", ignoreCase = true) ||
             it.url.contains("bandcamp.com", ignoreCase = true)
-    }?.url
-        ?: socials.firstOrNull { it.kind.equals("website", ignoreCase = true) }?.url
+    }?.url ?: socials.firstOrNull { it.kind.equals("website", ignoreCase = true) }?.url
 
 /**
- * Artist Profile hero — editorial split (the hub redesign).
- *
- * Circular avatar LEFT with the name + listener count beside it (a magazine
- * byline), then the app's own action vocabulary in place of the old stock
- * buttons: a solid plum play coin + a hairline radio ring (the Daily-Discover
- * FAB+ring language), with the gold "♥ Support" chip on the right
- * (Bandcamp → website, see [supportUrl]). Below, the artist's doors — one
- * glass coin per social link (brand icons via [socialIconFor], globe
- * fallback). Every element is optional-data-safe: no socials → no coins,
- * no support link → no chip, no listener count → hidden.
- *
- * Paints on the first frame from nav args (see [ArtistProfileViewModel]
- * init) so the < 50 ms hero-paint target is met before the cache emits.
+ * NØNStop cinematic artist hero: full-bleed real artist imagery and large readable
+ * title, Spotify-style functional content sections continue below this hero.
+ * A wordmark asset may be introduced when a licensed transparent artist logo
+ * exists; plain typographic text is the intentional fallback.
  */
 @Composable
 fun ArtistHero(
@@ -84,196 +69,169 @@ fun ArtistHero(
     onStreamingClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val primary = MaterialTheme.colorScheme.primary
-    val uriHandler = LocalUriHandler.current
-    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val plum = if (dark) Color(0xFF7E6A90) else Color(0xFF6E5A7E)
-    val cream = Color(0xFFF2ECE2)
-    val gold = Color(0xFFFFC947)
-    val goldInk = if (dark) gold else Color(0xFF7A5A00)
+    val backdrop = MaterialTheme.colorScheme.background
     val support = remember(socials) { supportUrl(socials) }
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        primary.copy(alpha = 0.35f),
-                        primary.copy(alpha = 0.05f),
-                    ),
-                ),
-            ),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                // Top padding clears the overlaid back arrow / streaming chip.
-                .padding(start = 20.dp, end = 20.dp, top = 56.dp, bottom = 16.dp),
-        ) {
-            // -- Byline: avatar left, name + listeners beside ------------------
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
+    val uriHandler = LocalUriHandler.current
+    Column(modifier.fillMaxWidth()) {
+        Box(Modifier.fillMaxWidth().height(350.dp)) {
+            if (hero.avatarUrl != null) {
                 AsyncImage(
                     model = ArtUrlUpgrader.upgrade(hero.avatarUrl),
                     contentDescription = hero.name,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(84.dp).clip(CircleShape),
+                    modifier = Modifier.matchParentSize(),
                 )
-                Column {
-                    Text(
-                        text = hero.name,
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    if (hero.subscribersText != null) {
-                        Text(
-                            text = hero.subscribersText,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+            } else {
+                Box(
+                    Modifier.matchParentSize().background(
+                        Brush.linearGradient(
+                            listOf(Color(0xFF48296D), Color(0xFF142A3E), backdrop),
+                        ),
+                    ),
+                )
             }
-
-            Spacer(Modifier.height(14.dp))
-
-            // -- Actions: play coin + radio ring · gold Support right ----------
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            // Soft dark wash keeps title legible for light and dark artist photos.
+            Box(
+                Modifier.matchParentSize().background(
+                    Brush.verticalGradient(
+                        0.0f to Color.Black.copy(alpha = 0.29f),
+                        0.32f to Color.Transparent,
+                        0.67f to backdrop.copy(alpha = 0.45f),
+                        1.0f to backdrop,
+                    ),
+                ),
+            )
+            Column(
+                Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .padding(horizontal = 22.dp, vertical = 19.dp),
             ) {
-                Surface(
-                    onClick = onPlayArtist,
-                    shape = CircleShape,
-                    color = plum,
-                    modifier = Modifier.size(48.dp),
-                ) {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                        Icon(
-                            imageVector = Icons.Default.PlayArrow,
-                            contentDescription = "Play ${hero.name}",
-                            tint = cream,
-                            modifier = Modifier.size(26.dp),
-                        )
-                    }
+                Text(
+                    text = hero.name,
+                    fontSize = 39.sp,
+                    lineHeight = 43.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (hero.subscribersText != null) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        hero.subscribersText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.85f),
+                    )
                 }
-                Surface(
-                    onClick = onStartRadio,
-                    shape = CircleShape,
-                    color = Color.Transparent,
-                    border = BorderStroke(1.5.dp, plum),
-                    modifier = Modifier.size(40.dp),
-                ) {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                        Icon(
-                            imageVector = Icons.Default.Radio,
-                            contentDescription = "Start ${hero.name} radio",
-                            tint = plum,
-                            modifier = Modifier.size(19.dp),
-                        )
-                    }
+            }
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier.align(Alignment.TopStart).padding(10.dp)
+                    .background(Color.Black.copy(alpha = 0.28f), CircleShape),
+            ) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+            }
+            if (com.stash.core.common.constants.StashConstants.STREAMING_ENGINE_ENABLED) {
+                com.stash.core.ui.components.streaming.StreamingModeChip(
+                    streamingEnabled = streamingEnabled,
+                    onClick = onStreamingClick,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
+                )
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 15.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Surface(
+                onClick = onPlayArtist,
+                shape = CircleShape,
+                color = Color(0xFFAF70F1),
+                modifier = Modifier.size(52.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Default.PlayArrow,
+                        contentDescription = "Play ${hero.name}",
+                        tint = Color(0xFF100C18),
+                        modifier = Modifier.size(29.dp),
+                    )
                 }
-                Spacer(Modifier.weight(1f))
-                if (support != null) {
-                    Surface(
-                        onClick = { runCatching { uriHandler.openUri(support) } },
-                        shape = RoundedCornerShape(99.dp),
-                        color = gold.copy(alpha = 0.28f),
-                        border = BorderStroke(1.dp, gold.copy(alpha = 0.55f)),
+            }
+            Surface(
+                onClick = onStartRadio,
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                modifier = Modifier.size(44.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Default.Radio,
+                        contentDescription = "Start ${hero.name} radio",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            if (support != null) {
+                Surface(
+                    onClick = { runCatching { uriHandler.openUri(support) } },
+                    shape = RoundedCornerShape(99.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(5.dp),
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Favorite,
-                                contentDescription = null,
-                                tint = goldInk,
-                                modifier = Modifier.size(13.dp),
-                            )
-                            Text(
-                                text = "Support",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = goldInk,
-                            )
-                        }
+                        Icon(
+                            Icons.Default.Favorite,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Text("Support", style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }
-
-            // -- The artist's doors: one glass coin per social link ------------
-            if (socials.isNotEmpty()) {
-                Spacer(Modifier.height(12.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                ) {
-                    socials.forEach { social ->
-                        Surface(
-                            onClick = { runCatching { uriHandler.openUri(social.url) } },
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f),
-                            border = BorderStroke(1.dp, plum.copy(alpha = 0.35f)),
-                            modifier = Modifier.size(32.dp),
-                        ) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier.fillMaxSize(),
-                            ) {
-                                val brand = socialIconFor(social.kind)
-                                if (brand != null) {
-                                    Icon(
-                                        painter = painterResource(brand),
-                                        contentDescription = social.kind,
-                                        tint = plum,
-                                        modifier = Modifier.size(16.dp),
-                                    )
-                                } else {
-                                    Icon(
-                                        imageVector = Icons.Default.Public,
-                                        contentDescription = social.kind,
-                                        tint = plum,
-                                        modifier = Modifier.size(16.dp),
-                                    )
-                                }
+        }
+        if (socials.isNotEmpty()) {
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                socials.forEach { social ->
+                    Surface(
+                        onClick = { runCatching { uriHandler.openUri(social.url) } },
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                        shape = CircleShape,
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            val brand = socialIconFor(social.kind)
+                            if (brand != null) {
+                                Icon(
+                                    painter = painterResource(brand),
+                                    contentDescription = social.kind,
+                                    modifier = Modifier.size(17.dp),
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Public,
+                                    contentDescription = social.kind,
+                                    modifier = Modifier.size(17.dp),
+                                )
                             }
                         }
                     }
                 }
             }
-        }
-
-        // Top-left back arrow (Scaffold already applies status-bar padding).
-        IconButton(
-            onClick = onBack,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(8.dp),
-        ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back",
-                tint = MaterialTheme.colorScheme.onBackground,
-            )
-        }
-
-        // Top-right Online/Offline chip — flip playback mode from the profile.
-        if (com.stash.core.common.constants.StashConstants.STREAMING_ENGINE_ENABLED) {
-            com.stash.core.ui.components.streaming.StreamingModeChip(
-                streamingEnabled = streamingEnabled,
-                onClick = onStreamingClick,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(8.dp),
-            )
         }
     }
 }
