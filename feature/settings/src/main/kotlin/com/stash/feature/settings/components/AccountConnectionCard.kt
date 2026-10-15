@@ -30,6 +30,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.stash.feature.settings.R
 import com.stash.core.auth.model.AuthState
 import com.stash.core.ui.theme.StashTheme
 
@@ -76,6 +78,20 @@ fun AccountConnectionCard(
 ) {
     val extendedColors = StashTheme.extendedColors
     val status = accountStatus(authState, expired)
+    // Keep the pure status model intact for existing unit tests.
+    val localizedStatus = when (authState) {
+        is AuthState.Connected -> {
+            val name = authState.user.displayName
+            when {
+                expired && name.isBlank() -> stringResource(R.string.nostop_account_expired)
+                expired -> stringResource(R.string.nostop_account_expired_named, name)
+                else -> stringResource(R.string.nostop_account_connected_as, name)
+            }
+        }
+        is AuthState.Connecting -> stringResource(R.string.nostop_account_connecting)
+        is AuthState.Error -> authState.message
+        AuthState.NotConnected -> stringResource(R.string.nostop_account_not_connected)
+    }
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -109,7 +125,7 @@ fun AccountConnectionCard(
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = status.text,
+                    text = localizedStatus,
                     style = MaterialTheme.typography.bodySmall,
                     color = when (status.tone) {
                         AccountStatusTone.CONNECTED -> extendedColors.success
@@ -152,7 +168,7 @@ fun AccountConnectionCard(
                                         contentColor = Color.White,
                                     ),
                                 ) {
-                                    Text("Reconnect")
+                                    Text(stringResource(R.string.nostop_account_reconnect))
                                 }
                                 TextButton(
                                     onClick = onDisconnect,
@@ -160,7 +176,7 @@ fun AccountConnectionCard(
                                         contentColor = MaterialTheme.colorScheme.error,
                                     ),
                                 ) {
-                                    Text("Disconnect")
+                                    Text(stringResource(R.string.nostop_account_disconnect))
                                 }
                             }
                         } else if (needsAction && onNeedsAction != null) {
@@ -181,7 +197,7 @@ fun AccountConnectionCard(
                                     contentColor = MaterialTheme.colorScheme.error,
                                 ),
                             ) {
-                                Text("Disconnect")
+                                Text(stringResource(R.string.nostop_account_disconnect))
                             }
                         }
                     }
@@ -193,7 +209,7 @@ fun AccountConnectionCard(
                                 contentColor = Color.White,
                             ),
                         ) {
-                            Text("Connect")
+                            Text(stringResource(R.string.nostop_account_connect))
                         }
                     }
                 }
