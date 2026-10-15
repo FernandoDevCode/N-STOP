@@ -471,109 +471,6 @@ fun HomeScreen(
             }
         }
 
-        // ── Discover hero pager (Daily Discover + your Stash mixes) ──
-        // A mix created from the hero's ＋ ring lands right here as an
-        // identical sibling card — swipe between Daily Discover and your
-        // own mixes (dots below signal the pages). Long-press a Your-mix
-        // page for the action sheet (refresh / edit / delete / hide).
-        // Replaces the old "Your mixes" rail.
-        item {
-            Spacer(Modifier.height(6.dp))
-            // Minimized (long-press → "Minimize for now") drops the hero page
-            // for the session; the mix pages keep the pager alive. Distinct
-            // from hero == null (not connected), which shows PersonalizeCard.
-            val hero = if (heroMinimized) null else uiState.hero
-            // Daily Discover still being built: its slot holds a "Building…"
-            // card (first page of the pager) instead of sitting empty.
-            val heroBuilding = uiState.heroBuilding && !heroMinimized
-            val mixPages = uiState.yourMixes
-            when {
-                uiState.isLoading -> DiscoverHeroCard(
-                    label = stringResource(R.string.nostop_home_updated_daily),
-                    title = stringResource(R.string.nostop_home_discover),
-                    subtitle = "",
-                    artUrl = null,
-                    onPlay = {},
-                    onOpen = {},
-                    loading = true,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-                uiState.showColdStartCard -> PersonalizeCard(
-                    onConnect = onNavigateToSettings,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-                hero == null && !heroBuilding && mixPages.isEmpty() -> Unit // minimized, nothing to page
-                else -> {
-                    val heroPages = if (hero != null || heroBuilding) 1 else 0
-                    val pageCount = heroPages + mixPages.size
-                    val pagerState = androidx.compose.foundation.pager.rememberPagerState(
-                        pageCount = { pageCount },
-                    )
-                    Column {
-                        androidx.compose.foundation.pager.HorizontalPager(
-                            state = pagerState,
-                            contentPadding = PaddingValues(horizontal = 16.dp),
-                            pageSpacing = 10.dp,
-                        ) { page ->
-                            if (page < heroPages && hero == null) {
-                                DailyDiscoverBuildingCard()
-                            } else if (page < heroPages && hero != null) {
-                                DiscoverHeroCard(
-                                    label = stringResource(R.string.nostop_home_updated_daily),
-                                    title = hero.title,
-                                    subtitle = hero.subtitle,
-                                    artUrl = hero.artUrl,
-                                    onPlay = viewModel::playHero,
-                                    onOpen = { onNavigateToPlaylist(hero.playlistId) },
-                                    onCreateMix = { onNavigateToMixBuilder(null) },
-                                    onLongPress = { heroActionSheet = true },
-                                )
-                            } else {
-                                val m = mixPages[page - heroPages]
-                                DiscoverHeroCard(
-                                    label = stringResource(R.string.nostop_home_your_mix),
-                                    title = m.title,
-                                    subtitle = when (m.buildState) {
-                                        MixBuildState.BUILDING -> "building…"
-                                        MixBuildState.EMPTY -> "empty — edit to fill"
-                                        else -> pluralize(m.trackCount, "track")
-                                    },
-                                    artUrl = m.artUrl,
-                                    onPlay = { viewModel.playMix(m.id) },
-                                    onOpen = { openMix(m.id) },
-                                    onLongPress = { actionSheetMixId = m.id },
-                                )
-                            }
-                        }
-                        if (pageCount > 1) {
-                            Spacer(Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.Center,
-                            ) {
-                                repeat(pageCount) { i ->
-                                    val active = pagerState.currentPage == i
-                                    Box(
-                                        modifier = Modifier
-                                            .padding(horizontal = 3.dp)
-                                            .size(6.dp)
-                                            .clip(CircleShape)
-                                            .background(
-                                                if (active) {
-                                                    MaterialTheme.colorScheme.primary
-                                                } else {
-                                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
-                                                },
-                                            ),
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
         // ── User-arranged sections (Settings > Appearance > Home layout) ──
         // Order + visibility come from uiState.sections. The genre chips
         // steer only the Qobuz rows, so they ride glued above the FIRST
@@ -730,6 +627,110 @@ fun HomeScreen(
                     }
                 }
                 HomeSection.COMMUNITY -> item(key = "section_community") { communitySection() }
+            }
+        }
+
+        // Daily Discover remains available below the user's prioritized Home sections.
+        // ── Discover hero pager (Daily Discover + your Stash mixes) ──
+        // A mix created from the hero's ＋ ring lands right here as an
+        // identical sibling card — swipe between Daily Discover and your
+        // own mixes (dots below signal the pages). Long-press a Your-mix
+        // page for the action sheet (refresh / edit / delete / hide).
+        // Replaces the old "Your mixes" rail.
+        item {
+            Spacer(Modifier.height(6.dp))
+            // Minimized (long-press → "Minimize for now") drops the hero page
+            // for the session; the mix pages keep the pager alive. Distinct
+            // from hero == null (not connected), which shows PersonalizeCard.
+            val hero = if (heroMinimized) null else uiState.hero
+            // Daily Discover still being built: its slot holds a "Building…"
+            // card (first page of the pager) instead of sitting empty.
+            val heroBuilding = uiState.heroBuilding && !heroMinimized
+            val mixPages = uiState.yourMixes
+            when {
+                uiState.isLoading -> DiscoverHeroCard(
+                    label = stringResource(R.string.nostop_home_updated_daily),
+                    title = stringResource(R.string.nostop_home_discover),
+                    subtitle = "",
+                    artUrl = null,
+                    onPlay = {},
+                    onOpen = {},
+                    loading = true,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                uiState.showColdStartCard -> PersonalizeCard(
+                    onConnect = onNavigateToSettings,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                hero == null && !heroBuilding && mixPages.isEmpty() -> Unit // minimized, nothing to page
+                else -> {
+                    val heroPages = if (hero != null || heroBuilding) 1 else 0
+                    val pageCount = heroPages + mixPages.size
+                    val pagerState = androidx.compose.foundation.pager.rememberPagerState(
+                        pageCount = { pageCount },
+                    )
+                    Column {
+                        androidx.compose.foundation.pager.HorizontalPager(
+                            state = pagerState,
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            pageSpacing = 10.dp,
+                        ) { page ->
+                            if (page < heroPages && hero == null) {
+                                DailyDiscoverBuildingCard()
+                            } else if (page < heroPages && hero != null) {
+                                DiscoverHeroCard(
+                                    label = stringResource(R.string.nostop_home_updated_daily),
+                                    title = hero.title,
+                                    subtitle = hero.subtitle,
+                                    artUrl = hero.artUrl,
+                                    onPlay = viewModel::playHero,
+                                    onOpen = { onNavigateToPlaylist(hero.playlistId) },
+                                    onCreateMix = { onNavigateToMixBuilder(null) },
+                                    onLongPress = { heroActionSheet = true },
+                                )
+                            } else {
+                                val m = mixPages[page - heroPages]
+                                DiscoverHeroCard(
+                                    label = stringResource(R.string.nostop_home_your_mix),
+                                    title = m.title,
+                                    subtitle = when (m.buildState) {
+                                        MixBuildState.BUILDING -> "building…"
+                                        MixBuildState.EMPTY -> "empty — edit to fill"
+                                        else -> pluralize(m.trackCount, "track")
+                                    },
+                                    artUrl = m.artUrl,
+                                    onPlay = { viewModel.playMix(m.id) },
+                                    onOpen = { openMix(m.id) },
+                                    onLongPress = { actionSheetMixId = m.id },
+                                )
+                            }
+                        }
+                        if (pageCount > 1) {
+                            Spacer(Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Center,
+                            ) {
+                                repeat(pageCount) { i ->
+                                    val active = pagerState.currentPage == i
+                                    Box(
+                                        modifier = Modifier
+                                            .padding(horizontal = 3.dp)
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                if (active) {
+                                                    MaterialTheme.colorScheme.primary
+                                                } else {
+                                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                                                },
+                                            ),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
