@@ -56,4 +56,11 @@
     <string name="nostop_home_layout_description">Reorganize ou oculte seções da tela inicial. Descobrir permanece no topo.</string>
     <string name="nostop_show_likes">Mostrar músicas curtidas no Início</string>
     <string name="nostop_show_likes_description">Exiba as músicas curtidas do NØSTOP, Spotify e YouTube juntas em Suas playlists.</string>
+    <string name="nostop_settings_title">Configurações</string>
+    <string name="nostop_nav_playback">Reprodução</string>
+    <string name="nostop_nav_audio">Áudio e qualidade</string>
+    <string name="nostop_nav_accounts">Contas e sincronização</string>
+    <string name="nostop_nav_library">Biblioteca e armazenamento</string>
+    <string name="nostop_nav_about">Sobre e ajuda</string>
+    <string name="nostop_search_empty">Nenhuma configuração encontrada para "%1$s"</string>
 </resources>
