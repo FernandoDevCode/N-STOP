@@ -64,4 +64,9 @@
     <string name="podcast_delete">Excluir arquivo</string>
     <string name="podcast_download">Baixar</string>
     <string name="podcast_downloading">Baixando %1$d%%</string>
+    <string name="podcast_now_playing">REPRODUZINDO · PODCAST</string>
+    <string name="podcast_collapse_player">Fechar player de podcast</string>
+    <string name="podcast_cover_art">Capa do episódio</string>
+    <string name="podcast_no_active_episode">Selecione um episódio para começar a ouvir.</string>
+    <string name="podcast_speed">Velocidade</string>
 </resources>
