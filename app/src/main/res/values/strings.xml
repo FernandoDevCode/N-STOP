@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">NØSTOP</string>
+    <string name="app_name">NØNStop</string>
     <string name="resume_playback_short">Resume</string>
     <string name="resume_playback_long">Resume playback</string>
     <string name="cast_connect_failed">Couldn\'t connect to %1$s</string>
