@@ -4,13 +4,13 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
-// ── NØSTOP accent tokens (legacy property names retained for compatibility) ──
-val StashPurple = Color(0xFFC6F58D)
-val StashPurpleLight = Color(0xFFE4FFC2)
-val StashPurpleDark = Color(0xFF315A40)
-val StashCyan = Color(0xFF70DDB8)
-val StashCyanLight = Color(0xFFA2EFCC)
-val StashCyanDark = Color(0xFF245B4A)
+// ── NØNStop violet → cyan → mint identity (legacy names kept for compatibility) ──
+val StashPurple = Color(0xFFAE76FA)
+val StashPurpleLight = Color(0xFFDCC0FF)
+val StashPurpleDark = Color(0xFF46316A)
+val StashCyan = Color(0xFF4BDDCB)
+val StashCyanLight = Color(0xFF91F3E3)
+val StashCyanDark = Color(0xFF155A60)
 val StashSpotifyGreen = Color(0xFF1DB954)
 val StashYouTubeRed = Color(0xFFFF0033)
 // Last.fm brand red — the Sync-tab Last.fm source card's brand bar (issue #255).
@@ -20,37 +20,37 @@ val StashWarning = Color(0xFFF59E0B)
 val StashSuccess = Color(0xFF10B981)
 
 // ── Dark theme palette ─────────────────────────────────────────────────────
-val StashBackground = Color(0xFF080D0A)
-val StashSurface = Color(0xFF111A15)
-val StashElevatedSurface = Color(0xFF1D2A21)
+val StashBackground = Color(0xFF080A13)
+val StashSurface = Color(0xFF111521)
+val StashElevatedSurface = Color(0xFF202438)
 
 // ── AMOLED (pure-black dark) ───────────────────────────────────────────────
 // Backgrounds and surfaces go to true #000000 so OLED pixels switch off;
 // only the raised-container tier keeps a dim lift for hierarchy.
-val StashAmoledSurfaceHigh = Color(0xFF162018)
-val StashTextPrimary = Color(0xFFF1F7EE)
-val StashTextSecondary = Color(0xFFA6B7AA)
-val StashTextTertiary = Color(0xFF6F8473)
+val StashAmoledSurfaceHigh = Color(0xFF191C2E)
+val StashTextPrimary = Color(0xFFF5F4FA)
+val StashTextSecondary = Color(0xFFADB1C7)
+val StashTextTertiary = Color(0xFF7F869D)
 val StashGlassBackground = Color(0x0AFFFFFF)
 val StashGlassBackgroundHover = Color(0x14FFFFFF)
 val StashGlassBorder = Color(0x0FFFFFFF)
 val StashGlassBorderBright = Color(0x24FFFFFF)
 
-// ── Light theme palette (mineral-white / sage, NØSTOP identity) ─────────────
+// ── Light theme palette (lavender mineral white, NØNStop identity) ─────────────
 //
 // Design goal: not a generic "white background + colored accents" light mode.
-// Instead, a warm mineral base that echoes the dark theme's green
+// Instead, a warm mineral base that echoes the dark theme's violet
 // accent and keeps editorial contrast.
-val StashBackgroundLight = Color(0xFFF3F6EF)      // soft lavender-tinted white
+val StashBackgroundLight = Color(0xFFF6F4FB)      // subtly lavender-tinted white
 val StashSurfaceLight = Color(0xFFFFFFFF)          // pure white cards stand out
-val StashElevatedSurfaceLight = Color(0xFFE4EBDF)  // subtle purple wash for raised elements
-val StashTextPrimaryLight = Color(0xFF122019)      // deep aubergine, high contrast
-val StashTextSecondaryLight = Color(0xFF475D4F)    // muted purple-gray for secondary text
-val StashTextTertiaryLight = Color(0xFF708477)     // lightest tier, for metadata
-val StashGlassBackgroundLight = Color(0x122E6844)  // green tint on warm white
-val StashGlassBackgroundHoverLight = Color(0x1A2E6844)
-val StashGlassBorderLight = Color(0x242E6844)      // subtle botanical border
-val StashGlassBorderBrightLight = Color(0x402E6844)
+val StashElevatedSurfaceLight = Color(0xFFEAE6F3)  // subtle lavender wash for raised elements
+val StashTextPrimaryLight = Color(0xFF221A35)      // deep plum, high contrast
+val StashTextSecondaryLight = Color(0xFF5D5470)    // muted purple-gray for secondary text
+val StashTextTertiaryLight = Color(0xFF837991)     // lightest tier, for metadata
+val StashGlassBackgroundLight = Color(0x126C4C9F)  // purple tint on warm white
+val StashGlassBackgroundHoverLight = Color(0x1A6C4C9F)
+val StashGlassBorderLight = Color(0x246C4C9F)      // subtle botanical border
+val StashGlassBorderBrightLight = Color(0x406C4C9F)
 
 @Immutable
 data class StashExtendedColors(
@@ -78,11 +78,11 @@ val StashExtendedColorsDark = StashExtendedColors()
 /** Light-theme instance of extended colors — cream/lavender palette. */
 val StashExtendedColorsLight = StashExtendedColors(
     // Accessible dark-ink versions of the accent colors on bright surfaces.
-    cyan = Color(0xFF27664F),
-    cyanLight = Color(0xFF38775A),
-    cyanDark = Color(0xFF194934),
-    purpleLight = Color(0xFF315A40),
-    purpleDark = Color(0xFF244B35),
+    cyan = Color(0xFF126C67),
+    cyanLight = Color(0xFF157C75),
+    cyanDark = Color(0xFF13524D),
+    purpleLight = Color(0xFF46316A),
+    purpleDark = Color(0xFF4D287E),
     elevatedSurface = StashElevatedSurfaceLight,
     glassBackground = StashGlassBackgroundLight,
     glassBackgroundHover = StashGlassBackgroundHoverLight,
