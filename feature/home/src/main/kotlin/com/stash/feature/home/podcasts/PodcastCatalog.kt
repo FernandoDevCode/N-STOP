@@ -91,9 +91,10 @@ class PodcastCatalog @Inject constructor(@ApplicationContext private val context
 
     /** Apple directory is used only to discover open RSS feed addresses, not to stream Apple content. */
     suspend fun search(term: String): List<PodcastShow> = withContext(Dispatchers.IO) {
-        val q = term.trim().take(100)
+        val raw = term.trim()
+        if (validPodcastUrl(raw)) return@withContext listOf(readShowFromRss(raw).first)
+        val q = raw.take(100)
         if (q.length < 2) return@withContext emptyList()
-        if (validPodcastUrl(q)) return@withContext listOf(readShowFromRss(q).first)
         val url = "https://itunes.apple.com/search?media=podcast&entity=podcast&country=BR&limit=30&term=" +
             java.net.URLEncoder.encode(q, "UTF-8")
         val data = fetchLimited(url, MAX_CATALOG_BYTES)
