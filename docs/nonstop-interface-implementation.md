@@ -107,3 +107,11 @@ Branch: `nonstop`.
 - Follow-up correctness fixes: saved podcast files route through Media3's local-file-capable DefaultDataSource; explicit downloads wait for connectivity and reject HTML/JSON/XML/video error responses; pasted RSS feed URLs are no longer truncated to the directory-search limit.
 - The audiobook coming-soon copy no longer claims the Podcast tab is unimplemented.
 - Re-run the full matrix on this exact head using `[do test]` before declaring this checkpoint green.
+
+## Podcast reliability and shared chrome checkpoint — 2026-10-15
+- RSS directory requests, RSS feeds, full-episode streaming, and permanent downloads share the same HTTPS-only OkHttp client. Redirects are bounded and validated hop-by-hop; private DNS answers are refused.
+- Permanent transfers remain WorkManager-owned across process death. The Home episode list reattaches to unique work for each episode, restores progress, and cancels the outstanding task before removing a saved file. Publication is serialized against file removal.
+- The activity-scoped PodcastViewModel shares one MediaController with the Home podcast tab and with global chrome. The root mini-player shows podcast-specific controls when the user chooses a podcast, not a simultaneous music transport. Music playback takes priority when it resumes; podcast playback pauses music when selected.
+- Podcast service is connected lazily until the user has first played a podcast; there is no duplicate media service startup on a fresh music-only install.
+- All changes preserve existing song DB, album art, download workers and Now Playing route; no intermediate APK installs.
+- CI required on latest commit: `[do test]`.
