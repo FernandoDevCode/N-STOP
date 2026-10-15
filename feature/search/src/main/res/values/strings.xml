@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="nostop_search_title">Search</string>
+    <string name="nostop_search_placeholder">Songs, artists, albums…</string>
+    <string name="nostop_search_clear">Clear search</string>
+    <string name="nostop_search_recent">RECENT</string>
+    <string name="nostop_search_clear_short">Clear</string>
+    <string name="nostop_search_failed">Search failed</string>
+    <string name="nostop_search_retry">Retry</string>
+    <string name="nostop_search_no_results">No results found</string>
+    <string name="nostop_search_try_another">Try a different search term</string>
+    <string name="nostop_search_youtube">Search YouTube Music</string>
+    <string name="nostop_search_empty_hint">Find a song or artist and download it to your library</string>
+</resources>
