@@ -80,6 +80,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -758,7 +759,7 @@ private fun PlaylistHeader(
                             modifier = Modifier.size(21.dp),
                         )
                         Spacer(Modifier.width(5.dp))
-                        Text("Play", maxLines = 1, style = MaterialTheme.typography.labelLarge)
+                        Text(stringResource(R.string.nonstop_collection_play), maxLines = 1, style = MaterialTheme.typography.labelLarge)
                     }
                 }
                 BulkPlayButtonBox(
@@ -777,14 +778,14 @@ private fun PlaylistHeader(
                             modifier = Modifier.size(18.dp),
                         )
                         Spacer(Modifier.width(5.dp))
-                        Text("Shuffle", maxLines = 1, style = MaterialTheme.typography.labelLarge)
+                        Text(stringResource(R.string.nonstop_collection_shuffle), maxLines = 1, style = MaterialTheme.typography.labelLarge)
                     }
                 }
                 Box {
                     IconButton(onClick = { actionsExpanded = true }) {
                         Icon(
                             imageVector = Icons.Default.MoreVert,
-                            contentDescription = "More playlist actions",
+                            contentDescription = stringResource(R.string.nonstop_collection_more),
                         )
                     }
                     DropdownMenu(
@@ -792,18 +793,18 @@ private fun PlaylistHeader(
                         onDismissRequest = { actionsExpanded = false },
                     ) {
                         DropdownMenuItem(
-                            text = { Text("Search tracks") },
+                            text = { Text(stringResource(R.string.nonstop_collection_search)) },
                             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                             onClick = { actionsExpanded = false; onToggleSearch() },
                         )
                         DropdownMenuItem(
-                            text = { Text("Share playlist") },
+                            text = { Text(stringResource(R.string.nonstop_collection_share)) },
                             leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
                             onClick = { actionsExpanded = false; onShare() },
                         )
                         if (mayEditCover) {
                             DropdownMenuItem(
-                                text = { Text("Change cover") },
+                                text = { Text(stringResource(R.string.nonstop_collection_cover)) },
                                 leadingIcon = { Icon(Icons.Default.Image, contentDescription = null) },
                                 onClick = { actionsExpanded = false; onSetImage() },
                             )
