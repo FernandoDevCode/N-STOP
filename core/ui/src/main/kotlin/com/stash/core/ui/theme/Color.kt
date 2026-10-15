@@ -77,14 +77,19 @@ val StashExtendedColorsDark = StashExtendedColors()
 
 /** Light-theme instance of extended colors — cream/lavender palette. */
 val StashExtendedColorsLight = StashExtendedColors(
+    // Accessible dark-ink versions of the accent colors on bright surfaces.
+    cyan = Color(0xFF27664F),
+    cyanLight = Color(0xFF38775A),
+    cyanDark = Color(0xFF194934),
+    purpleLight = Color(0xFF315A40),
+    purpleDark = Color(0xFF244B35),
     elevatedSurface = StashElevatedSurfaceLight,
     glassBackground = StashGlassBackgroundLight,
     glassBackgroundHover = StashGlassBackgroundHoverLight,
     glassBorder = StashGlassBorderLight,
     glassBorderBright = StashGlassBorderBrightLight,
     textTertiary = StashTextTertiaryLight,
-    // Brand colors (spotify/youtube/cyan/purple variants) stay identical —
-    // they're identity markers, not theme-dependent.
+    // External service colors remain distinct; NØSTOP ink adapts per theme.
 )
 
 val LocalStashColors = staticCompositionLocalOf { StashExtendedColorsDark }
