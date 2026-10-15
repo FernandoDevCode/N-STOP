@@ -326,12 +326,20 @@ fun SettingsLibraryStorageScreen(
                         )
                         Column(modifier = Modifier.padding(start = 8.dp)) {
                             Text(
-                                text = mode.label,
+                                text = when (mode) {
+                                    DownloadNetworkMode.WIFI_AND_CHARGING -> stringResource(R.string.nostop_storage_network_charging_title)
+                                    DownloadNetworkMode.WIFI_ANY -> stringResource(R.string.nostop_storage_network_wifi_title)
+                                    DownloadNetworkMode.ANY_NETWORK -> stringResource(R.string.nostop_storage_network_any_title)
+                                },
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
                             Text(
-                                text = mode.description,
+                                text = when (mode) {
+                                    DownloadNetworkMode.WIFI_AND_CHARGING -> stringResource(R.string.nostop_storage_network_charging_desc)
+                                    DownloadNetworkMode.WIFI_ANY -> stringResource(R.string.nostop_storage_network_wifi_desc)
+                                    DownloadNetworkMode.ANY_NETWORK -> stringResource(R.string.nostop_storage_network_any_desc)
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -834,12 +842,20 @@ fun SettingsLibraryStorageScreen(
                             )
                             Column(modifier = Modifier.padding(start = 8.dp)) {
                                 Text(
-                                    text = layout.label,
+                                    text = when (layout) {
+                                    com.stash.core.data.prefs.LibraryLayout.ARTIST_ALBUM -> stringResource(R.string.nostop_storage_layout_artist_album_title)
+                                    com.stash.core.data.prefs.LibraryLayout.SINGLE_FOLDER -> stringResource(R.string.nostop_storage_layout_single_folder_title)
+                                    com.stash.core.data.prefs.LibraryLayout.PLAYLIST -> stringResource(R.string.nostop_storage_layout_playlist_title)
+                                },
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSurface,
                                 )
                                 Text(
-                                    text = layout.description,
+                                    text = when (layout) {
+                                    com.stash.core.data.prefs.LibraryLayout.ARTIST_ALBUM -> stringResource(R.string.nostop_storage_layout_artist_album_desc)
+                                    com.stash.core.data.prefs.LibraryLayout.SINGLE_FOLDER -> stringResource(R.string.nostop_storage_layout_single_folder_desc)
+                                    com.stash.core.data.prefs.LibraryLayout.PLAYLIST -> stringResource(R.string.nostop_storage_layout_playlist_desc)
+                                },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
