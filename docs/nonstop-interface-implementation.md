@@ -64,3 +64,8 @@ Branch: `nonstop`.
 - Playlist search, share, and editable cover remain functional in an overflow menu, respecting read-only playlists.
 - Online album catalog hero now follows the same proportions, while retaining play, queue, save, shuffle (only when applicable), download and streaming switch behaviors.
 - New offline action labels respect the existing pt-BR/English resource system. No media/data services were replaced.
+
+## Cross-screen finish of collection checkpoint
+- Online album call-to-action labels use localized Portuguese/English resources, while the playlist and offline album labels follow the same language selection.
+- Search and Library headers share the product's restrained lilac lighting and search input tint instead of the older plum static color.
+- User requests no intermediate APK installs; builds are CI validation artifacts, not installation requests.
