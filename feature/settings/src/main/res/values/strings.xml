@@ -250,4 +250,17 @@
     <string name="nostop_storage_layout_single_folder_desc">Keep every song directly in one folder, named artist - title.</string>
     <string name="nostop_storage_layout_playlist_title">Per playlist</string>
     <string name="nostop_storage_layout_playlist_desc">Create a folder per playlist. Songs without playlists use Artist / Album.</string>
+    <string name="nostop_account_expired">Session expired. Reconnect to keep syncing.</string>
+    <string name="nostop_account_expired_named">Session expired for %1$s. Reconnect to keep syncing.</string>
+    <string name="nostop_account_connected_as">Connected as %1$s</string>
+    <string name="nostop_account_connecting">Connecting…</string>
+    <string name="nostop_account_not_connected">Not connected</string>
+    <string name="nostop_account_reconnect">Reconnect</string>
+    <string name="nostop_account_disconnect">Disconnect</string>
+    <string name="nostop_account_connect">Connect</string>
+    <string name="nostop_disconnect_question">Disconnect %1$s?</string>
+    <string name="nostop_disconnect_warning">NØSTOP will sign out of %1$s on this phone and stop syncing it. Songs from %1$s waiting to download will be removed from the queue.\n\nSongs already downloaded will stay in your library, and you can reconnect at any time.</string>
+    <string name="nostop_mirror_question">Mirror likes to %1$s?</string>
+    <string name="nostop_mirror_warning">Liking a song in NØSTOP will also like it on %1$s, and removing your like will remove it there too. Only new likes are mirrored.\n\nThis uses %1$s private web endpoints, not an official API. It may stop working or, in rare cases, cause account restrictions. Consider using a secondary account.</string>
+    <string name="nostop_mirror_understand">I understand</string>
 </resources>
