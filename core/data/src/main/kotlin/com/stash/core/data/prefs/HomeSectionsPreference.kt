@@ -26,12 +26,12 @@ import javax.inject.Singleton
  */
 enum class HomeSection(val key: String) {
     YOUR_PLAYLISTS("your_playlists"),
+    MOOD_DECADES("mood_decades"),
+    MADE_FOR_YOU("made_for_you"),
     NEW_RELEASES("new_releases"),
     QOBUZ_PLAYLISTS("qobuz_playlists"),
     TOP_ALBUMS("top_albums"),
-    MADE_FOR_YOU("made_for_you"),
     RADIOS("radios"),
-    MOOD_DECADES("mood_decades"),
 
     /** Stash Community (spec 2026-09-26 §3). Has its own switch, off by default: see [HomeSectionsPreference.communityOn]. */
     COMMUNITY("community");
