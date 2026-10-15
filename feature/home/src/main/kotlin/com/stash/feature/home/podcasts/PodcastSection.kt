@@ -58,7 +58,7 @@ import com.stash.feature.home.R
  * chrome. Real RSS episodes only: no invented catalogue tiles or Spotify extraction.
  */
 @Composable
-fun PodcastSection(viewModel: PodcastViewModel = hiltViewModel()) {
+fun PodcastSection(viewModel: PodcastViewModel = LocalPodcastViewModel.current ?: hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
