@@ -280,6 +280,9 @@ private fun StashNavGraph(
                 // as if tapped), and Accounts the way Sync's Re-authenticate opens it.
                 onNavigateToSync = { onNavigateToTab(TopLevelDestination.SYNC) },
                 onNavigateToSearch = { onNavigateToTab(TopLevelDestination.SEARCH) },
+                onNavigateToSettings = {
+                    navController.navigate(SettingsRoute) { launchSingleTop = true }
+                },
                 onNavigateToAccounts = {
                     navController.navigate(SettingsRoute) {
                         launchSingleTop = true
