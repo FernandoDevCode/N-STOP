@@ -112,6 +112,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import com.stash.core.ui.ambient.LocalAlbumChrome
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -305,12 +306,12 @@ fun HomeScreen(
                             text = {
                                 Column {
                                     Text(
-                                        text = "Report an issue",
+                                        text = stringResource(R.string.nostop_home_report_issue),
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurface,
                                     )
                                     Text(
-                                        text = "Grab diagnostics, then open GitHub",
+                                        text = stringResource(R.string.nostop_home_report_hint),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -336,12 +337,12 @@ fun HomeScreen(
                             text = {
                                 Column {
                                     Text(
-                                        text = "Help us translate",
+                                        text = stringResource(R.string.nostop_home_translate),
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurface,
                                     )
                                     Text(
-                                        text = "Join on Crowdin, then request access",
+                                        text = stringResource(R.string.nostop_home_crowdin),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -362,7 +363,7 @@ fun HomeScreen(
                         DropdownMenuItem(
                             text = {
                                 Text(
-                                    text = "Request translator access",
+                                    text = stringResource(R.string.nostop_home_request_access),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurface,
                                 )
@@ -481,8 +482,8 @@ fun HomeScreen(
             val mixPages = uiState.yourMixes
             when {
                 uiState.isLoading -> DiscoverHeroCard(
-                    label = "Updated daily",
-                    title = "Discover",
+                    label = stringResource(R.string.nostop_home_updated_daily),
+                    title = stringResource(R.string.nostop_home_discover),
                     subtitle = "",
                     artUrl = null,
                     onPlay = {},
@@ -511,7 +512,7 @@ fun HomeScreen(
                                 DailyDiscoverBuildingCard()
                             } else if (page < heroPages && hero != null) {
                                 DiscoverHeroCard(
-                                    label = "Updated daily",
+                                    label = stringResource(R.string.nostop_home_updated_daily),
                                     title = hero.title,
                                     subtitle = hero.subtitle,
                                     artUrl = hero.artUrl,
@@ -523,7 +524,7 @@ fun HomeScreen(
                             } else {
                                 val m = mixPages[page - heroPages]
                                 DiscoverHeroCard(
-                                    label = "Your mix",
+                                    label = stringResource(R.string.nostop_home_your_mix),
                                     title = m.title,
                                     subtitle = when (m.buildState) {
                                         MixBuildState.BUILDING -> "building…"
@@ -593,7 +594,7 @@ fun HomeScreen(
                 HomeSection.YOUR_PLAYLISTS ->
                     if (uiState.yourPlaylists.isNotEmpty() || uiState.likedCard != null) {
                         item(key = "section_your_playlists") {
-                            CardRail(title = "Your playlists") {
+                            CardRail(title = stringResource(R.string.nostop_home_playlists)) {
                                 uiState.likedCard?.let { liked ->
                                     item(key = "liked_card") {
                                         LikedHomeCard(
@@ -618,7 +619,7 @@ fun HomeScreen(
                 HomeSection.NEW_RELEASES -> if (uiState.newReleases.isNotEmpty()) {
                     item(key = "section_new_releases") {
                         DiscoveryAlbumRow(
-                            title = "New Releases",
+                            title = stringResource(R.string.nostop_home_new_releases),
                             albums = uiState.newReleases,
                             onOpen = onNavigateToAlbum,
                             topSpacing = if (chipsLead) 2.dp else 16.dp,
@@ -628,7 +629,7 @@ fun HomeScreen(
                 HomeSection.QOBUZ_PLAYLISTS -> if (uiState.playlists.isNotEmpty()) {
                     item(key = "section_qobuz_playlists") {
                         DiscoveryPlaylistRow(
-                            title = "Qobuz Playlists",
+                            title = stringResource(R.string.nostop_home_qobuz),
                             playlists = uiState.playlists,
                             onOpen = onNavigateToAlbum,
                             onSeeAll = { onSeeAllPlaylists(uiState.selectedGenre) },
@@ -647,11 +648,11 @@ fun HomeScreen(
                         Column {
                             Spacer(Modifier.height(if (chipsLead) 2.dp else 16.dp))
                             SectionHeader(
-                                title = "Top Albums",
+                                title = stringResource(R.string.nostop_home_top_albums),
                                 actionText = when {
                                     uiState.topAlbums.size <= 5 -> null
-                                    topAlbumsExpanded -> "Show less"
-                                    else -> "Show all ${uiState.topAlbums.size}"
+                                    topAlbumsExpanded -> stringResource(R.string.nostop_home_show_less)
+                                    else -> stringResource(R.string.nostop_home_show_all_count, uiState.topAlbums.size)
                                 },
                                 onActionClick = { topAlbumsExpanded = !topAlbumsExpanded },
                             )
@@ -673,8 +674,8 @@ fun HomeScreen(
                 HomeSection.MADE_FOR_YOU -> if (uiState.madeForYou.isNotEmpty()) {
                     item(key = "section_made_for_you") {
                         CardRail(
-                            title = "Made for you",
-                            actionText = "See all",
+                            title = stringResource(R.string.nostop_home_made_for_you),
+                            actionText = stringResource(R.string.nostop_home_see_all),
                             onActionClick = { onSeeAllMixes(MixRail.MADE_FOR_YOU) },
                         ) {
                             items(uiState.madeForYou.railCut(HOME_RAIL_LIMIT), key = { it.id }) { m ->
@@ -690,8 +691,8 @@ fun HomeScreen(
                 HomeSection.RADIOS -> if (uiState.radios.isNotEmpty()) {
                     item(key = "section_radios") {
                         CardRail(
-                            title = "Radios",
-                            actionText = "See all",
+                            title = stringResource(R.string.nostop_home_radios),
+                            actionText = stringResource(R.string.nostop_home_see_all),
                             onActionClick = { onSeeAllMixes(MixRail.RADIOS) },
                         ) {
                             items(uiState.radios.railCut(HOME_RAIL_LIMIT), key = { it.id }) { m ->
@@ -707,8 +708,8 @@ fun HomeScreen(
                 HomeSection.MOOD_DECADES -> if (uiState.moodDecades.isNotEmpty()) {
                     item(key = "section_mood_decades") {
                         CardRail(
-                            title = "Mood & decades",
-                            actionText = "See all",
+                            title = stringResource(R.string.nostop_home_moods),
+                            actionText = stringResource(R.string.nostop_home_see_all),
                             onActionClick = { onSeeAllMixes(MixRail.MOOD_DECADES) },
                         ) {
                             items(uiState.moodDecades.railCut(HOME_RAIL_LIMIT), key = { it.id }) { m ->
@@ -1014,18 +1015,18 @@ private fun LosslessConnectBanner(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Try lossless audio",
+                    text = stringResource(R.string.nostop_home_lossless),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "Studio-quality FLAC downloads via Qobuz. Tap to set up.",
+                    text = stringResource(R.string.nostop_home_lossless_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Text(
-                text = "Set up →",
+                text = stringResource(R.string.nostop_home_setup),
                 style = MaterialTheme.typography.labelSmall,
                 color = accent,
             )
@@ -1091,7 +1092,7 @@ private fun LosslessOfflineBanner(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "No lossless right now",
+                    text = stringResource(R.string.nostop_home_no_lossless),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
@@ -1103,7 +1104,7 @@ private fun LosslessOfflineBanner(
                 )
             }
             Text(
-                text = "Connect →",
+                text = stringResource(R.string.nostop_home_connect),
                 style = MaterialTheme.typography.labelSmall,
                 color = accent,
             )
@@ -1329,7 +1330,7 @@ private fun DiscoveryPlaylistRow(
 ) {
     Column {
         Spacer(Modifier.height(topSpacing))
-        SectionHeader(title = title, actionText = "See all", onActionClick = onSeeAll)
+        SectionHeader(title = title, actionText = stringResource(R.string.nostop_home_see_all), onActionClick = onSeeAll)
         LazyRow(
             contentPadding = PaddingValues(horizontal = 20.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
