@@ -84,6 +84,15 @@ fun StashScaffold(
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    // Keep the active bottom icon illuminated inside an album, artist or playlist.
+    // A detail screen is not itself a bottom destination; its parent tab is the
+    // last five-tab route in the live stack. Sync and Settings remain reachable
+    // from Library without introducing a sixth button.
+    val bottomTabRoutes = TopLevelDestination.bottomTabs.map { it.route::class.qualifiedName }.toSet()
+    val selectedTabRoute = if (currentRoute in bottomTabRoutes) currentRoute else
+        navController.currentBackStack.value
+            .lastOrNull { it.destination.route in bottomTabRoutes }
+            ?.destination?.route
     val onNowPlaying = currentRoute == NowPlayingRoute::class.qualifiedName
 
     // Whether a detail screen is currently in multi-select mode. Detail screens
@@ -281,7 +290,7 @@ fun StashScaffold(
                         exit = slideOutVertically(tween(NAV_BAR_SLIDE_MS)) { it } + fadeOut(tween(NAV_BAR_SLIDE_MS)),
                     ) {
                         StashBottomBar(
-                            currentRoute = currentRoute,
+                            currentRoute = selectedTabRoute,
                             onNavigate = ::navigateToTab,
                         )
                     }
