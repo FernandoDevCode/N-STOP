@@ -7,7 +7,6 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
@@ -47,10 +46,7 @@ class PodcastPlaybackService : MediaSessionService() {
             LeastRecentlyUsedCacheEvictor(300L * 1024 * 1024),
             StandaloneDatabaseProvider(this),
         )
-        val http = DefaultHttpDataSource.Factory()
-            .setAllowCrossProtocolRedirects(false)
-            .setConnectTimeoutMs(15_000)
-            .setReadTimeoutMs(30_000)
+        val http = androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(PodcastHttp.client)
             .setUserAgent("N0NStop-Podcasts/1.0")
         val sourceFactory = CacheDataSource.Factory()
             .setCache(cache)
