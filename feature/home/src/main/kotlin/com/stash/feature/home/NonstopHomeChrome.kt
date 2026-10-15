@@ -90,7 +90,7 @@ fun NonstopWordmark(modifier: Modifier = Modifier) {
                     val height = size.height
                     bars.forEachIndexed { index, level ->
                         val x = width * (index + 0.5f) / bars.size
-                        val hue = if (index < 3) brandPurple else if (index < 5) brandBlue else brandMint
+                        val hue = if (index < 3) violet else if (index < 5) blue else mint
                         drawLine(
                             color = hue,
                             start = Offset(x, height),
@@ -109,7 +109,7 @@ fun NonstopWordmark(modifier: Modifier = Modifier) {
                 )
             }
         }
-        Text("N", style = common, color = brandWhite)
+        Text("N", style = common, color = neutral)
         Text(
             "Stop",
             style = common.copy(
