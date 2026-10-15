@@ -665,19 +665,19 @@ private fun LibraryContent(
             var toolsExpanded by remember { mutableStateOf(false) }
             Box {
                 IconButton(onClick = { toolsExpanded = true }) {
-                    Icon(Icons.Filled.MoreVert, contentDescription = "Mais opções")
+                    Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.nonstop_library_more))
                 }
                 androidx.compose.material3.DropdownMenu(
                     expanded = toolsExpanded,
                     onDismissRequest = { toolsExpanded = false },
                 ) {
                     androidx.compose.material3.DropdownMenuItem(
-                        text = { Text("Sincronização") },
+                        text = { Text(stringResource(R.string.nonstop_library_sync)) },
                         leadingIcon = { Icon(Icons.Filled.Sync, contentDescription = null) },
                         onClick = { toolsExpanded = false; onOpenSync() },
                     )
                     androidx.compose.material3.DropdownMenuItem(
-                        text = { Text("Configurações") },
+                        text = { Text(stringResource(R.string.nonstop_library_settings)) },
                         leadingIcon = { Icon(Icons.Filled.Settings, contentDescription = null) },
                         onClick = { toolsExpanded = false; onOpenSettings() },
                     )
