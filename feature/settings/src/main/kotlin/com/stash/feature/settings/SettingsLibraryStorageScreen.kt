@@ -163,6 +163,46 @@ private val importScopeOptions = listOf(
  * The monolith keeps its copies until the Task D1 cutover deletes them there.
  */
 @Composable
+private fun exportBackupLabel(option: ExportScopeOption): String = when (option.scope) {
+    BackupExportScope.LIKES_ONLY -> stringResource(R.string.nostop_storage_export_label_likes_only)
+    BackupExportScope.EVERYTHING -> stringResource(R.string.nostop_storage_export_label_everything)
+    BackupExportScope.LIBRARY_ONLY -> stringResource(R.string.nostop_storage_export_label_library_only)
+    BackupExportScope.SETTINGS_ONLY -> stringResource(R.string.nostop_storage_export_label_settings_only)
+}
+
+@Composable
+private fun exportBackupDescription(option: ExportScopeOption): String = when (option.scope) {
+    BackupExportScope.LIKES_ONLY -> stringResource(R.string.nostop_storage_export_desc_likes_only)
+    BackupExportScope.EVERYTHING -> stringResource(R.string.nostop_storage_export_desc_everything)
+    BackupExportScope.LIBRARY_ONLY -> stringResource(R.string.nostop_storage_export_desc_library_only)
+    BackupExportScope.SETTINGS_ONLY -> stringResource(R.string.nostop_storage_export_desc_settings_only)
+}
+
+@Composable
+private fun importBackupLabel(option: ImportScopeOption): String = when (option.scope) {
+    BackupImportScope.LIBRARY_MERGE -> stringResource(R.string.nostop_storage_import_label_library_merge)
+    BackupImportScope.LIBRARY_REPLACE -> stringResource(R.string.nostop_storage_import_label_library_replace)
+    BackupImportScope.SETTINGS_REPLACE -> stringResource(R.string.nostop_storage_import_label_settings_replace)
+    BackupImportScope.EVERYTHING_REPLACE -> stringResource(R.string.nostop_storage_import_label_everything_replace)
+}
+
+@Composable
+private fun importBackupDescription(option: ImportScopeOption): String = when (option.scope) {
+    BackupImportScope.LIBRARY_MERGE -> stringResource(R.string.nostop_storage_import_desc_library_merge)
+    BackupImportScope.LIBRARY_REPLACE -> stringResource(R.string.nostop_storage_import_desc_library_replace)
+    BackupImportScope.SETTINGS_REPLACE -> stringResource(R.string.nostop_storage_import_desc_settings_replace)
+    BackupImportScope.EVERYTHING_REPLACE -> stringResource(R.string.nostop_storage_import_desc_everything_replace)
+}
+
+@Composable
+private fun importBackupConfirm(option: ImportScopeOption): String = when (option.scope) {
+    BackupImportScope.LIBRARY_MERGE -> stringResource(R.string.nostop_storage_import_confirm_library_merge)
+    BackupImportScope.LIBRARY_REPLACE -> stringResource(R.string.nostop_storage_import_confirm_library_replace)
+    BackupImportScope.SETTINGS_REPLACE -> stringResource(R.string.nostop_storage_import_confirm_settings_replace)
+    BackupImportScope.EVERYTHING_REPLACE -> stringResource(R.string.nostop_storage_import_confirm_everything_replace)
+}
+
+@Composable
 fun SettingsLibraryStorageScreen(
     onBack: () -> Unit,
     onNavigateToLibraryHealth: () -> Unit,
@@ -471,12 +511,12 @@ fun SettingsLibraryStorageScreen(
                                     RadioButton(selected = selected == option.scope, onClick = null)
                                     Column(modifier = Modifier.padding(start = 8.dp)) {
                                         Text(
-                                            text = option.label,
+                                            text = exportBackupLabel(option),
                                             style = MaterialTheme.typography.bodyLarge,
                                             color = MaterialTheme.colorScheme.onSurface,
                                         )
                                         Text(
-                                            text = option.description,
+                                            text = exportBackupDescription(option),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
@@ -546,7 +586,7 @@ fun SettingsLibraryStorageScreen(
                                     )
                                     Column(modifier = Modifier.padding(start = 8.dp)) {
                                         Text(
-                                            text = option.label,
+                                            text = importBackupLabel(option),
                                             style = MaterialTheme.typography.bodyLarge,
                                             color = if (option.destructive) {
                                                 MaterialTheme.colorScheme.error
@@ -555,7 +595,7 @@ fun SettingsLibraryStorageScreen(
                                             },
                                         )
                                         Text(
-                                            text = option.description,
+                                            text = importBackupDescription(option),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
@@ -595,7 +635,7 @@ fun SettingsLibraryStorageScreen(
                             },
                         ),
                     ) {
-                        Text(option.confirmLabel)
+                        Text(importBackupConfirm(option))
                     }
                 },
                 dismissButton = {
