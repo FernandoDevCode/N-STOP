@@ -13,7 +13,7 @@ Branch: `nonstop` · Date: 2026-10-15
 
 ## Follow-up and known limitations
 
-- Original pre-Android-26 raster launcher PNGs have **not** been changed and still carry the upstream graphic. Android 26+ devices use the new adaptive vector.
+- Older pre-Android-26 raster launcher PNGs still contain upstream artwork, but the app currently requires `minSdk = 26`. Thus these legacy resources are not used on supported devices. Android 26+ uses the new adaptive vector, and these legacy PNGs are not a release blocker.
 - A full screen-by-screen UX redesign has not been completed yet. This commit establishes the identity, global colors and shared string resources.
 - Existing short share links still use the upstream service domain; do not substitute a made-up NØSTOP domain without a working migration plan.
 - Podcasts (RSS, following, progress and allowed downloads) are still a separate future checkpoint.
