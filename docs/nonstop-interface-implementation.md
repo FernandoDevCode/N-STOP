@@ -83,3 +83,10 @@ Branch: `nonstop`.
 - Explore and Radio now show static, accessibility-hidden placeholder rails only during an initial empty loading state. Once loading finishes, the existing honest empty-state copy is retained.
 - No mock catalogs, media downloads, playback or routing changes were introduced.
 - Validate this change using the project's complete CI gate (`[do test]`).
+
+## Explore and Radio empty-state/accessibility finish — 2026-10-15
+- Discover page titles and section titles expose actual heading semantics for screen readers; visual hierarchy follows the shared editorial medium-weight section heading.
+- Cold-loading rails remain static decorative placeholders, but now expose one localized loading description for TalkBack (pt-BR/en) instead of disappearing silently from accessibility navigation.
+- Explore and Radio empty states use theme-aware rounded surfaces and decorative category icons, preserving existing conditional rendering and honest empty-state text.
+- No catalog request, routing, media player, downloaded-content or permissions logic was touched.
+- Full CI is requested on this checkpoint via `[do test]`; keep intermediate APKs out of the manual installation path.
