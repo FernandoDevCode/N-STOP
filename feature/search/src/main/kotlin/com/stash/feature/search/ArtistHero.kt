@@ -96,8 +96,8 @@ fun ArtistHero(
                     Brush.verticalGradient(
                         0.0f to Color.Black.copy(alpha = 0.29f),
                         0.32f to Color.Transparent,
-                        0.67f to backdrop.copy(alpha = 0.45f),
-                        1.0f to backdrop,
+                        0.67f to Color(0xFF090B18).copy(alpha = 0.65f),
+                        1.0f to Color(0xFF090B18).copy(alpha = 0.94f),
                     ),
                 ),
             )
