@@ -21,6 +21,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import java.time.DayOfWeek
+import java.time.format.TextStyle
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -47,6 +50,20 @@ fun ScheduleCard(
     var showTimeSheet by remember { mutableStateOf(false) }
     val emptyDays = syncDays.isEmpty
     val errorColor = Color(0xFFEF4444)
+    val locale = LocalContext.current.resources.configuration.locales[0]
+    val daysLabel = when {
+        syncDays.isDaily -> stringResource(R.string.nostop_schedule_daily)
+        syncDays.isWeekdays -> stringResource(R.string.nostop_schedule_weekdays)
+        syncDays.isWeekends -> stringResource(R.string.nostop_schedule_weekends)
+        else -> DayOfWeek.values()
+            .filter(syncDays::contains)
+            .joinToString(" · ") { it.getDisplayName(TextStyle.SHORT, locale) }
+    }
+    val clockLabel = if (locale.language == "pt") {
+        "%02d:%02d".format(syncHour, syncMinute)
+    } else {
+        formatTime(syncHour, syncMinute)
+    }
 
     GlassCard(modifier = modifier) {
         Column(modifier = Modifier.animateContentSize()) {
@@ -76,13 +93,13 @@ fun ScheduleCard(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(stringResource(R.string.nostop_schedule_sync) + " ", style = MaterialTheme.typography.bodyMedium)
                         ScheduleChip(
-                            text = syncDays.presetLabel(),
+                            text = daysLabel,
                             active = daysExpanded,
                             onClick = { daysExpanded = !daysExpanded },
                         )
                         Text(" " + stringResource(R.string.nostop_schedule_at) + " ", style = MaterialTheme.typography.bodyMedium)
                         ScheduleChip(
-                            text = formatTime(syncHour, syncMinute),
+                            text = clockLabel,
                             active = false,
                             onClick = { showTimeSheet = true },
                         )
