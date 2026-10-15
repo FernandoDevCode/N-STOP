@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -37,6 +38,7 @@ fun DayOfWeekPanel(
     modifier: Modifier = Modifier,
 ) {
     val purple = MaterialTheme.colorScheme.primary
+    val portuguese = LocalContext.current.resources.configuration.locales[0].language == "pt"
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -58,7 +60,7 @@ fun DayOfWeekPanel(
             ) {
                 DayOfWeek.values().forEach { day ->
                     DayCircle(
-                        label = day.shortLabel(),
+                        label = if (portuguese) day.portugueseLabel() else day.shortLabel(),
                         on = selection.contains(day),
                         onToggle = { newOn -> onSelectionChanged(selection.with(day, newOn)) },
                     )
@@ -130,4 +132,14 @@ private fun DayOfWeek.shortLabel(): String = when (this) {
     DayOfWeek.FRIDAY -> "F"
     DayOfWeek.SATURDAY -> "S"
     DayOfWeek.SUNDAY -> "S"
+}
+
+private fun DayOfWeek.portugueseLabel(): String = when (this) {
+    DayOfWeek.MONDAY -> "Se"
+    DayOfWeek.TUESDAY -> "Te"
+    DayOfWeek.WEDNESDAY -> "Qa"
+    DayOfWeek.THURSDAY -> "Qi"
+    DayOfWeek.FRIDAY -> "Sx"
+    DayOfWeek.SATURDAY -> "Sa"
+    DayOfWeek.SUNDAY -> "Do"
 }
