@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="web_library_export_title">Stash na web</string>
+    <string name="web_library_export_subtitle">Leve suas músicas curtidas, playlists e reproduções recentes para o Stash na web. Depois, no player web, acesse Configurações › Sua biblioteca › Importar do aplicativo Stash.</string>
+    <string name="web_library_export_button">Exportar para o Stash na web</string>
+    <string name="web_library_export_working_title">Exportando sua biblioteca</string>
+    <string name="web_library_export_done_title">Pronto para usar na web</string>
+    <string name="web_library_export_done_body">Foram salvos %1$s, %2$s e %3$s. Abra o Stash na web e importe este arquivo em Configurações › Sua biblioteca.</string>
+    <plurals name="web_library_export_likes">
+        <item quantity="one">%d música curtida</item>
+        <item quantity="other">%d músicas curtidas</item>
+    </plurals>
+    <plurals name="web_library_export_playlists">
+        <item quantity="one">%d playlist</item>
+        <item quantity="other">%d playlists</item>
+    </plurals>
+    <plurals name="web_library_export_plays">
+        <item quantity="one">%d reprodução</item>
+        <item quantity="other">%d reproduções</item>
+    </plurals>
+    <string name="web_library_export_failed_title">Não foi possível exportar</string>
+    <string name="web_library_export_failed_body">Não foi possível salvar o arquivo. Tente novamente ou escolha outro local.</string>
+    <string name="web_library_export_ok">OK</string>
+    <string name="web_library_import_button">Importar do Stash na web</string>
+    <string name="web_library_sent_title">Enviado</string>
+    <string name="web_library_sent_body">%2$s, %3$s e %4$s enviados para %1$s. Uma confirmação será solicitada antes da importação.</string>
+</resources>
