@@ -116,4 +116,15 @@
     <string name="nostop_about_checking">Checking for updates…</string>
     <string name="nostop_about_checking_short">Checking…</string>
     <string name="nostop_about_check_updates">Check for updates</string>
+    <string name="nostop_accounts_connections">Connections</string>
+    <string name="nostop_accounts_mirror_likes">Sync your likes</string>
+    <string name="nostop_accounts_discord_title">Before connecting Discord</string>
+    <string name="nostop_accounts_discord_warning">Discord has no official way for a phone app to set your status, so NØSTOP uses your account session. Discord considers this a self-bot and may penalize your account.\n\nEnforcement generally targets spam, but the risk is yours to consider.\n\nDisconnecting clears your status and removes the token from this phone.</string>
+    <string name="nostop_accounts_connect_anyway">Connect anyway</string>
+    <string name="nostop_accounts_cancel">Cancel</string>
+    <string name="nostop_accounts_finish_connect">Finish connecting</string>
+    <string name="nostop_accounts_lastfm_first">Connect Last.fm first.</string>
+    <string name="nostop_accounts_lastfm_offline">Couldn\'t reach Last.fm. Your plays remain queued and will be sent later.</string>
+    <string name="nostop_accounts_lastfm_no_scrobbles">No new scrobbles to send.</string>
+    <string name="nostop_accounts_lastfm_sent">Sent %1$d scrobbles to Last.fm.</string>
 </resources>
