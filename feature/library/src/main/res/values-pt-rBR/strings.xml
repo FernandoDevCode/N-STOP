@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="nostop_library_title">Biblioteca</string>
+    <string name="nostop_library_recent">BAIXADAS RECENTEMENTE</string>
+    <string name="nostop_library_empty">Sua biblioteca está vazia</string>
+    <string name="nostop_library_find_music">Encontrar músicas na Busca</string>
+    <string name="nostop_library_import_phone">Importar deste celular</string>
+    <string name="nostop_library_songs">Músicas</string>
+    <string name="nostop_library_liked">Curtidas</string>
+    <string name="nostop_library_playlists">Playlists</string>
+    <string name="nostop_library_artists">Artistas</string>
+    <string name="nostop_library_albums">Álbuns</string>
+    <string name="nostop_library_cancel">Cancelar</string>
+    <string name="nostop_library_dismiss">Fechar</string>
+    <string name="nostop_library_upgrade">Melhorar</string>
+    <string name="nostop_library_upgrade_flac">Converter para FLAC?</string>
+    <string name="nostop_library_block_songs">Também bloquear estas músicas nas próximas sincronizações</string>
+    <string name="nostop_library_block_song">Também bloquear esta música nas próximas sincronizações</string>
+    <string name="nostop_library_block_hint">Músicas bloqueadas não serão baixadas novamente. Você pode desbloqueá-las em Configurações.</string>
+    <string name="nostop_library_show_all">Mostrar tudo</string>
+    <string name="nostop_library_import_failed">Falha na importação</string>
+    <string name="nostop_library_play_all">Reproduzir tudo</string>
+    <string name="nostop_library_share_mix">Compartilhar mix</string>
+    <string name="nostop_library_remove_image">Remover imagem</string>
+    <string name="nostop_library_remove_playlist">Remover playlist</string>
+    <string name="nostop_library_delete_playlist_songs">Excluir playlist e músicas</string>
+    <string name="nostop_library_unpin_playlist">Desafixar playlist</string>
+    <string name="nostop_library_pin_playlist">Fixar playlist</string>
+    <string name="nostop_library_remove_home">Remover do Início</string>
+    <string name="nostop_library_show_home">Mostrar no Início</string>
+    <string name="nostop_library_change_image">Alterar imagem</string>
+    <string name="nostop_library_add_image">Adicionar imagem</string>
+    <string name="nostop_library_unfollow_confirm">Toque novamente para deixar de seguir</string>
+    <string name="nostop_library_unfollow">Deixar de seguir</string>
+    <string name="nostop_library_shuffle_liked">Embaralhar músicas curtidas</string>
+    <string name="nostop_library_shuffle">Embaralhar biblioteca</string>
+    <string name="nostop_library_import_tracks">Importar músicas</string>
+    <string name="nostop_library_search">Buscar na biblioteca</string>
+    <string name="nostop_library_sort_filter">Ordenar e filtrar</string>
+    <string name="nostop_library_clear_filter">Limpar filtro</string>
+    <string name="nostop_library_showing_filter">Mostrando apenas %1$s</string>
+</resources>
