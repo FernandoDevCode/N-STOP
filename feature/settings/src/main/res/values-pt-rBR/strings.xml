@@ -85,4 +85,10 @@
     <string name="nostop_lyrics_apple_description">Prefere letras sincronizadas palavra por palavra do Apple Music. Ao mudar para somente LRC, as letras armazenadas desse tipo são removidas; use Buscar letras em Saúde da biblioteca para obter letras sincronizadas por linha.</string>
     <string name="nostop_duration">Duração</string>
     <string name="nostop_duration_seconds">%1$d s</string>
+    <string name="nostop_hub_playback_hint">Temporizador, rádio automática, transição e reprodução sem intervalos</string>
+    <string name="nostop_hub_quality_hint">Qualidade de streaming, áudio sem perdas e downloads</string>
+    <string name="nostop_hub_accounts_hint">Spotify, YouTube Music, Last.fm</string>
+    <string name="nostop_hub_library_hint">Local dos arquivos, backups e downloads</string>
+    <string name="nostop_hub_appearance_hint">Tema, AMOLED, idioma e organização do Início</string>
+    <string name="nostop_hub_about_hint">Versão, diagnósticos e relatórios de falhas</string>
 </resources>
