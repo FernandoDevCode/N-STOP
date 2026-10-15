@@ -40,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -251,7 +252,7 @@ fun AlbumHero(
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = "Play",
+                        text = stringResource(R.string.nonstop_album_play),
                         style = MaterialTheme.typography.labelLarge,
                     )
                 }
@@ -268,7 +269,7 @@ fun AlbumHero(
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = "Queue",
+                        text = stringResource(R.string.nonstop_album_queue),
                         style = MaterialTheme.typography.labelLarge,
                     )
                 }
@@ -285,7 +286,7 @@ fun AlbumHero(
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = if (isSaved) "Saved" else "Save",
+                        text = if (isSaved) stringResource(R.string.nonstop_album_saved) else stringResource(R.string.nonstop_album_save),
                         style = MaterialTheme.typography.labelLarge,
                     )
                 }
@@ -302,7 +303,7 @@ fun AlbumHero(
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            text = "Shuffle",
+                            text = stringResource(R.string.nonstop_album_shuffle),
                             style = MaterialTheme.typography.labelLarge,
                         )
                     }
@@ -321,7 +322,7 @@ fun AlbumHero(
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            text = "Download all",
+                            text = stringResource(R.string.nonstop_album_download_all),
                             style = MaterialTheme.typography.labelLarge,
                         )
                     }
