@@ -97,4 +97,23 @@
     <string name="nostop_hub_about_hint">Version, diagnostics, crash reports</string>
     <string name="nostop_settings_search_placeholder">Search settings</string>
     <string name="nostop_settings_search_clear">Clear search</string>
+    <string name="nostop_about_diagnostics">Diagnostics</string>
+    <string name="nostop_about_share_crash">Share latest crash report</string>
+    <string name="nostop_about_crash_hint">Attach the most recent crash log to email or chat. The file stays on your device until you share it.</string>
+    <string name="nostop_about_no_crash">No recent crashes.</string>
+    <string name="nostop_about_no_crash_to_share">No crash report to share.</string>
+    <string name="nostop_about_crash_chooser">Share crash report</string>
+    <string name="nostop_about_share_unavailable">No app available to share the report.</string>
+    <string name="nostop_about_share_diagnostics">Share diagnostics</string>
+    <string name="nostop_about_diagnostics_hint">Include recent logs, sync history and connection status (no passwords) to help diagnose problems.</string>
+    <string name="nostop_about_heading">About</string>
+    <string name="nostop_about_latest">You\'re on the latest version (%1$s)</string>
+    <string name="nostop_about_update_available">Update available: %1$s</string>
+    <string name="nostop_about_see_releases">see Releases</string>
+    <string name="nostop_about_check_failed">Couldn\'t check for updates — try again later</string>
+    <string name="nostop_about_version">Version</string>
+    <string name="nostop_about_license">License</string>
+    <string name="nostop_about_checking">Checking for updates…</string>
+    <string name="nostop_about_checking_short">Checking…</string>
+    <string name="nostop_about_check_updates">Check for updates</string>
 </resources>
