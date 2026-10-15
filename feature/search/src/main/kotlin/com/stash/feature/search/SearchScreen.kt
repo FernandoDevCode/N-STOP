@@ -65,6 +65,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
@@ -142,13 +143,26 @@ fun SearchScreen(
                 .statusBarsPadding(),
         ) {
             // Command hero: the page owns its name like Library/Sync do.
-            Text(
-                text = stringResource(R.string.nostop_search_title),
-                style = MaterialTheme.typography.headlineLarge,
-                color = MaterialTheme.colorScheme.onBackground,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(start = 20.dp, top = 8.dp),
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                Color.Transparent,
+                            ),
+                        ),
+                    ),
+            ) {
+                Text(
+                    text = stringResource(R.string.nostop_search_title),
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 20.dp, top = 18.dp, bottom = 12.dp),
+                )
+            }
             SearchBar(
                 query = state.query,
                 onQueryChanged = viewModel::onQueryChanged,
@@ -232,8 +246,8 @@ private fun SearchBar(
     // Command-hero field: a soft plum tonal pill — the loud violet outline is
     // retired; focus is signaled by the cursor + keyboard, not a border.
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val plum = if (dark) Color(0xFF7E6A90) else Color(0xFF6E5A7E)
-    val tonal = plum.copy(alpha = if (dark) 0.22f else 0.10f)
+    val plum = MaterialTheme.colorScheme.primary
+    val tonal = plum.copy(alpha = if (dark) 0.16f else 0.09f)
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChanged,
