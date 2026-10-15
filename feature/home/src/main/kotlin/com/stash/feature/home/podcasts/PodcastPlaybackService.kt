@@ -56,7 +56,12 @@ class PodcastPlaybackService : MediaSessionService() {
             .setMediaSourceFactory(DefaultMediaSourceFactory(sourceFactory))
             .build()
         audio.setAudioAttributes(AudioAttributes.DEFAULT, true)
-        session = MediaSession.Builder(this, audio).build()
+        // The music MediaLibrarySession uses Media3's default empty ID.
+        // Two sessions in the same process must have different IDs or Media3
+        // throws IllegalStateException during service creation on first Play.
+        session = MediaSession.Builder(this, audio)
+            .setId("nonstop_podcasts")
+            .build()
         scope.launch {
             while (isActive) {
                 delay(3_000)
