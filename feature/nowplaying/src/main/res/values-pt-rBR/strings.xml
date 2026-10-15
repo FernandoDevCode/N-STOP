@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="nostop_np_end_everyone">Encerrar a sessão para todos?</string>
+    <string name="nostop_np_end">Encerrar</string>
+    <string name="nostop_np_leave_session">Sair da sessão?</string>
+    <string name="nostop_np_new_host">%1$s assumirá o comando e a música continuará para as outras pessoas.</string>
+    <string name="nostop_np_leave">Sair</string>
+    <string name="nostop_np_cancel">Cancelar</string>
+    <string name="nostop_np_wrong_track">Qual é o problema com esta música?</string>
+    <string name="nostop_np_wrong_track_hint">Escolha o que fazer com \'%1$s\'.</string>
+    <string name="nostop_np_find_flac">Encontrar em FLAC</string>
+    <string name="nostop_np_better_match">Buscar outra versão</string>
+    <string name="nostop_np_delete">Excluir da biblioteca</string>
+    <string name="nostop_np_delete_block">Excluir e bloquear definitivamente</string>
+    <string name="nostop_np_open_artist">Abrir artista</string>
+    <string name="nostop_np_album_art">Capa do álbum</string>
+    <string name="nostop_np_shuffle">Aleatório</string>
+    <string name="nostop_np_previous">Anterior</string>
+    <string name="nostop_np_next">Próxima</string>
+    <string name="nostop_np_repeat">Repetir</string>
+    <string name="nostop_np_streaming">Streaming</string>
+    <string name="nostop_np_sleep_timer">Temporizador</string>
+    <string name="nostop_np_sleep_timer_remaining">A música pausa em %1$s</string>
+    <string name="nostop_np_end_track_hint">Fim da faixa: a música pausa quando esta faixa terminar</string>
+    <string name="nostop_np_minutes">%1$d min</string>
+    <string name="nostop_np_custom">Personalizado</string>
+    <string name="nostop_np_end_track">Fim da faixa</string>
+    <string name="nostop_np_cancel_timer">Cancelar temporizador</string>
+    <string name="nostop_np_custom_sleep">Temporizador personalizado</string>
+    <string name="nostop_np_minute_label">Minutos</string>
+    <string name="nostop_np_start">Iniciar</string>
+    <string name="nostop_np_speed">Velocidade de reprodução</string>
+    <string name="nostop_np_custom_speed">Velocidade personalizada</string>
+    <string name="nostop_np_speed_range">Velocidade (0,1 – 4,0)</string>
+    <string name="nostop_np_set">Definir</string>
+</resources>
