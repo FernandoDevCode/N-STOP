@@ -45,3 +45,9 @@ Branch: `nonstop`.
 ## Home above-the-fold finishing adjustment
 - The genuine Daily Discover pager now follows the user's first four main music sections, rather than separating Back to Listening from Rediscovery. Its play/open/mix-building actions are preserved.
 - All of the above runs against existing real catalog and playlist data, not hardcoded showcase music.
+
+## Navigation refinement — approved layout
+- Bottom bar now uses the explicitly approved order: Início · Buscar · Explorar · Biblioteca · Rádio.
+- The online artist page provides sticky, localized jump chips for songs, albums, singles and about; only shelves with real data receive a live chip.
+- Artist album deep-links account for the extra sticky bar to land on the correct list.
+- Pure unit tests cover full, sparse and empty artist catalog section indexes.
