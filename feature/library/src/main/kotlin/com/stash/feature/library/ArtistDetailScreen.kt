@@ -398,129 +398,93 @@ private fun ArtistDetailHeader(
     onShuffle: () -> Unit,
     onToggleSearch: () -> Unit,
 ) {
-    val extendedColors = StashTheme.extendedColors
-
-    Column(modifier = Modifier.fillMaxWidth()) {
-        // ── Back button row ─────────────────────────────────────────────
-        Row(
+    Column(Modifier.fillMaxWidth()) {
+        // Full-bleed artist header, consistent with online catalog artist profiles.
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(start = 8.dp, top = 8.dp, end = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .height(320.dp)
+                .background(
+                    Brush.linearGradient(
+                        listOf(Color(0xFF543B7A), Color(0xFF102738), MaterialTheme.colorScheme.background),
+                    ),
+                ),
         ) {
+            val photoUrl = state.photoUrl
+            if (photoUrl != null) {
+                val painter = rememberAsyncImagePainter(model = photoUrl)
+                val painterState by painter.state.collectAsState()
+                if (painterState is AsyncImagePainter.State.Success) {
+                    Image(
+                        painter = painter,
+                        contentDescription = state.artistName,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            0f to Color.Black.copy(alpha = 0.22f),
+                            0.45f to Color.Transparent,
+                            0.72f to MaterialTheme.colorScheme.background.copy(alpha = 0.52f),
+                            1f to MaterialTheme.colorScheme.background,
+                        ),
+                    ),
+            )
             IconButton(
                 onClick = onBack,
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(
-                        color = extendedColors.glassBackground,
-                        shape = CircleShape,
-                    ),
+                modifier = Modifier.align(Alignment.TopStart)
+                    .statusBarsPadding()
+                    .padding(10.dp)
+                    .background(Color.Black.copy(alpha = 0.30f), CircleShape),
             ) {
                 Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Back",
-                    tint = MaterialTheme.colorScheme.onSurface,
+                    tint = Color.White,
+                )
+            }
+            Column(
+                modifier = Modifier.align(Alignment.BottomStart)
+                    .padding(horizontal = 22.dp, vertical = 20.dp),
+            ) {
+                Text(
+                    text = state.artistName,
+                    fontSize = 38.sp,
+                    lineHeight = 43.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(5.dp))
+                val trackCount = state.tracks.size
+                Text(
+                    text = "$trackCount track${if (trackCount != 1) "s" else ""}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.82f),
                 )
             }
         }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // ── Artist icon + name ──────────────────────────────────────────
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            // Circular artist icon — real photo from the artist_images cache
-            // (ArtistImageBackfillWorker output), else the gradient placeholder.
-            // The painter state is collected in composition so the circle
-            // upgrades to the photo the moment the request succeeds and never
-            // renders blank when the URL fails (Coil draws nothing outside a
-            // Success state, so everything else keeps the placeholder).
-            Box(
-                modifier = Modifier
-                    .size(96.dp)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.linearGradient(
-                            colors = listOf(
-                                MaterialTheme.colorScheme.primaryContainer,
-                                MaterialTheme.colorScheme.tertiary.copy(alpha = 0.6f),
-                            ),
-                        ),
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                val photoUrl = state.photoUrl
-                if (photoUrl != null) {
-                    val painter = rememberAsyncImagePainter(model = photoUrl)
-                    val painterState by painter.state.collectAsState()
-                    if (painterState is AsyncImagePainter.State.Success) {
-                        Image(
-                            painter = painter,
-                            contentDescription = state.artistName,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
-                        )
-                    } else {
-                        ArtistHeaderPlaceholder()
-                    }
-                } else {
-                    ArtistHeaderPlaceholder()
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Artist name
-            Text(
-                text = state.artistName,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Track count
-            val trackCount = state.tracks.size
-            Text(
-                text = "$trackCount track${if (trackCount != 1) "s" else ""}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // ── Action buttons: Play All + Shuffle + Search ─────────────────
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Button(
                 onClick = onPlayAll,
                 modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(vertical = 12.dp),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(18.dp),
+                contentPadding = PaddingValues(vertical = 13.dp),
             ) {
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(text = "Play All", style = MaterialTheme.typography.labelLarge)
+                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(7.dp))
+                Text("Play All", style = MaterialTheme.typography.labelLarge)
             }
-
             BulkPlayButtonBox(
                 modifier = Modifier.weight(1f),
                 showProgress = bulkPlayInFlight == BulkPlayAction.SHUFFLE_ALL,
@@ -528,30 +492,15 @@ private fun ArtistDetailHeader(
                 OutlinedButton(
                     onClick = onShuffle,
                     modifier = Modifier.fillMaxWidth(),
-                    contentPadding = PaddingValues(vertical = 12.dp),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(18.dp),
+                    contentPadding = PaddingValues(vertical = 13.dp),
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Shuffle,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "Shuffle", style = MaterialTheme.typography.labelLarge)
+                    Icon(Icons.Default.Shuffle, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(7.dp))
+                    Text("Shuffle", style = MaterialTheme.typography.labelLarge)
                 }
             }
-
-            // Search toggle button — same glass-background style as PlaylistHeader
-            Spacer(modifier = Modifier.width(8.dp))
-            IconButton(
-                onClick = onToggleSearch,
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(
-                        color = extendedColors.glassBackground,
-                        shape = RoundedCornerShape(12.dp),
-                    ),
-            ) {
+            IconButton(onClick = onToggleSearch) {
                 Icon(
                     imageVector = Icons.Default.Search,
                     contentDescription = "Filter tracks",
@@ -559,8 +508,6 @@ private fun ArtistDetailHeader(
                 )
             }
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
     }
 }
 
