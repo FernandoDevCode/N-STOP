@@ -27,7 +27,7 @@ enum class TopLevelDestination(val selectedIcon: ImageVector, val unselectedIcon
     SETTINGS(Icons.Filled.Settings, Icons.Outlined.Settings, "Settings", SettingsRoute);
     companion object {
         /** Five approved navigation destinations. Sync and Settings stay routable from the Library. */
-        val bottomTabs = listOf(HOME, SEARCH, EXPLORE, LIBRARY, RADIO)
+        val bottomTabs = listOf(HOME, EXPLORE, RADIO, SEARCH, LIBRARY)
     }
 }
 
