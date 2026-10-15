@@ -50,14 +50,13 @@ import com.stash.core.data.prefs.StartTab
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.stash.app.RequestNotificationPermissionOnce
+import com.stash.core.ui.theme.StashMotion
 import com.stash.core.ui.theme.StashTheme
 import com.stash.data.download.lossless.squid.CaptchaExpiredNotifier
 import com.stash.feature.nowplaying.MiniPlayer
 import com.stash.feature.nowplaying.PlayerQueueSheet
 import com.stash.app.ambient.AlbumColorsViewModel
-import com.stash.core.ui.ambient.LocalAlbumChrome
 import com.stash.core.ui.ambient.ProvideAlbumChrome
-import com.stash.core.ui.ambient.TAB_COLOUR_MS
 import com.stash.core.ui.ambient.rememberReducedMotion
 import com.stash.core.ui.components.LocalBottomChromeInset
 import com.stash.core.ui.components.LocalChromeHazeState
@@ -354,7 +353,10 @@ private fun StashBottomBar(
     val extendedColors = StashTheme.extendedColors
     // The web's 1px top line on the tab bar (rgba(255,255,255,.06) / the light glass border).
     val hairline = extendedColors.glassBorder
-    val chrome = LocalAlbumChrome.current
+    // The selected tab uses the NØNStop violet, rather than changing to
+    // the cover's color every time the song advances. Cover-derived color
+    // still drives the player, while navigation stays recognizably on-brand.
+    val selectedViolet = MaterialTheme.colorScheme.primary
     val reducedMotion = rememberReducedMotion()
 
     NavigationBar(
@@ -386,16 +388,15 @@ private fun StashBottomBar(
                 TopLevelDestination.SYNC -> stringResource(R.string.nostop_nav_sync)
                 TopLevelDestination.SETTINGS -> stringResource(R.string.nostop_nav_settings)
             }
-            // Selected: the song's text ink while a song plays, the theme's neutral selected
-            // colour otherwise (LocalAlbumChrome crossfades that over 800 ms); the change of
-            // tab itself takes the web's 180 ms. Unselected tabs stay neutral. Only the
-            // selection is animated here, so the album crossfade isn't chased by a second tween.
+            // Selected: NØNStop's violet with a short 180ms bloom. The ambient
+            // album color belongs to the player, not to navigation: tab colors
+            // remain steady as playback moves between different album covers.
             val selectedness by animateFloatAsState(
                 targetValue = if (isSelected) 1f else 0f,
-                animationSpec = tween(if (reducedMotion) 0 else TAB_COLOUR_MS),
+                animationSpec = tween(if (reducedMotion) 0 else StashMotion.DUR_SHORT_MS),
                 label = "tabSelected",
             )
-            val ink = lerp(extendedColors.textTertiary, chrome.selectedTab, selectedness)
+            val ink = lerp(extendedColors.textTertiary, selectedViolet, selectedness)
 
             NavigationBarItem(
                 selected = isSelected,
@@ -408,7 +409,7 @@ private fun StashBottomBar(
                         modifier = Modifier.drawBehind {
                             if (selectedness > 0.001f) {
                                 drawCircle(
-                                    color = chrome.selectedTab.copy(alpha = 0.22f * selectedness),
+                                    color = selectedViolet.copy(alpha = 0.24f * selectedness),
                                     radius = size.maxDimension * 0.85f,
                                     center = center,
                                 )
