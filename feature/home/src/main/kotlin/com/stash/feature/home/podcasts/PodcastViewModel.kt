@@ -21,6 +21,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
@@ -40,6 +42,7 @@ data class PodcastUiState(
     val playingId: String? = null,
     val playingTitle: String = "",
     val isPlaying: Boolean = false,
+    val foreground: Boolean = false,
     val positionMs: Long = 0,
     val durationMs: Long = 0,
     val downloaded: Set<String> = emptySet(),
@@ -55,6 +58,12 @@ class PodcastViewModel @Inject constructor(
     private val _state = MutableStateFlow(PodcastUiState(followed = catalog.followed.value))
     val state: StateFlow<PodcastUiState> = _state
     private val downloadJobs = mutableMapOf<String, Job>()
+    private val _openRequests = MutableStateFlow(0)
+    val openRequests: StateFlow<Int> = _openRequests
+
+    fun requestOpenFromChrome() {
+        _openRequests.value += 1
+    }
     private var searchJob: Job? = null
     private var listJob: Job? = null
     private var controller: MediaController? = null
@@ -91,6 +100,16 @@ class PodcastViewModel @Inject constructor(
                 refreshPlayback()
             }
         }
+        // A music track taking over must hide/pause the podcast transport.
+        viewModelScope.launch {
+            musicPlayer.playerState.map { it.playWhenReady }.distinctUntilChanged()
+                .collect { musicStarted ->
+                    if (musicStarted) {
+                        controller?.pause()
+                        _state.update { it.copy(foreground = false) }
+                    }
+                }
+        }
     }
 
     fun setQuery(value: String) { _state.update { it.copy(query = value) } }
@@ -124,6 +143,7 @@ class PodcastViewModel @Inject constructor(
                 _state.update {
                     it.copy(selected = resolved, episodes = episodes, downloaded = downloaded, busy = false)
                 }
+                episodes.forEach { observeDownload(it.id) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -167,12 +187,23 @@ class PodcastViewModel @Inject constructor(
             player.setMediaItem(item, position)
             player.prepare()
             player.play()
+            _state.update { it.copy(foreground = true) }
             refreshPlayback()
         }
     }
 
     fun togglePause() {
-        controller?.let { if (it.isPlaying) it.pause() else it.play() }
+        val player = controller ?: return
+        if (player.isPlaying || player.playWhenReady) {
+            player.pause()
+        } else {
+            viewModelScope.launch {
+                musicPlayer.pause()
+                player.play()
+                _state.update { it.copy(foreground = true) }
+                refreshPlayback()
+            }
+        }
         refreshPlayback()
     }
     fun jump(ms: Long) {
@@ -202,44 +233,76 @@ class PodcastViewModel @Inject constructor(
 
     fun download(episode: PodcastEpisode) {
         val id = episode.id
-        if (state.value.downloading.containsKey(id) || state.value.downloaded.contains(id)) return
+        if (id in state.value.downloaded || id in state.value.downloading) return
+        runCatching { PodcastFiles.enqueue(context, episode) }
+            .onFailure { error ->
+                _state.update { it.copy(error = error.message ?: "Falha ao iniciar download") }
+                return
+            }
         _state.update { it.copy(downloading = it.downloading + (id to 0)) }
-        val requestId = runCatching { PodcastFiles.enqueue(context, episode) }.getOrElse { e ->
-            _state.update { it.copy(downloading = it.downloading - id, error = e.message) }
-            return
-        }
-        downloadJobs[id]?.cancel()
+        observeDownload(id)
+    }
+
+    /**
+     * WorkManager owns transfers and survives process death. Reattach to the
+     * UNIQUE work by episode ID whenever a show's episodes are opened.
+     * A stale ViewModel never determines success; the saved file does.
+     */
+    private fun observeDownload(id: String) {
+        if (downloadJobs[id]?.isActive == true) return
         downloadJobs[id] = viewModelScope.launch(Dispatchers.IO) {
             val manager = WorkManager.getInstance(context)
+            var notFound = 0
             while (isActive) {
-                delay(900)
-                val info = runCatching { manager.getWorkInfoById(requestId).get() }.getOrNull()
                 val file = PodcastFiles.downloaded(context, id)
                 if (file != null) {
                     _state.update { it.copy(downloaded = it.downloaded + id, downloading = it.downloading - id) }
                     break
                 }
-                when (info?.state) {
-                    WorkInfo.State.FAILED, WorkInfo.State.CANCELLED, WorkInfo.State.SUCCEEDED -> {
-                        _state.update { it.copy(
-                            downloading = it.downloading - id,
-                            error = "Não foi possível salvar o episódio.",
-                        ) }
+                val works = runCatching {
+                    manager.getWorkInfosForUniqueWork(PodcastFiles.workName(id)).get()
+                }.getOrDefault(emptyList())
+                val work = works.firstOrNull { !it.state.isFinished } ?: works.lastOrNull()
+                if (work == null) {
+                    notFound += 1
+                    if (notFound > 3) {
+                        _state.update { it.copy(downloading = it.downloading - id) }
                         break
                     }
-                    else -> {
-                        val percent = info?.progress?.getInt("percent", 0) ?: 0
-                        _state.update { it.copy(downloading = it.downloading + (id to percent)) }
+                } else {
+                    when (work.state) {
+                        WorkInfo.State.SUCCEEDED, WorkInfo.State.FAILED, WorkInfo.State.CANCELLED -> {
+                            _state.update {
+                                it.copy(downloading = it.downloading - id,
+                                    error = if (id in it.downloading) "Download não concluído." else it.error)
+                            }
+                            break
+                        }
+                        else -> {
+                            val percent = work.progress.getInt("percent", 0)
+                            _state.update { it.copy(downloading = it.downloading + (id to percent)) }
+                        }
                     }
                 }
+                delay(1_000)
             }
         }
     }
 
     fun removeDownload(episode: PodcastEpisode) {
         viewModelScope.launch(Dispatchers.IO) {
-            PodcastFiles.remove(context, episode.id)
-            _state.update { it.copy(downloaded = it.downloaded - episode.id) }
+            val id = episode.id
+            WorkManager.getInstance(context).cancelUniqueWork(PodcastFiles.workName(id)).result.get()
+            if (state.value.playingId == id) {
+                withContext(Dispatchers.Main) {
+                    controller?.stop()
+                    controller?.clearMediaItems()
+                    _state.update { it.copy(foreground = false) }
+                }
+            }
+            PodcastFiles.remove(context, id)
+            downloadJobs[id]?.cancel()
+            _state.update { it.copy(downloaded = it.downloaded - id, downloading = it.downloading - id) }
         }
     }
 
