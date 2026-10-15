@@ -25,3 +25,21 @@ Updated: 2026-10-15. Branch: `nonstop`.
 ## CI
 
 The final commit for this checkpoint requests GitHub Actions' unit-test compilation, all-module tests and `:app:assembleDebug`. Build outcome must be checked before this checkpoint is called build-validated.
+
+
+## Checkpoint 2 — Shared components (2026-10-15)
+
+- Reusable account cards: connection, reconnection, expiry and error-state labels, with authentication state behavior unchanged.
+- Account safety dialogs: disconnect consequences and unofficial like-mirroring warning now available in English and pt-BR.
+- Sync hero: download mode, button, last-sync summaries, track counts.
+- Sync auth warnings: expired YouTube/Spotify sign-ins.
+- Sync scheduling: automatic sync, date presets, localized short day names, Portuguese 24-hour schedule display and time picker action labels.
+- Core UI shared playlist save/create sheet: titles, buttons and track count.
+- English and pt-BR resource keys are paired in each touched module. This checkpoint does **not** mean every string of the entire app has been translated.
+- All changes are code and resources; no alterations to actual data sync or authentication operations were intended.
+
+### Integration verification
+
+Build, compile all module unit tests, run all unit tests, and web Worker tests through GitHub Actions. The commit that adds this section requests the CI suite with `[do test]`. The outcome must be checked after the run completes.
+
+Remaining: translate more shared UI elements and secondary screens, then implement and validate the design and podcast features before any consolidated phone installation.
