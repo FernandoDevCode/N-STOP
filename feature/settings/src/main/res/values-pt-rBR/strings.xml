@@ -123,4 +123,12 @@
     <string name="nostop_accounts_lastfm_offline">Não foi possível acessar o Last.fm. Suas reproduções continuam na fila para envio posterior.</string>
     <string name="nostop_accounts_lastfm_no_scrobbles">Nenhuma reprodução nova para enviar.</string>
     <string name="nostop_accounts_lastfm_sent">%1$d reproduções enviadas ao Last.fm.</string>
+    <string name="nostop_hub_stream_only">Somente streaming</string>
+    <string name="nostop_hub_cellular_on">Dados móveis ativados</string>
+    <string name="nostop_hub_cellular_off">Dados móveis desativados</string>
+    <string name="nostop_hub_pure_black">Preto absoluto</string>
+    <string name="nostop_hub_lossless">Sem perdas</string>
+    <string name="nostop_hub_not_connected">Não conectado</string>
+    <string name="nostop_hub_one_track">%1$d faixa</string>
+    <string name="nostop_hub_many_tracks">%1$d faixas</string>
 </resources>
