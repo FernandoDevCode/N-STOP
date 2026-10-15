@@ -30,6 +30,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+import com.stash.core.ui.R
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -150,7 +152,7 @@ fun TrackOptionsSheet(
         // -- Play Next option --
         SheetOptionRow(
             icon = Icons.Default.PlaylistPlay,
-            label = playNextLabel(role, "Play Next"),
+            label = playNextLabel(role, stringResource(R.string.nostop_track_play_next)),
             onClick = { onPlayNext(track) },
         )
 
@@ -158,7 +160,7 @@ fun TrackOptionsSheet(
         if (onAddToQueue != null && role == ListenTogetherRole.NONE) {
             SheetOptionRow(
                 icon = Icons.Default.PlaylistAdd,
-                label = "Add to Queue",
+                label = stringResource(R.string.nostop_track_add_queue),
                 onClick = { onAddToQueue(track) },
             )
         }
@@ -167,7 +169,7 @@ fun TrackOptionsSheet(
         if (onStartRadio != null && role == ListenTogetherRole.NONE) {
             SheetOptionRow(
                 icon = Icons.Default.Radio,
-                label = "Start radio",
+                label = stringResource(R.string.nostop_track_start_radio),
                 onClick = { onStartRadio(track) },
             )
         }
@@ -175,7 +177,7 @@ fun TrackOptionsSheet(
         // -- Save to Playlist option --
         SheetOptionRow(
             icon = Icons.Default.FavoriteBorder,
-            label = "Save to Playlist",
+            label = stringResource(R.string.nostop_playlist_save_to),
             onClick = { onSaveToPlaylist(track) },
         )
 
@@ -187,13 +189,13 @@ fun TrackOptionsSheet(
         if (track.isDownloaded && onRemoveDownload != null) {
             SheetOptionRow(
                 icon = Icons.Default.DownloadDone,
-                label = "Remove download",
+                label = stringResource(R.string.nostop_track_remove_download),
                 onClick = { onRemoveDownload(track) },
             )
         } else if (!track.isDownloaded && onDownload != null) {
             SheetOptionRow(
                 icon = Icons.Default.Download,
-                label = "Download",
+                label = stringResource(R.string.nostop_mode_download),
                 onClick = { onDownload(track) },
             )
         }
@@ -202,7 +204,7 @@ fun TrackOptionsSheet(
         if (onShare != null) {
             SheetOptionRow(
                 icon = Icons.Default.Share,
-                label = "Share",
+                label = stringResource(R.string.nostop_track_share),
                 onClick = { onShare(track) },
             )
         }
@@ -211,7 +213,7 @@ fun TrackOptionsSheet(
         LocalPostToCommunity.current?.let { post ->
             SheetOptionRow(
                 icon = Icons.Default.Public,
-                label = "Post to Community",
+                label = stringResource(R.string.nostop_track_post_community),
                 onClick = { onDismiss(); post(PostTarget.Song(track)) },
             )
         }
@@ -220,7 +222,7 @@ fun TrackOptionsSheet(
         if (onViewAlbum != null) {
             SheetOptionRow(
                 icon = Icons.Default.Album,
-                label = "View Album",
+                label = stringResource(R.string.nostop_track_view_album),
                 onClick = { onViewAlbum(track) },
             )
         }
@@ -230,7 +232,7 @@ fun TrackOptionsSheet(
             Spacer(modifier = Modifier.height(4.dp))
             SheetOptionRow(
                 icon = Icons.Default.Delete,
-                label = "Delete",
+                label = stringResource(R.string.nostop_track_delete),
                 tint = MaterialTheme.colorScheme.error,
                 onClick = { onDelete(track) },
             )
