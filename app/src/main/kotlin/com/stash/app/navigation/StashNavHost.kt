@@ -33,6 +33,7 @@ import com.stash.feature.community.rememberCommunityPosting
 import com.stash.feature.home.NonstopExploreScreen
 import com.stash.feature.home.NonstopRadioScreen
 import com.stash.feature.home.HomeScreen
+import com.stash.feature.home.podcasts.PodcastNowPlayingScreen
 import com.stash.feature.home.MixBrowseScreen
 import com.stash.feature.home.MixRail
 import com.stash.feature.home.PlaylistBrowseScreen
@@ -637,6 +638,37 @@ private fun StashNavGraph(
                     )
                 },
             )
+        }
+
+        // Podcast has its own full-screen transport, backed by the SAME
+        // activity-scoped MediaController used by the global podcast mini-player.
+        composable<PodcastNowPlayingRoute>(
+            enterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Up,
+                    animationSpec = tween(SLIDE_DURATION_MS),
+                )
+            },
+            exitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Down,
+                    animationSpec = tween(SLIDE_DURATION_MS),
+                )
+            },
+            popEnterTransition = {
+                slideIntoContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Up,
+                    animationSpec = tween(SLIDE_DURATION_MS),
+                )
+            },
+            popExitTransition = {
+                slideOutOfContainer(
+                    towards = AnimatedContentTransitionScope.SlideDirection.Down,
+                    animationSpec = tween(SLIDE_DURATION_MS),
+                )
+            },
+        ) {
+            PodcastNowPlayingScreen(onDismiss = { navController.popBackStack() })
         }
 
         composable<NowPlayingRoute>(
