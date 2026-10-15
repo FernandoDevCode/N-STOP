@@ -246,16 +246,18 @@ fun HomeScreen(
                 // One ink (owner, 2026-10-11): white on dark / aubergine on light, and while a song
                 // plays the contrast-checked tint of its mood colour, crossfading over 800 ms. Read
                 // at draw time, so the crossfade redraws the wordmark without recomposing the feed.
-                val wordmark = painterResource(id = R.drawable.wordmark_stash)
                 val chrome = LocalAlbumChrome.current
-                Spacer(
-                    modifier = Modifier
-                        .height(48.dp)
-                        .aspectRatio(wordmark.intrinsicSize.width / wordmark.intrinsicSize.height)
-                        .semantics { contentDescription = "Stash" }
-                        .drawBehind {
-                            with(wordmark) { draw(size, colorFilter = ColorFilter.tint(chrome.wordmark)) }
-                        },
+                Text(
+                    text = "NØSTOP",
+                    style = TextStyle(
+                        fontFamily = SpaceGrotesk,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 30.sp,
+                        letterSpacing = (-1.5).sp,
+                    ),
+                    color = chrome.wordmark,
+                    maxLines = 1,
+                    modifier = Modifier.semantics { contentDescription = "NØSTOP" },
                 )
                 Spacer(modifier = Modifier.weight(1f))
 
