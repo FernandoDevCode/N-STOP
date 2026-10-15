@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
@@ -409,8 +410,14 @@ private fun StashBottomBar(
                         modifier = Modifier.drawBehind {
                             if (selectedness > 0.001f) {
                                 drawCircle(
-                                    color = selectedViolet.copy(alpha = 0.24f * selectedness),
-                                    radius = size.maxDimension * 0.85f,
+                                    brush = Brush.radialGradient(
+                                        0f to selectedViolet.copy(alpha = 0.26f * selectedness),
+                                        0.6f to selectedViolet.copy(alpha = 0.10f * selectedness),
+                                        1f to selectedViolet.copy(alpha = 0f),
+                                        center = center,
+                                        radius = size.maxDimension * 1.1f,
+                                    ),
+                                    radius = size.maxDimension * 1.1f,
                                     center = center,
                                 )
                             }
