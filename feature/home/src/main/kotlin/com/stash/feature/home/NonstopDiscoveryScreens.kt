@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
@@ -59,8 +60,8 @@ fun NonstopExploreScreen(
     ) {
         item {
             DiscoveryScreenHeading(
-                title = "Explorar",
-                subtitle = "Novos sons, artistas e caminhos para ouvir.",
+                title = stringResource(R.string.nonstop_explore_title),
+                subtitle = stringResource(R.string.nonstop_explore_subtitle),
                 radio = false,
             )
         }
@@ -75,7 +76,7 @@ fun NonstopExploreScreen(
         }
         if (state.newReleases.isNotEmpty()) {
             item {
-                DiscoverySectionLabel("Novos lançamentos", "Acabaram de chegar")
+                DiscoverySectionLabel(stringResource(R.string.nonstop_explore_releases), stringResource(R.string.nonstop_explore_arrivals))
                 Spacer(Modifier.height(12.dp))
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -89,7 +90,7 @@ fun NonstopExploreScreen(
         }
         if (state.topAlbums.isNotEmpty()) {
             item {
-                DiscoverySectionLabel("Em destaque", "Álbuns para descobrir")
+                DiscoverySectionLabel(stringResource(R.string.nonstop_explore_featured), stringResource(R.string.nonstop_explore_albums))
                 Spacer(Modifier.height(12.dp))
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -103,7 +104,7 @@ fun NonstopExploreScreen(
         }
         if (state.moodDecades.isNotEmpty()) {
             item {
-                DiscoverySectionLabel("Redescoberta", "Outras formas de ouvir o que você gosta")
+                DiscoverySectionLabel(stringResource(R.string.nonstop_explore_rediscovery), stringResource(R.string.nonstop_explore_rediscovery_subtitle))
                 Spacer(Modifier.height(12.dp))
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -126,7 +127,7 @@ fun NonstopExploreScreen(
         ) {
             item {
                 DiscoveryEmptyMessage(
-                    "Conecte uma fonte musical para explorar lançamentos e sugestões.",
+                    stringResource(R.string.nonstop_explore_empty),
                 )
             }
         }
@@ -146,14 +147,14 @@ fun NonstopRadioScreen(
     ) {
         item {
             DiscoveryScreenHeading(
-                title = "Rádio",
-                subtitle = "Deixe a próxima música surpreender você.",
+                title = stringResource(R.string.nonstop_radio_title),
+                subtitle = stringResource(R.string.nonstop_radio_subtitle),
                 radio = true,
             )
         }
         if (state.radios.isNotEmpty()) {
             item {
-                DiscoverySectionLabel("Suas rádios", "Estações geradas a partir da sua música")
+                DiscoverySectionLabel(stringResource(R.string.nonstop_radio_your_stations), stringResource(R.string.nonstop_radio_stations_subtitle))
                 Spacer(Modifier.height(14.dp))
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -173,7 +174,7 @@ fun NonstopRadioScreen(
         }
         if (state.madeForYou.isNotEmpty()) {
             item {
-                DiscoverySectionLabel("Continue ouvindo", "Misturas feitas para o seu gosto")
+                DiscoverySectionLabel(stringResource(R.string.nonstop_radio_listen_again), stringResource(R.string.nonstop_radio_listen_subtitle))
                 Spacer(Modifier.height(14.dp))
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -194,7 +195,7 @@ fun NonstopRadioScreen(
         if (!state.isLoading && state.radios.isEmpty() && state.madeForYou.isEmpty()) {
             item {
                 DiscoveryEmptyMessage(
-                    "Suas estações vão aparecer aqui quando houver músicas suficientes para recomendar.",
+                    stringResource(R.string.nonstop_radio_empty),
                 )
             }
         }
