@@ -51,3 +51,9 @@ Branch: `nonstop`.
 - The online artist page provides sticky, localized jump chips for songs, albums, singles and about; only shelves with real data receive a live chip.
 - Artist album deep-links account for the extra sticky bar to land on the correct list.
 - Pure unit tests cover full, sparse and empty artist catalog section indexes.
+
+## Now Playing composition pass
+- The expanded music player now uses a left-aligned editorial song title and artist/album caption under the prominent artwork, in place of the older centered, constrained title.
+- The real like/unlike action and sleep timer remain independently clickable beside the track information; tapping the song text still opens the artist profile.
+- The art keeps album-palette lighting with a tighter 14dp corner radius and controlled glow.
+- Existing playback transport, queue, seek gestures, casting, lyrics, shared transitions and audio engine are unchanged.
