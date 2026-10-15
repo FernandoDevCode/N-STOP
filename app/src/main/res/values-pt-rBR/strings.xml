@@ -4,4 +4,9 @@
     <string name="resume_playback_short">Retomar</string>
     <string name="resume_playback_long">Retomar reprodução</string>
     <string name="cast_connect_failed">Não foi possível conectar a %1$s</string>
+    <string name="nostop_nav_home">Início</string>
+    <string name="nostop_nav_library">Biblioteca</string>
+    <string name="nostop_nav_search">Buscar</string>
+    <string name="nostop_nav_sync">Sincronizar</string>
+    <string name="nostop_nav_settings">Configurações</string>
 </resources>
