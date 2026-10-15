@@ -1,6 +1,7 @@
 package com.stash.feature.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,6 +30,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -131,7 +135,8 @@ fun NonstopExploreScreen(
         ) {
             item {
                 DiscoveryEmptyMessage(
-                    stringResource(R.string.nonstop_explore_empty),
+                    message = stringResource(R.string.nonstop_explore_empty),
+                    radio = false,
                 )
             }
         }
@@ -202,7 +207,8 @@ fun NonstopRadioScreen(
         if (!state.isLoading && state.radios.isEmpty() && state.madeForYou.isEmpty()) {
             item {
                 DiscoveryEmptyMessage(
-                    stringResource(R.string.nonstop_radio_empty),
+                    message = stringResource(R.string.nonstop_radio_empty),
+                    radio = true,
                 )
             }
         }
@@ -234,6 +240,7 @@ private fun DiscoveryScreenHeading(title: String, subtitle: String, radio: Boole
             style = MaterialTheme.typography.headlineLarge,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.semantics { heading() },
         )
         Spacer(Modifier.height(6.dp))
         Text(
@@ -250,7 +257,8 @@ private fun DiscoverySectionLabel(title: String, subtitle: String) {
         Text(
             text = title,
             style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.semantics { heading() },
         )
         Text(
             text = subtitle,
@@ -269,7 +277,10 @@ private fun DiscoveryLoadingRail(squareArtwork: Boolean) {
     val tileWidth = if (squareArtwork) 152.dp else 158.dp
     val tileHeight = if (squareArtwork) 152.dp else 188.dp
     val placeholder = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
-    Column(modifier = Modifier.clearAndSetSemantics {}) {
+    val spokenLoading = stringResource(
+        if (squareArtwork) R.string.nonstop_explore_loading else R.string.nonstop_radio_loading,
+    )
+    Column(modifier = Modifier.clearAndSetSemantics { contentDescription = spokenLoading }) {
         Box(
             Modifier.padding(horizontal = 20.dp)
                 .size(width = 154.dp, height = 19.dp)
@@ -308,12 +319,34 @@ private fun DiscoveryLoadingRail(squareArtwork: Boolean) {
     }
 }
 
+/**
+ * A quiet, accessible empty state, distinct from the loading placeholder.
+ * The copy is passed by the caller so the reason shown remains accurate to
+ * the real catalog/playlist state; no synthetic recommendations are implied.
+ */
 @Composable
-private fun DiscoveryEmptyMessage(message: String) {
-    Text(
-        message,
-        modifier = Modifier.padding(horizontal = 20.dp, vertical = 20.dp),
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        style = MaterialTheme.typography.bodyMedium,
-    )
+private fun DiscoveryEmptyMessage(message: String, radio: Boolean) {
+    val shape = RoundedCornerShape(16.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 8.dp)
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.50f))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+            .padding(horizontal = 20.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Icon(
+            imageVector = if (radio) Icons.Outlined.Radio else Icons.Outlined.Explore,
+            contentDescription = null,
+            tint = if (radio) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(28.dp),
+        )
+        Text(
+            text = message,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
 }
