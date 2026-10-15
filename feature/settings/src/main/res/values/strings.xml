@@ -67,4 +67,26 @@
     <string name="nostop_nav_library">Library &amp; Storage</string>
     <string name="nostop_nav_about">About &amp; Help</string>
     <string name="nostop_search_empty">No settings found for "%1$s"</string>
+    <string name="nostop_playback_mode">Mode</string>
+    <string name="nostop_stream_only">Stream only</string>
+    <string name="nostop_download">Download</string>
+    <string name="nostop_streaming">Streaming</string>
+    <string name="nostop_cellular">Stream on cellular</string>
+    <string name="nostop_cellular_desc">Allow streaming over mobile data (5G / LTE). Off by default to avoid surprise data use.</string>
+    <string name="nostop_via_youtube">Stream via YouTube</string>
+    <string name="nostop_via_youtube_desc">Skip Qobuz and stream everything via YouTube. Enable if lossless playback fails or only short clips play.</string>
+    <string name="nostop_force_qobuz">Force Qobuz only (debug)</string>
+    <string name="nostop_force_qobuz_desc">Debug only. Streams and downloads through Qobuz, without fallback to YouTube.</string>
+    <string name="nostop_stream_unavailable">Streaming is unavailable in this build.</string>
+    <string name="nostop_autoplay">Autoplay</string>
+    <string name="nostop_autoplay_radio">Autoplay radio</string>
+    <string name="nostop_autoplay_radio_desc">When the queue nears its end, play similar songs automatically. Internet required.</string>
+    <string name="nostop_crossfade">Crossfade</string>
+    <string name="nostop_crossfade_desc">Fade out the current track and fade in the next. Manual skips still switch immediately.</string>
+    <string name="nostop_lyrics">Lyrics</string>
+    <string name="nostop_lrc_only">LRC only</string>
+    <string name="nostop_lyrics_lrc_description">Word-synced lyrics are off. To fetch them again, switch back to Apple Music and use Fetch lyrics in Library Health.</string>
+    <string name="nostop_lyrics_apple_description">Prefers Apple Music word-synced lyrics. Switching to LRC only removes stored word-synced lyrics; use Fetch lyrics in Library Health to fetch line-synced lyrics.</string>
+    <string name="nostop_duration">Duration</string>
+    <string name="nostop_duration_seconds">%1$d sec</string>
 </resources>
