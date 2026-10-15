@@ -115,3 +115,7 @@ Branch: `nonstop`.
 - Podcast service is connected lazily until the user has first played a podcast; there is no duplicate media service startup on a fresh music-only install.
 - All changes preserve existing song DB, album art, download workers and Now Playing route; no intermediate APK installs.
 - CI required on latest commit: `[do test]`.
+
+### Kotlin compilation fixes after initial CI
+- First shared-chrome CI caught two narrowly scoped Kotlin errors: a removed UUID import still used by download temp naming, and OkHttp 4's Dns interface requiring an explicit object implementation. Both corrected without changing product scope.
+- Re-run all checks on current head: `[do test]`.
