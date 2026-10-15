@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="nostop_playlist_save_to">Save to Playlist</string>
+    <string name="nostop_playlist_create_new">Create New Playlist</string>
+    <string name="nostop_playlist_one_track">%1$d track</string>
+    <string name="nostop_playlist_many_tracks">%1$d tracks</string>
+    <string name="nostop_playlist_create">Create Playlist</string>
+    <string name="nostop_playlist_name">Playlist name</string>
+    <string name="nostop_playlist_confirm">Create</string>
+    <string name="nostop_playlist_cancel">Cancel</string>
+</resources>
