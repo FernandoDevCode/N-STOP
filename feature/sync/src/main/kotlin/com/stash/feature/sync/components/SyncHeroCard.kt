@@ -34,6 +34,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.stash.feature.sync.R
 import com.stash.core.ui.theme.StashTheme
 
 /**
@@ -94,17 +96,17 @@ fun SyncHeroCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "LAST SYNC",
+                        text = stringResource(R.string.nostop_hero_last_sync),
                         style = MaterialTheme.typography.labelSmall,
                         color = StashTheme.extendedColors.purpleLight,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Spacer(Modifier.height(2.dp))
                     val body = when {
-                        lastSyncTrackCount == null -> "Never synced"
-                        lastSyncTrackCount == 0 -> "$lastSyncRelativeTime · no new songs"
-                        lastSyncTrackCount == 1 -> "$lastSyncRelativeTime · 1 new song"
-                        else -> "$lastSyncRelativeTime · $lastSyncTrackCount new songs"
+                        lastSyncTrackCount == null -> stringResource(R.string.nostop_hero_never)
+                        lastSyncTrackCount == 0 -> stringResource(R.string.nostop_hero_no_new, lastSyncRelativeTime)
+                        lastSyncTrackCount == 1 -> stringResource(R.string.nostop_hero_one_new, lastSyncRelativeTime)
+                        else -> stringResource(R.string.nostop_hero_many_new, lastSyncRelativeTime, lastSyncTrackCount)
                     }
                     Text(
                         text = body,
@@ -131,16 +133,16 @@ fun SyncHeroCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "DOWNLOAD",
+                        text = stringResource(R.string.nostop_hero_download),
                         style = MaterialTheme.typography.labelSmall,
                         color = StashTheme.extendedColors.purpleLight,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
                         text = if (downloadOnline) {
-                            "Off — switched-on playlists stream instead"
+                            stringResource(R.string.nostop_hero_off)
                         } else {
-                            "On — switched-on playlists and mixes save to this phone"
+                            stringResource(R.string.nostop_hero_on)
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -170,7 +172,7 @@ fun SyncHeroCard(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = if (downloadOnline) "Update Streaming Index" else "Download Tracks to Device",
+                        text = if (downloadOnline) stringResource(R.string.nostop_hero_update_index) else stringResource(R.string.nostop_hero_download_device),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
