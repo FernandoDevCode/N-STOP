@@ -93,4 +93,23 @@
     <string name="nostop_hub_about_hint">Versão, diagnósticos e relatórios de falhas</string>
     <string name="nostop_settings_search_placeholder">Buscar nas configurações</string>
     <string name="nostop_settings_search_clear">Limpar busca</string>
+    <string name="nostop_about_diagnostics">Diagnósticos</string>
+    <string name="nostop_about_share_crash">Compartilhar último relatório de falha</string>
+    <string name="nostop_about_crash_hint">Anexe o registro da falha mais recente a um e-mail ou conversa. O arquivo permanece no celular até você compartilhá-lo.</string>
+    <string name="nostop_about_no_crash">Nenhuma falha recente.</string>
+    <string name="nostop_about_no_crash_to_share">Nenhum relatório de falha para compartilhar.</string>
+    <string name="nostop_about_crash_chooser">Compartilhar relatório de falha</string>
+    <string name="nostop_about_share_unavailable">Nenhum aplicativo disponível para compartilhar o relatório.</string>
+    <string name="nostop_about_share_diagnostics">Compartilhar diagnósticos</string>
+    <string name="nostop_about_diagnostics_hint">Inclua registros recentes, histórico de sincronização e estado das conexões (sem senhas) para ajudar a diagnosticar problemas.</string>
+    <string name="nostop_about_heading">Sobre</string>
+    <string name="nostop_about_latest">Você já está na versão mais recente (%1$s)</string>
+    <string name="nostop_about_update_available">Atualização disponível: %1$s</string>
+    <string name="nostop_about_see_releases">veja os lançamentos</string>
+    <string name="nostop_about_check_failed">Não foi possível verificar atualizações. Tente novamente mais tarde.</string>
+    <string name="nostop_about_version">Versão</string>
+    <string name="nostop_about_license">Licença</string>
+    <string name="nostop_about_checking">Verificando atualizações…</string>
+    <string name="nostop_about_checking_short">Verificando…</string>
+    <string name="nostop_about_check_updates">Verificar atualizações</string>
 </resources>
