@@ -101,3 +101,9 @@ Branch: `nonstop`.
 - Scope limitation: this MVP does not yet include OPML, episode bookmarks, playback speed presets, a unified music/podcast mini-player, download migration to external SAF storage, catalogue browse charts, or RSS auto-refresh notifications.
 - The legacy audiobook tab remains informational. No intermediate phone APK should be installed.
 - CI trigger below validates Kotlin compilation, unit tests and the debug assemble: `[do test]`.
+
+### Podcast MVP post-CI fixes
+- Initial implementation passed the complete Android debug/compile/unit/worker CI matrix (run 38811308589).
+- Follow-up correctness fixes: saved podcast files route through Media3's local-file-capable DefaultDataSource; explicit downloads wait for connectivity and reject HTML/JSON/XML/video error responses; pasted RSS feed URLs are no longer truncated to the directory-search limit.
+- The audiobook coming-soon copy no longer claims the Podcast tab is unimplemented.
+- Re-run the full matrix on this exact head using `[do test]` before declaring this checkpoint green.
