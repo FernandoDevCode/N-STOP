@@ -162,6 +162,7 @@ fun StashScaffold(
             // before the switch so restoreState can never
             // resurrect it into a tab's saved stack.
             navController.popBackStack(NowPlayingRoute, inclusive = true)
+            navController.popBackStack(PodcastNowPlayingRoute, inclusive = true)
             navController.navigate(dest.route) {
                 // Save each tab's back stack + state when leaving
                 // it, and restore it when returning — so tabbing to
@@ -261,7 +262,7 @@ fun StashScaffold(
                     // player already shows all transport controls, so the
                     // duplicate mini transport hides on this route only.
                     AnimatedVisibility(
-                        visible = currentRoute != NowPlayingRoute::class.qualifiedName,
+                        visible = !onNowPlaying,
                         modifier = cardInsets,
                         enter = fadeIn(),
                         exit = fadeOut(),
@@ -275,8 +276,11 @@ fun StashScaffold(
                             PodcastMiniPlayer(
                                 state = podcastUi,
                                 onExpand = {
-                                    podcastViewModel.requestOpenFromChrome()
-                                    navigateToTab(TopLevelDestination.HOME)
+                                    if (!navController.popBackStack(PodcastNowPlayingRoute, inclusive = false)) {
+                                        navController.navigate(PodcastNowPlayingRoute) {
+                                            launchSingleTop = true
+                                        }
+                                    }
                                 },
                                 onPlayPause = podcastViewModel::togglePause,
                             )
