@@ -61,6 +61,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -465,7 +466,7 @@ private fun AlbumDetailHeader(
                         modifier = Modifier.size(21.dp),
                     )
                     Spacer(Modifier.width(5.dp))
-                    Text("Play", style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                    Text(stringResource(R.string.nonstop_collection_play), style = MaterialTheme.typography.labelLarge, maxLines = 1)
                 }
                 BulkPlayButtonBox(
                     modifier = Modifier.weight(1f),
@@ -483,13 +484,13 @@ private fun AlbumDetailHeader(
                             modifier = Modifier.size(18.dp),
                         )
                         Spacer(Modifier.width(5.dp))
-                        Text("Shuffle", style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                        Text(stringResource(R.string.nonstop_collection_shuffle), style = MaterialTheme.typography.labelLarge, maxLines = 1)
                     }
                 }
                 IconButton(onClick = onToggleSearch) {
                     Icon(
                         imageVector = Icons.Default.Search,
-                        contentDescription = "Filter tracks",
+                        contentDescription = stringResource(R.string.nonstop_collection_search),
                         tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }
