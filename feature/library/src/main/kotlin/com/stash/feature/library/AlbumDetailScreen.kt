@@ -416,116 +416,14 @@ private fun AlbumDetailHeader(
     onShuffle: () -> Unit,
     onToggleSearch: () -> Unit,
 ) {
-    val extendedColors = StashTheme.extendedColors
-
-    // Try to find album art from the first track that has one.
     val albumArt = state.tracks.firstNotNullOfOrNull { it.albumArtPath ?: it.albumArtUrl }
-
-    Column(modifier = Modifier.fillMaxWidth()) {
-        // -- Artwork with back button and gradient scrim --
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(1f),
-        ) {
-            if (albumArt != null) {
-                AsyncImage(
-                    model = albumArt,
-                    contentDescription = "${state.albumName} artwork",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                )
-            } else {
-                // Gradient placeholder with album icon
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.linearGradient(
-                                colors = listOf(
-                                    MaterialTheme.colorScheme.primaryContainer,
-                                    MaterialTheme.colorScheme.tertiary.copy(alpha = 0.6f),
-                                ),
-                            ),
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Album,
-                        contentDescription = null,
-                        modifier = Modifier.size(72.dp),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f),
-                    )
-                }
-            }
-
-            // Gradient scrim at the bottom for text readability
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(160.dp)
-                    .align(Alignment.BottomCenter)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                MaterialTheme.colorScheme.background,
-                            ),
-                        ),
-                    ),
-            )
-
-            // Back button
-            IconButton(
-                onClick = onBack,
-                modifier = Modifier
-                    .statusBarsPadding()
-                    .padding(start = 8.dp, top = 8.dp)
-                    .align(Alignment.TopStart)
-                    .size(48.dp)
-                    .background(
-                        color = extendedColors.glassBackground,
-                        shape = CircleShape,
-                    ),
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
-                    tint = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-        }
-
-        // -- Album info below artwork --
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp),
-        ) {
-            // Album name
-            Text(
-                text = state.albumName,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            // Artist name
-            Text(
-                text = state.artistName,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Track count + total duration
+    NonstopCollectionHero(
+        title = state.albumName,
+        subtitle = state.artistName,
+        artwork = albumArt,
+        fallbackIcon = Icons.Default.Album,
+        onBack = onBack,
+        metadata = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -536,44 +434,39 @@ private fun AlbumDetailHeader(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-
-                val totalDuration = state.tracks.sumOf { it.durationMs }
-                if (totalDuration > 0) {
+                val duration = state.tracks.sumOf { it.durationMs }
+                if (duration > 0) {
                     Text(
-                        text = "\u2022",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = formatTotalDuration(totalDuration),
+                        text = "•  ${formatTotalDuration(duration)}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Action buttons: Play All + Shuffle
+        },
+        actions = {
+            // Explicit, equal-width play controls; a standalone search control.
+            // Unlike the previous crowded row, labels retain their full width
+            // even on narrow devices and at large font scales.
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(9.dp),
             ) {
                 Button(
                     onClick = onPlayAll,
+                    shape = RoundedCornerShape(24.dp),
                     modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(vertical = 12.dp),
-                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(vertical = 12.dp, horizontal = 6.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Default.PlayArrow,
                         contentDescription = null,
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(21.dp),
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "Play All", style = MaterialTheme.typography.labelLarge)
+                    Spacer(Modifier.width(5.dp))
+                    Text("Play", style = MaterialTheme.typography.labelLarge, maxLines = 1)
                 }
-
                 BulkPlayButtonBox(
                     modifier = Modifier.weight(1f),
                     showProgress = bulkPlayInFlight == BulkPlayAction.SHUFFLE_ALL,
@@ -581,29 +474,19 @@ private fun AlbumDetailHeader(
                     OutlinedButton(
                         onClick = onShuffle,
                         modifier = Modifier.fillMaxWidth(),
-                        contentPadding = PaddingValues(vertical = 12.dp),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(24.dp),
+                        contentPadding = PaddingValues(vertical = 12.dp, horizontal = 6.dp),
                     ) {
                         Icon(
                             imageVector = Icons.Default.Shuffle,
                             contentDescription = null,
-                            modifier = Modifier.size(20.dp),
+                            modifier = Modifier.size(18.dp),
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "Shuffle", style = MaterialTheme.typography.labelLarge)
+                        Spacer(Modifier.width(5.dp))
+                        Text("Shuffle", style = MaterialTheme.typography.labelLarge, maxLines = 1)
                     }
                 }
-
-                Spacer(modifier = Modifier.width(8.dp))
-                IconButton(
-                    onClick = onToggleSearch,
-                    modifier = Modifier
-                        .size(48.dp)
-                        .background(
-                            color = extendedColors.glassBackground,
-                            shape = RoundedCornerShape(12.dp),
-                        ),
-                ) {
+                IconButton(onClick = onToggleSearch) {
                     Icon(
                         imageVector = Icons.Default.Search,
                         contentDescription = "Filter tracks",
@@ -611,8 +494,6 @@ private fun AlbumDetailHeader(
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-    }
+        },
+    )
 }
