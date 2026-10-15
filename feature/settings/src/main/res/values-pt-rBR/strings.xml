@@ -234,4 +234,16 @@
     <string name="nostop_storage_import_confirm_library_replace">Substituir biblioteca</string>
     <string name="nostop_storage_import_confirm_settings_replace">Restaurar configurações</string>
     <string name="nostop_storage_import_confirm_everything_replace">Sobrescrever tudo</string>
+    <string name="nostop_storage_network_charging_title">Wi-Fi e carregando</string>
+    <string name="nostop_storage_network_charging_desc">Baixar somente no Wi-Fi enquanto o celular estiver carregando.</string>
+    <string name="nostop_storage_network_wifi_title">Wi-Fi a qualquer momento</string>
+    <string name="nostop_storage_network_wifi_desc">Baixar pelo Wi-Fi mesmo sem estar carregando.</string>
+    <string name="nostop_storage_network_any_title">Qualquer rede</string>
+    <string name="nostop_storage_network_any_desc">Também baixa pelos dados móveis. Consome seu pacote de internet.</string>
+    <string name="nostop_storage_layout_artist_album_title">Artista / Álbum</string>
+    <string name="nostop_storage_layout_artist_album_desc">Criar pastas de artistas com subpastas para os álbuns.</string>
+    <string name="nostop_storage_layout_single_folder_title">Pasta única</string>
+    <string name="nostop_storage_layout_single_folder_desc">Salvar todas as músicas em uma só pasta, como artista - título.</string>
+    <string name="nostop_storage_layout_playlist_title">Por playlist</string>
+    <string name="nostop_storage_layout_playlist_desc">Criar uma pasta para cada playlist. Músicas sem playlist ficam em Artista / Álbum.</string>
 </resources>
