@@ -22,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -82,42 +83,42 @@ fun SettingsHubScreen(
     ) {
         listOf(
             SettingsSearchItem(
-                title = "Playback",
+                title = stringResource(R.string.nostop_nav_playback),
                 subtitle = "Sleep timer, autoplay radio, crossfade, gapless",
                 keywords = listOf("sleep timer", "autoplay", "radio", "crossfade", "gapless", "playback"),
                 icon = Icons.Rounded.PlayArrow,
                 onSelect = onOpenPlayback,
             ),
             SettingsSearchItem(
-                title = "Audio & Quality",
+                title = stringResource(R.string.nostop_nav_audio),
                 subtitle = "Streaming quality, lossless, download quality",
                 keywords = listOf("bitrate", "flac", "lossless", "quality", "streaming", "wifi", "cellular"),
                 icon = Icons.Rounded.GraphicEq,
                 onSelect = onOpenAudioQuality,
             ),
             SettingsSearchItem(
-                title = "Accounts & Sync",
+                title = stringResource(R.string.nostop_nav_accounts),
                 subtitle = "Spotify, YouTube Music, Last.fm",
                 keywords = listOf("spotify", "youtube", "lastfm", "last.fm", "login", "sync", "scrobble"),
                 icon = Icons.Rounded.Person,
                 onSelect = onOpenAccounts,
             ),
             SettingsSearchItem(
-                title = "Library & Storage",
+                title = stringResource(R.string.nostop_nav_library),
                 subtitle = "Storage location, backups, downloads",
                 keywords = listOf("storage", "backup", "export", "import", "download", "move library", "web", "browser", "link", "pair"),
                 icon = Icons.Rounded.FolderOpen,
                 onSelect = onOpenLibraryStorage,
             ),
             SettingsSearchItem(
-                title = "Appearance",
+                title = stringResource(R.string.nostop_appearance),
                 subtitle = "Theme, AMOLED, Home layout",
                 keywords = listOf("theme", "dark mode", "amoled", "appearance", "home layout", "community", "open stash on", "start tab", "launch"),
                 icon = Icons.Rounded.Palette,
                 onSelect = onOpenAppearance,
             ),
             SettingsSearchItem(
-                title = "About & Help",
+                title = stringResource(R.string.nostop_nav_about),
                 subtitle = "Version, diagnostics, crash reports",
                 keywords = listOf("about", "version", "diagnostics", "crash", "help"),
                 icon = Icons.Rounded.Info,
@@ -158,7 +159,7 @@ fun SettingsHubScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(
-            text = "Settings",
+            text = stringResource(R.string.nostop_settings_title),
             style = MaterialTheme.typography.headlineSmall,
             color = MaterialTheme.colorScheme.onSurface,
         )
@@ -170,7 +171,7 @@ fun SettingsHubScreen(
         if (searchQuery.isNotBlank()) {
             if (searchResults.isEmpty()) {
                 Text(
-                    text = "No settings found for \"$searchQuery\"",
+                    text = stringResource(R.string.nostop_search_empty, searchQuery),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 4.dp),
@@ -198,7 +199,7 @@ fun SettingsHubScreen(
             rows = listOf(
                 {
                     SettingsNavRow(
-                        title = "Playback",
+                        title = stringResource(R.string.nostop_nav_playback),
                         subtitle = summaries.playback,
                         leadingIcon = Icons.Rounded.PlayArrow,
                         onClick = onOpenPlayback,
@@ -206,7 +207,7 @@ fun SettingsHubScreen(
                 },
                 {
                     SettingsNavRow(
-                        title = "Audio & Quality",
+                        title = stringResource(R.string.nostop_nav_audio),
                         subtitle = summaries.audioQuality,
                         leadingIcon = Icons.Rounded.GraphicEq,
                         onClick = onOpenAudioQuality,
@@ -214,7 +215,7 @@ fun SettingsHubScreen(
                 },
                 {
                     SettingsNavRow(
-                        title = "Accounts & Sync",
+                        title = stringResource(R.string.nostop_nav_accounts),
                         subtitle = summaries.accounts,
                         leadingIcon = Icons.Rounded.Person,
                         onClick = onOpenAccounts,
@@ -222,7 +223,7 @@ fun SettingsHubScreen(
                 },
                 {
                     SettingsNavRow(
-                        title = "Library & Storage",
+                        title = stringResource(R.string.nostop_nav_library),
                         subtitle = summaries.libraryStorage,
                         leadingIcon = Icons.Rounded.FolderOpen,
                         onClick = onOpenLibraryStorage,
@@ -230,7 +231,7 @@ fun SettingsHubScreen(
                 },
                 {
                     SettingsNavRow(
-                        title = "Appearance",
+                        title = stringResource(R.string.nostop_appearance),
                         subtitle = summaries.appearance,
                         leadingIcon = Icons.Rounded.Palette,
                         onClick = onOpenAppearance,
@@ -238,7 +239,7 @@ fun SettingsHubScreen(
                 },
                 {
                     SettingsNavRow(
-                        title = "About & Help",
+                        title = stringResource(R.string.nostop_nav_about),
                         subtitle = summaries.about,
                         leadingIcon = Icons.Rounded.Info,
                         onClick = onOpenAbout,
