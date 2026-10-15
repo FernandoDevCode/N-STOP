@@ -69,3 +69,11 @@ Branch: `nonstop`.
 - Online album call-to-action labels use localized Portuguese/English resources, while the playlist and offline album labels follow the same language selection.
 - Search and Library headers share the product's restrained lilac lighting and search input tint instead of the older plum static color.
 - User requests no intermediate APK installs; builds are CI validation artifacts, not installation requests.
+
+## Shared visual finishing pass — 2026-10-15
+- NØNStop wordmark: both neutral N letters now adapt to light/dark, and the equalizer hues contrast in light mode; the approved logo proportions/typography remain unchanged.
+- Selected bottom navigation icon uses steady brand violet rather than cover-dependent tones, with a soft radial glow and a 180 ms selection transition; tab order remains **Início · Explorar · Rádio · Buscar · Biblioteca**.
+- Home media chips now paint their pulse above the resting tint instead of hiding it underneath, use accessible tab semantics and honor Android's reduce-motion option.
+- Shared press-scale feedback honors reduce motion; artwork-first album and artist cards have reliable violet/cyan placeholders and readable two-line titles.
+- Section headings and Home rail spacing now follow one editorial rhythm.
+- This pass changes presentation only; playback, library permissions, downloads and data models are untouched.
