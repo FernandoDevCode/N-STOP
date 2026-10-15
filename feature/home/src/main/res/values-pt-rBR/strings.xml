@@ -27,4 +27,22 @@
     <string name="nonstop_filter_podcasts">Podcasts</string>
     <string name="nonstop_filter_audiobooks">Audiobooks</string>
     <string name="nonstop_media_coming_soon">A reprodução de podcasts e audiobooks será integrada em uma próxima etapa. Sua música e biblioteca continuam disponíveis.</string>
+    <string name="nonstop_explore_title">Explorar</string>
+    <string name="nonstop_explore_subtitle">Novos sons, artistas e caminhos para ouvir.</string>
+    <string name="nonstop_explore_releases">Novos lançamentos</string>
+    <string name="nonstop_explore_arrivals">Acabaram de chegar</string>
+    <string name="nonstop_explore_featured">Em destaque</string>
+    <string name="nonstop_explore_albums">Álbuns para descobrir</string>
+    <string name="nonstop_explore_rediscovery">Redescoberta</string>
+    <string name="nonstop_explore_rediscovery_subtitle">Outras formas de ouvir o que você gosta</string>
+    <string name="nonstop_explore_empty">Conecte uma fonte musical para explorar lançamentos e sugestões.</string>
+    <string name="nonstop_radio_title">Rádio</string>
+    <string name="nonstop_radio_subtitle">Deixe a próxima música surpreender você.</string>
+    <string name="nonstop_radio_your_stations">Suas rádios</string>
+    <string name="nonstop_radio_stations_subtitle">Estações geradas a partir da sua música</string>
+    <string name="nonstop_radio_listen_again">Continue ouvindo</string>
+    <string name="nonstop_radio_listen_subtitle">Misturas feitas para o seu gosto</string>
+    <string name="nonstop_radio_empty">Suas estações vão aparecer aqui quando houver músicas suficientes para recomendar.</string>
+    <string name="nonstop_mix_building">Preparando</string>
+    <string name="nonstop_mix_empty">Ainda sem faixas</string>
 </resources>
