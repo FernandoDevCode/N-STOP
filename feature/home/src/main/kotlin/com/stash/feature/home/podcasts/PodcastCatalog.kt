@@ -39,25 +39,10 @@ internal fun podcastKey(raw: String): String =
     MessageDigest.getInstance("SHA-256").digest(raw.toByteArray(Charsets.UTF_8))
         .take(16).joinToString("") { "%02x".format(it) }
 
-/** Only remote HTTPS sources may be handed to the RSS reader or audio downloader. */
-internal fun validPodcastUrl(raw: String): Boolean {
-    val uri = runCatching { URI(raw.trim()) }.getOrNull() ?: return false
-    if (!uri.scheme.equals("https", true) || uri.host.isNullOrBlank() ||
-        uri.userInfo != null || uri.port !in listOf(-1, 443)) return false
-    val host = uri.host.lowercase()
-    if (host == "localhost" || host.endsWith(".localhost") || host.endsWith(".local") ||
-        host.endsWith(".internal") || host == "127.0.0.1" || host == "::1" ||
-        host.matches(Regex("\\d+\\.\\d+\\.\\d+\\.\\d+")) ||
-        host.startsWith("10.") || host.startsWith("192.168.") || host.startsWith("172.")) return false
-    return true
-}
-
 @Singleton
 class PodcastCatalog @Inject constructor(@ApplicationContext private val context: Context) {
-    private val client = OkHttpClient.Builder()
-        .followSslRedirects(false)
-        .callTimeout(java.time.Duration.ofSeconds(20))
-        .build()
+    private val client = PodcastHttp.client.newBuilder()
+        .callTimeout(java.time.Duration.ofSeconds(20)).build()
     private val prefs = context.getSharedPreferences("nonstop_podcasts", Context.MODE_PRIVATE)
     private val _followed = MutableStateFlow(readFollowed())
     val followed: StateFlow<List<PodcastShow>> = _followed
