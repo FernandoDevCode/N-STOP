@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NØSTOP</string>
+    <string name="resume_playback_short">Retomar</string>
+    <string name="resume_playback_long">Retomar reprodução</string>
+    <string name="cast_connect_failed">Não foi possível conectar a %1$s</string>
+</resources>
