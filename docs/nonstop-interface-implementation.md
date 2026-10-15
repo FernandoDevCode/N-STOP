@@ -57,3 +57,10 @@ Branch: `nonstop`.
 - The real like/unlike action and sleep timer remain independently clickable beside the track information; tapping the song text still opens the artist profile.
 - The art keeps album-palette lighting with a tighter 14dp corner radius and controlled glow.
 - Existing playback transport, queue, seek gestures, casting, lyrics, shared transitions and audio engine are unchanged.
+
+## Albums and playlists UI checkpoint
+- Extracted a reusable native NØNStop collection hero for local albums and playlists: editorial artwork, violet/navy atmosphere, restrained colored shadow, clear title and metadata.
+- Reworked their primary actions to fit narrow phone screens without squeezed labels.
+- Playlist search, share, and editable cover remain functional in an overflow menu, respecting read-only playlists.
+- Online album catalog hero now follows the same proportions, while retaining play, queue, save, shuffle (only when applicable), download and streaming switch behaviors.
+- New offline action labels respect the existing pt-BR/English resource system. No media/data services were replaced.
