@@ -36,6 +36,8 @@
     <string name="nonstop_explore_rediscovery">Rediscovery</string>
     <string name="nonstop_explore_rediscovery_subtitle">Fresh ways to revisit your favorites</string>
     <string name="nonstop_explore_empty">Connect a music source to explore releases and recommendations.</string>
+    <string name="nonstop_explore_loading">Loading releases and recommendations</string>
+    <string name="nonstop_radio_loading">Loading your stations and mixes</string>
     <string name="nonstop_radio_title">Radio</string>
     <string name="nonstop_radio_subtitle">Let the next song surprise you.</string>
     <string name="nonstop_radio_your_stations">Your stations</string>
