@@ -15,4 +15,10 @@
     <string name="nonstop_artist_albums_tab">Álbuns</string>
     <string name="nonstop_artist_singles_tab">Singles</string>
     <string name="nonstop_artist_about_tab">Sobre</string>
+    <string name="nonstop_album_play">Tocar</string>
+    <string name="nonstop_album_queue">Adicionar à fila</string>
+    <string name="nonstop_album_saved">Salvo</string>
+    <string name="nonstop_album_save">Salvar</string>
+    <string name="nonstop_album_shuffle">Aleatório</string>
+    <string name="nonstop_album_download_all">Baixar tudo</string>
 </resources>
