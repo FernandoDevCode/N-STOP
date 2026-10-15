@@ -3,7 +3,7 @@
 Branch: `nonstop`.
 
 ## Approved design implemented in native Compose
-- Bottom navigation, in the approved order: Início · Explorar · Rádio · Sua Biblioteca · Buscar.
+- Bottom navigation, in the approved order: Início · Explorar · Rádio · Buscar · Biblioteca.
 - Five tabs are real routes. Explore lists available catalog releases, albums and rediscovery mixes; Radio lists the app's actual generated radio/mix playlists, without mock data.
 - Old Sync/Settings routes are retained and exposed in the Library overflow.
 - Full-width frosted mini-player and tab navigation. Timeline at the mini-player's top edge; real local-liked heart and play/pause, no skip/queue buttons and no outlined play button.
@@ -47,7 +47,7 @@ Branch: `nonstop`.
 - All of the above runs against existing real catalog and playlist data, not hardcoded showcase music.
 
 ## Navigation refinement — approved layout
-- Bottom bar now uses the explicitly approved order: Início · Buscar · Explorar · Biblioteca · Rádio.
+- Bottom bar uses the user's explicitly confirmed order: Início · Explorar · Rádio · Buscar · Biblioteca.
 - The online artist page provides sticky, localized jump chips for songs, albums, singles and about; only shelves with real data receive a live chip.
 - Artist album deep-links account for the extra sticky bar to land on the correct list.
 - Pure unit tests cover full, sparse and empty artist catalog section indexes.
