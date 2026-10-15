@@ -218,11 +218,11 @@
     <string name="nostop_storage_dismiss">Dismiss</string>
     <string name="nostop_storage_moving_progress">Moving %1$d of %2$d...</string>
     <string name="nostop_storage_downloads">Downloads</string>
-    <string name="nostop_storage_export_label_likes">Liked songs only</string>
+    <string name="nostop_storage_export_label_likes_only">Liked songs only</string>
     <string name="nostop_storage_export_label_everything">Everything</string>
     <string name="nostop_storage_export_label_library_only">Library only</string>
     <string name="nostop_storage_export_label_settings_only">Settings only</string>
-    <string name="nostop_storage_export_desc_likes">Everything you liked and nothing else. Small file.</string>
+    <string name="nostop_storage_export_desc_likes_only">Everything you liked and nothing else. Small file.</string>
     <string name="nostop_storage_export_desc_everything">Library and settings. Logins cannot be restored.</string>
     <string name="nostop_storage_export_desc_library_only">Songs, playlists and history. No settings.</string>
     <string name="nostop_storage_export_desc_settings_only">Preferences without the library.</string>
