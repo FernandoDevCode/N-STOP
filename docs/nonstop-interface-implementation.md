@@ -77,3 +77,9 @@ Branch: `nonstop`.
 - Shared press-scale feedback honors reduce motion; artwork-first album and artist cards have reliable violet/cyan placeholders and readable two-line titles.
 - Section headings and Home rail spacing now follow one editorial rhythm.
 - This pass changes presentation only; playback, library permissions, downloads and data models are untouched.
+
+## Explore and Radio cold-loading refinement — 2026-10-15
+- Explore's catalog album rails now reuse the same shared 152dp album cards as Search and artist profiles, including consistent artwork fallbacks and touch feedback.
+- Explore and Radio now show static, accessibility-hidden placeholder rails only during an initial empty loading state. Once loading finishes, the existing honest empty-state copy is retained.
+- No mock catalogs, media downloads, playback or routing changes were introduced.
+- Validate this change using the project's complete CI gate (`[do test]`).
