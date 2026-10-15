@@ -94,6 +94,7 @@ import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -448,7 +449,7 @@ fun NowPlayingScreen(
     if (confirmEndTogether) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { confirmEndTogether = false },
-            title = { Text("End the session for everyone?") },
+            title = { Text(stringResource(R.string.nostop_np_end_everyone)) },
             text = {
                 val others = (room?.members?.size ?: 1) - 1
                 Text(if (others == 1) "The person listening with you will be dropped." else "The $others people listening with you will be dropped.")
@@ -457,10 +458,10 @@ fun NowPlayingScreen(
                 androidx.compose.material3.TextButton(
                     onClick = { together.end(); confirmEndTogether = false },
                     colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                ) { Text("End") }
+                ) { Text(stringResource(R.string.nostop_np_end)) }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { confirmEndTogether = false }) { Text("Cancel") }
+                androidx.compose.material3.TextButton(onClick = { confirmEndTogether = false }) { Text(stringResource(R.string.nostop_np_cancel)) }
             },
         )
     }
@@ -469,13 +470,13 @@ fun NowPlayingScreen(
         val nextHost = room?.members?.filter { it.id != room.myId }?.minByOrNull { it.joinedAt }?.name ?: "Someone"
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { confirmLeaveTogether = false },
-            title = { Text("Leave the session?") },
-            text = { Text("$nextHost will host, and the music keeps playing for everyone else.") },
+            title = { Text(stringResource(R.string.nostop_np_leave_session)) },
+            text = { Text(stringResource(R.string.nostop_np_new_host, nextHost)) },
             confirmButton = {
-                androidx.compose.material3.TextButton(onClick = { together.leave(); confirmLeaveTogether = false }) { Text("Leave") }
+                androidx.compose.material3.TextButton(onClick = { together.leave(); confirmLeaveTogether = false }) { Text(stringResource(R.string.nostop_np_leave)) }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { confirmLeaveTogether = false }) { Text("Cancel") }
+                androidx.compose.material3.TextButton(onClick = { confirmLeaveTogether = false }) { Text(stringResource(R.string.nostop_np_cancel)) }
             },
         )
     }
@@ -612,7 +613,7 @@ fun NowPlayingScreen(
             },
             dismissButton = {
                 androidx.compose.material3.TextButton(onClick = { pendingWrongMatchDelete = null }) {
-                    androidx.compose.material3.Text("Cancel")
+                    androidx.compose.material3.Text(stringResource(R.string.nostop_np_cancel))
                 }
             },
         )
@@ -622,7 +623,7 @@ fun NowPlayingScreen(
             onDismissRequest = { showWrongMatchDialog = false },
             title = {
                 androidx.compose.material3.Text(
-                    text = "What's wrong with this song?",
+                    text = stringResource(R.string.nostop_np_wrong_track),
                     style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
                     fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
                 )
@@ -632,7 +633,7 @@ fun NowPlayingScreen(
                     verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
                 ) {
                     androidx.compose.material3.Text(
-                        text = "Pick what should happen to '${track.title}'.",
+                        text = stringResource(R.string.nostop_np_wrong_track_hint, track.title),
                         style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
                         color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -647,7 +648,7 @@ fun NowPlayingScreen(
                             },
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            androidx.compose.material3.Text("Find in FLAC")
+                            androidx.compose.material3.Text(stringResource(R.string.nostop_np_find_flac))
                         }
                     }
                     androidx.compose.material3.OutlinedButton(
@@ -657,7 +658,7 @@ fun NowPlayingScreen(
                         },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        androidx.compose.material3.Text("Find a better match")
+                        androidx.compose.material3.Text(stringResource(R.string.nostop_np_better_match))
                     }
                     // Both deletes confirm first (pendingWrongMatchDelete below), as deletes do
                     // elsewhere: "Delete from library" looked exactly like the harmless option
@@ -672,7 +673,7 @@ fun NowPlayingScreen(
                             contentColor = androidx.compose.material3.MaterialTheme.colorScheme.error,
                         ),
                     ) {
-                        androidx.compose.material3.Text("Delete from library")
+                        androidx.compose.material3.Text(stringResource(R.string.nostop_np_delete))
                     }
                     androidx.compose.material3.Button(
                         onClick = {
@@ -684,7 +685,7 @@ fun NowPlayingScreen(
                             containerColor = androidx.compose.material3.MaterialTheme.colorScheme.error,
                         ),
                     ) {
-                        androidx.compose.material3.Text("Delete and block forever")
+                        androidx.compose.material3.Text(stringResource(R.string.nostop_np_delete_block))
                     }
                 }
             },
@@ -692,7 +693,7 @@ fun NowPlayingScreen(
                 androidx.compose.material3.TextButton(
                     onClick = { showWrongMatchDialog = false },
                 ) {
-                    androidx.compose.material3.Text("Cancel")
+                    androidx.compose.material3.Text(stringResource(R.string.nostop_np_cancel))
                 }
             },
         )
@@ -1302,7 +1303,7 @@ private fun TrackInfoBlock(
                     } else {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                            contentDescription = "Open artist",
+                            contentDescription = stringResource(R.string.nostop_np_open_artist),
                             tint = npInk().copy(alpha = 0.6f),
                             modifier = Modifier.size(18.dp),
                         )
@@ -1409,7 +1410,7 @@ private fun AlbumArtSection(
 
         AsyncImage(
             model = artRequest,
-            contentDescription = "Album art",
+            contentDescription = stringResource(R.string.nostop_np_album_art),
             contentScale = ContentScale.Crop,
             error = missingArt,
             fallback = missingArt,
@@ -1459,7 +1460,7 @@ private fun PlaybackControls(
         } else IconButton(onClick = onToggleShuffle) {
             Icon(
                 imageVector = Icons.Default.Shuffle,
-                contentDescription = "Shuffle",
+                contentDescription = stringResource(R.string.nostop_np_shuffle),
                 tint = if (shuffleEnabled) accentColor else npInk().copy(alpha = 0.6f),
                 modifier = Modifier.size(24.dp),
             )
@@ -1469,7 +1470,7 @@ private fun PlaybackControls(
         if (!canSkip) Spacer(Modifier.size(48.dp)) else IconButton(onClick = onSkipPrevious) {
             Icon(
                 imageVector = Icons.Default.SkipPrevious,
-                contentDescription = "Previous",
+                contentDescription = stringResource(R.string.nostop_np_previous),
                 tint = npInk(),
                 modifier = Modifier.size(36.dp),
             )
@@ -1513,7 +1514,7 @@ private fun PlaybackControls(
         if (!canSkip) Spacer(Modifier.size(48.dp)) else IconButton(onClick = onSkipNext) {
             Icon(
                 imageVector = Icons.Default.SkipNext,
-                contentDescription = "Next",
+                contentDescription = stringResource(R.string.nostop_np_next),
                 tint = npInk(),
                 modifier = Modifier.size(36.dp),
             )
@@ -1528,7 +1529,7 @@ private fun PlaybackControls(
                     RepeatMode.ONE -> Icons.Default.RepeatOne
                     else -> Icons.Default.Repeat
                 },
-                contentDescription = "Repeat",
+                contentDescription = stringResource(R.string.nostop_np_repeat),
                 tint = when (repeatMode) {
                     RepeatMode.OFF -> npInk().copy(alpha = 0.6f)
                     else -> accentColor
@@ -1621,7 +1622,7 @@ private fun QualityLine(
         ) {
             Icon(
                 imageVector = Icons.Default.Wifi,
-                contentDescription = "Streaming",
+                contentDescription = stringResource(R.string.nostop_np_streaming),
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(12.dp),
             )
@@ -1677,7 +1678,7 @@ private fun SleepTimerSheet(
                 .padding(bottom = 36.dp),
         ) {
             Text(
-                text = "Sleep Timer",
+                text = stringResource(R.string.nostop_np_sleep_timer),
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                 modifier = Modifier
                     .padding(bottom = 20.dp)
@@ -1691,7 +1692,7 @@ private fun SleepTimerSheet(
                     val remainingMs = rememberSleepTimerRemainingMs(currentState, everySecond = true) ?: 0L
                     val spoken = "Music pauses in ${sleepTimerSpoken(remainingMs, withSeconds = true)}"
                     Text(
-                        text = "Music pauses in ${sleepTimerClock(remainingMs)}",
+                        text = stringResource(R.string.nostop_np_sleep_timer_remaining, sleepTimerClock(remainingMs)),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier
@@ -1701,7 +1702,7 @@ private fun SleepTimerSheet(
                     )
                 }
                 SleepTimerController.State.EndOfTrack -> Text(
-                    text = "End of track: music pauses when this song ends",
+                    text = stringResource(R.string.nostop_np_end_track_hint),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(bottom = 12.dp),
@@ -1712,20 +1713,20 @@ private fun SleepTimerSheet(
             listOf(15, 30, 45, 60, 120, 180).forEach { minutes ->
                 SheetOptionRow(
                     icon = Icons.Default.Timer,
-                    label = "$minutes min",
+                    label = stringResource(R.string.nostop_np_minutes, minutes),
                     onClick = { onSelectMinutes(minutes) },
                 )
                 Spacer(Modifier.height(8.dp))
             }
-            SheetOptionRow(icon = Icons.Default.Edit, label = "Custom", onClick = onSelectCustom)
+            SheetOptionRow(icon = Icons.Default.Edit, label = stringResource(R.string.nostop_np_custom), onClick = onSelectCustom)
             Spacer(Modifier.height(8.dp))
-            SheetOptionRow(icon = Icons.Default.Bedtime, label = "End of Track", onClick = onSelectEndOfTrack)
+            SheetOptionRow(icon = Icons.Default.Bedtime, label = stringResource(R.string.nostop_np_end_track), onClick = onSelectEndOfTrack)
 
             if (currentState != SleepTimerController.State.Off) {
                 Spacer(Modifier.height(8.dp))
                 SheetOptionRow(
                     icon = Icons.Default.Close,
-                    label = "Cancel timer",
+                    label = stringResource(R.string.nostop_np_cancel_timer),
                     onClick = onCancel,
                 )
             }
@@ -1743,12 +1744,12 @@ private fun CustomSleepTimerDialog(
     val parsedMinutes = minutesText.toIntOrNull()
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Custom sleep timer") },
+        title = { Text(stringResource(R.string.nostop_np_custom_sleep)) },
         text = {
             androidx.compose.material3.OutlinedTextField(
                 value = minutesText,
                 onValueChange = { if (it.all(Char::isDigit)) minutesText = it },
-                label = { Text("Minutes") },
+                label = { Text(stringResource(R.string.nostop_np_minute_label)) },
                 singleLine = true,
                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                     keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
@@ -1760,11 +1761,11 @@ private fun CustomSleepTimerDialog(
                 onClick = { parsedMinutes?.let(onConfirm) },
                 enabled = parsedMinutes != null && parsedMinutes > 0,
             ) {
-                Text("Start")
+                Text(stringResource(R.string.nostop_np_start))
             }
         },
         dismissButton = {
-            androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") }
+            androidx.compose.material3.TextButton(onClick = onDismiss) { Text(stringResource(R.string.nostop_np_cancel)) }
         },
     )
 }
@@ -1791,7 +1792,7 @@ private fun SpeedSheet(
                 .padding(bottom = 36.dp),
         ) {
             Text(
-                text = "Playback speed",
+                text = stringResource(R.string.nostop_np_speed),
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                 modifier = Modifier
                     .padding(bottom = 4.dp)
@@ -1855,7 +1856,7 @@ private fun SpeedSheet(
             }
 
             Spacer(Modifier.height(4.dp))
-            SheetOptionRow(icon = Icons.Default.Edit, label = "Custom", onClick = onCustom)
+            SheetOptionRow(icon = Icons.Default.Edit, label = stringResource(R.string.nostop_np_custom), onClick = onCustom)
         }
     }
 }
@@ -1878,12 +1879,12 @@ private fun CustomSpeedDialog(
     val valid = parsed != null
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Custom speed") },
+        title = { Text(stringResource(R.string.nostop_np_custom_speed)) },
         text = {
             androidx.compose.material3.OutlinedTextField(
                 value = text,
                 onValueChange = { new -> customSpeedInput(new)?.let { text = it } },
-                label = { Text("Speed (0.1 – 4.0)") },
+                label = { Text(stringResource(R.string.nostop_np_speed_range)) },
                 suffix = { Text("x") },
                 singleLine = true,
                 isError = text.isNotEmpty() && !valid,
@@ -1893,9 +1894,9 @@ private fun CustomSpeedDialog(
             )
         },
         confirmButton = {
-            TextButton(onClick = { parsed?.let(onConfirm) }, enabled = valid) { Text("Set") }
+            TextButton(onClick = { parsed?.let(onConfirm) }, enabled = valid) { Text(stringResource(R.string.nostop_np_set)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.nostop_np_cancel)) } },
     )
 }
 
