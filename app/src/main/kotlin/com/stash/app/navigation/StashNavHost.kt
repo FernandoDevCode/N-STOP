@@ -151,6 +151,11 @@ private fun StashNavGraph(
                     navController.navigate(PlaylistDetailRoute(playlistId))
                 },
                 onShareMix = { id -> navController.navigate(PlaylistDetailRoute(id, openShare = true)) },
+                onNavigateToNowPlaying = {
+                    if (!navController.popBackStack(NowPlayingRoute, inclusive = false)) {
+                        navController.navigate(NowPlayingRoute) { launchSingleTop = true }
+                    }
+                },
                 // Liked card: the ViewModel queued the Liked focus; perform the
                 // canonical tab switch so Back + bottom-bar state behave exactly
                 // like tapping the Library tab — then pop any RESTORED detail
