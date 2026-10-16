@@ -71,4 +71,5 @@
     <string name="podcast_speed">Speed</string>
     <string name="nostop_home_continue_current">Back to listening</string>
     <string name="nostop_home_resume_label">Your soundtrack</string>
+    <string name="podcast_preparing">Preparing download…</string>
 </resources>
