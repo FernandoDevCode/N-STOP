@@ -328,6 +328,7 @@ internal fun CompactCover(
         onSuccess = { s: AsyncImagePainter.State.Success ->
             onBitmapLoaded(runCatching { s.result.image.toBitmap() }.getOrNull())
         },
+        onError = { onBitmapLoaded(null) },
         modifier = modifier
             .size(CompactCoverSize)
             .clip(RoundedCornerShape(8.dp))

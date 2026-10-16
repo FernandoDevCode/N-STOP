@@ -28,6 +28,7 @@ import com.stash.feature.nowplaying.ui.npIsLight
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -94,6 +95,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -113,6 +115,8 @@ import com.stash.core.model.isFlac
 import com.stash.core.ui.components.SaveToPlaylistSheet
 import com.stash.core.ui.components.SheetOptionRow
 import com.stash.core.ui.theme.LocalIsAmoledTheme
+import com.stash.feature.nowplaying.ui.PlayerArtDirection
+import com.stash.feature.nowplaying.ui.playerArtDirectionFromBitmap
 import com.stash.feature.nowplaying.ui.AmbientBackground
 import com.stash.feature.nowplaying.ui.GlowingProgressBar
 import com.stash.feature.nowplaying.ui.LiveLyricsBar
@@ -342,6 +346,25 @@ fun NowPlayingScreen(
     // Both covers share one decode (rememberNpArtRequest), so the colours match either way.
     var paletteArtModel by remember { mutableStateOf<Any?>(null) }
     val artModel: Any? = track?.albumArtPath ?: track?.albumArtUrl
+    // The same decoded Coil artwork feeds the existing VM palette and the
+    // v7 direction pass. Analysis is background-only and keyed by artwork,
+    // never by playback position, and cancellation follows song changes.
+    var directionBitmap by remember(artModel) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var artDirection by remember(artModel) { mutableStateOf<PlayerArtDirection?>(null) }
+    LaunchedEffect(artModel, directionBitmap) {
+        val bitmap = directionBitmap ?: return@LaunchedEffect
+        artDirection = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            runCatching {
+                playerArtDirectionFromBitmap(bitmap, artModel.toString())
+            }.getOrElse { PlayerArtDirection.Neutral }
+        }
+    }
+    val resolvedDirection = artDirection ?: if (artModel == null) PlayerArtDirection.Neutral else null
+    val dynamicProgress = resolvedDirection?.progress ?: npAccent(uiState.vibrantColor)
+    val dynamicFill = resolvedDirection?.playFill ?: npAccent(uiState.vibrantColor)
+    val dynamicGlow = resolvedDirection?.playGlow ?: npAccent(uiState.vibrantColor)
+    val dynamicInk = resolvedDirection?.playInk ?: Color.White
+    val dynamicGlowStrength = resolvedDirection?.glowStrength ?: 0.12f
 
     // -- Actions: where each shows (pinned row or ⋮ menu) and what it does. Everything the top
     // row reads is remembered on what it depends on, so the 250ms position tick that recomposes
@@ -712,7 +735,7 @@ fun NowPlayingScreen(
         // system navigation bar (the scaffold hides the tab bar on this route).
         if (ambientAnimationEnabled) when (ambientStyle) {
             com.stash.core.data.prefs.AmbientStyle.SOFT_GLOW -> AmbientBackground(
-                palette = uiState.ambientPalette,
+                palette = resolvedDirection?.ambient ?: uiState.ambientPalette,
                 lightMode = MaterialTheme.colorScheme.background.luminance() >= 0.5f,
                 amoledMode = LocalIsAmoledTheme.current,
                 modifier = Modifier.fillMaxSize(),
@@ -735,12 +758,12 @@ fun NowPlayingScreen(
 
         // -- Progress + transport: one piece, shared by both modes. In lyrics mode it glides
         // from under the title to the bottom edge (a shared element, see ModeBounds). --
-        val foot: @Composable (Modifier) -> Unit = { footModifier ->
+        val foot: @Composable (Modifier, @Composable () -> Unit) -> Unit = { footModifier, info ->
             Column(modifier = footModifier.fillMaxWidth()) {
                 // -- Progress bar --
                 GlowingProgressBar(
                     progress = { progressFraction(playerPosition.value, uiState.durationMs) },
-                    accentColor = npAccent(uiState.vibrantColor),
+                    accentColor = dynamicProgress,
                     elapsedMs = { playerPosition.value },
                     totalMs = uiState.durationMs,
                     onSeek = viewModel::onSeekTo,
@@ -758,6 +781,7 @@ fun NowPlayingScreen(
                     },
                 )
 
+                info()
                 Spacer(modifier = Modifier.height(StackRhythm.ProgressToControls))
 
                 // -- Playback controls -- the same row for host and listener, so a role change
@@ -769,7 +793,11 @@ fun NowPlayingScreen(
                     isBuffering = uiState.isBuffering && (uiState.playWhenReady || uiState.isPlaying),
                     shuffleEnabled = uiState.shuffleEnabled,
                     repeatMode = uiState.repeatMode,
-                    accentColor = npAccent(uiState.vibrantColor),
+                    accentColor = dynamicProgress,
+                    buttonFill = dynamicFill,
+                    buttonGlow = dynamicGlow,
+                    buttonInk = dynamicInk,
+                    glowStrength = dynamicGlowStrength,
                     onPlayPauseClick = viewModel::onPlayPauseClick,
                     onSkipNext = viewModel::onSkipNext,
                     onSkipPrevious = viewModel::onSkipPrevious,
@@ -885,10 +913,13 @@ fun NowPlayingScreen(
                                         AlbumArtSection(
                                             albumArtUrl = track?.albumArtUrl,
                                             albumArtPath = track?.albumArtPath,
-                                            accentColor = npAccent(uiState.vibrantColor),
+                                            accentColor = dynamicGlow,
+                                            glowStrength = dynamicGlowStrength,
                                             onBitmapLoaded = { bitmap ->
                                                 paletteArtModel = artModel
                                                 viewModel.onAlbumArtLoaded(bitmap)
+                                                if (bitmap == null) artDirection = PlayerArtDirection.Neutral
+                                                else if (bitmap !== directionBitmap) directionBitmap = bitmap
                                             },
                                             modifier = swipeModifier,
                                         )
@@ -906,39 +937,21 @@ fun NowPlayingScreen(
                                 // The like heart floats at the right edge (relocated out of the
                                 // crowded top icon row); symmetric horizontal padding keeps the
                                 // title/artist block optically centred under the album art.
-                                TrackInfoBlock(
-                                    track = track,
-                                    resolvingArtist = resolvingArtist,
-                                    onTrackInfoTapped = viewModel::onTrackInfoTapped,
-                                    sleepTimerState = sleepTimerState,
-                                    onSleepTimerClick = { showSleepTimerSheet = true },
-                                    accent = npAccent(uiState.vibrantColor),
-                                    isLiked = uiState.currentTrack?.stashLikedAt != null,
-                                    onLikeTap = viewModel::onLikeTap,
-                                )
-
-                                // The approved player keeps codec/bitrate off the main canvas.
-                                // Diagnostic quality helpers remain available in the signal path UI.
-
-                                if (room != null) com.stash.feature.nowplaying.listen.PickLine(room)
-
-                                Spacer(modifier = Modifier.height(StackRhythm.InfoToProgress))
-
-                                foot(footShared)
-
-                                // "Up next · Title — Artist": a tap opens the queue, or the session
-                                // in a room (whose Up next is the room's). Art view only: lyrics
-                                // mode keeps the bottom for the lyrics.
-                                Spacer(modifier = Modifier.height(StackRhythm.ControlsToUpNext))
-                                UpNextLine(
-                                    peek = if (room != null) {
-                                        roomUpNextPeek(room.queue)
-                                    } else {
-                                        upNextPeek(uiState.queue, uiState.currentIndex, uiState.repeatMode)
-                                    },
-                                    inRoom = room != null,
-                                    onOpen = { if (room != null) showSession = true else showQueue = true },
-                                )
+                                // Approved v7 order: art > progress > editorial title + heart
+                                // > transport. The shared foot takes a mode-specific middle slot
+                                // so progress and transport remain one animated element.
+                                foot(footShared) {
+                                    Spacer(Modifier.height(StackRhythm.InfoToProgress))
+                                    TrackInfoBlock(
+                                        track = track,
+                                        resolvingArtist = resolvingArtist,
+                                        onTrackInfoTapped = viewModel::onTrackInfoTapped,
+                                        isLiked = uiState.currentTrack?.stashLikedAt != null,
+                                        heartTint = dynamicProgress,
+                                        onLikeTap = viewModel::onLikeTap,
+                                    )
+                                    if (room != null) com.stash.feature.nowplaying.listen.PickLine(room)
+                                }
                                 },
                             )
 
@@ -949,7 +962,7 @@ fun NowPlayingScreen(
                             LiveLyricsBar(
                                 state = lyricsState,
                                 currentPositionMs = { lyricsPosition.value },
-                                accentColor = npAccent(uiState.vibrantColor),
+                                accentColor = dynamicProgress,
                                 liveEnabled = liveLyricsEnabled,
                                 onTap = viewModel::onShowLyrics,
                                 isPlaying = uiState.isPlaying && !uiState.isBuffering,
@@ -988,6 +1001,8 @@ fun NowPlayingScreen(
                                                 paletteArtModel = artModel
                                                 viewModel.onAlbumArtLoaded(bitmap)
                                             }
+                                            if (bitmap == null) artDirection = PlayerArtDirection.Neutral
+                                            else if (bitmap !== directionBitmap) directionBitmap = bitmap
                                         },
                                         onClick = { viewModel.onDismissLyrics() },
                                         modifier = artShared,
@@ -996,24 +1011,31 @@ fun NowPlayingScreen(
                                 title = track?.title.orEmpty(),
                                 artist = displayArtist,
                                 ink = headerInk,
-                                modifier = Modifier.padding(start = 24.dp, end = 12.dp, top = 8.dp),
+                                modifier = Modifier
+                                    .padding(start = 24.dp, end = 12.dp, top = 8.dp)
+                                    .pointerInput(viewModel) {
+                                        var draggedDown = 0f
+                                        detectVerticalDragGestures(
+                                            onDragStart = { draggedDown = 0f },
+                                            onVerticalDrag = { change, amount ->
+                                                draggedDown += amount
+                                                change.consume()
+                                            },
+                                            onDragEnd = {
+                                                if (draggedDown > 40f) viewModel.onDismissLyrics()
+                                                draggedDown = 0f
+                                            },
+                                            onDragCancel = { draggedDown = 0f },
+                                        )
+                                    },
                                 textModifier = headerTextEnter,
                                 actionsModifier = headerActionsEnter,
                             ) {
-                                // The sleep timer, as on the art view (and in the web's header);
-                                // accented, with its live countdown under the moon, while armed.
-                                SleepTimerButton(
-                                    state = sleepTimerState,
-                                    onClick = { showSleepTimerSheet = true },
-                                    activeTint = headerAccent,
-                                    idleTint = headerInk.copy(alpha = 0.7f),
-                                    buttonSize = 48.dp,
-                                    iconSize = 22.dp,
-                                )
                                 com.stash.core.ui.components.LikeButton(
                                     isLiked = headerLiked,
                                     onTap = { viewModel.onLikeTap() },
                                     unlikedTint = headerInk.copy(alpha = 0.7f),
+                                    likedTint = dynamicProgress,
                                     size = 26.dp,
                                 )
                                 LyricsMenuButton(
@@ -1029,6 +1051,10 @@ fun NowPlayingScreen(
                                     ink = headerInk,
                                 )
                             }
+                            // Lyrics-first approved mode: compact cover, title, heart and
+                            // compact transport at top; the rest is reserved for lyrics.
+                            foot(Modifier.padding(horizontal = 24.dp).then(footShared)) {}
+                            Spacer(modifier = Modifier.height(8.dp))
                             LyricsPane(
                                 state = lyricsState,
                                 currentPositionMs = { lyricsPosition.value },
@@ -1045,8 +1071,7 @@ fun NowPlayingScreen(
                                     .padding(top = 4.dp)
                                     .then(paneEnter),
                             )
-                            foot(Modifier.padding(horizontal = 24.dp).then(footShared))
-                            Spacer(modifier = Modifier.height(LyricsFootBottom))
+
                         }
                     }
                 }
@@ -1067,6 +1092,8 @@ fun NowPlayingScreen(
             },
             accent = npAccent(uiState.vibrantColor),
             onAction = { action -> onAction(action); showOptionsSheet = false },
+            onSleepTimerClick = { showOptionsSheet = false; showSleepTimerSheet = true },
+            onAudioClick = { showOptionsSheet = false; showSignalPath = true },
             onTogglePin = viewModel::onTogglePin,
             onResetPins = viewModel::onResetPins,
             onDismiss = { showOptionsSheet = false },
@@ -1099,8 +1126,8 @@ private val ArtMax = 375.dp
  */
 private val GapTop = 20.dp
 private val GapTopMin = 8.dp
-private val GapArt = 36.dp
-private val GapArtMin = 16.dp
+private val GapArt = 22.dp
+private val GapArtMin = 12.dp
 private val GapBottom = 28.dp
 private val GapBottomMin = 12.dp
 private const val ART_COMFORT = 0.75f
@@ -1232,10 +1259,8 @@ private fun TrackInfoBlock(
     track: com.stash.core.model.Track?,
     resolvingArtist: Boolean,
     onTrackInfoTapped: () -> Unit,
-    sleepTimerState: SleepTimerController.State,
-    onSleepTimerClick: () -> Unit,
-    accent: Color,
     isLiked: Boolean,
+    heartTint: Color,
     onLikeTap: () -> Unit,
 ) {
     val ink = npInk()
@@ -1312,16 +1337,10 @@ private fun TrackInfoBlock(
                 isLiked = isLiked,
                 onTap = onLikeTap,
                 unlikedTint = ink.copy(alpha = 0.76f),
+                likedTint = heartTint,
                 size = 28.dp,
             )
-            SleepTimerButton(
-                state = sleepTimerState,
-                onClick = onSleepTimerClick,
-                activeTint = accent,
-                idleTint = ink.copy(alpha = 0.68f),
-                buttonSize = 28.dp,
-                iconSize = 20.dp,
-            )
+
         }
     }
 }
@@ -1338,6 +1357,7 @@ private fun AlbumArtSection(
     albumArtUrl: String?,
     albumArtPath: String?,
     accentColor: Color,
+    glowStrength: Float,
     onBitmapLoaded: (android.graphics.Bitmap?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1361,8 +1381,8 @@ private fun AlbumArtSection(
                 .shadow(
                     elevation = 48.dp,
                     shape = RoundedCornerShape(16.dp),
-                    ambientColor = accentColor.copy(alpha = 0.40f),
-                    spotColor = accentColor.copy(alpha = 0.33f),
+                    ambientColor = accentColor.copy(alpha = glowStrength * 0.65f),
+                    spotColor = accentColor.copy(alpha = glowStrength * 0.55f),
                 ),
         )
 
@@ -1372,6 +1392,7 @@ private fun AlbumArtSection(
             contentScale = ContentScale.Crop,
             error = missingArt,
             fallback = missingArt,
+            onError = { onBitmapLoaded(null) },
             onSuccess = { state: AsyncImagePainter.State.Success ->
                 try {
                     val bitmap = state.result.image.toBitmap()
@@ -1403,6 +1424,10 @@ private fun PlaybackControls(
     shuffleEnabled: Boolean,
     repeatMode: RepeatMode,
     accentColor: Color,
+    buttonFill: Color,
+    buttonGlow: Color,
+    buttonInk: Color,
+    glowStrength: Float,
     onPlayPauseClick: () -> Unit,
     onSkipNext: () -> Unit,
     onSkipPrevious: () -> Unit,
@@ -1448,18 +1473,19 @@ private fun PlaybackControls(
             onClick = onPlayPauseClick,
             modifier = Modifier
                 .size(64.dp)
-                .background(
-                    brush = Brush.linearGradient(
-                        colors = listOf(accentColor, accentColor.copy(alpha = 0.7f)),
-                    ),
+                .shadow(
+                    elevation = 22.dp,
                     shape = CircleShape,
-                ),
+                    ambientColor = buttonGlow.copy(alpha = glowStrength),
+                    spotColor = buttonGlow.copy(alpha = glowStrength),
+                )
+                .background(buttonFill, CircleShape),
         ) {
             // On the accent-gradient circle, not the ambient ground — stays
             // white in both themes (the accent is contrast-adjusted instead).
             if (isBuffering) {
                 CircularProgressIndicator(
-                    color = Color.White,
+                    color = buttonInk,
                     strokeWidth = 3.dp,
                     modifier = Modifier.size(28.dp),
                 )
@@ -1467,7 +1493,7 @@ private fun PlaybackControls(
                 Icon(
                     imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                     contentDescription = if (isPlaying) "Pause" else "Play",
-                    tint = Color.White,
+                    tint = buttonInk,
                     modifier = Modifier.size(32.dp),
                 )
             }
