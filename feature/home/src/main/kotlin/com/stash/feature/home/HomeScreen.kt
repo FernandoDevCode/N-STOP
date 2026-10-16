@@ -167,6 +167,7 @@ fun HomeScreen(
     onNavigateToSettings: () -> Unit = {},
     onNavigateToPlaylist: (Long) -> Unit = {},
     onNavigateToLibrary: () -> Unit = {},
+    onNavigateToNowPlaying: () -> Unit = {},
     onNavigateToAlbum: (AlbumSummary) -> Unit = {},
     onSeeAllPlaylists: (String) -> Unit = {},
     onNavigateToMixBuilder: (Long?) -> Unit = {},
