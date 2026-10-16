@@ -940,6 +940,7 @@ fun NowPlayingScreen(
                                         resolvingArtist = resolvingArtist,
                                         onTrackInfoTapped = viewModel::onTrackInfoTapped,
                                         isLiked = uiState.currentTrack?.stashLikedAt != null,
+                                        heartTint = dynamicProgress,
                                         onLikeTap = viewModel::onLikeTap,
                                     )
                                     if (room != null) com.stash.feature.nowplaying.listen.PickLine(room)
@@ -1010,6 +1011,7 @@ fun NowPlayingScreen(
                                     isLiked = headerLiked,
                                     onTap = { viewModel.onLikeTap() },
                                     unlikedTint = headerInk.copy(alpha = 0.7f),
+                                    likedTint = dynamicProgress,
                                     size = 26.dp,
                                 )
                                 LyricsMenuButton(
@@ -1234,6 +1236,7 @@ private fun TrackInfoBlock(
     resolvingArtist: Boolean,
     onTrackInfoTapped: () -> Unit,
     isLiked: Boolean,
+    heartTint: Color,
     onLikeTap: () -> Unit,
 ) {
     val ink = npInk()
@@ -1310,6 +1313,7 @@ private fun TrackInfoBlock(
                 isLiked = isLiked,
                 onTap = onLikeTap,
                 unlikedTint = ink.copy(alpha = 0.76f),
+                likedTint = heartTint,
                 size = 28.dp,
             )
 
