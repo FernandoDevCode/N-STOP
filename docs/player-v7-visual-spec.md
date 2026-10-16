@@ -197,3 +197,16 @@ Regras:
   playback e Listen Together permanecem reais e acessiveis.
 - Validar CI e uso fisico antes de qualificar como pronto para instalar;
   nenhum APK intermediario.
+ 
+## Checkpoint de implementacao da branch feat/player-v7-art-direction
+
+- UI Compose: progresso sob a capa, bloco de titulo + coracao unico, controle
+  com fill/halo separados, base LETRAS com gesto ascendente, vista expandida
+  com transporte no topo e letras protagonistas, gesto descendente no cabecalho.
+- Temporizador e audio/diagnostico acessiveis pelo menu de acoes secundarias.
+- Direcao cromatica local: amostra 40x40 processada fora da thread UI,
+  distribuicao de matizes + contraste, tres classificacoes conservadoras,
+  neutral em capas ausentes/sem matiz e cache LRU de ate 64 artes.
+- Fixture de testes JUnit para capas acromaticas, unificadas, seletivas e
+  cinematograficas. A verificacao em CI e dispositivo fisico continua pendente.
+- Nao alterar camada de reproducao ou emitir APK intermediario.
