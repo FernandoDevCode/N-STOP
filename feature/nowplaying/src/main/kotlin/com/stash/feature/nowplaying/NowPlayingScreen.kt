@@ -364,6 +364,7 @@ fun NowPlayingScreen(
     val dynamicFill = resolvedDirection?.playFill ?: npAccent(uiState.vibrantColor)
     val dynamicGlow = resolvedDirection?.playGlow ?: npAccent(uiState.vibrantColor)
     val dynamicInk = resolvedDirection?.playInk ?: Color.White
+    val dynamicGlowStrength = resolvedDirection?.glowStrength ?: 0.12f
 
     // -- Actions: where each shows (pinned row or ⋮ menu) and what it does. Everything the top
     // row reads is remembered on what it depends on, so the 250ms position tick that recomposes
@@ -796,6 +797,7 @@ fun NowPlayingScreen(
                     buttonFill = dynamicFill,
                     buttonGlow = dynamicGlow,
                     buttonInk = dynamicInk,
+                    glowStrength = dynamicGlowStrength,
                     onPlayPauseClick = viewModel::onPlayPauseClick,
                     onSkipNext = viewModel::onSkipNext,
                     onSkipPrevious = viewModel::onSkipPrevious,
@@ -912,6 +914,7 @@ fun NowPlayingScreen(
                                             albumArtUrl = track?.albumArtUrl,
                                             albumArtPath = track?.albumArtPath,
                                             accentColor = dynamicGlow,
+                                            glowStrength = dynamicGlowStrength,
                                             onBitmapLoaded = { bitmap ->
                                                 paletteArtModel = artModel
                                                 viewModel.onAlbumArtLoaded(bitmap)
@@ -1354,6 +1357,7 @@ private fun AlbumArtSection(
     albumArtUrl: String?,
     albumArtPath: String?,
     accentColor: Color,
+    glowStrength: Float,
     onBitmapLoaded: (android.graphics.Bitmap?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1377,8 +1381,8 @@ private fun AlbumArtSection(
                 .shadow(
                     elevation = 48.dp,
                     shape = RoundedCornerShape(16.dp),
-                    ambientColor = accentColor.copy(alpha = 0.40f),
-                    spotColor = accentColor.copy(alpha = 0.33f),
+                    ambientColor = accentColor.copy(alpha = glowStrength * 0.65f),
+                    spotColor = accentColor.copy(alpha = glowStrength * 0.55f),
                 ),
         )
 
@@ -1423,6 +1427,7 @@ private fun PlaybackControls(
     buttonFill: Color,
     buttonGlow: Color,
     buttonInk: Color,
+    glowStrength: Float,
     onPlayPauseClick: () -> Unit,
     onSkipNext: () -> Unit,
     onSkipPrevious: () -> Unit,
@@ -1471,8 +1476,8 @@ private fun PlaybackControls(
                 .shadow(
                     elevation = 22.dp,
                     shape = CircleShape,
-                    ambientColor = buttonGlow.copy(alpha = 0.35f),
-                    spotColor = buttonGlow.copy(alpha = 0.36f),
+                    ambientColor = buttonGlow.copy(alpha = glowStrength),
+                    spotColor = buttonGlow.copy(alpha = glowStrength),
                 )
                 .background(buttonFill, CircleShape),
         ) {
