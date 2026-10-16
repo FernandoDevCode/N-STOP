@@ -69,4 +69,6 @@
     <string name="podcast_cover_art">Episode cover art</string>
     <string name="podcast_no_active_episode">Choose an episode to start listening.</string>
     <string name="podcast_speed">Speed</string>
+    <string name="nostop_home_continue_current">Back to listening</string>
+    <string name="nostop_home_resume_label">Your soundtrack</string>
 </resources>
