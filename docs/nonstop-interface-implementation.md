@@ -127,3 +127,14 @@ Branch: `nonstop`.
 - The same slide-up/down transitions and chrome-hidden behavior as the music Now Playing route apply; Android Back and the downward arrow dismiss the podcast player without pausing audio.
 - Removed the duplicated in-list seek/player controls; episode play buttons and global mini-player remain available in the Podcasts Home tab.
 - Android compilation and all unit suites must validate this change: `[do test]`.
+
+## Visual convergence checkpoint — 2026-10-15 (post-device screenshots)
+- The user's Android screenshots demonstrated a mismatch between the approved editorial mockups and the shipped presentation. Passing CI is not proof of visual parity.
+- Home now shows an actual, artwork-led "Continue listening" card whenever the music player exposes a real current track, including when a sparse or not-yet-synced library has no playlists. The card opens the existing full-screen music player; it does not fabricate playback history, media or recommendations. Previous pinned playlist sections and user-customized arrangements are unchanged.
+- Search's Top Result no longer crushes the title between a large album cover and three independent track actions: artwork/name occupy the complete first row, while transport/download/more controls occupy a second row. The play/download/queue callbacks are unchanged.
+- Podcast detail now has a full-width, artwork-led show hero, themed episode cards, localized RSS dates where parsable, and an indeterminate progress state while a permanent download is only preparing. Explicit downloads still use the original WorkManager path.
+- The music Now Playing title now wraps to two readable lines, with slightly stronger album-colour lighting and a restrained artwork rim. It still retains existing music transport, lyrics, casting, shared element and sleep timer actions.
+- The actual design target remains an editorial, not Spotify-heavy Home: "Volte para isso", "Redescoberta", "Feito para você", "Novos lançamentos" when backed by real items; purple/cyan/mint highlights; full-width frosted mini-player and five-tab order Início · Explorar · Rádio · Buscar · Biblioteca.
+- This is a **visual convergence checkpoint, not a final release**: production wordmark/launcher assets, remaining search/library/collection visual QA, hardware screenshots, and functional smoke verification still remain. The Audiobooks tab is informational, not a playable backend; it must not be represented as completed.
+- Do not request another device install just because the CI passed. The owner wants one consolidated installation after the final visual/functional verification.
+- CI gate: `[do test]`.
