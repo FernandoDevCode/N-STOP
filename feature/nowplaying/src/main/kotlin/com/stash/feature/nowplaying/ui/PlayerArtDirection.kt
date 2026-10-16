@@ -161,7 +161,9 @@ internal fun playerArtDirectionFromPixels(argb: IntArray, artKey: String = "art"
         .maxByOrNull { weights[it] }
     val distinctSecond = second != null &&
         weights[second] >= weights[first] * 0.34f &&
-        counts[second] >= max(8f, opaque * 0.035f).toInt()
+        // Thin, deliberate colour bands (e.g. prism covers) can occupy only
+        // a small part of an otherwise black album. Still require real area.
+        counts[second] >= max(10f, opaque * 0.018f).toInt()
     val secondHue = if (distinctSecond && second != null) second * 30f + 15f else firstHue
 
     // White moon on a dark blue sky is cinematic. A short white caption on a
