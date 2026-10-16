@@ -43,10 +43,6 @@ internal data class PlayerArtDirection(
 }
 
 private data class Sample(val hue: Float, val saturation: Float, val value: Float)
-private data class HueGroup(
-    val weight: Float, val amount: Int, val red: Float, val green: Float, val blue: Float,
-)
-
 private fun sample(argb: Int): Sample {
     val r = ((argb ushr 16) and 255) / 255f
     val g = ((argb ushr 8) and 255) / 255f
@@ -87,16 +83,25 @@ private fun hueDistance(a: Float, b: Float): Float {
     return min(difference, 360f - difference)
 }
 
+/** Small bounded process cache, shared between cover and lyrics presentations. */
+private val artworkDirections = object : LinkedHashMap<String, PlayerArtDirection>(64, 0.75f, true) {
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, PlayerArtDirection>?): Boolean =
+        size > 64
+}
+
 /** Uses at most a 40 x 40 pixel sample; called off the UI thread. */
 internal fun playerArtDirectionFromBitmap(bitmap: Bitmap, artKey: String): PlayerArtDirection {
+    synchronized(artworkDirections) { artworkDirections[artKey]?.let { return it } }
     val scaled = Bitmap.createScaledBitmap(bitmap, 40, 40, true)
-    return try {
+    val resolved = try {
         val pixels = IntArray(40 * 40)
         scaled.getPixels(pixels, 0, 40, 0, 0, 40, 40)
         playerArtDirectionFromPixels(pixels, artKey)
     } finally {
         if (scaled !== bitmap) scaled.recycle()
     }
+    synchronized(artworkDirections) { artworkDirections[artKey] = resolved }
+    return resolved
 }
 
 /** Pure analysis, also usable by JVM unit tests without Android bitmap objects. */
