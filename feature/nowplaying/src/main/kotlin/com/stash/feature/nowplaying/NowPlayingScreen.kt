@@ -1066,6 +1066,8 @@ fun NowPlayingScreen(
             },
             accent = npAccent(uiState.vibrantColor),
             onAction = { action -> onAction(action); showOptionsSheet = false },
+            onSleepTimerClick = { showOptionsSheet = false; showSleepTimerSheet = true },
+            onAudioClick = { showOptionsSheet = false; showSignalPath = true },
             onTogglePin = viewModel::onTogglePin,
             onResetPins = viewModel::onResetPins,
             onDismiss = { showOptionsSheet = false },
@@ -1098,8 +1100,8 @@ private val ArtMax = 375.dp
  */
 private val GapTop = 20.dp
 private val GapTopMin = 8.dp
-private val GapArt = 36.dp
-private val GapArtMin = 16.dp
+private val GapArt = 22.dp
+private val GapArtMin = 12.dp
 private val GapBottom = 28.dp
 private val GapBottomMin = 12.dp
 private const val ART_COMFORT = 0.75f
