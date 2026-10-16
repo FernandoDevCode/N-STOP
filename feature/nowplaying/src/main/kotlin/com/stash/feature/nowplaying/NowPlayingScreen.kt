@@ -359,10 +359,11 @@ fun NowPlayingScreen(
             }.getOrElse { PlayerArtDirection.Neutral }
         }
     }
-    val dynamicProgress = artDirection?.progress ?: npAccent(uiState.vibrantColor)
-    val dynamicFill = artDirection?.playFill ?: npAccent(uiState.vibrantColor)
-    val dynamicGlow = artDirection?.playGlow ?: npAccent(uiState.vibrantColor)
-    val dynamicInk = artDirection?.playInk ?: Color.White
+    val resolvedDirection = artDirection ?: if (artModel == null) PlayerArtDirection.Neutral else null
+    val dynamicProgress = resolvedDirection?.progress ?: npAccent(uiState.vibrantColor)
+    val dynamicFill = resolvedDirection?.playFill ?: npAccent(uiState.vibrantColor)
+    val dynamicGlow = resolvedDirection?.playGlow ?: npAccent(uiState.vibrantColor)
+    val dynamicInk = resolvedDirection?.playInk ?: Color.White
 
     // -- Actions: where each shows (pinned row or ⋮ menu) and what it does. Everything the top
     // row reads is remembered on what it depends on, so the 250ms position tick that recomposes
@@ -733,7 +734,7 @@ fun NowPlayingScreen(
         // system navigation bar (the scaffold hides the tab bar on this route).
         if (ambientAnimationEnabled) when (ambientStyle) {
             com.stash.core.data.prefs.AmbientStyle.SOFT_GLOW -> AmbientBackground(
-                palette = artDirection?.ambient ?: uiState.ambientPalette,
+                palette = resolvedDirection?.ambient ?: uiState.ambientPalette,
                 lightMode = MaterialTheme.colorScheme.background.luminance() >= 0.5f,
                 amoledMode = LocalIsAmoledTheme.current,
                 modifier = Modifier.fillMaxSize(),
@@ -914,7 +915,8 @@ fun NowPlayingScreen(
                                             onBitmapLoaded = { bitmap ->
                                                 paletteArtModel = artModel
                                                 viewModel.onAlbumArtLoaded(bitmap)
-                                                if (bitmap != null && bitmap !== directionBitmap) directionBitmap = bitmap
+                                                if (bitmap == null) artDirection = PlayerArtDirection.Neutral
+                                                else if (bitmap !== directionBitmap) directionBitmap = bitmap
                                             },
                                             modifier = swipeModifier,
                                         )
@@ -996,7 +998,8 @@ fun NowPlayingScreen(
                                                 paletteArtModel = artModel
                                                 viewModel.onAlbumArtLoaded(bitmap)
                                             }
-                                            if (bitmap != null && bitmap !== directionBitmap) directionBitmap = bitmap
+                                            if (bitmap == null) artDirection = PlayerArtDirection.Neutral
+                                            else if (bitmap !== directionBitmap) directionBitmap = bitmap
                                         },
                                         onClick = { viewModel.onDismissLyrics() },
                                         modifier = artShared,
@@ -1385,6 +1388,7 @@ private fun AlbumArtSection(
             contentScale = ContentScale.Crop,
             error = missingArt,
             fallback = missingArt,
+            onError = { onBitmapLoaded(null) },
             onSuccess = { state: AsyncImagePainter.State.Success ->
                 try {
                     val bitmap = state.result.image.toBitmap()
