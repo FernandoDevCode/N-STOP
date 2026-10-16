@@ -144,3 +144,8 @@ Branch: `nonstop`.
 - Podcast search now follows NØNStop's compact rounded-input language, with a keyboard Search action and an inline accessible search affordance rather than a second oversized purple button.
 - This is still a code-level checkpoint. It needs physical-device comparison against the agreed visual prototype before anyone calls the look final.
 - Verify updated head on CI with `[do test]`.
+
+### Podcast player atmosphere
+- The full-screen podcast player now has a soft brand-colour glow behind the real episode artwork, plus a restrained outline and a fading radial backdrop. Controls, real Media3 session, speed and background playback are unchanged.
+- This complements the music Now Playing artwork approach; it is not a new, redundant player engine.
+- Run complete CI against this commit: `[do test]`.
