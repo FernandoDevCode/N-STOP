@@ -210,3 +210,10 @@ Regras:
 - Fixture de testes JUnit para capas acromaticas, unificadas, seletivas e
   cinematograficas. A verificacao em CI e dispositivo fisico continua pendente.
 - Nao alterar camada de reproducao ou emitir APK intermediario.
+
+### Refinamento de intensidade — segunda rodada de CI
+- Intensidade de glow e auto-seletiva: neutro = 0, unificada = discreto,
+  seletiva = moderado, cinematografica = forte mas controlado.
+- O halo da arte usa fracao da intensidade do play. Evita iluminacao excessiva
+  simultanea em capas comuns. Testes cobrem as intensidades por modo.
+- [do test] no commit abaixo solicita nova execucao integral do Android CI.
