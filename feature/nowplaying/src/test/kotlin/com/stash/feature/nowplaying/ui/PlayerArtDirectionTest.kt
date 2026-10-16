@@ -53,6 +53,19 @@ class PlayerArtDirectionTest {
         assertTrue(result.playGlow.blue > result.playGlow.red)
     }
 
+    @Test fun `thin multicolour prism bands are selective not a full rainbow UI`() {
+        val pixels = IntArray(1600) {
+            when {
+                it < 30 -> argb(240, 40, 50)
+                it < 60 -> argb(40, 215, 70)
+                it < 90 -> argb(30, 90, 224)
+                it < 120 -> argb(239, 217, 43)
+                else -> argb(12, 12, 15)
+            }
+        }
+        assertEquals(PlayerColorMode.SELECTIVE, playerArtDirectionFromPixels(pixels).mode)
+    }
+
     @Test fun `transparent art falls back without guessing colours`() {
         val result = playerArtDirectionFromPixels(IntArray(100))
         assertEquals(PlayerArtDirection.Neutral, result)
