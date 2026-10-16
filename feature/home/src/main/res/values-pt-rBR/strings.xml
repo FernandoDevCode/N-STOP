@@ -69,4 +69,6 @@
     <string name="podcast_cover_art">Capa do episódio</string>
     <string name="podcast_no_active_episode">Selecione um episódio para começar a ouvir.</string>
     <string name="podcast_speed">Velocidade</string>
+    <string name="nostop_home_continue_current">Continue ouvindo</string>
+    <string name="nostop_home_resume_label">Sua trilha agora</string>
 </resources>
