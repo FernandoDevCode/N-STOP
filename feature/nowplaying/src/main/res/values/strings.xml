@@ -33,4 +33,7 @@
     <string name="nostop_np_custom_speed">Custom speed</string>
     <string name="nostop_np_speed_range">Speed (0.1 – 4.0)</string>
     <string name="nostop_np_set">Set</string>
+    <string name="nostop_np_lyrics">Lyrics</string>
+    <string name="nostop_np_open_lyrics">Open lyrics</string>
+    <string name="nostop_np_audio_details">Audio and diagnostics</string>
 </resources>
