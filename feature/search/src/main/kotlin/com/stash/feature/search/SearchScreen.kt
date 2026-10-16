@@ -529,7 +529,7 @@ private fun SectionedResultsList(
                     }
                 }
                 is SearchResultSection.Songs -> {
-                    item(key = "songs_header") { SectionHeader("Songs") }
+                    item(key = "songs_header") { SectionHeader(stringResource(R.string.nostop_search_songs)) }
                     items(section.tracks, key = { "song_" + it.videoId }) { t ->
                         val item = t.toSearchResultItem()
                         // Warm the lossless URL cache for each song row as it
@@ -560,7 +560,7 @@ private fun SectionedResultsList(
                     }
                 }
                 is SearchResultSection.Artists -> {
-                    item(key = "artists_header") { SectionHeader("Artists") }
+                    item(key = "artists_header") { SectionHeader(stringResource(R.string.nostop_search_artists)) }
                     item(key = "artists_row") {
                         LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -577,7 +577,7 @@ private fun SectionedResultsList(
                     }
                 }
                 is SearchResultSection.Albums -> {
-                    item(key = "albums_header") { SectionHeader("Albums") }
+                    item(key = "albums_header") { SectionHeader(stringResource(R.string.nostop_search_albums)) }
                     item(key = "albums_row") {
                         LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -692,9 +692,9 @@ private fun TopResultCard(
         Column(modifier = Modifier.weight(1f)) {
             val (primary, secondary, kind) = when (item) {
                 is TopResultItem.ArtistTop ->
-                    Triple(item.artist.name, null, "Artist")
+                    Triple(item.artist.name, null, stringResource(R.string.nostop_search_kind_artist))
                 is TopResultItem.TrackTop ->
-                    Triple(item.track.title, item.track.artist, "Song")
+                    Triple(item.track.title, item.track.artist, stringResource(R.string.nostop_search_kind_song))
             }
             Text(
                 text = kind,
