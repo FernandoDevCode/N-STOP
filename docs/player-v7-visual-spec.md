@@ -217,3 +217,9 @@ Regras:
 - O halo da arte usa fracao da intensidade do play. Evita iluminacao excessiva
   simultanea em capas comuns. Testes cobrem as intensidades por modo.
 - [do test] no commit abaixo solicita nova execucao integral do Android CI.
+
+### Capa com faixas cromaticas estreitas
+- A paleta seletiva admite duas faixas cromaticas menores, quando ambas
+  aparecem em area mensuravel; isso contempla capas com prisma sobre fundo
+  preto sem pintar cada elemento da UI com todas as cores do espectro.
+- Fixture JUnit adicionada. Validar novamente este head: [do test].
