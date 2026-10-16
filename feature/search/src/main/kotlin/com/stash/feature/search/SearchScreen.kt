@@ -637,7 +637,9 @@ private fun TopResultCard(
         is TopResultItem.TrackTop -> Modifier.clickable { onTrackPlay(item.track) }
     }
 
-    Row(
+    // Keep text and actions on separate rows: on compact 360dp screens
+    // three actions plus 96dp art used to squeeze song titles to 3-5 letters.
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
@@ -645,12 +647,16 @@ private fun TopResultCard(
             .clip(RoundedCornerShape(16.dp))
             .background(extendedColors.glassBackground)
             .then(clickMod)
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
         Box(
             modifier = Modifier
-                .size(96.dp)
+                .size(78.dp)
                 .clip(RoundedCornerShape(12.dp))
                 .background(extendedColors.elevatedSurface),
             contentAlignment = Alignment.Center,
@@ -681,7 +687,7 @@ private fun TopResultCard(
             }
         }
 
-        Spacer(Modifier.width(16.dp))
+        Spacer(Modifier.width(13.dp))
 
         Column(modifier = Modifier.weight(1f)) {
             val (primary, secondary, kind) = when (item) {
@@ -716,9 +722,13 @@ private fun TopResultCard(
             }
         }
 
+        }
         if (item is TopResultItem.TrackTop) {
-            Spacer(Modifier.width(8.dp))
-
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
             // Preview button — mirrors PreviewDownloadRow's control
             IconButton(
                 onClick = if (isPreviewPlaying) onStopPreview else onPreview,
@@ -785,6 +795,7 @@ private fun TopResultCard(
                 onAddToPlaylist = onAddToPlaylist,
                 onStartRadio = onStartRadio,
             )
+            }
         }
     }
 }
