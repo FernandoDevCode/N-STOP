@@ -21,4 +21,9 @@
     <string name="nonstop_album_save">Save</string>
     <string name="nonstop_album_shuffle">Shuffle</string>
     <string name="nonstop_album_download_all">Download all</string>
+    <string name="nostop_search_songs">Songs</string>
+    <string name="nostop_search_artists">Artists</string>
+    <string name="nostop_search_albums">Albums</string>
+    <string name="nostop_search_kind_song">Song</string>
+    <string name="nostop_search_kind_artist">Artist</string>
 </resources>
