@@ -28,6 +28,7 @@ import com.stash.feature.nowplaying.ui.npIsLight
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -94,6 +95,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -1003,7 +1005,23 @@ fun NowPlayingScreen(
                                 title = track?.title.orEmpty(),
                                 artist = displayArtist,
                                 ink = headerInk,
-                                modifier = Modifier.padding(start = 24.dp, end = 12.dp, top = 8.dp),
+                                modifier = Modifier
+                                    .padding(start = 24.dp, end = 12.dp, top = 8.dp)
+                                    .pointerInput(viewModel) {
+                                        var draggedDown = 0f
+                                        detectVerticalDragGestures(
+                                            onDragStart = { draggedDown = 0f },
+                                            onVerticalDrag = { change, amount ->
+                                                draggedDown += amount
+                                                change.consume()
+                                            },
+                                            onDragEnd = {
+                                                if (draggedDown > 40f) viewModel.onDismissLyrics()
+                                                draggedDown = 0f
+                                            },
+                                            onDragCancel = { draggedDown = 0f },
+                                        )
+                                    },
                                 textModifier = headerTextEnter,
                                 actionsModifier = headerActionsEnter,
                             ) {
