@@ -1,49 +1,48 @@
 package com.stash.feature.nowplaying.ui
 
-import androidx.compose.animation.AnimatedContent
+import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.stash.data.lyrics.parser.LrcLine
 import com.stash.data.lyrics.parser.TtmlLyrics
+import com.stash.feature.nowplaying.R
 
 /**
- * What the live-lyrics bar renders for a given [LyricsViewState]:
- *  - [Live]   synced lyrics — the current line, accent-colored, advancing
- *             with playback.
- *  - [Static] plain-only lyrics — a dim "View lyrics ♪" tap target (the
- *             ~15% of lyric hits with no timing data).
- *  - [Hidden] nothing to offer (no lyrics / instrumental / loading / error)
- *             — the bar row is absent entirely; it animates in when a fetch
- *             lands with lyrics.
+ * The v7 cover deliberately uses a compact LETRAS handle instead of always
+ * exposing an extra song-line preview. A full upward swipe or a tap opens the
+ * existing real synced/plain lyrics route; absence of lyrics hides the handle.
  */
 internal sealed interface LiveBarMode {
     data class Live(val lines: List<LrcLine>, val syllables: TtmlLyrics? = null) : LiveBarMode
@@ -52,46 +51,18 @@ internal sealed interface LiveBarMode {
 }
 
 internal fun liveBarModeFor(state: LyricsViewState, liveEnabled: Boolean): LiveBarMode = when (state) {
-    // Live line only when the user opted in; otherwise synced tracks get the
-    // same quiet "View lyrics ♪" bar as plain ones — lyrics stay one tap away
-    // without the ticking line pulling focus from the music. The lines are the
-    // lyrics view's own (breaks folded by [linesWithBreaks]), so the two always
-    // agree on the live line, ♪ row included.
     is LyricsViewState.Synced ->
         if (liveEnabled) LiveBarMode.Live(linesWithBreaks(state.lines), state.syllables) else LiveBarMode.Static
     is LyricsViewState.Plain -> LiveBarMode.Static
     else -> LiveBarMode.Hidden
 }
 
-/** Near-black scrim base — matches `AmbientBackground.BaseDark`. */
-private val BarBase = Color(0xFF06060C)
-
-/** Light-theme scrim base — matches `AmbientBackground.BaseLight`. */
-private val BarBaseLight = Color(0xFFF4F1FA)
-
-/** Light-theme ink for the Static "View lyrics ♪" line. */
-private val BarInkLight = Color(0xFF241C36)
-
-/** Space between the bar's ♪ notes during an instrumental break. */
+/** Kept for compatibility with the existing lyric view and unit tests. */
 internal val BarNoteSpacing = 10.dp
 
-/**
- * Live synced-lyrics bar pinned at the bottom of Now Playing, where the
- * MiniPlayer sits on every other screen. Renders per [LiveBarMode]:
- * the currently-sung line in the album accent (Live), a dim "View lyrics ♪"
- * (Static), or nothing (Hidden). Tapping switches Now Playing to its lyrics view.
- *
- * The backdrop is a translucent scrim — the screen's full-bleed
- * [AmbientBackground] animates beneath, so the Now Playing atmosphere flows
- * through the bar; the vertical gradient only guarantees text contrast.
- *
- * @param accentColor `uiState.vibrantColor` — the same accent
- *        [GlowingProgressBar] uses, NOT `dominantColor`.
- */
 @Composable
 fun LiveLyricsBar(
     state: LyricsViewState,
-    /** Read inside the bar's content only, so the 250ms tick doesn't recompose Now Playing. */
     currentPositionMs: () -> Long,
     accentColor: Color,
     liveEnabled: Boolean,
@@ -100,111 +71,67 @@ fun LiveLyricsBar(
     isPlaying: Boolean = true,
     playbackSpeed: Float = 1f,
 ) {
-    // remember(state, liveEnabled): the 250ms position ticks recompose this
-    // composable every tick; without the cache each tick would re-allocate
-    // a Live() wrapper.
-    val mode = remember(state, liveEnabled) { liveBarModeFor(state, liveEnabled) }
+    // Retain the same existing state gate: no invented content or empty panel.
+    val visible = remember(state, liveEnabled) { liveBarModeFor(state, liveEnabled) != LiveBarMode.Hidden }
+    val resolver = LocalContext.current.contentResolver
+    val reducedMotion = remember(resolver) {
+        runCatching { Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f }
+            .getOrDefault(false)
+    }
+    val ink = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color.White else Color(0xFF241C36)
+    val bg = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF06060C) else Color(0xFFF4F1FA)
+    val shape = RoundedCornerShape(topStart = 34.dp, topEnd = 34.dp)
+    val description = stringResource(R.string.nostop_np_open_lyrics)
+
     AnimatedVisibility(
-        visible = mode != LiveBarMode.Hidden,
-        enter = fadeIn(tween(400)) + expandVertically(tween(400)),
-        exit = fadeOut(tween(250)) + shrinkVertically(tween(250)),
+        visible = visible,
+        enter = fadeIn(tween(if (reducedMotion) 0 else 220)),
+        exit = fadeOut(tween(if (reducedMotion) 0 else 170)),
         modifier = modifier,
     ) {
-        // 800ms accent crossfade on track change — matches AmbientBackground's
-        // CROSSFADE_MS so the whole surface recolors as one.
-        val animAccent by animateColorAsState(
-            targetValue = accentColor,
-            animationSpec = tween(800),
-            label = "liveBarAccent",
-        )
-        // Scrim + static ink follow the resolved theme so the bar reads on
-        // both the dark ambient and the light pastel wash.
-        val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
-        val scrimBase = if (darkTheme) BarBase else BarBaseLight
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClickLabel = "Open lyrics", onClick = onTap)
+                .height(76.dp)
+                .clip(shape)
                 .background(
                     Brush.verticalGradient(
-                        0f to scrimBase.copy(alpha = 0.30f),
-                        1f to scrimBase.copy(alpha = 0.65f),
+                        listOf(bg.copy(alpha = 0.42f), bg.copy(alpha = 0.77f)),
                     ),
                 )
-                .padding(horizontal = 20.dp, vertical = 16.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            val positionMs = currentPositionMs()
-            when (mode) {
-                is LiveBarMode.Live -> if (mode.syllables != null) {
-                    WordSyncedBarLine(
-                        lyrics = mode.syllables,
-                        currentPositionMs = positionMs,
-                        isPlaying = isPlaying,
-                        accent = animAccent,
-                        playbackSpeed = playbackSpeed,
-                    )
-                } else {
-                    // On the smoothed clock, as the lyrics view: on the raw 250ms poll a line
-                    // could light up to 250ms after its vocal.
-                    val clock = rememberSmoothPositionMs(positionMs, isPlaying, playbackSpeed)
-                    val indexState = remember(mode.lines) {
-                        derivedStateOf { currentLineIndex(mode.lines, clock.value) }
-                    }
-                    val index = indexState.value
-                    val line = mode.lines.getOrNull(index)?.text.orEmpty()
-                    val gap = remember(mode.lines, index) { instrumentalBreakAt(mode.lines, index) }
-                    val style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.SemiBold,
-                        shadow = Shadow(
-                            color = animAccent.copy(alpha = 0.55f),
-                            blurRadius = 18f,
-                        ),
-                    )
-                    AnimatedContent(
-                        targetState = line,
-                        transitionSpec = {
-                            (fadeIn(tween(250)) + slideInVertically(tween(250)) { it / 3 })
-                                .togetherWith(
-                                    fadeOut(tween(250)) + slideOutVertically(tween(250)) { -it / 3 },
-                                )
+                .border(1.dp, accentColor.copy(alpha = 0.19f), shape)
+                .clickable(onClickLabel = description, role = Role.Button, onClick = onTap)
+                .pointerInput(onTap) {
+                    var dragY = 0f
+                    detectVerticalDragGestures(
+                        onDragStart = { dragY = 0f },
+                        onVerticalDrag = { change, amount ->
+                            dragY += amount
+                            change.consume()
                         },
-                        label = "liveBarLine",
-                    ) { text ->
-                        if (text.isBlank()) {
-                            // An instrumental break (3 s or longer: shorter blanks never reach
-                            // the bar) — the ♪ row, breathing until the singing is back.
-                            InstrumentalBreakNotes(
-                                style = style,
-                                color = animAccent,
-                                live = true,
-                                progress = { gap?.progress(clock.value) },
-                                spacing = BarNoteSpacing,
-                                alignment = Alignment.CenterHorizontally,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        } else {
-                            Text(
-                                text = text,
-                                style = style,
-                                color = animAccent,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
-                    }
-                }
-                LiveBarMode.Static -> Text(
-                    text = "View lyrics ♪",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = (if (darkTheme) Color.White else BarInkLight).copy(alpha = 0.45f),
-                    maxLines = 1,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
+                        onDragEnd = {
+                            if (dragY < -25f) onTap()
+                            dragY = 0f
+                        },
+                        onDragCancel = { dragY = 0f },
+                    )
+                },
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowUp,
+                    contentDescription = null,
+                    modifier = Modifier.size(30.dp),
+                    tint = ink.copy(alpha = 0.95f),
                 )
-                LiveBarMode.Hidden -> Unit
+                Text(
+                    text = stringResource(R.string.nostop_np_lyrics).uppercase(),
+                    color = ink.copy(alpha = 0.66f),
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 4.sp,
+                    fontSize = 11.sp,
+                )
             }
         }
     }
