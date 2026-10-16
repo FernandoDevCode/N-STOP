@@ -26,6 +26,7 @@ import com.stash.feature.nowplaying.ui.LyricsPane
 import com.stash.feature.nowplaying.ui.lyricsMenuItemsFor
 import com.stash.feature.nowplaying.ui.npIsLight
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -1259,15 +1260,14 @@ private fun TrackInfoBlock(
         ) {
             Text(
                 text = track?.title ?: "Not Playing",
-                fontSize = 23.sp,
-                lineHeight = 27.sp,
+                fontSize = 25.sp,
+                lineHeight = 29.sp,
                 fontWeight = FontWeight.Bold,
-                letterSpacing = (-0.5).sp,
+                letterSpacing = (-0.6).sp,
                 color = ink,
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Clip,
-                modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(StackRhythm.TitleToArtist))
             Row(
@@ -1359,10 +1359,10 @@ private fun AlbumArtSection(
                 .fillMaxSize()
                 .padding(10.dp)
                 .shadow(
-                    elevation = 46.dp,
-                    shape = RoundedCornerShape(14.dp),
-                    ambientColor = accentColor.copy(alpha = 0.32f),
-                    spotColor = accentColor.copy(alpha = 0.28f),
+                    elevation = 48.dp,
+                    shape = RoundedCornerShape(16.dp),
+                    ambientColor = accentColor.copy(alpha = 0.40f),
+                    spotColor = accentColor.copy(alpha = 0.33f),
                 ),
         )
 
@@ -1383,7 +1383,12 @@ private fun AlbumArtSection(
             },
             modifier = Modifier
                 .fillMaxSize()
-                .clip(RoundedCornerShape(14.dp)),
+                .clip(RoundedCornerShape(16.dp))
+                .border(
+                    1.dp,
+                    Color.White.copy(alpha = 0.10f),
+                    RoundedCornerShape(16.dp),
+                ),
         )
     }
 }
