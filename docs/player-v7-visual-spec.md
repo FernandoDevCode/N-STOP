@@ -120,3 +120,80 @@ e não instalar APK intermediário.
 
 **Ponto de implementação**: não redesenhar serviços existentes nem criar
 novos botões duplicados; adaptar os componentes de UI já encontrados no repo.
+
+## Adendo aprovado 2026-10-16 — mockups finais prevalecem
+
+Este adendo substitui os trechos conflitantes acima; nao reabrir escolhas visuais.
+
+### Player de capa (estado padrao)
+
+- Manter a capa quadrada como protagonista, halo ambiental organica e contornos discretos.
+- Barra de progresso **imediatamente sob a capa**, antes do bloco de titulo.
+- Titulo editorial a esquerda (ate duas linhas); artista e album na linha secundaria.
+- **Um unico coracao**, sem circulo decorativo, ao lado do bloco de titulo. Nao repetir no topo.
+- Transporte abaixo do bloco de titulo: shuffle, anterior, play/pause circular,
+  proximo e repeat. O play pode ser claro com halo em outra cor da capa.
+- Topo: voltar/fechar a esquerda e `⋮` a direita; respeitar Cast e preferencias
+  de acoes existentes sem duplicar ou perder funcoes. Timer e diagnostico de
+  audio ficam acessiveis por acoes secundarias, nao fixos ao lado do titulo.
+- A base traz uma aba/handle minimalista **LETRAS** com chevron para cima.
+  **Nao** deixar preview cantavel permanentemente nesse estado; o desenho
+  aprovado substitui o cartao de duas linhas sugerido anteriormente.
+- Sem faixa persistente `Up Next` no player principal; fila pelo menu.
+- Toque ou gesto vertical ascendente sobre o handle abre leitura de letras.
+  A ausencia real de letras nunca gera versos ficticios.
+
+### Letras expandidas — Opcao 1 aprovada
+
+- Layout diferente da composicao anterior: capa compacta junto do titulo,
+  artista e unico coracao; barra de progresso e transporte compactos logo abaixo.
+- Letras ocupam a maior parte da altura e assumem protagonismo.
+- Reutilizar renderizadores existentes TTML/LRC/plain, estado, relogio, rolagem
+  automatica, seek por linha quando permitido e preferencia de sincronismo.
+- Destaque claro na linha atual, outras linhas atenuadas. Fundo atmosferico
+  dinamico e legivel; sem emojis ou versos inventados.
+- Voltar/gesto para baixo retorna ao player de capa, sem interromper audio.
+- Acoes secundarias de letras, como ajuste de offset e exportacao existente,
+  continuam acessiveis sem multiplicar menus na tela principal.
+- Alturas curtas, landscape, fontes ampliadas, TalkBack e reduzir movimento:
+  priorizar area de leitura e alvos de toque reais.
+
+### Motor de direcao cromatica (automatico; sem IA remota)
+
+Tres tratamentos com escolha **conservadora por confianca**, sempre da capa:
+1. **Unificada:** um matiz principal e variacoes de claro/escuro; fallback seguro.
+2. **Seletiva:** no maximo dois matizes de destaque com suporte cromatico real
+   e distancia perceptivel; fundo profundo neutro ou moderadamente matizado.
+   Nao aplicar todo o espectro de uma capa multicolorida nos controles.
+3. **Cinematografica:** apenas diante de evidencia de contraste entre regiao
+   luminosa de baixa saturacao e ambiente escuro colorido; diferenciar
+   preenchimento do play, halo, progresso e fundo. Referencia aprovada: lua
+   branco-azulada, halo azul, ceu azul-noturno.
+
+Regras:
+- Nunca fixar violeta para capas que oferecem paleta util.
+- Nao interpretar semanticamente objetos a partir de tres cores, nem prometer
+  classificacao perfeita. Em caso de duvida usar unificada.
+- Cores de texto/icone devem manter contraste adequado; sem glows fortes
+  simultaneos. Fundo claro e temas AMOLED continuam funcionais.
+- Analisar uma vez por identidade de arte/bitmap e reaproveitar resultado
+  entre player normal e letras; nao fazer processamento por tick de progresso.
+- Respeitar reduzir movimento, manter crossfade sutil em mudancas de faixa.
+- A classificacao cromatica e **apresentacao**, nunca altera biblioteca,
+  playback, downloads, autenticacao, RSS, sessao ou fila.
+
+### Aceite complementar
+
+- Capa azul/noite com destaque claro: quando houver evidencia suficiente, play
+  claro + halo azul e fundo azul escuro; cores derivadas do bitmap real.
+- Capa predominantemente vermelha: controle/progresso vermelho harmonizados,
+  sem roxo arbitrario.
+- Capa multicolorida: selecionar ate dois destaques ou fallback unificado;
+  jamais copiar todas as cores literalmente no controle.
+- Sem arte/capa acromatica: fallback neutro legivel, nao efeito aleatorio.
+- O unico coracao do player de capa fica junto do titulo, sem moldura propria.
+- O handle LETRAS abre a visualizacao protagonista e permite retorno.
+- Rotas/acoes de Cast, fila, diagnosticos, temporizador, share/download,
+  playback e Listen Together permanecem reais e acessiveis.
+- Validar CI e uso fisico antes de qualificar como pronto para instalar;
+  nenhum APK intermediario.
