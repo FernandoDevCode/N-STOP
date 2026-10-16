@@ -26,6 +26,8 @@ internal data class PlayerArtDirection(
     val playFill: Color,
     val playGlow: Color,
     val playInk: Color,
+    /** 0..1, muted for ordinary covers and stronger only when evidence supports it. */
+    val glowStrength: Float,
 ) {
     companion object {
         val Neutral = PlayerArtDirection(
@@ -38,6 +40,7 @@ internal data class PlayerArtDirection(
             playFill = Color(0xFFE9EFF4),
             playGlow = Color(0xFF7499B4),
             playInk = Color(0xFF10151D),
+            glowStrength = 0f,
         )
     }
 }
@@ -198,6 +201,11 @@ internal fun playerArtDirectionFromPixels(argb: IntArray, artKey: String = "art"
         playFill = fill,
         playGlow = glow,
         playInk = if (sampleColorLuminance(fill) > 0.43f) Color(0xFF10131A) else Color.White,
+        glowStrength = when (mode) {
+            PlayerColorMode.UNIFIED -> 0.12f
+            PlayerColorMode.SELECTIVE -> 0.23f
+            PlayerColorMode.CINEMATIC -> 0.34f
+        },
     )
 }
 
