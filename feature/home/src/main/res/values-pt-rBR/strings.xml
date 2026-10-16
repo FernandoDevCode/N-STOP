@@ -71,4 +71,5 @@
     <string name="podcast_speed">Velocidade</string>
     <string name="nostop_home_continue_current">Continue ouvindo</string>
     <string name="nostop_home_resume_label">Sua trilha agora</string>
+    <string name="podcast_preparing">Preparando download…</string>
 </resources>
