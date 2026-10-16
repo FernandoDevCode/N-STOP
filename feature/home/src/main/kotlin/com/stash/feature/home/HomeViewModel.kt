@@ -92,6 +92,9 @@ class HomeViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
+    /** The real, shared music transport is the Home's listening anchor. */
+    val listeningState: StateFlow<com.stash.core.model.PlayerState> = playerRepository.playerState
+
     /**
      * Master streaming-mode toggle observed by the Home `StreamingModeToggle`.
      * Mirrors [StreamingPreference.enabled] one-for-one — writes route
