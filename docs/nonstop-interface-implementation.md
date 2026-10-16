@@ -138,3 +138,9 @@ Branch: `nonstop`.
 - This is a **visual convergence checkpoint, not a final release**: production wordmark/launcher assets, remaining search/library/collection visual QA, hardware screenshots, and functional smoke verification still remain. The Audiobooks tab is informational, not a playable backend; it must not be represented as completed.
 - Do not request another device install just because the CI passed. The owner wants one consolidated installation after the final visual/functional verification.
 - CI gate: `[do test]`.
+
+### Visual convergence supplementary finishing
+- Search result category and top-result type labels are localized (Portuguese / English): the screenshot's "Songs" and "Artists" English headings no longer appear in pt-BR.
+- Podcast search now follows NØNStop's compact rounded-input language, with a keyboard Search action and an inline accessible search affordance rather than a second oversized purple button.
+- This is still a code-level checkpoint. It needs physical-device comparison against the agreed visual prototype before anyone calls the look final.
+- Verify updated head on CI with `[do test]`.
