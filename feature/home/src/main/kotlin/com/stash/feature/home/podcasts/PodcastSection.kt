@@ -1,6 +1,8 @@
 package com.stash.feature.home.podcasts
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +27,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,6 +42,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
@@ -73,6 +78,7 @@ fun PodcastSection(viewModel: PodcastViewModel = LocalPodcastViewModel.current ?
             stringResource(R.string.podcast_source_notice),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 8.dp),
         )
         OutlinedTextField(
             value = state.query,
@@ -104,16 +110,33 @@ fun PodcastSection(viewModel: PodcastViewModel = LocalPodcastViewModel.current ?
                 Text(stringResource(R.string.podcast_episodes), fontWeight = FontWeight.SemiBold,
                     style = MaterialTheme.typography.titleMedium)
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                Cover(show.imageUrl, show.title, 96)
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(show.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            val heroShape = RoundedCornerShape(18.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth()
+                    .clip(heroShape)
+                    .background(Brush.linearGradient(
+                        listOf(Color(0xFF362447), Color(0xFF151723), Color(0xFF12323D)),
+                    ))
+                    .border(1.dp, Color.White.copy(alpha = 0.10f), heroShape)
+                    .padding(14.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Cover(show.imageUrl, show.title, 102)
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Text(show.title, style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold, color = Color.White, maxLines = 3,
+                        overflow = TextOverflow.Ellipsis)
                     if (show.author.isNotBlank()) {
                         Text(show.author, style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            color = Color.White.copy(alpha = 0.70f), maxLines = 2,
+                            overflow = TextOverflow.Ellipsis)
                     }
                     val follows = state.followed.any { it.feedUrl == show.feedUrl }
-                    OutlinedButton(onClick = viewModel::toggleFollow) {
+                    OutlinedButton(
+                        onClick = viewModel::toggleFollow,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                    ) {
                         Text(stringResource(if (follows) R.string.podcast_unfollow else R.string.podcast_follow))
                     }
                 }
@@ -207,11 +230,24 @@ private fun PodcastEpisodeRow(
     onDownload: () -> Unit,
     onRemove: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    val shape = RoundedCornerShape(15.dp)
+    Column(
+        modifier = Modifier.fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (active) 0.58f else 0.32f))
+            .border(
+                1.dp,
+                if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
+                else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+                shape,
+            )
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp),
+    ) {
         Text(episode.title, style = MaterialTheme.typography.titleMedium,
             fontWeight = if (active) FontWeight.Bold else FontWeight.Medium)
         if (episode.published.isNotBlank()) {
-            Text(episode.published.take(24), style = MaterialTheme.typography.labelSmall,
+            Text(formatPodcastDate(episode.published), style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (episode.description.isNotBlank()) {
@@ -233,8 +269,11 @@ private fun PodcastEpisodeRow(
                     Spacer(Modifier.width(4.dp))
                     Text(stringResource(R.string.podcast_delete))
                 }
-                progress != null -> Text(stringResource(R.string.podcast_downloading, progress),
-                    style = MaterialTheme.typography.labelMedium)
+                progress != null -> Text(
+                    if (progress <= 0) stringResource(R.string.podcast_preparing)
+                    else stringResource(R.string.podcast_downloading, progress),
+                    style = MaterialTheme.typography.labelMedium,
+                )
                 else -> TextButton(onClick = onDownload) {
                     Icon(Icons.Default.Download, null, Modifier.size(17.dp))
                     Spacer(Modifier.width(4.dp))
@@ -242,11 +281,24 @@ private fun PodcastEpisodeRow(
                 }
             }
         }
-        if (progress != null) LinearProgressIndicator(
-            progress = { progress.coerceIn(0, 100) / 100f },
-            modifier = Modifier.fillMaxWidth(),
-        )
-        androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        if (progress != null) {
+            if (progress <= 0) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            else LinearProgressIndicator(
+                progress = { progress.coerceIn(0, 100) / 100f },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }
 
+
+/** RSS dates are in English regardless of the user's Android locale. */
+private fun formatPodcastDate(raw: String): String =
+    runCatching {
+        val parsed = java.time.ZonedDateTime.parse(raw, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME)
+        parsed.format(
+            java.time.format.DateTimeFormatter.ofPattern(
+                "dd MMM yyyy", java.util.Locale.getDefault(),
+            ),
+        )
+    }.getOrElse { raw.substringBefore(" GMT").take(30) }
