@@ -192,6 +192,7 @@ fun HomeScreen(
         onNavigateToPlaylist(id)
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val listeningState by viewModel.listeningState.collectAsStateWithLifecycle()
     var selectedMediaTab by rememberSaveable { mutableIntStateOf(0) }
     val podcastController = com.stash.feature.home.podcasts.LocalPodcastViewModel.current
     val podcastOpenRequest = podcastController?.openRequests?.collectAsStateWithLifecycle()?.value ?: 0
@@ -390,6 +391,14 @@ fun HomeScreen(
             )
         }
         if (selectedMediaTab == 0) {
+            // A real listening surface must survive an empty personal-library
+            // sync: the current track exists even when no playlists do.
+            listeningState.currentTrack?.let { activeTrack ->
+                item(key = "nonstop_listening_now") {
+                    NonstopListeningCard(activeTrack, onOpenPlayer = onNavigateToNowPlaying)
+                    Spacer(Modifier.height(10.dp))
+                }
+            }
 
         // ── Lossless connect nudge ───────────────────────────────────
         // Shown when the user has lossless toggled OFF and hasn't
