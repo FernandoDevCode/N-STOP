@@ -1,6 +1,7 @@
 package com.stash.feature.home.podcasts
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -33,7 +34,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
@@ -64,6 +67,22 @@ fun PodcastNowPlayingScreen(
             Brush.verticalGradient(listOf(accent.copy(alpha = 0.17f), background, background)),
         ),
     ) {
+        // The album-art atmosphere starts behind the cover and fades out
+        // before the controls. This is decorative and never affects playback.
+        Box(
+            modifier = Modifier.fillMaxWidth().height(360.dp)
+                .align(Alignment.TopCenter)
+                .background(
+                    Brush.radialGradient(
+                        listOf(
+                            accent.copy(alpha = 0.25f),
+                            MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f),
+                            Color.Transparent,
+                        ),
+                        radius = 670f,
+                    ),
+                ),
+        )
         Column(
             modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -93,8 +112,20 @@ fun PodcastNowPlayingScreen(
                 BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     val artSize = maxWidth.coerceAtMost(260.dp)
                     Box(
-                        modifier = Modifier.size(artSize).clip(RoundedCornerShape(20.dp))
-                            .background(surface),
+                        modifier = Modifier.size(artSize)
+                            .shadow(
+                                elevation = 38.dp,
+                                shape = RoundedCornerShape(20.dp),
+                                ambientColor = accent.copy(alpha = 0.32f),
+                                spotColor = accent.copy(alpha = 0.26f),
+                            )
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(surface)
+                            .border(
+                                1.dp,
+                                Color.White.copy(alpha = 0.11f),
+                                RoundedCornerShape(20.dp),
+                            ),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(Icons.Filled.Headphones, contentDescription = null,
