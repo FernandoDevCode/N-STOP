@@ -20,6 +20,7 @@ class PlayerArtDirectionTest {
         val pixels = IntArray(900) { if (it < 450) argb(12, 16, 25) else argb(20, 87, 158) }
         val result = playerArtDirectionFromPixels(pixels)
         assertEquals(PlayerColorMode.UNIFIED, result.mode)
+        assertEquals(0.12f, result.glowStrength, 0.001f)
         assertTrue(result.progress.blue > result.progress.red)
     }
 
@@ -33,6 +34,7 @@ class PlayerArtDirectionTest {
         }
         val result = playerArtDirectionFromPixels(pixels)
         assertEquals(PlayerColorMode.SELECTIVE, result.mode)
+        assertEquals(0.23f, result.glowStrength, 0.001f)
         assertTrue(result.playGlow != result.playFill)
     }
 
@@ -46,6 +48,7 @@ class PlayerArtDirectionTest {
         }
         val result = playerArtDirectionFromPixels(pixels)
         assertEquals(PlayerColorMode.CINEMATIC, result.mode)
+        assertEquals(0.34f, result.glowStrength, 0.001f)
         assertTrue(result.playFill.red > 0.8f)
         assertTrue(result.playGlow.blue > result.playGlow.red)
     }
