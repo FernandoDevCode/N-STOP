@@ -27,6 +27,15 @@ class PlayerArtDirectionTest {
         assertTrue(result.progress.blue > result.progress.red)
     }
 
+    @Test fun `blue families keep blue atmosphere and reflect cooler light in the play material`() {
+        val result = playerArtDirectionFromPixels(IntArray(1600) { argb(25, 60, 175) })
+        assertEquals(PlayerColorMode.UNIFIED, result.mode)
+        assertTrue(result.playFill.blue > result.playFill.green)
+        assertTrue(result.playFill.green > result.playFill.red)
+        assertTrue(result.ambient.dom.blue > result.ambient.dom.red)
+        assertTrue(result.canvas.luminance() < .01f)
+    }
+
     @Test fun `broad multicolour cover limits accents to two supported families`() {
         val pixels = IntArray(900) {
             when {
@@ -85,7 +94,7 @@ class PlayerArtDirectionTest {
             assertEquals(PlayerColorMode.UNIFIED, result.mode)
             assertTrue(result.canvas.luminance() < .01f)
             assertTrue(result.ambientStrength > .30f)
-            val darkest = lerp(result.playFill, Color.Black, .10f).luminance()
+            val darkest = lerp(result.playFill, Color.Black, .12f).luminance()
             val lightest = lerp(result.playFill, Color.White, .30f).luminance()
             val ink = result.playInk.luminance()
             val contrast = if (ink < darkest) (darkest + .05f) / (ink + .05f)

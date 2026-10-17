@@ -100,16 +100,18 @@ class LyricsModeModelTest {
 
     // ── type scale ───────────────────────────────────────────────────────────────────────────
 
-    @Test fun `font size follows the web formula and caps at 34`() {
-        assertEquals((393f - 48f) / 14f, lyricFontSizeSp(393f), 0.001f) // Pixel 5: ~24.6sp
+    @Test fun `phone lyrics retain a readable shared type scale and cap on large screens`() {
+        assertEquals((393f - 48f) / 13f, lyricFontSizeSp(393f), 0.001f)
         assertEquals(34f, lyricFontSizeSp(900f), 0.001f)
         assertEquals(0f, lyricFontSizeSp(10f), 0.001f)
     }
 
-    @Test fun `short lines keep full size, long ones shrink to no less than 60 percent`() {
-        assertEquals(1f, lyricLineFit("x".repeat(25)), 0f)
-        assertEquals(25f / 30f, lyricLineFit("x".repeat(30)), 0.0001f)
-        assertEquals(0.6f, lyricLineFit("x".repeat(80)), 0f)
+    @Test fun `long phrases wrap without reducing the editorial size by more than ten percent`() {
+        assertEquals(1f, lyricLineFit("x".repeat(32)), 0f)
+        assertEquals(32f / 35f, lyricLineFit("x".repeat(35)), 0.0001f)
+        listOf("And you run, and you run to catch up with the sun", "x".repeat(80)).forEach {
+            assertTrue(lyricLineFit(it) >= .9f)
+        }
     }
 
     @Test fun `fit counts characters, not UTF-16 units`() {
@@ -134,7 +136,8 @@ class LyricsModeModelTest {
     }
 
     @Test fun `future lines fade progressively while the next remains legible`() {
-        assertTrue(lyricUpcomingAlpha(1) >= .8f)
+        assertTrue(lyricUpcomingAlpha(1) >= .88f)
+        assertTrue(lyricUpcomingAlpha(2) >= .75f)
         assertTrue(lyricUpcomingAlpha(1) > lyricUpcomingAlpha(2))
         assertTrue(lyricUpcomingAlpha(2) > lyricUpcomingAlpha(3))
         assertTrue(lyricUpcomingAlpha(3) > lyricUpcomingAlpha(4))

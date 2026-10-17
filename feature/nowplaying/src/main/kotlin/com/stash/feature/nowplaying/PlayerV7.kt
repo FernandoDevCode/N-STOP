@@ -61,6 +61,7 @@ internal fun PlayerV7Backdrop(artModel: Any?, direction: PlayerArtDirection, ani
     val drift = rememberMiniFlare(visible = animate)
     val dominant = animateColorAsState(direction.ambient.dom, tween(if (reduced) 0 else 900), label = "v7-ground")
     val reflected = animateColorAsState(direction.ambient.mut, tween(if (reduced) 0 else 900), label = "v7-reflection")
+    val rim = animateColorAsState(direction.progress, tween(if (reduced) 0 else 900), label = "v7-rim")
     val canvas by animateColorAsState(direction.canvas, tween(if (reduced) 0 else 900), label = "v7-canvas")
     val artOpacity = animateFloatAsState(direction.artworkOpacity, tween(if (reduced) 0 else 900), label = "v7-art-opacity")
     val ambient = animateFloatAsState(direction.ambientStrength, tween(if (reduced) 0 else 900), label = "v7-ambient-strength")
@@ -71,21 +72,31 @@ internal fun PlayerV7Backdrop(artModel: Any?, direction: PlayerArtDirection, ani
             model = rememberNpArtRequest(artModel), contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize().graphicsLayer {
-                scaleX = 1.15f; scaleY = 1.15f; alpha = artOpacity.value
-            }.blur(38.dp, BlurredEdgeTreatment.Unbounded),
+                scaleX = 1.2f; scaleY = 1.2f; alpha = artOpacity.value
+            }.blur(32.dp, BlurredEdgeTreatment.Unbounded),
         )
         Box(Modifier.fillMaxSize().drawBehind {
-            val driftX = (drift.value - .5f) * .24f
-            val a = Offset(size.width * (lightX.value + driftX), size.height * (.12f + lightY.value * .38f))
+            val driftX = (drift.value - .5f) * .12f
+            val a = Offset(size.width * (.55f + lightX.value * .65f + driftX),
+                size.height * (.05f + lightY.value * .30f))
             // Every gradient fades to the same hue at zero alpha; there is no
             // smaller rectangular blur surface or additive full-screen tint.
-            drawRect(Brush.radialGradient(listOf(dominant.value.copy(alpha = ambient.value),
-                dominant.value.copy(alpha = 0f)), a, size.maxDimension * .62f))
-            val b = Offset(size.width * (1f - lightX.value - driftX), size.height * .78f)
-            drawRect(Brush.radialGradient(listOf(reflected.value.copy(alpha = ambient.value * .72f),
-                reflected.value.copy(alpha = 0f)), b, size.maxDimension * .48f))
-            drawRect(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .18f),
-                canvas.copy(alpha = .32f), Color.Black.copy(alpha = .57f))))
+            // Width-based radii retain local light pools on tall phones instead
+            // of averaging the whole screen into one translucent colour wash.
+            drawRect(Brush.radialGradient(
+                0f to dominant.value.copy(alpha = ambient.value),
+                .35f to dominant.value.copy(alpha = ambient.value * .80f),
+                1f to dominant.value.copy(alpha = 0f), center = a, radius = size.width * .78f))
+            val b = Offset(size.width * (.02f + (1f - lightX.value) * .10f - driftX), size.height * .74f)
+            drawRect(Brush.radialGradient(
+                0f to reflected.value.copy(alpha = ambient.value * .86f),
+                .35f to reflected.value.copy(alpha = ambient.value * .55f),
+                1f to reflected.value.copy(alpha = 0f), center = b, radius = size.width * .75f))
+            val c = Offset(size.width * .08f, size.height * .44f)
+            drawRect(Brush.radialGradient(listOf(rim.value.copy(alpha = ambient.value * .20f),
+                rim.value.copy(alpha = 0f)), c, size.width * .58f))
+            drawRect(Brush.verticalGradient(0f to Color.Black.copy(alpha = .12f),
+                .52f to Color.Black.copy(alpha = .27f), 1f to Color.Black.copy(alpha = .60f)))
         })
     }
 }
@@ -201,21 +212,27 @@ internal fun PlayerV7Transport(
         }
         Box(Modifier.size(if (compact) 64.dp else 94.dp).drawBehind {
             val radius = size.minDimension / 2f
-            drawCircle(Brush.radialGradient(listOf(glow.copy(alpha = .10f + strength.value * .50f),
-                glow.copy(alpha = 0f)), center, radius), radius)
+            // The halo peaks beside the solid disk, not underneath its opaque
+            // centre; every edge reaches zero alpha on a real radial surface.
+            val haloAlpha = if (selective) .10f else .14f + strength.value * .45f
+            drawCircle(Brush.radialGradient(
+                0f to glow.copy(alpha = 0f),
+                .68f to glow.copy(alpha = haloAlpha),
+                .85f to glow.copy(alpha = haloAlpha * .35f),
+                1f to glow.copy(alpha = 0f), center = center, radius = radius), radius)
         }, contentAlignment = Alignment.Center) {
             val shape = CircleShape
             val colors = direction.accents.ifEmpty { listOf(accent, glow) }
             Box(Modifier.size(circleSize).clip(shape)
                 // Material is painted inside the real circular clip. Reflection
                 // changes value, not opacity/size, and cannot expose a blur box.
-                .background(Brush.linearGradient(listOf(lerp(fill, Color.White, if (selective) .06f else .16f),
-                    fill, lerp(fill, Color.Black, .10f))))
+                .background(Brush.linearGradient(listOf(lerp(fill, Color.White, if (selective) .06f else .22f),
+                    fill, lerp(fill, Color.Black, .12f))))
                 .drawBehind {
                     drawCircle(Brush.radialGradient(listOf(Color.White.copy(alpha = if (selective) .035f else .16f),
                         Color.White.copy(alpha = 0f)), Offset(size.width * .25f, size.height * .12f), size.width * .85f))
                 }
-                .border(if (selective) 1.dp else .65.dp,
+                .border(if (selective) 1.dp else .45.dp,
                     if (selective) Brush.sweepGradient(colors + colors.first()) else
                         Brush.linearGradient(listOf(Color.White.copy(alpha = .40f), fill.copy(alpha = .12f), glow.copy(alpha = .38f))), shape)
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null,
@@ -223,7 +240,7 @@ internal fun PlayerV7Transport(
                 .semantics { contentDescription = if (uiState.playWhenReady || uiState.isPlaying) "Pause" else "Play" },
                 contentAlignment = Alignment.Center) {
                 // Follow the interpolated material as well as the final palette.
-                val ink = if (lerp(fill, Color.Black, .10f).luminance() > .18f) Color(0xFF080B10) else V7White
+                val ink = if (lerp(fill, Color.Black, .12f).luminance() > .18f) Color(0xFF080B10) else V7White
                 if (uiState.isBuffering && (uiState.playWhenReady || uiState.isPlaying)) {
                     CircularProgressIndicator(color = ink, strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
                 } else Icon(if (uiState.playWhenReady || uiState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,

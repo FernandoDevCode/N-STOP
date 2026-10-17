@@ -1066,9 +1066,9 @@ private fun TrackInfoBlock(
         ) {
             Text(
                 text = track?.title ?: "Not Playing",
-                fontSize = 26.sp,
-                lineHeight = 30.sp,
-                fontWeight = FontWeight.Bold,
+                fontSize = 24.sp,
+                lineHeight = 28.sp,
+                fontWeight = FontWeight.SemiBold,
                 letterSpacing = (-0.6).sp,
                 color = ink,
                 maxLines = 2,
@@ -1085,7 +1085,7 @@ private fun TrackInfoBlock(
                     text = buildString {
                         append(displayArtist)
                         if (track != null && track.album.isNotBlank()) {
-                            append("  •  ")
+                            append(" · ")
                             append(track.album)
                         }
                     },

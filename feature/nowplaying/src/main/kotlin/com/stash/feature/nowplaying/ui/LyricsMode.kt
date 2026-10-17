@@ -121,7 +121,7 @@ internal fun LyricsPane(
 
     BoxWithConstraints(modifier = modifier.lyricsEdgeFade()) {
         val density = LocalDensity.current
-        val fontSp = minOf(34f, ((maxWidth.value - 2 * LYRICS_SIDE_PAD_DP) / 12f).coerceAtLeast(16f))
+        val fontSp = lyricFontSizeSp(maxWidth.value).coerceAtLeast(16f)
         val viewportHeight = maxHeight
         val look = remember(fontSp, viewportHeight, ink, light, density) {
             with(density) {
@@ -130,7 +130,7 @@ internal fun LyricsPane(
                     fontSize = fontSp.sp,
                     // Readability comes from crisp ink and distance opacity, not heavy blur.
                     bright = if (light) ink else ink.copy(alpha = 0.98f),
-                    dim = ink.copy(alpha = if (light) 0.38f else 0.65f),
+                    dim = ink.copy(alpha = if (light) 0.55f else 0.82f),
                     ink = ink,
                     sidePadding = LYRICS_SIDE_PAD_DP.dp,
                     lineGap = (fontSp.sp.toPx() * 0.16f).toDp(),
@@ -238,17 +238,19 @@ internal fun LyricsModeHeader(
         cover()
         Spacer(Modifier.width(14.dp))
         Column(modifier = textModifier.weight(1f)) {
-            // A long title or artist scrolls rather than ending in "…"; text that fits stays still.
-            NpMarqueeText(text = title, style = HeaderTitleStyle, color = ink)
+            // Keep the beginning visible while reading; long metadata ends in an ellipsis.
+            Text(text = title, style = HeaderTitleStyle, color = ink,
+                maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(2.dp))
-            NpMarqueeText(text = artist, style = HeaderArtistStyle, color = ink.copy(alpha = 0.7f))
+            Text(text = artist, style = HeaderArtistStyle, color = ink.copy(alpha = 0.7f),
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth())
         }
         Row(modifier = actionsModifier, verticalAlignment = Alignment.CenterVertically, content = actions)
     }
 }
 
-private val HeaderTitleStyle = TextStyle(fontFamily = SpaceGrotesk, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-private val HeaderArtistStyle = TextStyle(fontSize = 14.sp)
+private val HeaderTitleStyle = TextStyle(fontFamily = SpaceGrotesk, fontWeight = FontWeight.SemiBold, fontSize = 18.sp, lineHeight = 22.sp)
+private val HeaderArtistStyle = TextStyle(fontSize = 13.sp)
 
 /** The header's cover: the web's 64px, radius 8. A tap goes back to the big art. */
 internal val CompactCoverSize = 64.dp

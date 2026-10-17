@@ -7,8 +7,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -162,7 +160,9 @@ fun GlowingProgressBar(
         else -> elapsedNow
     }
 
-    Column(modifier = modifier.fillMaxWidth()) {
+    // The times share the lower half of the 48dp touch strip. The visual gap is
+    // compact without shrinking the seek target or extending it over the title.
+    Box(modifier = modifier.fillMaxWidth().height(TrackHeight + TouchPadding * 2)) {
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
@@ -213,6 +213,10 @@ fun GlowingProgressBar(
             val barY = size.height / 2f
             val barHeight = TrackHeight.toPx()
             val barWidth = size.width
+            val colors = gradientColors.ifEmpty { listOf(accentColor, accentColor) }
+                .let { if (it.size == 1) it + it else it }
+            // One spatial coordinate system for both track and fill, at every position.
+            val spatialGradient = Brush.horizontalGradient(colors, startX = 0f, endX = barWidth)
 
             // --- Background track ---
             drawRoundRect(
@@ -221,17 +225,23 @@ fun GlowingProgressBar(
                 size = Size(barWidth, barHeight),
                 cornerRadius = CornerRadius(barHeight / 2f),
             )
+            if (colors.size >= 3) {
+                // Selective accents remain discoverable ahead of the playhead,
+                // but only the brighter foreground represents elapsed time.
+                drawRoundRect(
+                    brush = Brush.horizontalGradient(colors.map { it.copy(alpha = .18f) },
+                        startX = 0f, endX = barWidth),
+                    topLeft = Offset(0f, barY - barHeight / 2f),
+                    size = Size(barWidth, barHeight),
+                    cornerRadius = CornerRadius(barHeight / 2f),
+                )
+            }
 
             // --- Filled (elapsed) track with gradient ---
             val filledWidth = barWidth * displayProgress
             if (filledWidth > 0f) {
                 drawRoundRect(
-                    brush = Brush.horizontalGradient(
-                        colors = gradientColors.ifEmpty { listOf(accentColor, accentColor) }
-                            .let { if (it.size == 1) it + it else it },
-                        startX = 0f,
-                        endX = filledWidth,
-                    ),
+                    brush = spatialGradient,
                     topLeft = Offset(0f, barY - barHeight / 2f),
                     size = Size(filledWidth, barHeight),
                     cornerRadius = CornerRadius(barHeight / 2f),
@@ -253,14 +263,14 @@ fun GlowingProgressBar(
                 text = formatTime(displayMs),
                 ink = ink,
                 thumbFraction = { displayProgress },
+                modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
 
         // --- Time labels ---
-        Spacer(modifier = Modifier.height(2.dp))
-
         Box(
             modifier = Modifier
+                .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .padding(horizontal = 4.dp),
             contentAlignment = Alignment.Center,
@@ -293,7 +303,7 @@ private val ScrubBubbleLift = 24.dp
  * of the drag. Visual only: TalkBack reads the bar's own position and target.
  */
 @Composable
-private fun ScrubBubble(text: String, ink: Color, thumbFraction: () -> Float) {
+private fun ScrubBubble(text: String, ink: Color, thumbFraction: () -> Float, modifier: Modifier = Modifier) {
     Text(
         text = text,
         style = MaterialTheme.typography.labelMedium,
@@ -302,7 +312,7 @@ private fun ScrubBubble(text: String, ink: Color, thumbFraction: () -> Float) {
         color = if (ink == Color.White) NpInkLight else Color.White,
         maxLines = 1,
         softWrap = false,
-        modifier = Modifier
+        modifier = modifier
             .layout { measurable, constraints ->
                 val bubble = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
                 val barWidth = constraints.maxWidth

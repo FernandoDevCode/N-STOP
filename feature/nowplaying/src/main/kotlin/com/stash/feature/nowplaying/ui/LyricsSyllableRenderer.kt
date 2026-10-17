@@ -247,7 +247,7 @@ private fun LineItem(
     val blur by animateFloatAsState(blurTarget, tween(BLUR_FADE_MS), label = "line-blur")
 
     val line = item.line
-    // A long line shrinks (to 60% at most) so it usually holds on one row; past that it wraps.
+    // Only modest fitting; long phrases wrap instead of changing the type hierarchy.
     val fit = remember(line) { lyricLineFit(line.lead.text) }
     val leadStyle = remember(ctx, fit) { ctx.leadStyle.copy(fontSize = ctx.leadStyle.fontSize * fit) }
     val bgStyle = remember(ctx, fit) { ctx.bgStyle.copy(fontSize = ctx.bgStyle.fontSize * fit) }
@@ -358,7 +358,7 @@ private fun SimpleSyllable(syl: TtmlSyllable, ctx: LyricsCtx, style: TextStyle, 
             ph != PHASE_ACTIVE && motion.asleep()
         }
     }
-    GlyphBox(syl.text, style, motion, ctx, bright, dim, yScale = 1f, blurBase = 4f, blurGain = 2f, alphaGain = 0.35f)
+    GlyphBox(syl.text, style, motion, ctx, bright, dim, yScale = 1f, blurBase = 3f, blurGain = 2f, alphaGain = 0.18f)
 }
 
 @Composable
@@ -384,7 +384,7 @@ private fun EmphasisSyllable(syl: TtmlSyllable, ctx: LyricsCtx, style: TextStyle
         },
     ) {
         letters.forEachIndexed { i, ch ->
-            GlyphBox(ch, style, motion.letters[i], ctx, bright, dim, yScale = 2f, blurBase = 4f, blurGain = 12f, alphaGain = 1.85f)
+            GlyphBox(ch, style, motion.letters[i], ctx, bright, dim, yScale = 2f, blurBase = 3f, blurGain = 6f, alphaGain = 0.45f)
         }
     }
 }

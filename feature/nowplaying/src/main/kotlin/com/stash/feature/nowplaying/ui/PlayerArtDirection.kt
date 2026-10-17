@@ -245,9 +245,12 @@ internal fun playerArtDirectionFromPixels(argb: IntArray, artKey: String = "art"
     val fill = when {
         darkControl -> Color(0xFF11161D)
         cinematic -> pale
-        else -> lerp(main, Color.White, .46f)
+        // A blue-led family reflects cooler light in the control material;
+        // the canvas/progress retain the measured hue. No album-specific rule.
+        blueLed -> lerp(hsv(firstHue * .35f + 185f * .65f, .62f, .98f), Color.White, .18f)
+        else -> lerp(main, Color.White, .38f)
     }
-    val glow = if (meaningfulSecond && !cinematic) secondAccent else main
+    val glow = if (blueLed && !cinematic) main else if (meaningfulSecond && !cinematic) secondAccent else main
     // Broad multicolour covers use two supported families. Only a dark base
     // with several small luminous bands warrants a longer selective spectrum.
     val accentBins = if (sparse && supported.size >= 3) supported else
@@ -257,26 +260,30 @@ internal fun playerArtDirectionFromPixels(argb: IntArray, artKey: String = "art"
         // Keep progress on dark canvas legible, including deep blue/red samples.
         lerp(source, Color.White, if (source.luminance() < .20f) .24f else .10f)
     }.let { colors -> if (colors.size <= 7) colors else List(7) { i -> colors[i * colors.lastIndex / 6] } }
-    val canvas = if (sparse) Color(0xFF050609) else hsv(firstHue, .34f, .055f)
+    val canvas = if (sparse) Color(0xFF050609) else hsv(firstHue, .55f, .035f)
+    // A small multicolour highlight may support a second pool of light, but
+    // never a rainbow canvas. Pick a genuinely sampled, contrasting family.
+    val reflectionHue = if (sparse) supported.maxByOrNull { hueDistance(firstHue, it * 30f + 15f) }
+        ?.let { it * 30f + 15f } ?: secondHue else if (mode == PlayerColorMode.UNIFIED) firstHue else secondHue
 
     return PlayerArtDirection(
         mode = mode,
         ambient = AmbientPalette(
-            dom = hsv(firstHue, if (sparse) .32f else .55f, if (sparse) .15f else .32f),
+            dom = hsv(firstHue, if (sparse) .50f else .78f, if (sparse) .50f else .70f),
             vib = hsv(firstHue, 0.65f, 0.57f),
-            mut = hsv(secondHue, if (meaningfulSecond) .36f else .28f, if (sparse) .15f else .34f),
+            mut = hsv(reflectionHue, if (sparse) .55f else .68f, if (sparse) .50f else .60f),
             key = artKey,
         ),
         progress = if (sparse && accents.size >= 3) Color(0xFFC7DDE5) else lerp(main, Color.White, .18f),
         playFill = fill,
         playGlow = glow,
         // Check the darkest part of the actual button gradient, not gamma-encoded RGB.
-        playInk = if (lerp(fill, Color.Black, .10f).luminance() > .18f) Color(0xFF080B10) else Color.White,
+        playInk = if (lerp(fill, Color.Black, .12f).luminance() > .18f) Color(0xFF080B10) else Color.White,
         accents = if (mode == PlayerColorMode.SELECTIVE) accents else emptyList(),
         canvas = canvas,
         sparseHighlights = sparse,
-        artworkOpacity = if (sparse) .18f else .34f,
-        ambientStrength = if (sparse) .12f else .30f + confidence * .26f,
+        artworkOpacity = if (sparse) .18f else .24f,
+        ambientStrength = if (sparse) .18f else .36f + confidence * .36f,
         lightX = (lightX[first] / weights[first]).coerceIn(.15f, .85f),
         lightY = (lightY[first] / weights[first]).coerceIn(.15f, .85f),
         glowStrength = when (mode) {
