@@ -24,7 +24,7 @@ docs/player-v8/
   references/
     README.md
     manifest.json
-    MASTER_MEGAD...png         # após importação no PC e publicação
+    MASTER_MEGADETH.png         # após importação no PC e publicação
     MASTER_PINK_FLOYD.png      # após importação no PC e publicação
 ```
 

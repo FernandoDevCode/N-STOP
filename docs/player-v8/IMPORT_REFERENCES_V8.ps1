@@ -11,7 +11,7 @@ $dest = Join-Path $PSScriptRoot 'references'
 New-Item -ItemType Directory -Path $dest -Force | Out-Null
 $specs = @(
   @{ Name = 'MASTER_PINK_FLOYD.png'; Source = '02_PLAYER_PINK_FLOYD_PALETA-SELETIVA.png'; Sha = '6b7cbd4da0fa601379b2d8d790d70aac2b532d22bb35739370fc3958fec430f0' },
-  @{ Name = 'MASTER_MEGAD...png'; Source = '03_PLAYER_MEGAdeth_PALETA-AZUL.png'; Sha = '3547184210edca28399a0945dc28192e65341ebd1545be070873593004e3d68d' }
+  @{ Name = 'MASTER_MEGADETH.png'; Source = '03_PLAYER_MEGAdeth_PALETA-AZUL.png'; Sha = '3547184210edca28399a0945dc28192e65341ebd1545be070873593004e3d68d' }
 )
 $srcDirs = @(
   (Join-Path $root '02_CHECKPOINT_2'),
@@ -62,7 +62,7 @@ foreach ($s in $specs) {
 }
 Write-Host "As duas imagens mestras estao em $dest" -ForegroundColor Cyan
 if ($Publish) {
-  $paths = @('docs/player-v8/references/MASTER_PINK_FLOYD.png','docs/player-v8/references/MASTER_MEGAD...png')
+  $paths = @('docs/player-v8/references/MASTER_PINK_FLOYD.png','docs/player-v8/references/MASTER_MEGADETH.png')
   & git -C $root add -- $paths
   if ($LASTEXITCODE -ne 0) { throw 'git add falhou' }
   $changes = @(& git -C $root diff --cached --name-only -- $paths)
