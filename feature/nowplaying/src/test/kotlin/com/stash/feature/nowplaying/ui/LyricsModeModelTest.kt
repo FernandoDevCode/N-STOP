@@ -122,13 +122,23 @@ class LyricsModeModelTest {
         assertEquals(120f, lyricAnchorPx(fontPx = 100f, viewportPx = 500f), 0.001f)
     }
 
-    @Test fun `distance blur keeps neighbours sharp and steps at two and three lines`() {
+    @Test fun `current and next two lines stay sharp with bounded distant blur`() {
         assertEquals(0f, lyricBlurDp(0, 25f), 0f)
         assertEquals(0f, lyricBlurDp(1, 25f), 0f)
         val near = lyricBlurDp(2, 25f)
         val far = lyricBlurDp(3, 25f)
-        assertEquals((1f - 0.5f) / 0.57735f, near, 0.001f)
+        assertEquals(0f, near, 0f)
         assertTrue(far > near)
-        assertEquals(far, lyricBlurDp(9, 25f), 0f)
+        assertTrue(lyricBlurDp(9, 25f) <= .75f)
+        assertTrue(lyricBlurDp(9, 100f) <= .75f)
+    }
+
+    @Test fun `future lines fade progressively while the next remains legible`() {
+        assertTrue(lyricUpcomingAlpha(1) >= .8f)
+        assertTrue(lyricUpcomingAlpha(1) > lyricUpcomingAlpha(2))
+        assertTrue(lyricUpcomingAlpha(2) > lyricUpcomingAlpha(3))
+        assertTrue(lyricUpcomingAlpha(3) > lyricUpcomingAlpha(4))
+        assertTrue(lyricUpcomingAlpha(4) > lyricUpcomingAlpha(5))
+        assertEquals(lyricUpcomingAlpha(5), lyricUpcomingAlpha(100), 0f)
     }
 }

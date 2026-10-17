@@ -100,7 +100,7 @@ internal data class LyricsLook(
 /**
  * Line-synced lyrics: one bold line per LRC line, lit from its timestamp. Upcoming lines wait
  * dim at 51%, the live one is fully lit, sung ones stay lit at 49.7% (the web's line states),
- * and lines two or more away from the live one blur ([lyricBlurDp], API 31+ only: a no-op
+ * and only distant lines receive a light blur ([lyricBlurDp], API 31+ only: a no-op
  * below). Tap a line to seek to it.
  *
  * A blank line is an instrumental break ([lines] come through [linesWithBreaks], so only breaks
@@ -144,7 +144,7 @@ internal fun LyricsLineRenderer(
                 targetValue = when {
                     index == currentIndex -> 1f
                     index < currentIndex -> SUNG_ALPHA
-                    else -> UPCOMING_ALPHA
+                    else -> lyricUpcomingAlpha(index - currentIndex)
                 },
                 animationSpec = tween(LINE_STATE_MS),
                 label = "line-alpha",
@@ -156,8 +156,9 @@ internal fun LyricsLineRenderer(
             )
             val rowModifier = Modifier
                 .fillMaxWidth()
-                .graphicsLayer { this.alpha = alpha }
-                .then(if (blur > 0.25f) Modifier.blur(blur.dp, BlurredEdgeTreatment.Unbounded) else Modifier)
+                .graphicsLayer { this.alpha = if (index == currentIndex) 1f else alpha }
+                // Never carry the previous line's blur into the newly active line.
+                .then(if (index != currentIndex && blur > 0.25f) Modifier.blur(blur.dp, BlurredEdgeTreatment.Unbounded) else Modifier)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -180,7 +181,7 @@ internal fun LyricsLineRenderer(
                 )
             } else {
                 val style = remember(line.text, look) { look.lineStyle(lyricLineFit(line.text)) }
-                Text(text = line.text, style = style, color = color, modifier = rowModifier)
+                Text(text = line.text, style = style, color = if (index == currentIndex) look.bright else color, modifier = rowModifier)
             }
         }
     }
@@ -342,7 +343,6 @@ internal const val LINE_STATE_MS = 300
 internal const val BLUR_FADE_MS = 150
 
 /** Line alpha by state, from the app's word renderer (which the web copied). */
-internal const val UPCOMING_ALPHA = 0.51f
 internal const val SUNG_ALPHA = 0.497f
 
 private val PLAIN_FONT = 18.sp

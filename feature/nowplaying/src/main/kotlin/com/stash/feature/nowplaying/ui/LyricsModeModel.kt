@@ -96,17 +96,17 @@ internal fun lyricLineFit(text: String): Float {
 /** Where the live line's top sits in the lyrics area: `max(1.2 em, 16% of its height)`. */
 internal fun lyricAnchorPx(fontPx: Float, viewportPx: Float): Float = max(1.2f * fontPx, 0.16f * viewportPx)
 
-/**
- * The web's distance blur (`filter: blur()`: 0.04em two lines from the live one, 0.09em from
- * three) as a Compose blur radius. CSS takes a standard deviation; Android's RenderEffect takes
- * a radius it turns into sigma = 0.57735 r + 0.5, so the radius is (sigma - 0.5) / 0.57735.
- * Returns dp. Lines next to the live one stay sharp.
- */
+/** Opacity supplies most of the depth; the next two lines remain readable and sharp. */
+internal fun lyricUpcomingAlpha(distance: Int): Float = when {
+    distance <= 1 -> .84f
+    distance == 2 -> .70f
+    distance == 3 -> .56f
+    distance == 4 -> .44f
+    else -> .36f
+}
+
+/** A small, bounded softening only for distant lines, including at large font scales. */
 internal fun lyricBlurDp(distance: Int, fontSp: Float): Float {
-    val sigma = when {
-        distance <= 1 -> return 0f
-        distance == 2 -> 0.04f * fontSp
-        else -> 0.09f * fontSp
-    }
-    return max(0f, (sigma - 0.5f) / 0.57735f)
+    if (distance <= 2) return 0f
+    return (fontSp * if (distance == 3) .012f else .022f).coerceIn(0f, .75f)
 }

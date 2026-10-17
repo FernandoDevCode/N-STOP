@@ -2,6 +2,7 @@ package com.stash.feature.nowplaying
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -29,6 +30,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
@@ -49,7 +52,6 @@ import com.stash.feature.nowplaying.ui.rememberNpArtRequest
 
 private val V7White = Color(0xFFF5F6F9)
 private val V7Muted = Color(0xFFA5ACBF)
-private val V7Ground = Color(0xFF05080D)
 
 /** Real artwork texture plus softly crossfaded art direction. Entire effect is window-clipped. */
 @Composable
@@ -59,23 +61,31 @@ internal fun PlayerV7Backdrop(artModel: Any?, direction: PlayerArtDirection, ani
     val drift = rememberMiniFlare(visible = animate)
     val dominant = animateColorAsState(direction.ambient.dom, tween(if (reduced) 0 else 900), label = "v7-ground")
     val reflected = animateColorAsState(direction.ambient.mut, tween(if (reduced) 0 else 900), label = "v7-reflection")
-    Box(Modifier.fillMaxSize().clipToBounds().background(V7Ground)) {
+    val canvas by animateColorAsState(direction.canvas, tween(if (reduced) 0 else 900), label = "v7-canvas")
+    val artOpacity = animateFloatAsState(direction.artworkOpacity, tween(if (reduced) 0 else 900), label = "v7-art-opacity")
+    val ambient = animateFloatAsState(direction.ambientStrength, tween(if (reduced) 0 else 900), label = "v7-ambient-strength")
+    val lightX = animateFloatAsState(direction.lightX, tween(if (reduced) 0 else 900), label = "v7-light-x")
+    val lightY = animateFloatAsState(direction.lightY, tween(if (reduced) 0 else 900), label = "v7-light-y")
+    Box(Modifier.fillMaxSize().clipToBounds().background(canvas)) {
         AsyncImage(
             model = rememberNpArtRequest(artModel), contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize().graphicsLayer {
-                scaleX = 1.15f; scaleY = 1.15f; alpha = .42f
+                scaleX = 1.15f; scaleY = 1.15f; alpha = artOpacity.value
             }.blur(38.dp, BlurredEdgeTreatment.Unbounded),
         )
         Box(Modifier.fillMaxSize().drawBehind {
-            val a = Offset(size.width * drift.value, size.height * .18f)
-            drawRect(Brush.radialGradient(listOf(dominant.value.copy(alpha = .30f),
-                dominant.value.copy(alpha = 0f)), a, size.maxDimension * .75f))
-            val b = Offset(size.width * (1f - drift.value), size.height * .76f)
-            drawRect(Brush.radialGradient(listOf(reflected.value.copy(alpha = .24f),
-                reflected.value.copy(alpha = 0f)), b, size.maxDimension * .55f))
-            drawRect(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .12f),
-                V7Ground.copy(alpha = .34f), Color.Black.copy(alpha = .76f))))
+            val driftX = (drift.value - .5f) * .24f
+            val a = Offset(size.width * (lightX.value + driftX), size.height * (.12f + lightY.value * .38f))
+            // Every gradient fades to the same hue at zero alpha; there is no
+            // smaller rectangular blur surface or additive full-screen tint.
+            drawRect(Brush.radialGradient(listOf(dominant.value.copy(alpha = ambient.value),
+                dominant.value.copy(alpha = 0f)), a, size.maxDimension * .62f))
+            val b = Offset(size.width * (1f - lightX.value - driftX), size.height * .78f)
+            drawRect(Brush.radialGradient(listOf(reflected.value.copy(alpha = ambient.value * .72f),
+                reflected.value.copy(alpha = 0f)), b, size.maxDimension * .48f))
+            drawRect(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .18f),
+                canvas.copy(alpha = .32f), Color.Black.copy(alpha = .57f))))
         })
     }
 }
@@ -141,13 +151,15 @@ internal fun PlayerV7MainLayout(
         }
         val shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)
         Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp).height(76.dp)
-            .clip(shape).background(Color(0x320C111A))
+            .clip(shape)
+            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .08f))))
             .playerV7VerticalGesture(onUp = onLyrics)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null,
                 role = Role.Button, onClick = onLyrics),
             horizontalAlignment = Alignment.CenterHorizontally) {
-            // Static top seam, clipped with the same rounded panel; never a glow layer.
-            Box(Modifier.fillMaxWidth().height(.5.dp).background(Color.White.copy(alpha = .10f)))
+            // No opaque panel: the same atmosphere continues under the handle.
+            Box(Modifier.fillMaxWidth().height(.5.dp).background(Brush.horizontalGradient(
+                listOf(Color.White.copy(alpha = 0f), Color.White.copy(alpha = .07f), Color.White.copy(alpha = 0f)))))
             Icon(Icons.Default.KeyboardArrowUp, null, tint = V7White,
                 modifier = Modifier.padding(top = 5.dp).size(27.dp))
             Text(stringResource(R.string.v7_lyrics), color = V7Muted, fontSize = 10.sp,
@@ -169,10 +181,13 @@ internal fun PlayerV7Transport(
     onRepeat: () -> Unit,
     onReact: ((String) -> Unit)? = null,
 ) {
-    val fill by animateColorAsState(direction.playFill, tween(800), label = "v7-play-fill")
-    val accent by animateColorAsState(direction.progress, tween(800), label = "v7-control-accent")
-    val glow by animateColorAsState(direction.playGlow, tween(800), label = "v7-control-light")
-    val selective = direction.mode == PlayerColorMode.SELECTIVE
+    val reduced = rememberReducedMotion()
+    val duration = if (reduced) 0 else 900
+    val fill by animateColorAsState(direction.playFill, tween(duration), label = "v7-play-fill")
+    val accent by animateColorAsState(direction.progress, tween(duration), label = "v7-control-accent")
+    val glow by animateColorAsState(direction.playGlow, tween(duration), label = "v7-control-light")
+    val strength = animateFloatAsState(direction.glowStrength, tween(duration), label = "v7-control-glow")
+    val selective = direction.sparseHighlights && direction.mode == PlayerColorMode.SELECTIVE
     val circleSize = if (compact) 50.dp else 64.dp
     Row(Modifier.fillMaxWidth().height(if (compact) 64.dp else 100.dp),
         horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
@@ -186,19 +201,29 @@ internal fun PlayerV7Transport(
         }
         Box(Modifier.size(if (compact) 64.dp else 94.dp).drawBehind {
             val radius = size.minDimension / 2f
-            drawCircle(Brush.radialGradient(listOf(glow.copy(alpha = .22f),
+            drawCircle(Brush.radialGradient(listOf(glow.copy(alpha = .10f + strength.value * .50f),
                 glow.copy(alpha = 0f)), center, radius), radius)
         }, contentAlignment = Alignment.Center) {
             val shape = CircleShape
             val colors = direction.accents.ifEmpty { listOf(accent, glow) }
             Box(Modifier.size(circleSize).clip(shape)
-                .background(if (selective) Color(0xAD0B1018) else fill, shape)
-                .then(if (selective) Modifier.border(1.dp, Brush.sweepGradient(colors + colors.first()), shape) else Modifier)
+                // Material is painted inside the real circular clip. Reflection
+                // changes value, not opacity/size, and cannot expose a blur box.
+                .background(Brush.linearGradient(listOf(lerp(fill, Color.White, if (selective) .06f else .16f),
+                    fill, lerp(fill, Color.Black, .10f))))
+                .drawBehind {
+                    drawCircle(Brush.radialGradient(listOf(Color.White.copy(alpha = if (selective) .035f else .16f),
+                        Color.White.copy(alpha = 0f)), Offset(size.width * .25f, size.height * .12f), size.width * .85f))
+                }
+                .border(if (selective) 1.dp else .65.dp,
+                    if (selective) Brush.sweepGradient(colors + colors.first()) else
+                        Brush.linearGradient(listOf(Color.White.copy(alpha = .40f), fill.copy(alpha = .12f), glow.copy(alpha = .38f))), shape)
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null,
                     role = Role.Button, onClick = onPlayPause)
                 .semantics { contentDescription = if (uiState.playWhenReady || uiState.isPlaying) "Pause" else "Play" },
                 contentAlignment = Alignment.Center) {
-                val ink = if (selective) V7White else direction.playInk
+                // Follow the interpolated material as well as the final palette.
+                val ink = if (lerp(fill, Color.Black, .10f).luminance() > .18f) Color(0xFF080B10) else V7White
                 if (uiState.isBuffering && (uiState.playWhenReady || uiState.isPlaying)) {
                     CircularProgressIndicator(color = ink, strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
                 } else Icon(if (uiState.playWhenReady || uiState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,

@@ -125,15 +125,15 @@ internal fun LyricsPane(
         val viewportHeight = maxHeight
         val look = remember(fontSp, viewportHeight, ink, light, density) {
             with(density) {
-                val anchor = maxOf(fontSp.sp.toPx() * .75f, viewportHeight.toPx() * .07f).toDp()
+                val anchor = lyricAnchorPx(fontSp.sp.toPx(), viewportHeight.toPx()).toDp()
                 LyricsLook(
                     fontSize = fontSp.sp,
-                    // The web's inks: lit .85 on the dark ambient, full plum on the light wash; dim .35.
+                    // Readability comes from crisp ink and distance opacity, not heavy blur.
                     bright = if (light) ink else ink.copy(alpha = 0.98f),
                     dim = ink.copy(alpha = if (light) 0.38f else 0.65f),
                     ink = ink,
                     sidePadding = LYRICS_SIDE_PAD_DP.dp,
-                    lineGap = (fontSp.sp.toPx() * 0.2f).toDp(),
+                    lineGap = (fontSp.sp.toPx() * 0.16f).toDp(),
                     anchor = anchor,
                     bottomRoom = (viewportHeight - anchor).coerceAtLeast(0.dp),
                 )

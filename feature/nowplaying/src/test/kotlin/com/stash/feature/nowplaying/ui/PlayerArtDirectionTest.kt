@@ -1,5 +1,8 @@
 package com.stash.feature.nowplaying.ui
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -24,7 +27,7 @@ class PlayerArtDirectionTest {
         assertTrue(result.progress.blue > result.progress.red)
     }
 
-    @Test fun `multiple supported hues select at most two roles`() {
+    @Test fun `broad multicolour cover limits accents to two supported families`() {
         val pixels = IntArray(900) {
             when {
                 it < 200 -> argb(12, 14, 23)
@@ -36,6 +39,8 @@ class PlayerArtDirectionTest {
         assertEquals(PlayerColorMode.SELECTIVE, result.mode)
         assertEquals(0.23f, result.glowStrength, 0.001f)
         assertTrue(result.playGlow != result.playFill)
+        assertEquals(2, result.accents.size)
+        assertTrue(!result.sparseHighlights)
     }
 
     @Test fun `pale moon against dark blue sky selects cinematic fill and blue glow`() {
@@ -56,14 +61,60 @@ class PlayerArtDirectionTest {
     @Test fun `thin multicolour prism bands are selective not a full rainbow UI`() {
         val pixels = IntArray(1600) {
             when {
-                it < 30 -> argb(240, 40, 50)
-                it < 60 -> argb(40, 215, 70)
-                it < 90 -> argb(30, 90, 224)
-                it < 120 -> argb(239, 217, 43)
+                it < 20 -> argb(240, 40, 50)
+                it < 40 -> argb(40, 215, 70)
+                it < 60 -> argb(30, 90, 224)
+                it < 80 -> argb(239, 217, 43)
                 else -> argb(12, 12, 15)
             }
         }
-        assertEquals(PlayerColorMode.SELECTIVE, playerArtDirectionFromPixels(pixels).mode)
+        val result = playerArtDirectionFromPixels(pixels)
+        assertEquals(PlayerColorMode.SELECTIVE, result.mode)
+        assertTrue(result.sparseHighlights)
+        assertTrue(result.canvas.luminance() < .003f)
+        assertTrue(result.artworkOpacity < .20f)
+        assertTrue(result.ambientStrength < .20f)
+        assertTrue(result.accents.size >= 3)
+        assertTrue(result.playFill.luminance() < .02f)
+        assertTrue(result.progress.blue >= result.progress.red)
+    }
+
+    @Test fun `red and green unknown covers keep their own dark canvas and readable controls`() {
+        listOf(argb(205, 35, 46), argb(28, 165, 87), argb(25, 95, 190)).forEach { colour ->
+            val result = playerArtDirectionFromPixels(IntArray(1600) { colour })
+            assertEquals(PlayerColorMode.UNIFIED, result.mode)
+            assertTrue(result.canvas.luminance() < .01f)
+            assertTrue(result.ambientStrength > .30f)
+            val darkest = lerp(result.playFill, Color.Black, .10f).luminance()
+            val lightest = lerp(result.playFill, Color.White, .30f).luminance()
+            val ink = result.playInk.luminance()
+            val contrast = if (ink < darkest) (darkest + .05f) / (ink + .05f)
+                else (ink + .05f) / (lightest + .05f)
+            assertTrue("icon contrast $contrast", contrast >= 3f)
+        }
+    }
+
+    @Test fun `same histogram in isolated and distributed regions changes ambient confidence`() {
+        val clustered = IntArray(1600) { if (it / 40 < 20 && it % 40 < 20) argb(22, 91, 190) else argb(19, 20, 24) }
+        val distributed = IntArray(1600) { if (it % 4 == 0) argb(22, 91, 190) else argb(19, 20, 24) }
+        val a = playerArtDirectionFromPixels(clustered)
+        val b = playerArtDirectionFromPixels(distributed)
+        assertEquals(a.mode, b.mode)
+        assertEquals(a.progress, b.progress)
+        assertTrue(a.ambientStrength < b.ambientStrength)
+        assertTrue(a.lightX < b.lightX)
+    }
+
+    @Test fun `tiny coloured noise on light or black artwork cannot establish a palette`() {
+        listOf(argb(248, 248, 244), argb(6, 6, 7)).forEach { ground ->
+            val pixels = IntArray(1600) { if (it < 8) argb(230, 30, 70) else ground }
+            assertEquals(PlayerArtDirection.Neutral, playerArtDirectionFromPixels(pixels))
+        }
+    }
+
+    @Test fun `predominantly light cover does not turn a small coloured mark into a saturated theme`() {
+        val pixels = IntArray(1600) { if (it < 240) argb(205, 25, 70) else argb(248, 248, 240) }
+        assertEquals(PlayerArtDirection.Neutral, playerArtDirectionFromPixels(pixels))
     }
 
     @Test fun `transparent art falls back without guessing colours`() {

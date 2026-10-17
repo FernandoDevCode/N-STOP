@@ -3,11 +3,14 @@ package com.stash.feature.nowplaying.ui
 import android.graphics.Bitmap
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import com.stash.core.ui.ambient.AmbientPalette
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 /**
  * Conservative, artwork-only colour direction for Now Playing.
@@ -30,6 +33,14 @@ internal data class PlayerArtDirection(
     val glowStrength: Float,
     /** Supported artwork swatches only; empty on unified/neutral covers. */
     val accents: List<Color> = emptyList(),
+    val canvas: Color = Color(0xFF05080D),
+    /** Dark artwork with small, genuinely contrasting details, not a new colour mode. */
+    val sparseHighlights: Boolean = false,
+    val artworkOpacity: Float = .14f,
+    val ambientStrength: Float = .18f,
+    /** Normalised centre of the supported colour family, measured once in the sample. */
+    val lightX: Float = .5f,
+    val lightY: Float = .3f,
 ) {
     companion object {
         val Neutral = PlayerArtDirection(
@@ -118,19 +129,31 @@ internal fun playerArtDirectionFromPixels(argb: IntArray, artKey: String = "art"
     val red = FloatArray(12)
     val green = FloatArray(12)
     val blue = FloatArray(12)
+    val lightX = FloatArray(12)
+    val lightY = FloatArray(12)
+    // The bitmap path always supplies a square 40x40 sample. Non-square synthetic
+    // samples still get bounded regions rather than depending on a specific artwork.
+    val width = sqrt(argb.size.toDouble()).toInt().coerceAtLeast(1)
+    val height = (argb.size + width - 1) / width
+    val regions = Array(12) { BooleanArray(16) }
     var opaque = 0
     var dark = 0
+    var light = 0
     var neutralBright = 0
     var neutralR = 0f
     var neutralG = 0f
     var neutralB = 0f
     var colourful = 0
+    var highlights = 0
 
-    for (pixel in argb) {
+    for ((position, pixel) in argb.withIndex()) {
         if ((pixel ushr 24) < 128) continue
         opaque++
         val colour = sample(pixel)
-        if (colour.value < 0.27f) dark++
+        val luminance = Color(pixel).luminance()
+        if (luminance < .045f) dark++
+        if (luminance > .60f) light++
+        if (luminance > .13f && colour.value > .52f) highlights++
         if (colour.value > 0.72f && colour.saturation < 0.23f) {
             neutralBright++
             neutralR += ((pixel ushr 16) and 255) / 255f
@@ -140,15 +163,22 @@ internal fun playerArtDirectionFromPixels(argb: IntArray, artKey: String = "art"
         if (colour.saturation < 0.28f || colour.value < 0.16f) continue
         colourful++
         val i = (colour.hue / 30f).toInt().coerceIn(0, 11)
-        val w = colour.saturation * (0.75f + colour.value * 0.25f)
+        // Suppress almost-black coloured noise without discarding bright narrow
+        // bands. Linear luminance and HSV together retain saturated blue details.
+        val w = colour.saturation * (.25f + .75f * sqrt(luminance))
+        val x = ((position % width) + .5f) / width
+        val y = ((position / width) + .5f) / height
         weights[i] += w
+        lightX[i] += x * w
+        lightY[i] += y * w
+        regions[i][(y * 4).toInt().coerceIn(0, 3) * 4 + (x * 4).toInt().coerceIn(0, 3)] = true
         counts[i]++
         red[i] += ((pixel ushr 16) and 255) / 255f
         green[i] += ((pixel ushr 8) and 255) / 255f
         blue[i] += (pixel and 255) / 255f
     }
 
-    if (opaque == 0 || colourful < opaque * 0.035f) return PlayerArtDirection.Neutral
+    if (opaque == 0 || colourful < opaque * .035f || light >= opaque * .70f) return PlayerArtDirection.Neutral
     val first = weights.indices.maxByOrNull { weights[it] } ?: return PlayerArtDirection.Neutral
     if (counts[first] < 8) return PlayerArtDirection.Neutral
     val firstHue = sample(
@@ -166,11 +196,28 @@ internal fun playerArtDirectionFromPixels(argb: IntArray, artKey: String = "art"
         // Thin, deliberate colour bands (e.g. prism covers) can occupy only
         // a small part of an otherwise black album. Still require real area.
         counts[second] >= max(10f, opaque * 0.018f).toInt()
-    val secondHue = if (distinctSecond && second != null) second * 30f + 15f else firstHue
+    val darkCoverage = dark.toFloat() / opaque
+    val colourCoverage = colourful.toFloat() / opaque
+    val supported = weights.indices.filter {
+        counts[it] >= max(8f, opaque * .005f) && weights[it] >= weights[first] * .10f
+    }
+    val sparse = darkCoverage >= .72f && colourCoverage < .24f &&
+        highlights >= max(8f, opaque * .012f) && supported.isNotEmpty()
+    // On a black canvas each luminous family may occupy less than 1.8% of the
+    // whole cover. Require agreement among the supported bins, not broad-area
+    // thresholds that would throw those details away and leave a single red hue.
+    val meaningfulSecond = distinctSecond || (sparse && second != null &&
+        second in supported && weights[second] >= weights[first] * .20f)
+    val secondHue = if (meaningfulSecond && second != null) second * 30f + 15f else firstHue
+    // A small isolated mark is weaker ambient evidence than colour spanning the
+    // artwork. This affects illumination, never changes a song's identity.
+    val spatialSupport = regions[first].count { it } / 16f
+    val confidence = (colourCoverage / .30f).coerceIn(.15f, 1f) *
+        (.55f + .45f * spatialSupport)
 
     // White moon on a dark blue sky is cinematic. A short white caption on a
     // rainbow cover is not: both contrast and meaningful neutral area matter.
-    val cinematic = dark >= opaque * 0.38f &&
+    val cinematic = !sparse && dark >= opaque * 0.38f &&
         neutralBright >= opaque * 0.09f &&
         colourful >= opaque * 0.16f &&
         weights[first] >= colourful * 0.10f
@@ -179,12 +226,13 @@ internal fun playerArtDirectionFromPixels(argb: IntArray, artKey: String = "art"
     val blueLed = firstHue in 180f..270f && blueWeight > weights.sum() * .62
     val mode = when {
         cinematic -> PlayerColorMode.CINEMATIC
+        sparse && meaningfulSecond -> PlayerColorMode.SELECTIVE
         blueLed -> PlayerColorMode.UNIFIED
         distinctSecond -> PlayerColorMode.SELECTIVE
         else -> PlayerColorMode.UNIFIED
     }
 
-    val main = hsv(firstHue, 0.70f, 0.76f)
+    val main = hsv(firstHue, 0.64f, 0.84f)
     val secondAccent = hsv(secondHue, 0.64f, 0.63f)
     val pale = if (neutralBright > 0) {
         Color(
@@ -193,26 +241,44 @@ internal fun playerArtDirectionFromPixels(argb: IntArray, artKey: String = "art"
             (neutralB / neutralBright * 0.84f + 0.16f).coerceIn(0.78f, 1f),
         )
     } else Color(0xFFECEFF3)
-    val fill = if (cinematic) pale else androidx.compose.ui.graphics.lerp(main, Color.White, .28f)
-    val glow = if (distinctSecond && !cinematic) secondAccent else main
+    val darkControl = sparse && mode == PlayerColorMode.SELECTIVE
+    val fill = when {
+        darkControl -> Color(0xFF11161D)
+        cinematic -> pale
+        else -> lerp(main, Color.White, .46f)
+    }
+    val glow = if (meaningfulSecond && !cinematic) secondAccent else main
+    // Broad multicolour covers use two supported families. Only a dark base
+    // with several small luminous bands warrants a longer selective spectrum.
+    val accentBins = if (sparse && supported.size >= 3) supported else
+        if (mode == PlayerColorMode.SELECTIVE && second != null) listOf(first, second) else emptyList()
+    val accents = accentBins.map { i ->
+        val source = Color(red[i] / counts[i], green[i] / counts[i], blue[i] / counts[i])
+        // Keep progress on dark canvas legible, including deep blue/red samples.
+        lerp(source, Color.White, if (source.luminance() < .20f) .24f else .10f)
+    }.let { colors -> if (colors.size <= 7) colors else List(7) { i -> colors[i * colors.lastIndex / 6] } }
+    val canvas = if (sparse) Color(0xFF050609) else hsv(firstHue, .34f, .055f)
 
     return PlayerArtDirection(
         mode = mode,
         ambient = AmbientPalette(
-            dom = hsv(firstHue, 0.55f, 0.23f),
+            dom = hsv(firstHue, if (sparse) .32f else .55f, if (sparse) .15f else .32f),
             vib = hsv(firstHue, 0.65f, 0.57f),
-            mut = hsv(secondHue, if (distinctSecond) 0.36f else 0.21f, 0.25f),
+            mut = hsv(secondHue, if (meaningfulSecond) .36f else .28f, if (sparse) .15f else .34f),
             key = artKey,
         ),
-        progress = main,
+        progress = if (sparse && accents.size >= 3) Color(0xFFC7DDE5) else lerp(main, Color.White, .18f),
         playFill = fill,
         playGlow = glow,
-        playInk = if (sampleColorLuminance(fill) > 0.43f) Color(0xFF10131A) else Color.White,
-        accents = if (mode == PlayerColorMode.SELECTIVE) weights.indices
-            .filter { counts[it] >= max(8f, opaque * .005f) && weights[it] >= weights[first] * .06f }
-            .map { i -> Color(red[i] / counts[i], green[i] / counts[i], blue[i] / counts[i]) }
-            .let { colors -> if (colors.size <= 7) colors else List(7) { i -> colors[i * colors.lastIndex / 6] } }
-            else emptyList(),
+        // Check the darkest part of the actual button gradient, not gamma-encoded RGB.
+        playInk = if (lerp(fill, Color.Black, .10f).luminance() > .18f) Color(0xFF080B10) else Color.White,
+        accents = if (mode == PlayerColorMode.SELECTIVE) accents else emptyList(),
+        canvas = canvas,
+        sparseHighlights = sparse,
+        artworkOpacity = if (sparse) .18f else .34f,
+        ambientStrength = if (sparse) .12f else .30f + confidence * .26f,
+        lightX = (lightX[first] / weights[first]).coerceIn(.15f, .85f),
+        lightY = (lightY[first] / weights[first]).coerceIn(.15f, .85f),
         glowStrength = when (mode) {
             PlayerColorMode.UNIFIED -> 0.12f
             PlayerColorMode.SELECTIVE -> 0.23f
@@ -220,6 +286,3 @@ internal fun playerArtDirectionFromPixels(argb: IntArray, artKey: String = "art"
         },
     )
 }
-
-private fun sampleColorLuminance(color: Color): Float =
-    0.2126f * color.red + 0.7152f * color.green + 0.0722f * color.blue
