@@ -7,7 +7,6 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,7 +37,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -62,7 +60,6 @@ import com.stash.core.model.RepeatMode
 import com.stash.core.ui.ambient.LocalAlbumChrome
 import com.stash.core.ui.components.ListenTogetherRole
 import com.stash.core.ui.components.LocalListenTogetherRole
-import com.stash.core.ui.components.motion.pressScale
 import com.stash.feature.nowplaying.listen.ListenTogetherViewModel
 import com.stash.feature.nowplaying.listen.MiniSessionFaces
 import com.stash.feature.nowplaying.ui.hasNextInQueue
@@ -71,7 +68,8 @@ import com.stash.feature.nowplaying.ui.rememberSwipeToSkip
 
 /** NØNSTOP compact transport. Playback, likes and room ownership stay in the existing models. */
 private val MiniHeight = 60.dp
-private val MiniShape = RoundedCornerShape(10.dp)
+private val MiniCornerRadius = 10.dp
+private val MiniShape = RoundedCornerShape(MiniCornerRadius)
 val MiniPlayerMargin = 14.dp
 
 @Composable
@@ -79,6 +77,7 @@ fun MiniPlayer(
     onExpand: () -> Unit,
     onOpenQueue: () -> Unit,
     modifier: Modifier = Modifier,
+    backgroundVisible: Boolean = true,
     viewModel: NowPlayingViewModel = hiltViewModel(),
     listen: ListenTogetherViewModel = hiltViewModel(),
 ) {
@@ -95,7 +94,7 @@ fun MiniPlayer(
         enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
         exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
     ) {
-        val flare = rememberMiniFlare()
+        val flare = rememberMiniFlare(visible = backgroundVisible && uiState.hasTrack)
         val press = remember { MutableInteractionSource() }
         val track = uiState.currentTrack
         // Swipe the song sideways to skip, with Now Playing's art threshold (rememberSwipeToSkip).
@@ -115,9 +114,11 @@ fun MiniPlayer(
         Box(
             modifier = modifier
                 .fillMaxWidth()
-                .padding(start = MiniPlayerMargin, end = MiniPlayerMargin, bottom = 2.dp)
-                .nonstopMiniSurface(flare)
+                .padding(start = MiniPlayerMargin, end = MiniPlayerMargin, bottom = 6.dp)
+                // Draw the rail and its full dot outside the surface clip, into the 6dp gap.
+                .miniPlayerProgress(position, uiState.durationMs, chrome, MiniCornerRadius)
                 .clip(MiniShape)
+                .nonstopMiniSurface(flare, chrome)
                 .clickable(interactionSource = press, indication = ripple(), onClick = onExpand)
                 // Preserve swipe navigation for assistive technology as well.
                 .semantics {
@@ -134,23 +135,16 @@ fun MiniPlayer(
                 }
                 .height(MiniHeight),
         ) {
-            Box(
-                Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                    .padding(horizontal = 10.dp).height(12.dp)
-                    .drawBehind {
-                        val fraction = progressFraction(position.value, uiState.durationMs)
-                        val y = size.height - 4.dp.toPx()
-                        val end = size.width * fraction
-                        drawLine(Color(0xFF353B49), androidx.compose.ui.geometry.Offset(0f, y),
-                            androidx.compose.ui.geometry.Offset(size.width, y), 2.dp.toPx(), androidx.compose.ui.graphics.StrokeCap.Round)
-                        drawLine(chrome.vib, androidx.compose.ui.geometry.Offset(0f, y),
-                            androidx.compose.ui.geometry.Offset(end, y), 2.dp.toPx(), androidx.compose.ui.graphics.StrokeCap.Round)
-                        val dot = androidx.compose.ui.geometry.Offset(end, y)
-                        drawCircle(androidx.compose.ui.graphics.Brush.radialGradient(
-                            listOf(chrome.vib.copy(alpha = .45f), Color.Transparent), dot, 7.dp.toPx()), 7.dp.toPx(), dot)
-                        drawCircle(chrome.vib, 3.2.dp.toPx(), dot)
-                        drawCircle(Color.White.copy(alpha = .9f), 2.2.dp.toPx(), dot)
-                    },
+            // Behind the content: existing cover gestures and 48dp controls keep priority.
+            // The exposed bottom strip seeks; the semantic range is a full 48dp target.
+            MiniPlayerSeekTarget(
+                position = position,
+                durationMs = uiState.durationMs,
+                trackKey = track?.id,
+                cornerRadius = MiniCornerRadius,
+                enabled = !isListener && uiState.durationMs > 0L,
+                onSeek = viewModel::onSeekTo,
+                modifier = Modifier.align(Alignment.BottomCenter),
             )
 
             Row(
@@ -284,9 +278,7 @@ fun MiniPlayer(
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(40.dp)
-                                .pressScale(playPress)
-                                .indication(playPress, ripple(color = MaterialTheme.colorScheme.onSurface)),
+                                .size(40.dp),
                             contentAlignment = Alignment.Center,
                         ) {
                             if (loading) {
