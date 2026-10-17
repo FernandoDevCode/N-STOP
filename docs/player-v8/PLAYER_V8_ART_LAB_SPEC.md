@@ -196,3 +196,21 @@ Ao final de cada fase informar:
 - Não buscar capas de terceiros em fontes não verificadas nem registrar chaves de API.
 - Não declarar sucesso por `BUILD SUCCESSFUL`, nem aprovar o visual sozinho.
 - Não criar uma pilha indefinida de documentação: esta é a **única especificação operacional da v8**; novos aprendizados devem ser anexados com seção de decisão versionada e justificativa.
+
+## 17. Registro de execução — decisão 2026-10-17 / Fases 0 e 1A
+
+- Laboratório independente em `labs/art-lab`, Kotlin 2.3.0 / Compose Multiplatform 1.10.0,
+  com renderer em `commonMain` e adaptadores Desktop separados. Justificativa: executar
+  e medir a UI sem configurar/modificar os módulos Android de produção.
+- Evidência, medidas e limitações: [reference-measurements.md](reference-measurements.md).
+  Esse registro e o README do laboratório não constituem outra especificação operacional.
+- Mestres verificados por SHA-256; arte disponível apenas por recortes identificados dos
+  mockups. Dez capas ausentes permanecem `missing`. Justificativa: não incorporar arte
+  substituta ou de fonte não verificável.
+- Baseline estático neutro, sem classificação ou IA. Fonte Inter existente usada como
+  fallback explícito. Geometria compartilhada inicialmente concilia as duas amostras;
+  caixas quadradas diferem dos retângulos levemente não quadrados dos mestres.
+- Risco preliminar para a Fase 1C: termos oficiais dos pesos MobileCLIP restringem Research
+  Purposes e excluem product development. Nenhum peso foi baixado; reavaliar antes de integrar.
+- Aceite artístico continua **NOT PASSED / pendente do usuário**. Este registro não autoriza
+  integração Android/produção, commit, push ou merge.
