@@ -65,62 +65,7 @@ private val brandWhite = Color(0xFFF6F5FA)
  */
 @Composable
 fun NonstopWordmark(modifier: Modifier = Modifier) {
-    val font = SpaceGrotesk
-    val dark = LocalIsDarkTheme.current
-    val neutral = if (dark) brandWhite else Color(0xFF211833)
-    val violet = if (dark) brandPurple else Color(0xFF7A42B2)
-    val blue = if (dark) brandBlue else Color(0xFF2469B1)
-    val mint = if (dark) brandMint else Color(0xFF127E76)
-    val common = TextStyle(
-        fontFamily = font,
-        fontWeight = FontWeight.Bold,
-        fontSize = 29.sp,
-        letterSpacing = (-1.4).sp,
-    )
-    Row(
-        modifier = modifier.semantics { contentDescription = "NØNStop" },
-        verticalAlignment = Alignment.Bottom,
-        horizontalArrangement = Arrangement.spacedBy(0.dp),
-    ) {
-        Text("N", style = common, color = neutral)
-        Box {
-            // Equalizer is centred over Ø, not an extension of its diagonal.
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Canvas(Modifier.width(31.dp).height(12.dp)) {
-                    val bars = listOf(0.32f, 0.56f, 0.82f, 1f, 0.82f, 0.56f, 0.32f)
-                    val width = size.width
-                    val height = size.height
-                    bars.forEachIndexed { index, level ->
-                        val x = width * (index + 0.5f) / bars.size
-                        val hue = if (index < 3) violet else if (index < 5) blue else mint
-                        drawLine(
-                            color = hue,
-                            start = Offset(x, height),
-                            end = Offset(x, height * (1 - level)),
-                            strokeWidth = 2.3.dp.toPx(),
-                            cap = StrokeCap.Round,
-                        )
-                    }
-                }
-                Text(
-                    "Ø",
-                    style = common.copy(
-                        brush = Brush.linearGradient(listOf(violet, blue, mint)),
-                        shadow = if (dark) Shadow(brandBlue.copy(alpha = 0.45f), Offset.Zero, 10f) else null,
-                    ),
-                )
-            }
-        }
-        Text("N", style = common, color = neutral)
-        Text(
-            "Stop",
-            style = common.copy(
-                brush = Brush.horizontalGradient(listOf(violet, blue, mint)),
-                shadow = if (dark) Shadow(brandPurple.copy(alpha = 0.24f), Offset.Zero, 8f) else null,
-                fontWeight = FontWeight.Medium,
-            ),
-        )
-    }
+    com.stash.core.ui.theme.NonstopBrand(modifier)
 }
 
 /**
@@ -178,8 +123,8 @@ fun NonstopMediaFilters(
                         } else {
                             Brush.horizontalGradient(
                                 listOf(
-                                    Color(0xFFAA79CF).copy(alpha = 0.09f + 0.25f * prominence + 0.16f * burst),
-                                    Color(0xFF6A6996).copy(alpha = 0.09f + 0.14f * prominence),
+                                    Color(0xFF721DFF).copy(alpha = 0.09f + 0.72f * prominence),
+                                    Color(0xFF101115).copy(alpha = 0.8f),
                                 ),
                             )
                         },
@@ -200,7 +145,7 @@ fun NonstopMediaFilters(
                     }
                     .border(
                         1.dp,
-                        Color.White.copy(alpha = 0.12f + 0.21f * prominence + 0.19f * burst),
+                        if (active) brandPurple else Color.White.copy(alpha = 0.04f),
                         shape,
                     )
                     .selectable(

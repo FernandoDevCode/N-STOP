@@ -5,7 +5,7 @@
     <string name="resume_playback_long">Resume playback</string>
     <string name="cast_connect_failed">Couldn\'t connect to %1$s</string>
     <string name="nostop_nav_home">Home</string>
-    <string name="nostop_nav_library">Library</string>
+    <string name="nostop_nav_library">Your Library</string>
     <string name="nostop_nav_search">Search</string>
     <string name="nostop_nav_sync">Sync</string>
     <string name="nostop_nav_settings">Settings</string>

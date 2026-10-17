@@ -20,9 +20,9 @@ val StashWarning = Color(0xFFF59E0B)
 val StashSuccess = Color(0xFF10B981)
 
 // ── Dark theme palette ─────────────────────────────────────────────────────
-val StashBackground = Color(0xFF080A13)
-val StashSurface = Color(0xFF111521)
-val StashElevatedSurface = Color(0xFF202438)
+val StashBackground = Color(0xFF08090B)
+val StashSurface = Color(0xFF111216)
+val StashElevatedSurface = Color(0xFF1B1E26)
 
 // ── AMOLED (pure-black dark) ───────────────────────────────────────────────
 // Backgrounds and surfaces go to true #000000 so OLED pixels switch off;

@@ -6,6 +6,12 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
@@ -15,19 +21,13 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -36,9 +36,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
@@ -51,8 +49,6 @@ import com.stash.core.data.prefs.StartTab
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.stash.app.RequestNotificationPermissionOnce
-import com.stash.core.ui.theme.StashMotion
-import com.stash.core.ui.theme.StashTheme
 import com.stash.data.download.lossless.squid.CaptchaExpiredNotifier
 import com.stash.feature.nowplaying.MiniPlayer
 import com.stash.feature.nowplaying.PlayerQueueSheet
@@ -61,10 +57,8 @@ import com.stash.feature.home.podcasts.PodcastMiniPlayer
 import com.stash.feature.home.podcasts.PodcastViewModel
 import com.stash.app.ambient.AlbumColorsViewModel
 import com.stash.core.ui.ambient.ProvideAlbumChrome
-import com.stash.core.ui.ambient.rememberReducedMotion
 import com.stash.core.ui.components.LocalBottomChromeInset
 import com.stash.core.ui.components.LocalChromeHazeState
-import com.stash.core.ui.components.chromeGlass
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 
@@ -109,7 +103,7 @@ fun StashScaffold(
     // The queue sheet opened from the mini player's Up next button, over any screen.
     var showQueue by rememberSaveable { mutableStateOf(false) }
 
-    // One album colour for the whole app (wordmark, selected tab, mini player), computed
+    // Album-derived transport colors, computed
     // at the player level so it follows the song whether or not Now Playing is open.
     val albumColorsViewModel: AlbumColorsViewModel = hiltViewModel()
     val albumColors by albumColorsViewModel.colors.collectAsStateWithLifecycle()
@@ -248,7 +242,7 @@ fun StashScaffold(
                 // under it is frosted all the way to the screen's edge. The cards above it keep
                 // clear of a side system bar (3-button navigation in landscape).
                 val cardInsets = Modifier.windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal))
-                Column {
+                Column(Modifier.background(com.stash.core.ui.theme.NonstopDesign.Background)) {
                     AnimatedVisibility(
                         visible = !onNowPlaying,
                         modifier = cardInsets,
@@ -369,89 +363,37 @@ private fun StashBottomBar(
     currentRoute: String?,
     onNavigate: (TopLevelDestination) -> Unit,
 ) {
-    val extendedColors = StashTheme.extendedColors
-    // The web's 1px top line on the tab bar (rgba(255,255,255,.06) / the light glass border).
-    val hairline = extendedColors.glassBorder
-    // The selected tab uses the NØNStop violet, rather than changing to
-    // the cover's color every time the song advances. Cover-derived color
-    // still drives the player, while navigation stays recognizably on-brand.
-    val selectedViolet = MaterialTheme.colorScheme.primary
-    val reducedMotion = rememberReducedMotion()
-
-    NavigationBar(
-        // The same frosted glass as the mini player (a denser tint: the tab labels sit on it),
-        // running down under the system bar; the top hairline marks its edge.
-        modifier = Modifier
-            .chromeGlass(ring = false, tintAlphaScale = NAV_GLASS_TINT_SCALE)
-            .drawBehind {
-                drawLine(
-                    color = hairline,
-                    start = Offset(0f, 0f),
-                    end = Offset(size.width, 0f),
-                    strokeWidth = 1.dp.toPx(),
-                )
-            },
-        containerColor = Color.Transparent,
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        tonalElevation = 0.dp,
-        windowInsets = WindowInsets.navigationBars,
+    androidx.compose.foundation.layout.Row(
+        Modifier.fillMaxWidth()
+            .background(com.stash.core.ui.theme.NonstopDesign.Background)
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .padding(horizontal = 2.dp, vertical = 4.dp),
     ) {
-        TopLevelDestination.bottomTabs.forEach { dest ->
-            val isSelected = currentRoute == dest.route::class.qualifiedName
-            val destinationLabel = when (dest) {
-                TopLevelDestination.HOME -> stringResource(R.string.nostop_nav_home)
-                TopLevelDestination.EXPLORE -> stringResource(R.string.nonstop_nav_explore)
-                TopLevelDestination.RADIO -> stringResource(R.string.nonstop_nav_radio)
-                TopLevelDestination.LIBRARY -> stringResource(R.string.nostop_nav_library)
-                TopLevelDestination.SEARCH -> stringResource(R.string.nostop_nav_search)
-                TopLevelDestination.SYNC -> stringResource(R.string.nostop_nav_sync)
-                TopLevelDestination.SETTINGS -> stringResource(R.string.nostop_nav_settings)
+        TopLevelDestination.bottomTabs.forEachIndexed { index, dest ->
+            val selected = currentRoute == dest.route::class.qualifiedName
+            val label = stringResource(when (dest) {
+                TopLevelDestination.HOME -> R.string.nostop_nav_home
+                TopLevelDestination.EXPLORE -> R.string.nonstop_nav_explore
+                TopLevelDestination.RADIO -> R.string.nonstop_nav_radio
+                TopLevelDestination.LIBRARY -> R.string.nostop_nav_library
+                else -> R.string.nostop_nav_search
+            })
+            Column(
+                modifier = Modifier.weight(1f).height(48.dp)
+                    .selectable(selected, role = androidx.compose.ui.semantics.Role.Tab,
+                        onClick = { onNavigate(dest) }),
+                horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(5.dp),
+            ) {
+                com.stash.core.ui.components.NonstopNavIcon(index, selected, Modifier.size(26.dp))
+                Text(label, maxLines = 1, softWrap = false,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        letterSpacing = 0.sp,
+                        shadow = if (selected) androidx.compose.ui.graphics.Shadow(
+                            com.stash.core.ui.theme.NonstopDesign.Violet, Offset.Zero, 16f) else null),
+                    color = if (selected) com.stash.core.ui.theme.NonstopDesign.ActiveInk
+                        else com.stash.core.ui.theme.NonstopDesign.Secondary)
             }
-            // Selected: NØNStop's violet with a short 180ms bloom. The ambient
-            // album color belongs to the player, not to navigation: tab colors
-            // remain steady as playback moves between different album covers.
-            val selectedness by animateFloatAsState(
-                targetValue = if (isSelected) 1f else 0f,
-                animationSpec = tween(if (reducedMotion) 0 else StashMotion.DUR_SHORT_MS),
-                label = "tabSelected",
-            )
-            val ink = lerp(extendedColors.textTertiary, selectedViolet, selectedness)
-
-            NavigationBarItem(
-                selected = isSelected,
-                onClick = { onNavigate(dest) },
-                icon = {
-                    Icon(
-                        imageVector = if (isSelected) dest.selectedIcon else dest.unselectedIcon,
-                        contentDescription = destinationLabel,
-                        tint = ink,
-                        modifier = Modifier.drawBehind {
-                            if (selectedness > 0.001f) {
-                                drawCircle(
-                                    brush = Brush.radialGradient(
-                                        0f to selectedViolet.copy(alpha = 0.26f * selectedness),
-                                        0.6f to selectedViolet.copy(alpha = 0.10f * selectedness),
-                                        1f to selectedViolet.copy(alpha = 0f),
-                                        center = center,
-                                        radius = size.maxDimension * 1.1f,
-                                    ),
-                                    radius = size.maxDimension * 1.1f,
-                                    center = center,
-                                )
-                            }
-                        },
-                    )
-                },
-                label = {
-                    Text(text = destinationLabel, style = MaterialTheme.typography.labelSmall, color = ink)
-                },
-                colors = NavigationBarItemDefaults.colors(
-                    indicatorColor = Color.Transparent,
-                ),
-            )
         }
     }
 }
-
-/** The tab bar's glass is denser than the mini player's (70 % → 84 % on dark). */
-private const val NAV_GLASS_TINT_SCALE = 1.2f

@@ -13,23 +13,19 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -43,10 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.dropShadow
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -57,7 +50,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -70,7 +62,6 @@ import com.stash.core.model.RepeatMode
 import com.stash.core.ui.ambient.LocalAlbumChrome
 import com.stash.core.ui.components.ListenTogetherRole
 import com.stash.core.ui.components.LocalListenTogetherRole
-import com.stash.core.ui.components.chromeGlass
 import com.stash.core.ui.components.motion.pressScale
 import com.stash.feature.nowplaying.listen.ListenTogetherViewModel
 import com.stash.feature.nowplaying.listen.MiniSessionFaces
@@ -78,43 +69,11 @@ import com.stash.feature.nowplaying.ui.hasNextInQueue
 import com.stash.feature.nowplaying.ui.hasPreviousInQueue
 import com.stash.feature.nowplaying.ui.rememberSwipeToSkip
 
-/*
- * The glass mini player, a port of the web player's phone mini player (stash-web
- * player/src/lib/ui/MiniPlayer.svelte, shell.css `.mini*`): a 60dp frosted card floating 8dp above
- * the tab bar with 8dp side margins and a 12dp radius; cover 44 (r6) | title / artist | queue 36 |
- * play 40 (filled with the album's vibrant colour, its ink on top) | next 36, 10dp apart; a 2dp
- * progress line in the vibrant colour along the top edge. The colours come from the app-wide album
- * colour (LocalAlbumChrome), so they follow the song from any screen, Now Playing open or not.
- */
-
-/** shell.css `.mini`: height 60, radius 12, 8 px from the tab bar and the sides. */
+/** NØNSTOP compact transport. Playback, likes and room ownership stay in the existing models. */
 private val MiniHeight = 60.dp
-private val MiniShape = androidx.compose.ui.graphics.RectangleShape
-val MiniPlayerMargin = 0.dp
+private val MiniShape = RoundedCornerShape(10.dp)
+val MiniPlayerMargin = 14.dp
 
-/** box-shadow: 0 16px 32px -12px rgb(0 0 0 / .5). */
-private val MiniShadow = Shadow(
-    radius = 32.dp,
-    spread = (-12).dp,
-    color = Color.Black.copy(alpha = 0.5f),
-    offset = DpOffset(0.dp, 16.dp),
-)
-
-/**
- * Compact glass player floating above the tab bar.
- *
- * Shows the cover, title and artist, the queue (hidden in a Listen Together room, as the queue is
- * on Now Playing), play/pause (a spinner while the song resolves or buffers) and skip next (an
- * empty slot for a Listen Together listener). Slides in and out with the current track. Tapping
- * anywhere else opens Now Playing; pressing scales the card to 0.97. Swiping the song (cover, title
- * and artist) sideways skips to the next or previous song, as on Now Playing's art; TalkBack gets
- * Previous as an action on the card (Next is the button).
- *
- * @param onExpand Opens Now Playing.
- * @param onOpenQueue Opens the queue sheet over the current screen.
- * @param modifier Standard Compose [Modifier] for the floating card's slot.
- * @param viewModel The activity-scoped [NowPlayingViewModel] provided by Hilt.
- */
 @Composable
 fun MiniPlayer(
     onExpand: () -> Unit,
@@ -136,6 +95,7 @@ fun MiniPlayer(
         enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
         exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
     ) {
+        val flare = rememberMiniFlare()
         val press = remember { MutableInteractionSource() }
         val track = uiState.currentTrack
         // Swipe the song sideways to skip, with Now Playing's art threshold (rememberSwipeToSkip).
@@ -155,29 +115,41 @@ fun MiniPlayer(
         Box(
             modifier = modifier
                 .fillMaxWidth()
-                .padding(start = MiniPlayerMargin, end = MiniPlayerMargin, bottom = MiniPlayerMargin)
-                .pressScale(press)
-                .chromeGlass(MiniShape, ring = false)
+                .padding(start = MiniPlayerMargin, end = MiniPlayerMargin, bottom = 2.dp)
+                .nonstopMiniSurface(flare)
+                .clip(MiniShape)
                 .clickable(interactionSource = press, indication = ripple(), onClick = onExpand)
-                // The swipe's TalkBack equivalent. Next already has its button; Previous has none.
+                // Preserve swipe navigation for assistive technology as well.
                 .semantics {
-                    if (!isListener && canPrevious) {
-                        customActions = listOf(
-                            CustomAccessibilityAction("Previous song") { viewModel.onSwipePrevious(); true },
-                        )
+                    if (!isListener) {
+                        customActions = buildList {
+                            if (canPrevious) add(CustomAccessibilityAction("Previous song") {
+                                viewModel.onSwipePrevious(); true
+                            })
+                            if (canNext) add(CustomAccessibilityAction("Next song") {
+                                viewModel.onSkipNext(); true
+                            })
+                        }
                     }
                 }
                 .height(MiniHeight),
         ) {
-            // The 2dp progress line along the top edge (clipped to the card's corners by the glass),
-            // drawn in the draw phase so the album colour's crossfade only redraws it.
             Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(2.dp)
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                    .padding(horizontal = 10.dp).height(12.dp)
                     .drawBehind {
                         val fraction = progressFraction(position.value, uiState.durationMs)
-                        drawRect(color = chrome.vib, size = Size(size.width * fraction, size.height))
+                        val y = size.height - 4.dp.toPx()
+                        val end = size.width * fraction
+                        drawLine(Color(0xFF353B49), androidx.compose.ui.geometry.Offset(0f, y),
+                            androidx.compose.ui.geometry.Offset(size.width, y), 2.dp.toPx(), androidx.compose.ui.graphics.StrokeCap.Round)
+                        drawLine(chrome.vib, androidx.compose.ui.geometry.Offset(0f, y),
+                            androidx.compose.ui.geometry.Offset(end, y), 2.dp.toPx(), androidx.compose.ui.graphics.StrokeCap.Round)
+                        val dot = androidx.compose.ui.geometry.Offset(end, y)
+                        drawCircle(androidx.compose.ui.graphics.Brush.radialGradient(
+                            listOf(chrome.vib.copy(alpha = .45f), Color.Transparent), dot, 7.dp.toPx()), 7.dp.toPx(), dot)
+                        drawCircle(chrome.vib, 3.2.dp.toPx(), dot)
+                        drawCircle(Color.White.copy(alpha = .9f), 2.2.dp.toPx(), dot)
                     },
             )
 
@@ -185,7 +157,7 @@ fun MiniPlayer(
                 modifier = Modifier
                     .fillMaxSize()
                     // end 4 + the next slot's 6dp of spare width = the web's 10dp to the icon.
-                    .padding(start = 8.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+                    .padding(start = 9.dp, end = 0.dp, top = 4.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
@@ -257,14 +229,14 @@ fun MiniPlayer(
                                 text = track?.title ?: "",
                                 style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 18.sp),
                                 fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface,
+                                color = Color(0xFFF6F5FA),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
                             Text(
                                 text = artist ?: "",
                                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = Color(0xFFADB7CE),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -280,17 +252,12 @@ fun MiniPlayer(
                         Icon(
                             imageVector = if (track?.stashLikedAt != null) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
                             contentDescription = if (track?.stashLikedAt != null) "Unlike song" else "Like song",
-                            tint = if (track?.stashLikedAt != null) chrome.vib else MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(24.dp),
+                            tint = Color.White,
+                            modifier = Modifier.size(25.dp),
                         )
                     }
 
-                    // Play / pause: a 40dp circle in the album's vibrant colour, its ink on top;
-                    // a spinner while the track is still resolving/buffering (e.g. a slow
-                    // YouTube-fallback resolve). One button to TalkBack: its action, and its state.
-                    // It stays ENABLED while buffering and keys on playWhenReady, so a stalled
-                    // stream can be paused from any screen (it used to be disabled while loading,
-                    // which left no in-app way to stop a stream that was about to start).
+                    // Keep pause available during buffering.
                     val playPress = remember { MutableInteractionSource() }
                     val wantsToPlay = uiState.playWhenReady || uiState.isPlaying
                     val loading = uiState.isBuffering && wantsToPlay
@@ -324,7 +291,7 @@ fun MiniPlayer(
                         ) {
                             if (loading) {
                                 CircularProgressIndicator(
-                                    color = MaterialTheme.colorScheme.onSurface,
+                                    color = Color(0xFFF6F5FA),
                                     strokeWidth = 2.dp,
                                     modifier = Modifier.size(20.dp),
                                 )
@@ -332,7 +299,7 @@ fun MiniPlayer(
                                 Icon(
                                     imageVector = if (wantsToPlay) Icons.Default.Pause else Icons.Default.PlayArrow,
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    tint = Color.White,
                                     modifier = Modifier.size(30.dp),
                                 )
                             }
@@ -349,10 +316,7 @@ fun MiniPlayer(
 /** The minimum touch target for every mini player control (Material's 48dp). */
 private val MiniTouchTarget = 48.dp
 
-/**
- * shell.css `.mini-ib`: a 36dp round icon button (its ripple), in a 48dp touch slot. The icon's
- * contentDescription names it; the slot is announced as a button.
- */
+/** Uncontained controls with 48dp touch targets. */
 @Composable
 private fun MiniIconButton(onClick: () -> Unit, content: @Composable () -> Unit) {
     Box(
