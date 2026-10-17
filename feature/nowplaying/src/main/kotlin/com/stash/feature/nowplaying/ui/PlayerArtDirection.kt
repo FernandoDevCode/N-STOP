@@ -28,6 +28,8 @@ internal data class PlayerArtDirection(
     val playInk: Color,
     /** 0..1, muted for ordinary covers and stronger only when evidence supports it. */
     val glowStrength: Float,
+    /** Supported artwork swatches only; empty on unified/neutral covers. */
+    val accents: List<Color> = emptyList(),
 ) {
     companion object {
         val Neutral = PlayerArtDirection(
@@ -135,7 +137,7 @@ internal fun playerArtDirectionFromPixels(argb: IntArray, artKey: String = "art"
             neutralG += ((pixel ushr 8) and 255) / 255f
             neutralB += (pixel and 255) / 255f
         }
-        if (colour.saturation < 0.28f || colour.value < 0.16f || colour.value > 0.96f) continue
+        if (colour.saturation < 0.28f || colour.value < 0.16f) continue
         colourful++
         val i = (colour.hue / 30f).toInt().coerceIn(0, 11)
         val w = colour.saturation * (0.75f + colour.value * 0.25f)
@@ -173,8 +175,11 @@ internal fun playerArtDirectionFromPixels(argb: IntArray, artKey: String = "art"
         colourful >= opaque * 0.16f &&
         weights[first] >= colourful * 0.10f
 
+    val blueWeight = weights.indices.filter { it in 6..8 }.sumOf { weights[it].toDouble() }
+    val blueLed = firstHue in 180f..270f && blueWeight > weights.sum() * .62
     val mode = when {
         cinematic -> PlayerColorMode.CINEMATIC
+        blueLed -> PlayerColorMode.UNIFIED
         distinctSecond -> PlayerColorMode.SELECTIVE
         else -> PlayerColorMode.UNIFIED
     }
@@ -188,7 +193,7 @@ internal fun playerArtDirectionFromPixels(argb: IntArray, artKey: String = "art"
             (neutralB / neutralBright * 0.84f + 0.16f).coerceIn(0.78f, 1f),
         )
     } else Color(0xFFECEFF3)
-    val fill = if (cinematic) pale else main
+    val fill = if (cinematic) pale else androidx.compose.ui.graphics.lerp(main, Color.White, .28f)
     val glow = if (distinctSecond && !cinematic) secondAccent else main
 
     return PlayerArtDirection(
@@ -203,6 +208,11 @@ internal fun playerArtDirectionFromPixels(argb: IntArray, artKey: String = "art"
         playFill = fill,
         playGlow = glow,
         playInk = if (sampleColorLuminance(fill) > 0.43f) Color(0xFF10131A) else Color.White,
+        accents = if (mode == PlayerColorMode.SELECTIVE) weights.indices
+            .filter { counts[it] >= max(8f, opaque * .005f) && weights[it] >= weights[first] * .06f }
+            .map { i -> Color(red[i] / counts[i], green[i] / counts[i], blue[i] / counts[i]) }
+            .let { colors -> if (colors.size <= 7) colors else List(7) { i -> colors[i * colors.lastIndex / 6] } }
+            else emptyList(),
         glowStrength = when (mode) {
             PlayerColorMode.UNIFIED -> 0.12f
             PlayerColorMode.SELECTIVE -> 0.23f

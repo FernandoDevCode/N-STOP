@@ -121,16 +121,16 @@ internal fun LyricsPane(
 
     BoxWithConstraints(modifier = modifier.lyricsEdgeFade()) {
         val density = LocalDensity.current
-        val fontSp = lyricFontSizeSp(maxWidth.value)
+        val fontSp = minOf(34f, ((maxWidth.value - 2 * LYRICS_SIDE_PAD_DP) / 12f).coerceAtLeast(16f))
         val viewportHeight = maxHeight
         val look = remember(fontSp, viewportHeight, ink, light, density) {
             with(density) {
-                val anchor = lyricAnchorPx(fontSp.sp.toPx(), viewportHeight.toPx()).toDp()
+                val anchor = maxOf(fontSp.sp.toPx() * .75f, viewportHeight.toPx() * .07f).toDp()
                 LyricsLook(
                     fontSize = fontSp.sp,
                     // The web's inks: lit .85 on the dark ambient, full plum on the light wash; dim .35.
-                    bright = if (light) ink else ink.copy(alpha = 0.85f),
-                    dim = ink.copy(alpha = if (light) 0.38f else 0.35f),
+                    bright = if (light) ink else ink.copy(alpha = 0.98f),
+                    dim = ink.copy(alpha = if (light) 0.38f else 0.65f),
                     ink = ink,
                     sidePadding = LYRICS_SIDE_PAD_DP.dp,
                     lineGap = (fontSp.sp.toPx() * 0.2f).toDp(),

@@ -1,0 +1,11 @@
+<resources>
+    <string name="v7_close">Close player</string>
+    <string name="v7_lyrics">LYRICS</string>
+    <string name="v7_actions">Player actions</string>
+    <string name="v7_queue">Playback queue</string>
+    <string name="v7_timer">Sleep timer</string>
+    <string name="v7_audio">Audio quality</string>
+    <string name="v7_together">Listen together</string>
+    <string name="v7_share">Share</string>
+    <string name="v7_more">More actions</string>
+</resources>

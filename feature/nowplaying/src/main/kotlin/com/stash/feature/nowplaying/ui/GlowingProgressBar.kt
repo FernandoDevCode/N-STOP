@@ -54,10 +54,10 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 /** Height of the track bar in dp. */
-private val TrackHeight = 4.dp
+private val TrackHeight = 3.dp
 
 /** Additional touch target padding above/below the bar. */
-private val TouchPadding = 12.dp
+private val TouchPadding = 22.5.dp
 
 /** Radius of the outer thumb circle (visible during drag). */
 private const val THUMB_OUTER_RADIUS = 8f
@@ -97,6 +97,7 @@ fun GlowingProgressBar(
     seekable: Boolean = true,
     /** Centred between the two times, so it costs no height: a listener's LIVE / Back to live. */
     center: @Composable () -> Unit = {},
+    gradientColors: List<Color> = listOf(accentColor, accentColor),
 ) {
     // The position is read HERE, through lambdas, so its 250ms tick recomposes only this bar,
     // not the Now Playing screen that hosts it.
@@ -107,6 +108,13 @@ fun GlowingProgressBar(
     // A released seek's target, held as the display value until the reported progress catches
     // up (or SEEK_HOLD_MS passes): see [seekArrived].
     var pendingSeek by remember { mutableStateOf<Float?>(null) }
+
+    LaunchedEffect(seekable, totalMs > 0L) {
+        if (!seekable || totalMs <= 0L) {
+            isDragging = false
+            pendingSeek = null
+        }
+    }
 
     // The gesture detectors are keyed on Unit and read these live. Keyed on totalMs, they were
     // torn down whenever the duration changed mid-drag (a stream's estimate replaced by the
@@ -177,7 +185,7 @@ fun GlowingProgressBar(
                         )
                     }
                 }
-                .then(if (!seekable) Modifier else Modifier.pointerInput(Unit) {
+                .then(if (!seekable || totalMs <= 0L) Modifier else Modifier.pointerInput(Unit) {
                     detectTapGestures { offset ->
                         seekTo(offset.x / size.width)
                     }
@@ -195,9 +203,9 @@ fun GlowingProgressBar(
                         onDragCancel = {
                             isDragging = false
                         },
-                        onHorizontalDrag = { _, dragAmount ->
-                            dragProgress = (dragProgress + dragAmount / size.width)
-                                .coerceIn(0f, 1f)
+                        onHorizontalDrag = { change, _ ->
+                            change.consume()
+                            dragProgress = (change.position.x / size.width).coerceIn(0f, 1f)
                         },
                     )
                 })
@@ -219,10 +227,8 @@ fun GlowingProgressBar(
             if (filledWidth > 0f) {
                 drawRoundRect(
                     brush = Brush.horizontalGradient(
-                        colors = listOf(
-                            accentColor.copy(alpha = 0.6f),
-                            accentColor,
-                        ),
+                        colors = gradientColors.ifEmpty { listOf(accentColor, accentColor) }
+                            .let { if (it.size == 1) it + it else it },
                         startX = 0f,
                         endX = filledWidth,
                     ),
@@ -232,29 +238,12 @@ fun GlowingProgressBar(
                 )
             }
 
-            // --- Glow at playhead ---
             val playheadX = filledWidth.coerceIn(0f, barWidth)
-            drawCircle(
-                color = accentColor.copy(alpha = 0.30f),
-                radius = GLOW_RADIUS,
-                center = Offset(playheadX, barY),
-            )
+            val dot = Offset(playheadX, barY)
+            drawCircle(Brush.radialGradient(listOf(accentColor.copy(alpha = .16f),
+                accentColor.copy(alpha = 0f)), dot, 9.dp.toPx()), 9.dp.toPx(), dot)
+            drawCircle(accentColor, if (isDragging) 5.dp.toPx() else 4.5.dp.toPx(), dot)
 
-            // --- Thumb (only visible while dragging) ---
-            if (isDragging) {
-                // Outer ink ring (white on dark, plum-black on light).
-                drawCircle(
-                    color = ink,
-                    radius = THUMB_OUTER_RADIUS,
-                    center = Offset(playheadX, barY),
-                )
-                // Inner accent fill.
-                drawCircle(
-                    color = accentColor,
-                    radius = THUMB_INNER_RADIUS,
-                    center = Offset(playheadX, barY),
-                )
-            }
         }
 
         // --- Scrub bubble (only while dragging): the target time above the thumb, clear of the
@@ -284,7 +273,7 @@ fun GlowingProgressBar(
             )
             center()
             Text(
-                text = "-${formatTime((totalMs - displayMs).coerceAtLeast(0L))}",
+                text = formatTime(totalMs.coerceAtLeast(0L)),
                 style = MaterialTheme.typography.labelSmall,
                 color = ink.copy(alpha = 0.7f),
                 modifier = Modifier.align(Alignment.CenterEnd),
