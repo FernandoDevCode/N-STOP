@@ -25,6 +25,7 @@ data class NowPlayingUiState(
     // recomposed all of Now Playing and the app-wide MiniPlayer on every tick. Readers take
     // NowPlayingViewModel.positionMs and read it as late as they can (draw, or a small child).
     val durationMs: Long = 0L,
+    val isSeekable: Boolean = false,
     val shuffleEnabled: Boolean = false,
     val repeatMode: RepeatMode = RepeatMode.OFF,
     val isBuffering: Boolean = false,

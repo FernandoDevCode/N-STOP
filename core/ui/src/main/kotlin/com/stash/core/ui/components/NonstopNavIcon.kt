@@ -4,7 +4,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -16,9 +15,6 @@ import com.stash.core.ui.theme.NonstopDesign
 @Composable
 fun NonstopNavIcon(destination: Int, selected: Boolean, modifier: Modifier = Modifier) {
     Canvas(modifier) {
-        if (selected) drawCircle(Brush.radialGradient(listOf(
-            NonstopDesign.Violet.copy(alpha = .32f), NonstopDesign.Violet.copy(alpha = 0f)),
-            center, size.width * 1.15f), size.width * 1.15f)
         withTransform({ scale(size.width / 24f, size.height / 24f, Offset.Zero) }) {
             val path = Path().apply {
                 when (destination) {
@@ -36,7 +32,15 @@ fun NonstopNavIcon(destination: Int, selected: Boolean, modifier: Modifier = Mod
                 }
             }
             val ink = if (selected) NonstopDesign.ActiveInk else NonstopDesign.Secondary
-            if (selected) drawPath(path, NonstopDesign.Violet.copy(alpha = .35f), style = Stroke(3.8f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+            // Finite, translucent strokes follow the glyph instead of filling a rectangular
+            // canvas with a gradient whose nonzero edges can expose a square on compositing.
+            // The outer stroke remains inside the existing 24-unit icon viewport.
+            if (selected) {
+                listOf(5.4f to .045f, 4.2f to .09f, 3f to .22f).forEach { (width, alpha) ->
+                    drawPath(path, NonstopDesign.Violet.copy(alpha = alpha),
+                        style = Stroke(width, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                }
+            }
             drawPath(path, ink, style = Stroke(1.4f, cap = StrokeCap.Round, join = StrokeJoin.Round))
             if (destination == 1 || destination == 4) drawCircle(ink,
                 if (destination == 1) 10f else 8f,

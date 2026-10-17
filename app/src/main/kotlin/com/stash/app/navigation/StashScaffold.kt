@@ -280,6 +280,7 @@ fun StashScaffold(
                             )
                         } else {
                             MiniPlayer(
+                                backgroundVisible = !onNowPlaying,
                                 onOpenQueue = { showQueue = true },
                                 onExpand = {
                                     // Return to the existing music Now Playing entry.
@@ -380,7 +381,10 @@ private fun StashBottomBar(
             })
             Column(
                 modifier = Modifier.weight(1f).height(48.dp)
-                    .selectable(selected, role = androidx.compose.ui.semantics.Role.Tab,
+                    .selectable(selected,
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null,
+                        role = androidx.compose.ui.semantics.Role.Tab,
                         onClick = { onNavigate(dest) }),
                 horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
                 verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(5.dp),

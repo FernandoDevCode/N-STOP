@@ -2592,6 +2592,10 @@ class PlayerRepositoryImpl @Inject constructor(
             updateState(controller)
         }
 
+        override fun onAvailableCommandsChanged(availableCommands: Player.Commands) {
+            controllerDeferred?.let { updateState(it) }
+        }
+
         override fun onPlaybackStateChanged(playbackState: Int) {
             controllerDeferred?.let { updateState(it) }
         }
@@ -3198,6 +3202,8 @@ class PlayerRepositoryImpl @Inject constructor(
             // Until an item is prepared (your queue put back paused after Listen Together) the player doesn't
             // know its length, but the item does. Without this Now Playing read "0:13 / -0:00".
             durationMs = controller.duration.takeIf { it > 0 } ?: track?.durationMs ?: 0L,
+            isSeekable = controller.isCurrentMediaItemSeekable &&
+                controller.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM),
             isShuffleEnabled = controller.shuffleModeEnabled,
             repeatMode = controller.repeatMode.toRepeatMode(),
             queue = display.queue,

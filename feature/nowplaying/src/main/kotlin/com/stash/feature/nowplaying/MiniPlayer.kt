@@ -33,12 +33,16 @@ import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
@@ -100,6 +104,12 @@ fun MiniPlayer(
         // Swipe the song sideways to skip, with Now Playing's art threshold (rememberSwipeToSkip).
         // A listener can't skip the room's song; a host's skips go to the room, which decides.
         val isListener = LocalListenTogetherRole.current == ListenTogetherRole.LISTENER
+        val seekEnabled = !isListener && uiState.isSeekable && uiState.durationMs > 0L
+        val seek = rememberMiniPlayerSeekState(
+            track?.let { Triple(it.id, it.youtubeId, uiState.currentIndex) }, position, seekEnabled,
+        )
+        val cardCoordinates = remember { mutableStateOf<LayoutCoordinates?>(null) }
+        val controlsCoordinates = remember { mutableStateOf<LayoutCoordinates?>(null) }
         val repeatAll = uiState.repeatMode == RepeatMode.ALL
         val canNext = room != null || hasNextInQueue(uiState.queue.size, uiState.currentIndex, repeatAll)
         val canPrevious = room != null || hasPreviousInQueue(uiState.queue.size, uiState.currentIndex, repeatAll)
@@ -116,7 +126,18 @@ fun MiniPlayer(
                 .fillMaxWidth()
                 .padding(start = MiniPlayerMargin, end = MiniPlayerMargin, bottom = 6.dp)
                 // Draw the rail and its full dot outside the surface clip, into the 6dp gap.
-                .miniPlayerProgress(position, uiState.durationMs, chrome, MiniCornerRadius)
+                .miniPlayerProgress(position, uiState.durationMs, seek, chrome, MiniCornerRadius)
+                .onGloballyPositioned { cardCoordinates.value = it }
+                .miniPlayerSeekInput(seek, uiState.durationMs, MiniCornerRadius, seekEnabled,
+                    controlsBounds = {
+                        val card = cardCoordinates.value
+                        val controls = controlsCoordinates.value
+                        if (card?.isAttached == true && controls?.isAttached == true)
+                            card.localBoundingBoxOf(controls, clipBounds = false)
+                        else Rect.Zero
+                    },
+                    onSeek = viewModel::onSeekTo,
+                )
                 .clip(MiniShape)
                 .nonstopMiniSurface(flare, chrome)
                 .clickable(interactionSource = press, indication = ripple(), onClick = onExpand)
@@ -135,14 +156,12 @@ fun MiniPlayer(
                 }
                 .height(MiniHeight),
         ) {
-            // Behind the content: existing cover gestures and 48dp controls keep priority.
-            // The exposed bottom strip seeks; the semantic range is a full 48dp target.
+            // Accessibility only; the card arbitrates touch before the cover can steal it.
             MiniPlayerSeekTarget(
                 position = position,
                 durationMs = uiState.durationMs,
-                trackKey = track?.id,
-                cornerRadius = MiniCornerRadius,
-                enabled = !isListener && uiState.durationMs > 0L,
+                seek = seek,
+                enabled = seekEnabled,
                 onSeek = viewModel::onSeekTo,
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
@@ -241,7 +260,10 @@ fun MiniPlayer(
                 room?.let { MiniSessionFaces(it) }
 
                 // Real local-library like toggle; queue/skip stay in the expanded player.
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.onGloballyPositioned { controlsCoordinates.value = it },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     MiniIconButton(onClick = viewModel::onLikeTap) {
                         Icon(
                             imageVector = if (track?.stashLikedAt != null) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,

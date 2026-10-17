@@ -834,6 +834,7 @@ class NowPlayingViewModel @Inject constructor(
                     currentTrackStored = if (liveResolved) liveTrack != null else null,
                     isPlaying = state.isPlaying,
                     durationMs = state.durationMs,
+                    isSeekable = state.isSeekable,
                     shuffleEnabled = state.isShuffleEnabled,
                     repeatMode = state.repeatMode,
                     queueSize = state.queue.size,
