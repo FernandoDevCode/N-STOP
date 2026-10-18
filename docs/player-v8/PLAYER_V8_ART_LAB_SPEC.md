@@ -1,5 +1,5 @@
 # NØNSTOP — PLAYER V8 ART LAB — ESPECIFICAÇÃO NORMATIVA
-**Versão:** 1.0 · **Data:** 2026-10-17 · **Branch:** `feat/nonstop-v8-art-lab` · **Estado:** aprovada para construção do laboratório; NÃO aprova integração ao app principal.
+**Versão:** 1.1 · **Data:** 2026-10-17 · **Branch:** `feat/nonstop-v8-art-lab` · **Estado:** aprovada para construção do laboratório; NÃO aprova integração ao app principal.
 
 ## 0. Contrato de interpretação
 1. **Fonte de verdade única para v8:** este documento. `docs/PLAYER_V7_VISUAL_FIDELITY.md` e demais documentos v7 servem SOMENTE como histórico e referência das funcionalidades intocáveis; em conflitos, este documento prevalece.
@@ -28,7 +28,7 @@ Construir **NØNSTOP Art Lab**, aplicativo experimental de desenvolvimento com *
 - **Recipe/receita**: parâmetros tipados e serializáveis, determinados pela capa. Não é imagem.
 - **Renderer**: UI Compose que consome Cover + Recipe e produz pixels em tempo real.
 - **Precomputation/pré-processamento**: gerar uma textura/atlas leve uma vez por capa, fora da UI; permitido.
-- **PASS funcional**: testes automatizados e execução sem regressão. **PASS visual**: somente aceite do usuário após comparar as duas referências e 10 capas adicionais.
+- **PASS funcional**: testes automatizados e execução sem regressão. **PASS visual da rodada inicial**: somente aceite do usuário após comparar Pink Floyd e Megadeth. **PASS visual total**: exige posteriormente o benchmark de generalização com as outras dez capas.
 - **Fallback premium**: receita conservadora, ainda com profundidade real e material de controle; jamais tela chapada de uma só cor.
 
 ## 3. Arquitetura e separação estrita
@@ -133,6 +133,12 @@ Saneamento **obrigatório** de todos os valores, checagem de contraste/NaN, limi
 
 A lista é **fixa no primeiro benchmark**; mudanças exigem revisão do documento. A aquisição das capas precisa respeitar fontes/licenças; para uso no laboratório local, Codex solicita imagens ao usuário caso fontes verificáveis não estejam disponíveis, sem incorporar credenciais ou scraping instável. Guardar manifesto com artista, álbum, URL/fonte (se conhecida), checksum e status `available/missing`. Não inventar artwork nem substituir por capa distinta silenciosamente. Imagens de mockups e capas originais podem ser diferentes; referenciar qual serve a cada teste.
 
+**Ordem obrigatória do benchmark (revisão 1.1):** a Fase 1B implementa e calibra o motor
+exclusivamente com as capas completas de Pink Floyd e Megadeth e seus dois PNGs mestres.
+As outras dez entradas permanecem placeholders no catálogo; não capturar, analisar nem refinar
+suas telas nesta rodada. A generalização para elas ocorre somente depois da validação das duas
+referências. Essa restrição de benchmark não permite regras específicas por identidade no motor.
+
 ## 11. UI do laboratório
 - Grade de 12 capas com nome do álbum, estado de disponibilidade e score resumido.
 - Selecionar uma capa abre **player renderizado de verdade** com layout v8 e a mesma receita que deverá ir ao Android.
@@ -162,7 +168,7 @@ C. Modelo indisponível/decode inválido não causa crash nem UI travada; mostra
 D. Progresso não reescala gradient em 0, 25, 50, 100%. Nenhum halo revela borda retangular nos estados testados.
 E. Controles clicáveis no lab, 2 viewports, modo LETRAS demo, troca rápida de capas, redução de movimento.
 F. `git diff --check`, testes direcionados, execução real com captura e **inspeção das screenshots**.
-G. Comparação com 12 capas — registrar configuração, receita e imagens capturadas do aplicativo, nunca substituir por PNGs gerados separadamente.
+G. Comparação inicial com as duas referências; depois expandir para as outras dez. Registrar configuração, receita e capturas reais do aplicativo, nunca substituir por PNGs gerados separadamente.
 
 ### Aceite visual exclusivamente humano
 - **Referências Pink Floyd e Megadeth:** buscar correspondência 1:1 em geometria/composição/aparência do mockup, usando imagens originais e comparações side-by-side na mesma escala. Não aceitar apenas “ficou mais bonito”; não autorizar modificações estéticas deliberadas para “melhorar”.
@@ -172,7 +178,7 @@ G. Comparação com 12 capas — registrar configuração, receita e imagens cap
 ## 14. Plano de execução e checkpoints do Codex
 **Fase 0: auditoria (sem UI).** Confirmar branch, status/diff, referências mestras legíveis, JVM/JDK/Gradle e dependências Compose. Reportar riscos de compartilhamento Desktop/Android e licença do modelo. Não tocar em produção.
 **Fase 1A: esqueleto Desktop.** Criar módulo/lab isolado, galeria, player estático Compose com dimensões mensuradas e alternância de capa. Tirar screenshots reais. Não mascarar ausência de IA.
-**Fase 1B: motor clássico + recipes.** Pipeline de features, arquétipos, cache, fallback, componentes visuais e painel diagnóstico. Render em tempo real; comparar 12 capas.
+**Fase 1B: motor clássico + recipes.** Pipeline de features, arquétipos, cache, fallback, componentes visuais e painel diagnóstico. Render em tempo real; comparar exclusivamente Pink Floyd e Megadeth em até três ciclos. As demais dez capas ficam como placeholders, fora desta rodada.
 **Fase 1C: IA.** Integrar MobileCLIP2-S0 caso compatível, com validação do download/licença e inferência local. Testar comparação **com vs. sem IA** na mesma amostra e receita. Se modelo não viável, propor alternativa com dados; não bloquear Fase 1B nem afirmar que IA está ativa.
 **Fase 1D: calibração.** Iterar luz/forma/posição nas referências, sem exceções por álbum. Depois validar o conjunto de dez capas sem ajustar manualmente por caso. Até três ciclos por sprint; reportar mudanças e pedir decisão quando meta visual não for alcançada.
 **Fase 2 (somente após PASS do laboratório):** adicionar alvo Android experimental/compartilhado; medir Redmi. O app principal continua inalterado.
@@ -214,3 +220,58 @@ Ao final de cada fase informar:
   Purposes e excluem product development. Nenhum peso foi baixado; reavaliar antes de integrar.
 - Aceite artístico continua **NOT PASSED / pendente do usuário**. Este registro não autoriza
   integração Android/produção, commit, push ou merge.
+
+## 18. Registro de execução — decisão 2026-10-17 / Fase 1B
+
+- Partida verificada: HEAD `4cf612ce145e44170d9fe38c09863abd56d85b4f`, branch
+  `feat/nonstop-v8-art-lab`. Evidências 1A preexistentes preservadas. Produção intocada.
+- Capas completas obtidas do catálogo oficial Apple Music/iTunes: Pink Floyd, coleção
+  `1065973699`; Megadeth, coleção `724648893`. Imagens JPEG 1200×1200, fontes, edição,
+  copyright e checksums em `labs/art-lab/cover-sources.json`. A imagem oficial é usada tanto
+  para análise quanto para exibição, sem depender dos recortes dos mockups. Disponibilidade
+  para validação local não significa licença irrestrita de redistribuição dessas artes.
+- Motor comum `features` → `ClassicalDirector` → `ArtRecipe` v2 → renderer Compose existente.
+  O diretor não recebe artista, álbum, ordem ou identidade conhecida. Hash é usado somente
+  como identidade opaca de origem/cache. Não foi instalado ou executado modelo neural.
+- Política clássica versionada/configurável: Rec.709 linear; baixa luminância <.035, alta ≥.32;
+  saturação HSV ≥.5 condicionada a V≥.18 e luminância ≥.004; grade 8×8. A grade oferece
+  distribuição mais fina que 4×4 sem afirmar localização semântica do prisma ou de pessoas.
+- Paleta: 24 grupos de matiz e neutros, separando antes a região quase preta (V<.12), com
+  cobertura, centroide, dispersão, OKLab e contraste contra o canvas. Acentos de saturação
+  moderada também são mantidos na paleta; não precisam satisfazer o limiar de alta saturação.
+  Importância local combina contraste, saturação ponderada por luminância e bordas; não é
+  saliência humana validada. Cinco sinais e scores heurísticos são expostos no diagnóstico.
+- Área negativa + pequenos grupos separados gera tratamento espectral localizado; cobertura
+  fria/distribuída gera canvas azul profundo, textura e luzes frias regionais. Até dois
+  tratamentos têm pesos registrados. Todos são hipóteses clássicas, sem confiança neural ou
+  interpretação dos scores como probabilidades.
+- Textura usa a capa inteira reduzida a até 192 px, sem recorte central. Blur gaussiano
+  separável replica bordas e usa o raio da receita relativo à largura lógica base 432.
+  Precompute e análise ficam fora da UI thread. Sem shader customizado ou blur integral por frame.
+- Renderer consome canvas, scrims, textura, centros/raios/cores/intensidade/queda das luzes,
+  posições dos stops, reflexo, halo, rim/diâmetro do play, tinta, favorito e estilos das letras.
+  `motionAmplitude` foi removido; transição pode ser desativada por redução de movimento.
+  Campos de identidade e análise são expostos no diagnóstico/exportação, não comandos de estilo.
+- Cache de features/receita/textura em memória e disco: bytes da capa + versão do pipeline +
+  política serializada. Corrupção de JSON/PNG resulta em recomputação. Modelo permanece `none`.
+- Verificação final: 12 testes direcionados, distribuição Windows e execução real do `.exe`.
+  Determinismo foi testado por recomputação e round-trip, além de cache memory/disk/invalidação,
+  nomes de álbum alterados, diferença real entre receitas, contraste ≥4.5:1 do material com
+  amostras de gradiente/reflexo, NaN/valores inválidos, bordas do precompute e acentos periféricos.
+- Capturas somente das duas referências: resoluções 941×1672 e 864×1536, controles/seek,
+  luzes e botão isolados, LETRAS demo, fonte 150% e viewport 1080×2340. As outras dez entradas
+  permaneceram placeholders, sem benchmark visual/análise/refinamento nesta rodada.
+- Três ciclos preservados em `docs/player-v8/validation/phase-1b/`: (1) implementação inicial
+  mostrou wash claro e excesso de tons quentes; (2) exposição/área negativa/máscara do halo
+  corrigidas; (3) acentos moderados azul/violeta preservados, entrelinha/encaixe de título
+  corrigidos e material/diâmetro calibrados por evidência cromática. Correções funcionais de
+  seek e validação de limiares não constituíram um quarto ciclo estético.
+- Evidências são capturas do GraphicsLayer usado pela UI em execução; comparações apenas
+  colocam mestre e captura lado a lado, sem redimensioná-los. Nenhuma interface foi substituída
+  por PNG gerado separadamente. Pixels fixos da barra permanecem iguais em 25/50/100%.
+- Limitações: artes oficiais diferem das artes estilizadas nos mestres; luz branca ainda é
+  difusa, reflexos espectrais e cor do favorito diferem, textura densa contém regiões claras/
+  quentes excessivas e restam diferenças geométricas/tipográficas. Generalização e Android
+  não foram validados. Detalhes medidos e arquivos estão em `reference-measurements.md`.
+- Estado: motor clássico funcional; **visual NOT PASSED / validação do usuário pendente**.
+  Sem aprovação estética automática, integração de produção, commit, push ou merge.

@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.*
 import androidx.compose.ui.input.pointer.pointerInput
@@ -66,9 +67,12 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: ImageBitmap?, reci
         val seekY = artY + artSize + w * MasterGeometry.progressGap
         val titleY = seekY + 43f*u
         val title=album.track ?: "Faixa não fornecida"
-        val titleSize=if(title.length>23) 21f else 27f
         val measurer=rememberTextMeasurer()
         val density=LocalDensity.current
+        val baseTitleSize=if(title.length>23)21f else 27f
+        val intrinsic=with(density) { measurer.measure(title,TextStyle(fontFamily=font,fontWeight=FontWeight.SemiBold,
+            fontSize=(baseTitleSize*u).sp),maxLines=1).size.width.toDp().value }
+        val titleSize=if(fontScale>1.05f)baseTitleSize else (baseTitleSize*(contentWidth-33*u)/intrinsic.coerceAtLeast(1f)).coerceIn(18f,baseTitleSize)
         val titleHeight=with(density) { measurer.measure(title,
             TextStyle(fontFamily=font,fontWeight=FontWeight.SemiBold,fontSize=(titleSize*u).sp,lineHeight=(titleSize*1.16f*u).sp),
             maxLines=2,constraints=Constraints(maxWidth=(contentWidth-33*u).dp.roundToPx())).size.height.toDp().value }
@@ -83,14 +87,15 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: ImageBitmap?, reci
         val muted = Color(0xff9296a6)
         val showArt = debug in listOf(DebugView.FINAL,DebugView.ART_BASE)
         if (showArt && atmosphere != null) Image(atmosphere, null, Modifier.fillMaxSize(),
-            contentScale=ContentScale.Crop, alpha=r.artTextureOpacity)
+            contentScale=ContentScale.FillBounds, alpha=r.artTextureOpacity)
         if (debug in listOf(DebugView.FINAL,DebugView.LIGHTS)) Canvas(Modifier.fillMaxSize()) {
             r.lights.forEach { l ->
                 val center = Offset(l.x*size.width,l.y*size.height)
                 val rx = l.radiusX*size.width
                 val ry = l.radiusY*size.height
                 scale(1f,ry/rx,center) {
-                    drawCircle(Brush.radialGradient(listOf(Color(l.color).copy(alpha=l.intensity),Color.Transparent),center,rx),rx,center)
+                    val stops=(0..8).map { i -> val t=i/8f; t to Color(l.color).copy(alpha=l.intensity*(1-t).pow(l.falloff)) }
+                    drawCircle(Brush.radialGradient(*stops.toTypedArray(),center=center,radius=rx),rx,center)
                 }
             }
         }
@@ -120,13 +125,13 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: ImageBitmap?, reci
             }
             Text(title,Modifier.offset(inset.dp,titleY.dp).width((contentWidth-33*u).dp),color=text,
                 fontSize=(titleSize*u).sp,fontFamily=font,fontWeight=FontWeight.SemiBold,
-                maxLines=2,overflow=TextOverflow.Ellipsis,lineHeight=(titleSize*1.16f*u).sp)
+                maxLines=2,overflow=TextOverflow.Ellipsis,lineHeight=(titleSize*1.16f*u).sp,letterSpacing=0.sp)
             Text(metadata,Modifier.offset(inset.dp,metadataY.dp).width((contentWidth-20*u).dp),
-                color=muted,fontSize=(16*u).sp,lineHeight=(20*u).sp,fontFamily=font,maxLines=2,overflow=TextOverflow.Ellipsis)
+                color=muted,fontSize=(16*u).sp,lineHeight=(20*u).sp,fontFamily=font,maxLines=2,overflow=TextOverflow.Ellipsis,letterSpacing=0.sp)
             RoundControl(if(state.liked) "Remover favorito (simulação)" else "Favoritar (simulação)","heart",
                 Modifier.offset((w-inset-34*u).dp,(titleY-2*u).dp).size((48*u).dp),
-                { onState(state.copy(liked=!state.liked)) },if(state.liked) Color(r.progress.thumb) else muted)
-            val buttonSize=80*u
+                { onState(state.copy(liked=!state.liked)) },if(state.liked) Color(r.favoriteColor) else muted)
+            val buttonSize=w*r.controlSurface.diameterRatio/.85f
             val small=48*u
             listOf(.135f,.315f,.685f,.865f).forEachIndexed { i,x ->
                 val labels=listOf("Aleatório (simulação)","Capa anterior","Próxima capa","Repetir (simulação)")
@@ -135,7 +140,7 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: ImageBitmap?, reci
                     when(i) { 0 -> onState(state.copy(shuffle=!state.shuffle)); 1 -> previous(); 2 -> next(); 3 -> onState(state.copy(repeat=!state.repeat)) }
                 },if((i==0 && state.shuffle)||(i==3 && state.repeat)) Color(r.progress.thumb) else if(i==3) muted else text)
             }
-            PlayControl(r,state.playing,Modifier.offset((w/2-buttonSize/2).dp,(controlsY-buttonSize/2).dp).size(buttonSize.dp)) {
+            PlayControl(r,state.playing,w,Modifier.offset((w/2-buttonSize/2).dp,(controlsY-buttonSize/2).dp).size(buttonSize.dp)) {
                 onState(state.copy(playing=!state.playing))
             }
             Box(Modifier.offset((8*u).dp,lyricsY.dp).width((w-16*u).dp).height((h-lyricsY).coerceAtLeast(60*u).dp)
@@ -148,12 +153,12 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: ImageBitmap?, reci
                 }
             }
         }
-        if (debug==DebugView.BUTTON) PlayControl(r,state.playing,Modifier.align(Alignment.Center).size((80*u).dp)) { onState(state.copy(playing=!state.playing)) }
+        if (debug==DebugView.BUTTON) PlayControl(r,state.playing,w,Modifier.align(Alignment.Center).size((w*r.controlSurface.diameterRatio/.85f).dp)) { onState(state.copy(playing=!state.playing)) }
         if (debug==DebugView.FINAL && state.lyrics) {
             Column(Modifier.offset(inset.dp,artY.dp).width(contentWidth.dp),verticalArrangement=Arrangement.spacedBy((20*u).dp)) {
                 Text(album.track ?: album.album,color=text,fontSize=(22*u).sp,lineHeight=(28*u).sp,fontFamily=font,fontWeight=FontWeight.SemiBold,maxLines=2,overflow=TextOverflow.Ellipsis)
                 Text("LETRAS · DEMONSTRAÇÃO\nSem letras reais ou versos atribuídos à faixa",color=muted,fontSize=(13*u).sp,lineHeight=(18*u).sp,fontFamily=font)
-                repeat(5) { i -> Text("Linha de teste ${i+1}",color=if(i==1) Color(r.lyrics.active) else Color(r.lyrics.future).copy(alpha=if(i>1) .5f else .8f),
+                repeat(5) { i -> Text("Linha de teste ${i+1}",color=(if(i==1) Color(r.lyrics.active) else Color(r.lyrics.future)).copy(alpha=r.lyrics.alphaProgression[i.coerceAtMost(r.lyrics.alphaProgression.lastIndex)]),
                     fontSize=(26*u).sp,lineHeight=(33*u).sp,fontFamily=font,fontWeight=FontWeight.SemiBold) }
                 Text("Voltar ao player",color=text,fontSize=(16*u).sp,fontFamily=font,
                     modifier=Modifier.heightIn(min=(48*u).dp).clickable { onState(state.copy(lyrics=false)) }.padding((12*u).dp))
@@ -166,29 +171,49 @@ fun progressX(fraction: Float,width: Float) = fraction.coerceIn(0f,1f)*width
 private fun time(seconds:Int) = "${seconds/60}:${(seconds%60).toString().padStart(2,'0')}"
 
 @Composable private fun ProgressBar(value:Float,r:ArtRecipe,modifier:Modifier,onSeek:(Float)->Unit) {
+    val latestSeek by rememberUpdatedState(onSeek)
     Canvas(modifier.semantics { contentDescription="Progresso demonstrativo"; progressBarRangeInfo=ProgressBarRangeInfo(value,0f..1f)
         setProgress { onSeek(it.coerceIn(0f,1f)); true } }
-        .pointerInput(Unit) { detectTapGestures { onSeek((it.x/size.width).coerceIn(0f,1f)) } }
-        .pointerInput(Unit) { detectDragGestures { change,_ -> change.consume(); onSeek((change.position.x/size.width).coerceIn(0f,1f)) } }) {
+        .pointerInput(Unit) { detectTapGestures { latestSeek((it.x/size.width).coerceIn(0f,1f)) } }
+        .pointerInput(Unit) { detectDragGestures { change,_ -> change.consume(); latestSeek((change.position.x/size.width).coerceIn(0f,1f)) } }) {
         val x=progressX(value,size.width)
         val thick=size.width*.009f
         drawLine(Color(r.progress.track),Offset(0f,size.height/2),Offset(size.width,size.height/2),thick,StrokeCap.Round)
         // Brush coordinates ALWAYS cover the full track. Only the reveal rectangle changes.
         val brush=Brush.horizontalGradient(*r.progress.fill.map { it.position to Color(it.color) }.toTypedArray(),startX=0f,endX=size.width)
         clipRect(right=x) { drawLine(brush,Offset(0f,size.height/2),Offset(size.width,size.height/2),thick,StrokeCap.Round) }
-        drawCircle(Color(r.progress.thumb),size.width*.014f,Offset(x,size.height/2))
+        val thumbCenter=Offset(x,size.height/2)
+        drawCircle(Brush.radialGradient(listOf(Color(r.progress.halo).copy(alpha=.17f),Color.Transparent),thumbCenter,size.width*.028f),size.width*.028f,thumbCenter)
+        drawCircle(Color(r.progress.thumb),size.width*.014f,thumbCenter)
     }
 }
-@Composable private fun PlayControl(r:ArtRecipe,playing:Boolean,modifier:Modifier,onClick:()->Unit) {
+@Composable private fun PlayControl(r:ArtRecipe,playing:Boolean,viewportWidth:Float,modifier:Modifier,onClick:()->Unit) {
     BoxWithConstraints(modifier) {
         val edge=maxWidth
-        Canvas(Modifier.requiredSize(edge*1.9f).align(Alignment.Center)) {
-            drawCircle(Brush.radialGradient(listOf(Color(r.controlSurface.haloColor).copy(alpha=r.controlSurface.haloIntensity),Color.Transparent)),size.minDimension/2)
+        Canvas(Modifier.requiredSize((viewportWidth*r.controlSurface.haloRadius*2).dp).align(Alignment.Center)) {
+            val surface=r.controlSurface
+            if(surface.haloSpectrum.isEmpty()) {
+                drawCircle(Brush.radialGradient(listOf(Color(surface.haloColor).copy(alpha=surface.haloIntensity),Color.Transparent)),size.minDimension/2)
+            } else {
+                drawContext.canvas.saveLayer(Rect(Offset.Zero,size),Paint())
+                rotate(surface.spectrumRotation) { drawCircle(Brush.sweepGradient(*surface.haloSpectrum.map { it.position to Color(it.color) }.toTypedArray())) }
+                drawRect(Brush.radialGradient(0f to Color.Transparent,.32f to Color.Transparent,
+                    .5f to Color.White.copy(alpha=surface.haloIntensity),1f to Color.Transparent),blendMode=BlendMode.DstIn)
+                drawContext.canvas.restore()
+            }
         }
         Box(Modifier.fillMaxSize().padding(edge*.075f).clip(CircleShape)
-            .background(Brush.linearGradient(r.controlSurface.fill.map { Color(it.color) }))
-            .border(.7.dp,Color(r.controlSurface.specular).copy(alpha=.4f),CircleShape)
+            .background(Brush.linearGradient(*r.controlSurface.fill.map { it.position to Color(it.color) }.toTypedArray()))
             .clickable(role=Role.Button,onClickLabel=if(playing) "Pausar (simulação)" else "Reproduzir (simulação)",onClick=onClick),contentAlignment=Alignment.Center) {
+            Canvas(Modifier.fillMaxSize()) {
+                val surface=r.controlSurface
+                drawCircle(Brush.radialGradient(listOf(Color(surface.specular).copy(alpha=surface.specularIntensity),Color.Transparent),
+                    Offset(size.width*.3f,size.height*.12f),size.width*.8f))
+                if(surface.rim.isNotEmpty()) rotate(surface.spectrumRotation) {
+                    drawCircle(Brush.sweepGradient(*surface.rim.map { it.position to Color(it.color) }.toTypedArray()),
+                        radius=size.minDimension/2-viewportWidth/432f,style=Stroke(viewportWidth/432f*1.2f))
+                }
+            }
             Glyph(if(playing) "pause" else "play",Color(r.controlSurface.ink),Modifier.size(edge*.39f))
         }
     }

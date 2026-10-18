@@ -10,7 +10,7 @@ import nonstop.artlab.renderer.progressX
 class ContractsTest {
     @Test fun fixedCatalogHasTwelveHonestEntries() {
         assertEquals(12,validationCatalog.size)
-        assertEquals(2,validationCatalog.count { it.status==ArtworkStatus.REFERENCE_EXTRACT })
+        assertEquals(2,validationCatalog.count { it.status==ArtworkStatus.OFFICIAL_COVER })
         assertEquals(10,validationCatalog.count { it.status==ArtworkStatus.MISSING && it.resource==null && it.track==null })
         assertEquals("The Dark Side of the Moon",validationCatalog[0].album)
         assertEquals("Rust in Peace",validationCatalog[1].album)

@@ -3,7 +3,7 @@ package nonstop.artlab.catalog
 import kotlinx.serialization.Serializable
 
 @Serializable
-enum class ArtworkStatus { REFERENCE_EXTRACT, MISSING, LOCAL }
+enum class ArtworkStatus { OFFICIAL_COVER, REFERENCE_EXTRACT, MISSING, LOCAL }
 
 @Serializable
 data class Album(
@@ -18,10 +18,10 @@ data class Album(
 )
 
 val validationCatalog = listOf(
-    Album("Pink Floyd", "The Dark Side of the Moon", "Time", 383, "PINK_FLOYD.png", ArtworkStatus.REFERENCE_EXTRACT,
-        "docs/player-v8/references/MASTER_PINK_FLOYD.png — recorte do mockup, não capa original", "6b7cbd4da0fa601379b2d8d790d70aac2b532d22bb35739370fc3958fec430f0"),
-    Album("Megadeth", "Rust in Peace", "Holy Wars... The Punishment Due", 392, "MEGADETH.png", ArtworkStatus.REFERENCE_EXTRACT,
-        "docs/player-v8/references/MASTER_MEGADETH.png — recorte do mockup, não capa original", "3547184210edca28399a0945dc28192e65341ebd1545be070873593004e3d68d"),
+    Album("Pink Floyd", "The Dark Side of the Moon", "Time", 383, "covers/PINK_FLOYD.jpg", ArtworkStatus.OFFICIAL_COVER,
+        "https://music.apple.com/us/album/the-dark-side-of-the-moon/1065973699", "7b5ad4cdeed66d53928f485667e8d5bf764529d4d7c45fb620f1ea31913445cb"),
+    Album("Megadeth", "Rust in Peace", "Holy Wars... The Punishment Due", 392, "covers/MEGADETH.jpg", ArtworkStatus.OFFICIAL_COVER,
+        "https://music.apple.com/us/album/rust-in-peace/724648893", "3a1ef3872b81e1dbccbc60673f1e5f20db80e222b7d3414b2c85be3b6a227c6e"),
     Album("Nirvana", "Nevermind"), Album("Michael Jackson", "Thriller"),
     Album("The Beatles", "Abbey Road"), Album("Daft Punk", "Random Access Memories"),
     Album("Joy Division", "Unknown Pleasures"), Album("Kendrick Lamar", "To Pimp a Butterfly"),

@@ -178,3 +178,84 @@ de modelo ou desempenho em Android. Não há IA, escores ou confiança calculado
 **Estado: Fases 0 e 1A funcionais; visual NOT PASSED / aguardando validação do usuário.**
 Não foi integrado Android, nem alterados PlayerV7, Media3, navegação, autenticação, downloads
 ou serviços. Sem commit, push ou merge. Execução e estrutura de arquivos estão no README do lab.
+
+## Atualização Fase 1B — benchmark de duas capas
+
+Registro operacional e decisões na seção 18 da especificação normativa, versão 1.1.
+Partida: `4cf612ce1`. As medições originais acima permanecem; o registro 1A é histórico.
+As outras dez entradas não foram capturadas, analisadas ou refinadas nesta rodada.
+
+Capas completas de 1200×1200 do catálogo oficial Apple Music/iTunes substituem os recortes
+como entrada de análise e de exibição. Fontes/copyright/edições estão em
+`../../labs/art-lab/cover-sources.json`:
+
+| Entrada | Coleção Apple | SHA-256 |
+|---|---|---|
+| Pink Floyd — The Dark Side of the Moon | 1065973699 | `7b5ad4cdeed66d53928f485667e8d5bf764529d4d7c45fb620f1ea31913445cb` |
+| Megadeth — Rust In Peace | 724648893 | `3a1ef3872b81e1dbccbc60673f1e5f20db80e222b7d3414b2c85be3b6a227c6e` |
+
+Não são imagens sintetizadas nem recortes do player. Tampouco são a mesma arte estilizada
+dos mestres: o prisma oficial é menor e fosco, sem a textura riscada; em Megadeth a composição,
+tipografia da capa, iluminação e cores também diferem. Isso impede atribuir toda a diferença
+pixel a pixel ao compositor. Nenhuma das imagens mestras foi alterada.
+
+O renderer agora recebe receitas distintas derivadas da imagem inteira. No motor final,
+Pink Floyd tem canvas `#040607`, tratamento espectral e 8 luzes; Megadeth tem canvas `#080C15`,
+tratamento frio/denso e 3 regiões luminosas. O play denso começa em `#6ACDF5` com tinta escura;
+o espectral usa superfície escura, tinta clara e stops cromáticos medidos na capa.
+São resultados desta amostra, não valores escolhidos por identidade do álbum.
+
+Capturas reais e dados por ciclo: `validation/phase-1b/cycle-1`, `cycle-2` e `cycle-3`.
+Em cada comparação, **mestre à esquerda / aplicativo à direita**, com dimensões originais
+iguais (o visualizador pode reduzir o conjunto para caber na tela). Os arquivos `*-recipe.json`
+e `*-features.json` correspondem às entradas renderizadas. `reference-*-timings.txt` registra
+uma amostra medida sem cache em processo JVM já aquecido; `*-timings.txt` das capturas registra
+o estado de cache do carregamento exibido. Não confundir zero análise em cache hit com análise
+instantânea. Relatório detalhado e métricas: `labs/art-lab/build/reports/classical/`.
+
+Uma amostra do teste final com cache vazio para cada capa, em JVM já aquecida:
+
+| Medida | Pink Floyd | Megadeth |
+|---|---:|---:|
+| Área escura (luminância <.035) | 95,05% | 40,93% |
+| Pixels altamente saturados com luz suficiente | 2,87% | 87,26% |
+| Cobertura fria | 1,63% | 88,10% |
+| Decode (wall) | 21,52 ms | 45,47 ms |
+| Features (wall) | 24,15 ms | 24,61 ms |
+| Direção (wall) | 0,72 ms | 1,52 ms |
+| Textura/cache/exportação (wall) | 44,53 ms | 36,47 ms |
+| Total (wall) | 94,88 ms | 113,22 ms |
+| CPU da thread (total) | 62,50 ms | 62,50 ms |
+
+São observações de uma execução, sem promessa de cold-start, FPS ou desempenho Android.
+Os resultados de determinismo excluem timings; nomes alterados não mudaram a receita.
+
+Foram examinados os pares, luzes isoladas, play isolado, LETRAS demo, fontes ampliadas e
+estados de seek. A checagem adicional de pixels, em (200,1010) para Pink Floyd e (200,926)
+para Megadeth, confirmou cor idêntica em 25/50/100%, sem reescalar o gradiente preenchido.
+Os 12 testes direcionados passaram; não houve benchmark FPS/jank/RAM ou Android.
+No executável final, cliques reais verificaram pausa seguida de seek sem perder o estado
+pausado e troca para a receita de Megadeth. O diagnóstico real foi inspecionado com seu mapa,
+paleta e contrastes. Evidências adicionais: `cycle-3/desktop-paused-seek.png`,
+`desktop-window.png` e `desktop-diagnostics.png`.
+
+Diferenças restantes após três ciclos:
+
+- Pink Floyd: arte oficial/prisma não reproduz o acabamento do mockup. Luz branca superior
+  é uma região difusa, não o feixe/estrutura triangular visível no mestre. A distribuição
+  espectral ainda é mais concentrada e suave. O favorito sai alaranjado pela paleta, enquanto
+  o mestre usa rosa. A barra usa os acentos da imagem original, com outra distribuição.
+- Pink Floyd: caixa quadrada estende a base da arte em ~23 px; barra/textos continuam
+  ~21–30 px abaixo do mestre; centro do play ~1346 contra ~1330. Diâmetro espectral
+  derivado da receita fica próximo de 159 px, contra ~160 px do mestre.
+- Megadeth: texto cabe numa linha em fonte normal, mas fonte/kerning/altura ainda diferem.
+  Capa do app ~ (72,157,721,721), contra (70,154,724,718); barra ~926 contra centro ~922;
+  play em ~1236 contra ~1255. Fonte ampliada mantém até duas linhas e controles sem sobreposição.
+- Megadeth: ambiente é frio e espacial, mas o blur ainda preserva ecos claros/quentes da
+  tipografia/rostos; falta a mesma profundidade azul e a variação de luz dos mestres. O halo
+  ciano é mais pálido/difuso. A superfície LETRAS difere em transparência/curvatura.
+- Ambos: glyphs de shuffle/repeat, tempos demonstrativos e espaçamentos não são equivalentes
+  ao mockup. Redução de movimento vem ativa; transição só anima quando ela é desativada.
+
+**Fase 1B funcional; visual NOT PASSED / pendente do usuário.** Nenhum peso/modelo neural
+foi baixado ou executado. A arquitetura permanece compartilhável; produção ficou intocada.

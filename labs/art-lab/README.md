@@ -1,32 +1,20 @@
-# NØNSTOP Art Lab v8 — Fases 0 e 1A
+# NØNSTOP Art Lab v8 — Fase 1B
 
-Laboratório Kotlin + Compose Multiplatform independente do build Android de produção.
-A norma continua sendo `../../docs/player-v8/PLAYER_V8_ART_LAB_SPEC.md`.
-Estado: esqueleto Desktop funcional; **aceite visual pendente / NOT PASSED**.
+Laboratório Kotlin/Compose Multiplatform isolado. A norma permanece
+`../../docs/player-v8/PLAYER_V8_ART_LAB_SPEC.md` (1.1).
+**Análise clássica de pixels, sem modelo neural. Aceite visual pendente / NOT PASSED.**
 
-## Executar no Windows
+## Windows
 
 Na raiz do repositório, com JDK 21 no `JAVA_HOME`:
 
 ```powershell
 .\gradlew.bat -p labs/art-lab run
-```
-
-Primeira execução precisa de rede para resolver dependências Gradle/Maven. O app não usa streaming,
-conta, serviços externos, pesos de IA ou módulos de produção. O wrapper existente é reutilizado;
-`settings.gradle.kts` e dependências deste laboratório são independentes.
-
-```powershell
-# Testes direcionados
 .\gradlew.bat -p labs/art-lab desktopTest
-# Executar e capturar o renderer real em vários estados (a janela permanece aberta)
-.\gradlew.bat -p labs/art-lab run --args=--capture-suite
-# Gerar pasta de aplicativo Windows com runtime Java incluído
 .\gradlew.bat -p labs/art-lab createDistributable
 ```
 
-Executável gerado: `build/compose/binaries/main/app/NonstopArtLab/NonstopArtLab.exe`.
-Para abri-lo com as saídas dentro do laboratório, partindo da raiz:
+Executável com runtime Java incluído:
 
 ```powershell
 Push-Location labs/art-lab
@@ -34,55 +22,80 @@ Push-Location labs/art-lab
 Pop-Location
 ```
 
-Mantenha **toda a pasta** `NonstopArtLab`, incluindo `app` e `runtime`, ao copiar o executável.
-Não foi criado instalador MSI nem assinatura de distribuição.
+Copiar toda a pasta `NonstopArtLab`, incluindo `app` e `runtime`, se mudar o executável de lugar.
+O primeiro build resolve dependências via rede; o app e o motor funcionam sem rede, conta ou áudio.
+Não há instalador MSI ou assinatura. Nenhum módulo Android/produção é dependência deste build.
 
-## Interface implementada
+## Benchmark restrito a duas capas
 
-- Galeria fixa de 12 entradas; duas disponíveis como **recortes dos mockups**, dez `missing`.
-  Nenhuma aquisição de capa externa foi feita. Manifesto gerado em `build/exports/catalog-manifest.json`
-  inclui proveniência, checksum do recorte e checksum do mestre.
-- Player Compose: arte quadrada com crop, topo, progresso, título até duas linhas,
-  artista/álbum, coração independente, transporte e alça LETRAS.
-- Play/pause, favorito, aleatório e repetir alternam estados demonstrativos. Anterior/próxima
-  mudam a capa; seek aceita clique/arraste e presets 0/25/50/100%. Não há reprodução de áudio.
-- LETRAS contém apenas “Linha de teste 1/2/…” e indicação de simulação.
-- Carregar PNG/JPEG local sem rebuild (adiciona uma entrada fora das 12 do benchmark).
-  Arquivo inválido mostra causa e fallback, sem crash. Cancelar o diálogo não muda a seleção.
-- Diagnóstico ocultável, exportação da receita JSON, depuração por camadas, fonte 100/150%,
-  viewports 864×1536, 941×1672, **1080×2340** e 720×1280.
-- Preview ajustado à janela ou **100% dos pixels** com scroll. Capturar exporta o layer do
-  próprio renderer Compose em execução, na resolução selecionada, antes da escala de apresentação.
-  As imagens não são um renderer alternativo nem a referência colada como fundo/player.
-- Render estático: redução de movimento ativa; não há toggle de animação que finja funcionar.
-  Transição animada, pipeline de features e direção por capa pertencem às fases seguintes.
+Pink Floyd e Megadeth usam capas completas **1200×1200**, verificadas no catálogo Apple Music/iTunes.
+URL da edição, endpoint, copyright e SHA-256 estão em `cover-sources.json`. São artes das edições
+catalogadas, não escaneamentos lossless nem uma licença de redistribuição irrestrita.
+As imagens dos mockups são diferentes e continuam como mestres de composição. Os recortes
+históricos não são entrada de análise nem de exibição do motor 1B.
 
-## Separação para Android futuro
+As outras dez entradas continuam `missing`, sem novas capturas/análises nesta rodada.
+Carregar PNG/JPEG local continua funcionando e aplica a mesma política de análise; a entrada
+local não altera as 12 entradas do catálogo fixo.
 
-`commonMain` contém `catalog`, contratos `features`/`inference`, `direction` e `renderer`.
-`commonTest/.../validation` contém testes de contrato. Fontes Inter regular/semibold são
-cópias dos assets já presentes em `core/ui`; o laboratório não depende desse módulo.
+```powershell
+# Capturar o renderer real somente nas duas referências (a janela permanece aberta)
+.\gradlew.bat -p labs/art-lab run "--args=--capture-suite --cycle=3"
+# Após aparecer a indicação de conclusão na janela:
+.\labs\art-lab\validation\Compare-Phase1B.ps1 -Cycle 3
+```
 
-`desktopMain` contém janela, picker, decode PNG/JPEG, textura reduzida/desfocada uma vez por
-hash, cache em memória e exportação de capturas/manifesto. Esses adaptadores JVM/AWT serão
-substituídos por adaptadores Android; **não há target Android nesta fase**. `V8Renderer`
-recebe bitmaps, receita e estado por parâmetros; não lê arquivos nem chama modelo/feature extractor.
+Foram executados três ciclos. `build/captures-1b/cycle-N` contém capturas do GraphicsLayer real
+antes da escala de apresentação, receitas, features e timings. O script preserva as evidências
+em `docs/player-v8/validation/phase-1b/cycle-N`, cria comparações sem redimensionar mestre/captura
+e verifica uma coordenada fixa da barra em 25/50/100%. Não existe um renderer de PNG paralelo.
 
-`ArtRecipe` é um contrato inicial serializável com fallback estável, não o motor da Fase 1B.
-Todas as capas usam os mesmos parâmetros neutros. Nenhuma decisão visual depende de artista,
-álbum, índice da galeria ou hash conhecido. O hash serve somente à identidade/cache.
+## Pipeline implementado
 
-## Evidências e limites
+- Decode limitado a 40 MP, PNG/JPEG, análise reduzida a até 256 px mantendo proporção.
+- Luminância linear Rec.709; faixas baixa/média/alta configuráveis; saturação HSV;
+  grade 8×8 de cor/luminância/saturação/bordas/contraste/área negativa/importância.
+- Paleta de grupos de matiz/neutros com cobertura, centroide, dispersão e OKLab;
+  área quase preta separada antes de acumular acentos para evitar que ruído JPEG os dilua.
+- Scores heurísticos e mistura de até dois tratamentos, com cinco sinais explicativos.
+  Não são probabilidades, reconhecimento de objetos ou inferência MobileCLIP.
+- Diretor recebe apenas `ImageFeatures` e hash opaco de origem. Não recebe metadados do álbum.
+  O hash identifica/cacheia conteúdo; não dirige cores ou geometria.
+- Textura da imagem **inteira**, até 192 px, com blur gaussiano separável e bordas replicadas.
+  O raio da receita é convertido pela largura lógica base 432; não há recorte central 48×48.
+- Receita v2: canvas/scrims/textura, luzes elípticas com queda, material/reflexo/halo/rim do play,
+  progresso de coordenadas fixas, favorito e letras. `motionAmplitude` foi removido; não há
+  movimento decorativo sem implementação. Metadata e scores são consumidos pelo diagnóstico.
+- Cache em memória e disco por SHA-256 dos bytes + versão do pipeline + política serializada.
+  Cache inválido é recalculado. Não há inferência neural ou cache de embeddings.
 
-Medidas, auditoria, testes executados e diferenças: `../../docs/player-v8/reference-measurements.md`.
-Capturas da sessão: `../../docs/player-v8/validation/phase-1a/`.
-Suite completa e relatórios JUnit/HTML: `build/captures/` e `build/reports/tests/desktopTest/`.
-Após terminar a suite, `./validation/Compare-Captures.ps1` preserva as capturas, monta
-comparações na mesma escala e verifica uma coordenada fixa da barra nos estados de seek.
+`commonMain`: catálogo, features, contratos de inferência, direção e renderer. `desktopMain`:
+arquivos, ImageIO, cache, precompute, picker, janela e exportação. O renderer não analisa pixels
+nem lê arquivos. Android ainda exigirá adaptadores/lifecycle/insets e não foi compilado nesta fase.
 
-**IA indisponível — fallback**. Nenhum modelo foi baixado/executado. Não há escores, confiança
-ou features inventadas. O cache é de bitmaps/textura, não um cache persistente de inferência.
-Timings exibidos são elapsed wall time de decode + textura; não são CPU time nem benchmark de FPS.
+## Controles e diagnóstico
 
-Iluminação cinematográfica, gradação por capa, persistência/invalidação de receitas e inferência
-não foram implementadas. A aparência não está 1:1 e aguarda validação do usuário.
+Player e galeria preservam play/pause/favorito/shuffle/repeat simulados, seek por clique/arraste
+e presets, anterior/próxima, recolher/reabrir, letras demo, capa local, fontes 100/150%, viewports
+originais/1080×2340/720×1280 e preview em 100% com scroll. Letras usam apenas linhas de teste.
+Transição suave pode ser ativada, mas redução de movimento vem ligada e a desativa.
+
+Diagnóstico fora do player: origem oficial/local, cache MISS/MEMORY/DISK, timings por etapa
+(elapsed wall e CPU de thread quando disponível), top-3 scores, cinco sinais, paleta e seus
+contrastes contra canvas, mapa de importância 8×8, parâmetros das luzes e exportação JSON.
+Modos de depuração: arte/base, luzes, scrims, botão e composição final.
+
+## Testes e limites
+
+12 testes direcionados: catálogo; round-trip/determinismo; fallback/NaN; thresholds;
+preto/branco/monocromático; acentos periféricos; capas reais com receitas diferentes;
+contraste ≥4.5:1 no material inclusive gradiente/reflexo; cache memória/disco/invalidação/reparo;
+PNG/JPEG/decode corrompido; preservação de bordas e efeito do raio do blur; seek fixo.
+Relatório HTML: `build/reports/tests/desktopTest/index.html`.
+Métricas das duas entradas: `build/reports/classical/`.
+
+O benchmark valida só estas duas capas. Não foi medido FPS/jank/RAM ou desempenho Android.
+A luz branca continua difusa, a superfície espectral difere do mestre, a textura densa tem
+regiões claras/quentes demais e há diferenças de fonte/geometria e das próprias artes.
+Os três ciclos e medidas estão registrados na seção 18 da especificação e em
+`docs/player-v8/reference-measurements.md`. Nenhuma aprovação estética foi declarada.

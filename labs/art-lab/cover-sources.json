@@ -1,0 +1,36 @@
+[
+  {
+    "artist": "Pink Floyd",
+    "album": "The Dark Side of the Moon",
+    "collectionId": 1065973699,
+    "lookupUrl": "https://itunes.apple.com/lookup?id=1065973699",
+    "albumUrl": "https://music.apple.com/us/album/the-dark-side-of-the-moon/1065973699?uo=4",
+    "downloadUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/3e/76/b0/3e76b0e3-762b-2286-a019-8afb19cee541/886445635829.jpg/1200x1200bb.jpg",
+    "copyright": "℗ 2016 The copyright in this sound recording is owned by Pink Floyd Music Ltd., marketed and distributed by Sony Music Entertainment",
+    "file": "covers/PINK_FLOYD.jpg",
+    "sha256": "7b5ad4cdeed66d53928f485667e8d5bf764529d4d7c45fb620f1ea31913445cb",
+    "status": "available",
+    "sourceKind": "official-album-artwork",
+    "retrievedAt": "2026-10-17",
+    "usage": "Local experimental validation; not a grant of redistribution rights",
+    "width": 1200,
+    "height": 1200
+  },
+  {
+    "artist": "Megadeth",
+    "album": "Rust In Peace",
+    "collectionId": 724648893,
+    "lookupUrl": "https://itunes.apple.com/lookup?id=724648893",
+    "albumUrl": "https://music.apple.com/us/album/rust-in-peace/724648893?uo=4",
+    "downloadUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/df/fe/a7/dffea722-e8d7-b2ac-2b31-e207fb738b8e/13UABIM36806.rgb.jpg/1200x1200bb.jpg",
+    "copyright": "℗ 1990 Capitol Records, LLC",
+    "file": "covers/MEGADETH.jpg",
+    "sha256": "3a1ef3872b81e1dbccbc60673f1e5f20db80e222b7d3414b2c85be3b6a227c6e",
+    "status": "available",
+    "sourceKind": "official-album-artwork",
+    "retrievedAt": "2026-10-17",
+    "usage": "Local experimental validation; not a grant of redistribution rights",
+    "width": 1200,
+    "height": 1200
+  }
+]
