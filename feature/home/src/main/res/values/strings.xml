@@ -72,4 +72,8 @@
     <string name="nostop_home_continue_current">Back to listening</string>
     <string name="nostop_home_resume_label">Your soundtrack</string>
     <string name="podcast_preparing">Preparing download…</string>
+    <string name="nonstop_editorial_listen">Listen</string>
+    <string name="nonstop_editorial_open">Open</string>
+    <string name="nonstop_home_rediscovery">Rediscoveries</string>
+    <string name="nonstop_home_open_artist">Open artist %1$s</string>
 </resources>

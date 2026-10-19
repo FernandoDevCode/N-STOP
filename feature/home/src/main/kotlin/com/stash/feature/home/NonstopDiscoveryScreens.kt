@@ -89,7 +89,7 @@ fun NonstopExploreScreen(
                         artUrl = lead.thumbnailUrl,
                         onPlay = { onOpenAlbum(lead) },
                         onOpen = { onOpenAlbum(lead) },
-                        primaryActionLabel = "Abrir",
+                        primaryActionLabel = stringResource(R.string.nonstop_editorial_open),
                     )
                 }
             }

@@ -19,6 +19,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,7 +44,7 @@ import com.stash.core.model.Track
 internal fun HomeRediscoveryRow(tracks: List<Track>, onArtistClick: (String) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
-            text = "Redescobertas",
+            text = stringResource(R.string.nonstop_home_rediscovery),
             modifier = Modifier.padding(horizontal = 20.dp).semantics { heading() },
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold,
@@ -54,9 +55,10 @@ internal fun HomeRediscoveryRow(tracks: List<Track>, onArtistClick: (String) -> 
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             items(tracks, key = { it.id }) { track ->
+                val artistSemantics = stringResource(R.string.nonstop_home_open_artist, track.artist)
                 Column(
                     modifier = Modifier.width(94.dp).clickable { onArtistClick(track.artist) }
-                        .semantics { contentDescription = "Abrir artista " + track.artist },
+                        .semantics { contentDescription = artistSemantics },
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(9.dp),
                 ) {

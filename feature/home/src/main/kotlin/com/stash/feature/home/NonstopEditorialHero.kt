@@ -24,6 +24,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,7 +56,7 @@ internal fun NonstopEditorialHero(
     onOpen: () -> Unit,
     onCreateMix: (() -> Unit)? = null,
     onLongPress: (() -> Unit)? = null,
-    primaryActionLabel: String = "Ouvir",
+    primaryActionLabel: String? = null,
     modifier: Modifier = Modifier,
 ) {
     val shape = RoundedCornerShape(20.dp)
@@ -146,7 +147,7 @@ internal fun NonstopEditorialHero(
                         modifier = Modifier.size(21.dp),
                     )
                     Text(
-                        text = primaryActionLabel,
+                        text = primaryActionLabel ?: stringResource(R.string.nonstop_editorial_listen),
                         color = Color(0xFF101214),
                         fontWeight = FontWeight.SemiBold,
                         style = MaterialTheme.typography.labelLarge,
