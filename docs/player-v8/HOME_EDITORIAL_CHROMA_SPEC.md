@@ -52,11 +52,12 @@
 - Aba inferior com cor da capa, glow no traço em vez de preenchimento RGB e nova ordem das cinco abas.
 - Card “Continue ouvindo” com base neutra e acento real.
 - Home sem logotipo e sem mensagem de saudação.
+- Atalhos compactos de mixes reais, prontos e com capa disponível, logo após os filtros (sem dados falsos).
 - Hero existente (dados reais) promovido para depois da escuta atual.
 - Código Android *não compilado nem validado visualmente* neste ambiente remoto.
 
 ## Próxima implementação (não fingir pronta)
-- Verificar e estruturar atalhos compactos reais no topo.
+- Verificar e refinar atalhos compactos reais no topo (primeira versão já criada com listas reais de mixes).
 - Criar seção “Redescobertas” apenas se houver dados reais de artistas escutados.
 - Refinar tamanhos de imagens, tipografia e densidade como na referência aprovada, mantendo scroll fluido.
 - Capturar screenshots do app real para aprovação estética.

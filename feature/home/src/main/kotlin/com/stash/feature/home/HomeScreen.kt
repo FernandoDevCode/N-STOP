@@ -193,6 +193,13 @@ fun HomeScreen(
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val listeningState by viewModel.listeningState.collectAsStateWithLifecycle()
+    // Real-data shortcuts only: skip unavailable artwork and unfinished mixes.
+    val quickMixes = listOfNotNull(
+        uiState.yourMixes.firstOrNull { it.artUrl != null && it.buildState == MixBuildState.READY },
+        uiState.madeForYou.firstOrNull { it.artUrl != null && it.buildState == MixBuildState.READY },
+        uiState.radios.firstOrNull { it.artUrl != null && it.buildState == MixBuildState.READY },
+        uiState.moodDecades.firstOrNull { it.artUrl != null && it.buildState == MixBuildState.READY },
+    ).distinctBy { it.id }.take(4)
     var selectedMediaTab by rememberSaveable { mutableIntStateOf(0) }
     val podcastController = com.stash.feature.home.podcasts.LocalPodcastViewModel.current
     val podcastOpenRequest = podcastController?.openRequests?.collectAsStateWithLifecycle()?.value ?: 0
@@ -391,6 +398,15 @@ fun HomeScreen(
             )
         }
         if (selectedMediaTab == 0) {
+            if (quickMixes.isNotEmpty()) {
+                item(key = "home_quick_discovery") {
+                    HomeQuickMixRow(
+                        mixes = quickMixes,
+                        onMixClick = { mix -> openMix(mix.id) },
+                    )
+                    Spacer(Modifier.height(14.dp))
+                }
+            }
             // A real listening surface must survive an empty personal-library
             // sync: the current track exists even when no playlists do.
             listeningState.currentTrack?.let { activeTrack ->
