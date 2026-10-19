@@ -123,6 +123,7 @@ import coil3.compose.rememberAsyncImagePainter
 import com.stash.core.model.Playlist
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.Track
+import com.stash.core.ui.ambient.LocalAlbumChrome
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.components.NowPlayingJumpChip
 import com.stash.core.ui.components.SourceIndicator
@@ -629,7 +630,7 @@ private fun LibraryContent(
                 .background(
                     Brush.horizontalGradient(
                         listOf(
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.11f),
+                            LocalAlbumChrome.current.selectedTab.copy(alpha = 0.075f),
                             Color.Transparent,
                         ),
                     ),
@@ -652,7 +653,7 @@ private fun LibraryContent(
                 Icon(
                     Icons.Filled.Shuffle,
                     contentDescription = if (likedTabActive) stringResource(R.string.nostop_library_shuffle_liked) else stringResource(R.string.nostop_library_shuffle),
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = LocalAlbumChrome.current.selectedTab,
                 )
             }
             IconButton(onClick = { importPicker.launch(arrayOf("audio/*")) }) {

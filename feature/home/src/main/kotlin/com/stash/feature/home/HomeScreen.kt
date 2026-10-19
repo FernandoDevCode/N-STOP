@@ -398,25 +398,7 @@ fun HomeScreen(
             )
         }
         if (selectedMediaTab == 0) {
-            if (quickMixes.isNotEmpty()) {
-                item(key = "home_quick_discovery") {
-                    HomeQuickMixRow(
-                        mixes = quickMixes,
-                        onMixClick = { mix -> openMix(mix.id) },
-                    )
-                    Spacer(Modifier.height(14.dp))
-                }
-            }
-            // A real listening surface must survive an empty personal-library
-            // sync: the current track exists even when no playlists do.
-            listeningState.currentTrack?.let { activeTrack ->
-                item(key = "nonstop_listening_now") {
-                    NonstopListeningCard(activeTrack, onOpenPlayer = onNavigateToNowPlaying)
-                    Spacer(Modifier.height(10.dp))
-                }
-            }
-
-        // Daily Discover appears early, after continue listening, before the personalized rails.
+        // Editorial feature begins the Music feed, before personalized rails and current listening.
         // ── Discover hero pager (Daily Discover + your Stash mixes) ──
         // A mix created from the hero's ＋ ring lands right here as an
         // identical sibling card — swipe between Daily Discover and your
@@ -464,7 +446,7 @@ fun HomeScreen(
                             if (page < heroPages && hero == null) {
                                 DailyDiscoverBuildingCard()
                             } else if (page < heroPages && hero != null) {
-                                DiscoverHeroCard(
+                                NonstopEditorialHero(
                                     label = stringResource(R.string.nostop_home_updated_daily),
                                     title = hero.title,
                                     subtitle = hero.subtitle,
@@ -476,7 +458,7 @@ fun HomeScreen(
                                 )
                             } else {
                                 val m = mixPages[page - heroPages]
-                                DiscoverHeroCard(
+                                NonstopEditorialHero(
                                     label = stringResource(R.string.nostop_home_your_mix),
                                     title = m.title,
                                     subtitle = when (m.buildState) {
@@ -506,7 +488,7 @@ fun HomeScreen(
                                             .clip(CircleShape)
                                             .background(
                                                 if (active) {
-                                                    MaterialTheme.colorScheme.primary
+                                                    LocalAlbumChrome.current.selectedTab
                                                 } else {
                                                     MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
                                                 },
@@ -519,6 +501,24 @@ fun HomeScreen(
                 }
             }
         }
+
+            if (quickMixes.isNotEmpty()) {
+                item(key = "home_quick_discovery") {
+                    HomeQuickMixRow(
+                        mixes = quickMixes,
+                        onMixClick = { mix -> openMix(mix.id) },
+                    )
+                    Spacer(Modifier.height(14.dp))
+                }
+            }
+            // A real listening surface must survive an empty personal-library
+            // sync: the current track exists even when no playlists do.
+            listeningState.currentTrack?.let { activeTrack ->
+                item(key = "nonstop_listening_now") {
+                    NonstopListeningCard(activeTrack, onOpenPlayer = onNavigateToNowPlaying)
+                    Spacer(Modifier.height(10.dp))
+                }
+            }
 
         // ── Lossless connect nudge ───────────────────────────────────
         // Shown when the user has lossless toggled OFF and hasn't

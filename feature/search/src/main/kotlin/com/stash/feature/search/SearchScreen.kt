@@ -95,6 +95,7 @@ import com.stash.data.ytmusic.model.SearchResultSection
 import com.stash.data.ytmusic.model.TopResultItem
 import com.stash.data.ytmusic.model.TrackSummary
 import com.stash.core.ui.components.bottomChromePadding
+import com.stash.core.ui.ambient.LocalAlbumChrome
 
 /**
  * Top-level search screen composable.
@@ -149,7 +150,7 @@ fun SearchScreen(
                     .background(
                         Brush.verticalGradient(
                             listOf(
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                LocalAlbumChrome.current.selectedTab.copy(alpha = 0.075f),
                                 Color.Transparent,
                             ),
                         ),
@@ -243,11 +244,10 @@ private fun SearchBar(
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
 
-    // Command-hero field: a soft plum tonal pill — the loud violet outline is
-    // retired; focus is signaled by the cursor + keyboard, not a border.
+    // Neutral search surface with a restrained album-derived active glyph.
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val plum = MaterialTheme.colorScheme.primary
-    val tonal = plum.copy(alpha = if (dark) 0.16f else 0.09f)
+    val accent = LocalAlbumChrome.current.selectedTab
+    val tonal = if (dark) Color(0xFF1A1D22) else Color(0xFFF0F1F3)
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChanged,
@@ -265,7 +265,7 @@ private fun SearchBar(
             Icon(
                 imageVector = Icons.Default.Search,
                 contentDescription = stringResource(R.string.nostop_search_title),
-                tint = plum,
+                tint = accent,
             )
         },
         trailingIcon = {
@@ -290,7 +290,7 @@ private fun SearchBar(
             unfocusedContainerColor = tonal,
             focusedBorderColor = Color.Transparent,
             unfocusedBorderColor = Color.Transparent,
-            cursorColor = MaterialTheme.colorScheme.primary,
+            cursorColor = accent,
         ),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         keyboardActions = KeyboardActions(

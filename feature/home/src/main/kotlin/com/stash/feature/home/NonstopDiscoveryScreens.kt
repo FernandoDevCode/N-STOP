@@ -43,10 +43,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.ui.components.AlbumSquareCard
 import com.stash.core.ui.components.CrispChipRow
 import com.stash.core.ui.components.bottomChromePadding
+import com.stash.core.ui.ambient.LocalAlbumChrome
 import com.stash.data.ytmusic.model.AlbumSummary
 
-private val DiscoveryViolet = Color(0xFFB16BFF)
-private val DiscoveryCyan = Color(0xFF54CDEB)
 
 @Composable
 fun NonstopExploreScreen(
@@ -217,13 +216,13 @@ fun NonstopRadioScreen(
 
 @Composable
 private fun DiscoveryScreenHeading(title: String, subtitle: String, radio: Boolean) {
-    val glow = if (radio) DiscoveryCyan else DiscoveryViolet
+    val glow = LocalAlbumChrome.current.selectedTab
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(
                 Brush.verticalGradient(
-                    listOf(glow.copy(alpha = 0.15f), Color.Transparent),
+                    listOf(glow.copy(alpha = 0.09f), Color.Transparent),
                 ),
             )
             .padding(start = 20.dp, end = 20.dp, top = 40.dp, bottom = 10.dp),
@@ -340,7 +339,7 @@ private fun DiscoveryEmptyMessage(message: String, radio: Boolean) {
         Icon(
             imageVector = if (radio) Icons.Outlined.Radio else Icons.Outlined.Explore,
             contentDescription = null,
-            tint = if (radio) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
+            tint = LocalAlbumChrome.current.selectedTab,
             modifier = Modifier.size(28.dp),
         )
         Text(
