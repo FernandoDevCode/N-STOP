@@ -167,6 +167,7 @@ fun HomeScreen(
     onNavigateToSettings: () -> Unit = {},
     onNavigateToPlaylist: (Long) -> Unit = {},
     onNavigateToLibrary: () -> Unit = {},
+    onNavigateToArtist: (String) -> Unit = {},
     onNavigateToNowPlaying: () -> Unit = {},
     onNavigateToAlbum: (AlbumSummary) -> Unit = {},
     onSeeAllPlaylists: (String) -> Unit = {},
@@ -193,6 +194,7 @@ fun HomeScreen(
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val listeningState by viewModel.listeningState.collectAsStateWithLifecycle()
+    val rediscoveryTracks by viewModel.rediscoveryTracks.collectAsStateWithLifecycle()
     // Real-data shortcuts only: skip unavailable artwork and unfinished mixes.
     val quickMixes = listOfNotNull(
         uiState.yourMixes.firstOrNull { it.artUrl != null && it.buildState == MixBuildState.READY },
@@ -510,6 +512,12 @@ fun HomeScreen(
                         onMixClick = { mix -> openMix(mix.id) },
                     )
                     Spacer(Modifier.height(14.dp))
+                }
+            }
+            if (rediscoveryTracks.isNotEmpty()) {
+                item(key = "home_real_rediscovery") {
+                    HomeRediscoveryRow(tracks = rediscoveryTracks, onArtistClick = onNavigateToArtist)
+                    Spacer(Modifier.height(12.dp))
                 }
             }
             // A real listening surface must survive an empty personal-library

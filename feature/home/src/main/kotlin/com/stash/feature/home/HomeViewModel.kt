@@ -95,6 +95,18 @@ class HomeViewModel @Inject constructor(
     /** The real, shared music transport is the Home's listening anchor. */
     val listeningState: StateFlow<com.stash.core.model.PlayerState> = playerRepository.playerState
 
+    /** Recent favorites from actual playback counters; no fabricated artists. */
+    val rediscoveryTracks: StateFlow<List<com.stash.core.model.Track>> =
+        musicRepository.getMostPlayed(limit = 40)
+            .map { tracks ->
+                tracks.asSequence()
+                    .filter { it.playCount > 0 && it.artist.isNotBlank() }
+                    .distinctBy { it.artist.trim().lowercase() }
+                    .take(12)
+                    .toList()
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     /**
      * Master streaming-mode toggle observed by the Home `StreamingModeToggle`.
      * Mirrors [StreamingPreference.enabled] one-for-one — writes route

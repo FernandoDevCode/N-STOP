@@ -69,3 +69,5 @@
 - Buscar: campo neutro e foco cromático discreto seguindo a música atual.
 - Biblioteca: cabeçalho e ação de shuffle com acento cromático real, sem aplicar wash forte ao catálogo.
 - Nenhuma dessas mudanças representa player v8 final no Android; build, screenshots e teste manual continuam necessários.
+
+- Redescobertas: artistas com reproduções reais de `getMostPlayed`, imagem circular de álbum real (não foto de artista inventada), navegando para o detalhe local do artista. Sem histórico válido, a seção não aparece.
