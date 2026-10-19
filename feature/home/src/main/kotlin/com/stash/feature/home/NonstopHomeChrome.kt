@@ -50,13 +50,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
+import com.stash.core.ui.ambient.LocalAlbumChrome
 import com.stash.core.ui.ambient.rememberReducedMotion
 import com.stash.core.ui.theme.SpaceGrotesk
 
-private val brandPurple = Color(0xFFAF6AFF)
-private val brandBlue = Color(0xFF4FADFF)
-private val brandMint = Color(0xFF57F0B6)
-private val brandWhite = Color(0xFFF6F5FA)
 
 /**
  * Lightweight Compose rendering of the approved NØNStop wordmark. The special
@@ -83,6 +80,7 @@ fun NonstopMediaFilters(
     var pulseId by remember { mutableIntStateOf(0) }
     val pulse = remember { Animatable(0f) }
     val dark = LocalIsDarkTheme.current
+    val accent = LocalAlbumChrome.current.selectedTab
     val reducedMotion = rememberReducedMotion()
     LaunchedEffect(pulseId, reducedMotion) {
         if (pulseId > 0) {
@@ -114,38 +112,28 @@ fun NonstopMediaFilters(
                 modifier = Modifier
                     .background(
                         if (!dark && active) {
-                            Brush.horizontalGradient(
-                                listOf(
-                                    Color(0xFF703C9C).copy(alpha = 0.94f),
-                                    Color(0xFF444F8A).copy(alpha = 0.92f),
-                                ),
-                            )
+                            Brush.horizontalGradient(listOf(accent.copy(alpha = 0.24f), Color(0xFFF1F3F5)))
                         } else {
                             Brush.horizontalGradient(
                                 listOf(
-                                    Color(0xFF721DFF).copy(alpha = 0.09f + 0.72f * prominence),
-                                    Color(0xFF101115).copy(alpha = 0.8f),
+                                    if (active) accent.copy(alpha = 0.16f + 0.05f * prominence) else Color(0xFF181C20),
+                                    if (active) Color(0xFF1B1F23) else Color(0xFF111418),
                                 ),
                             )
                         },
                         shape,
                     )
                     .drawBehind {
-                        if (active) {
+                        if (active && burst > 0f) {
                             drawRoundRect(
-                                brush = Brush.horizontalGradient(
-                                    listOf(
-                                        brandPurple.copy(alpha = 0.10f + 0.18f * burst),
-                                        brandBlue.copy(alpha = 0.04f + 0.10f * burst),
-                                    ),
-                                ),
+                                color = accent.copy(alpha = 0.06f * burst),
                                 cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2),
                             )
                         }
                     }
                     .border(
                         1.dp,
-                        if (active) brandPurple else Color.White.copy(alpha = 0.04f),
+                        if (active) accent.copy(alpha = 0.68f) else Color.White.copy(alpha = 0.09f),
                         shape,
                     )
                     .selectable(

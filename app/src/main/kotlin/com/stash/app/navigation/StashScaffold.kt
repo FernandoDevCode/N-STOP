@@ -394,8 +394,8 @@ private fun StashBottomBar(
                     style = MaterialTheme.typography.labelSmall.copy(
                         letterSpacing = 0.sp,
                         shadow = if (selected) androidx.compose.ui.graphics.Shadow(
-                            com.stash.core.ui.theme.NonstopDesign.Violet, Offset.Zero, 16f) else null),
-                    color = if (selected) com.stash.core.ui.theme.NonstopDesign.ActiveInk
+                            com.stash.core.ui.ambient.LocalAlbumChrome.current.selectedTab, Offset.Zero, 10f) else null),
+                    color = if (selected) com.stash.core.ui.ambient.LocalAlbumChrome.current.selectedTab
                         else com.stash.core.ui.theme.NonstopDesign.Secondary)
             }
         }

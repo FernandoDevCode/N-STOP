@@ -123,9 +123,11 @@ fun ProvideAlbumChrome(colors: AlbumColors, content: @Composable () -> Unit) {
     val wordmarkTarget = remember(colors.palette, colors.tinted, light) {
         wordmarkInk(if (colors.tinted) colors.palette else null, light)
     }
-    val neutralTab = MaterialTheme.colorScheme.primary
+    // Navigation stays linked to the last loaded cover while paused.
+    // No cover gets a neutral, readable accent rather than fixed purple.
+    val neutralTab = if (light) Color(0xFF252A31) else Color(0xFFE2E7EC)
     val tabTarget = when {
-        !colors.tinted -> neutralTab
+        colors.palette.key == AmbientPalette.Default.key -> neutralTab
         light -> scheme.textLight
         else -> scheme.textDark
     }
