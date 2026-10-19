@@ -18,28 +18,34 @@ data class PixelImage(val width: Int, val height: Int, val argb: IntArray) {
 }
 @Serializable data class ColorCluster(val color: Long, val coverage: Double, val x: Double, val y: Double,
     val hue: Double, val saturation: Double, val value: Double, val lab: LabColor,
-    val spreadX: Double, val spreadY: Double)
+    val spreadX: Double, val spreadY: Double, val orientation: Double = 0.0, val coherence: Double = 0.0)
+/** Axial tangent orientation, not an object label. Confidence measures tensor anisotropy. */
+@Serializable data class EdgeDirection(val angle: Double, val strength: Double)
 @Serializable data class SpatialCell(val x: Double, val y: Double, val color: Long,
     val luminance: Double, val saturation: Double, val edgeDensity: Double,
-    val contrast: Double, val importance: Double, val darkFraction: Double)
+    val contrast: Double, val importance: Double, val darkFraction: Double,
+    val orientation:Double=0.0,val coherence:Double=0.0)
 @Serializable data class ImageFeatures(
-    val schemaVersion: Int = 2, val policy: FeaturePolicy, val width: Int, val height: Int,
+    val schemaVersion: Int = 3, val policy: FeaturePolicy, val width: Int, val height: Int,
     val lowFraction: Double, val midFraction: Double, val highFraction: Double,
     val meanLuminance: Double, val meanSaturation: Double, val saturatedFraction: Double,
     val saturatedX: Double, val saturatedY: Double, val luminanceX: Double, val luminanceY: Double,
     val coolCoverage: Double, val edgeDensity: Double, val complexity: Double,
     val grid: List<SpatialCell>, val palette: List<ColorCluster>,
+    val directions: List<EdgeDirection> = emptyList(),
 ) {
     fun summary() = linkedMapOf("lowFraction" to lowFraction,"midFraction" to midFraction,
         "highFraction" to highFraction,"meanLuminance" to meanLuminance,"meanSaturation" to meanSaturation,
         "saturatedFraction" to saturatedFraction,"saturatedX" to saturatedX,"saturatedY" to saturatedY,
         "coolCoverage" to coolCoverage,"edgeDensity" to edgeDensity,"complexity" to complexity)
-    fun isValid() = schemaVersion==2 && policy.isValid() && width in 1..1024 && height in 1..1024 && grid.size == policy.gridSize*policy.gridSize &&
+    fun isValid() = schemaVersion==3 && policy.isValid() && width in 1..1024 && height in 1..1024 && grid.size == policy.gridSize*policy.gridSize &&
+        directions.size<=3 && directions.all { it.angle.isFinite() && it.angle in -180.0..180.0 && it.strength.isFinite() && it.strength in 0.0..1.0 } &&
         listOf(luminanceX,luminanceY).all { it.isFinite() && it in 0.0..1.0 } &&
         summary().values.all { it.isFinite() && it in 0.0..1.0 } &&
         abs(lowFraction+midFraction+highFraction-1.0)<.00001 && palette.isNotEmpty() &&
-        palette.all { p -> listOf(p.coverage,p.x,p.y,p.saturation,p.value,p.spreadX,p.spreadY,p.lab.l).all { it.isFinite() && it in 0.0..1.0 } && p.hue.isFinite() && p.lab.a.isFinite() && p.lab.b.isFinite() } &&
-        grid.all { c -> listOf(c.x,c.y,c.luminance,c.saturation,c.edgeDensity,c.contrast,c.importance,c.darkFraction).all { it.isFinite() && it in 0.0..1.0 } }
+        palette.all { p -> listOf(p.coverage,p.x,p.y,p.saturation,p.value,p.spreadX,p.spreadY,p.lab.l,p.coherence).all { it.isFinite() && it in 0.0..1.0 } && p.orientation.isFinite() && p.orientation in -180.0..180.0 && p.hue.isFinite() && p.lab.a.isFinite() && p.lab.b.isFinite() } &&
+        grid.all { c -> c.orientation.isFinite() && c.orientation in -180.0..180.0 &&
+            listOf(c.x,c.y,c.luminance,c.saturation,c.edgeDensity,c.contrast,c.importance,c.darkFraction,c.coherence).all { it.isFinite() && it in 0.0..1.0 } }
 }
 
 fun rgb(color: Long) = doubleArrayOf(((color shr 16) and 255)/255.0,((color shr 8) and 255)/255.0,(color and 255)/255.0)
@@ -76,6 +82,7 @@ class ClassicalFeatureExtractor(val policy: FeaturePolicy = FeaturePolicy()) : F
         val w=image.width; val h=image.height; val n=w*h; val grid=policy.gridSize
         val luma=DoubleArray(n) { luminance(image.argb[it].toLong() and 0xffffffffL) }
         val bins=Array(28) { Accumulator() }; val cells=Array(grid*grid) { Accumulator() }
+        val orientations=DoubleArray(18)
         var dark=0; var bright=0; var saturated=0; var cold=0; var sx=0.0; var sy=0.0
         var lx=0.0; var ly=0.0; var totalL=0.0; var totalS=0.0; var edges=0.0
         for(y in 0 until h) for(x in 0 until w) {
@@ -95,6 +102,19 @@ class ClassicalFeatureExtractor(val policy: FeaturePolicy = FeaturePolicy()) : F
             edge=(edge/max(1,neighbors)*3).coerceIn(0.0,1.0)
             val importance=(.32*localContrast+.38*hsv[1]*sqrt(lum)+.30*edge).coerceIn(0.0,1.0)
             val cell=cells[min(grid-1,y*grid/h)*grid+min(grid-1,x*grid/w)]
+            if(x in 1 until w-1 && y in 1 until h-1) {
+                // RGB gradients preserve contrast between isoluminant spectral bands.
+                val left=rgb(image.argb[i-1].toLong()); val right=rgb(image.argb[i+1].toLong())
+                val up=rgb(image.argb[i-w].toLong()); val down=rgb(image.argb[i+w].toLong())
+                val dx=DoubleArray(3) { right[it]-left[it] }; val dy=DoubleArray(3) { down[it]-up[it] }
+                val xx=dx.sumOf { it*it }; val yy=dy.sumOf { it*it }; val xy=dx.indices.sumOf { dx[it]*dy[it] }
+                val energy=xx+yy
+                cell.gxx+=xx; cell.gyy+=yy; cell.gxy+=xy
+                if(energy>.002) {
+                    val tangent=(.5*atan2(2*xy,xx-yy)+PI/2+PI)%PI
+                    orientations[min(17,(tangent/PI*18).toInt())]+=sqrt(energy)
+                }
+            }
             cell.add(c,px,py,lum,hsv[1],edge,localContrast,importance,low)
             // Near-black JPEG noise must not dilute a small bright color sharing the same hue.
             val bin=if(hsv[2]<policy.negativeMaxValue)24 else if(hsv[1]<.2) 24+min(3,(hsv[2]*4).toInt()) else min(23,(hsv[0]/15).toInt())
@@ -105,12 +125,15 @@ class ClassicalFeatureExtractor(val policy: FeaturePolicy = FeaturePolicy()) : F
         val palette=bins.filter { it.count>0 }.map { a ->
             val color=a.color(); val hsv=hsv(color)
             ColorCluster(color,a.count.toDouble()/n,a.x/a.count,a.y/a.count,hsv[0],hsv[1],hsv[2],oklab(color),
-                sqrt(max(0.0,a.x2/a.count-(a.x/a.count).pow(2))),sqrt(max(0.0,a.y2/a.count-(a.y/a.count).pow(2))))
+                sqrt(max(0.0,a.x2/a.count-(a.x/a.count).pow(2))),sqrt(max(0.0,a.y2/a.count-(a.y/a.count).pow(2))),
+                a.angle(),a.coherence())
         }.sortedByDescending { it.coverage }
         val spatial=cells.mapIndexed { i,a ->
             val count=max(1,a.count)
             SpatialCell((i%grid+.5)/grid,(i/grid+.5)/grid,a.color(),a.luma/count,a.saturation/count,a.edge/count,
-                a.contrast/count,(a.importance/count/maxImportance).coerceIn(0.0,1.0),a.dark.toDouble()/count)
+                a.contrast/count,(a.importance/count/maxImportance).coerceIn(0.0,1.0),a.dark.toDouble()/count,
+                .5*atan2(2*a.gxy,a.gxx-a.gyy)*180/PI-90,
+                (sqrt((a.gxx-a.gyy).pow(2)+4*a.gxy*a.gxy)/(a.gxx+a.gyy).coerceAtLeast(1e-9)).coerceIn(0.0,1.0))
         }
         val low=dark.toDouble()/n; val high=bright.toDouble()/n
         val variation=sqrt(spatial.sumOf { (it.luminance-totalL/n).pow(2) }/spatial.size)
@@ -118,14 +141,24 @@ class ClassicalFeatureExtractor(val policy: FeaturePolicy = FeaturePolicy()) : F
             meanLuminance=totalL/n,meanSaturation=totalS/n,saturatedFraction=saturated.toDouble()/n,
             saturatedX=if(saturated>0)sx/saturated else .5,saturatedY=if(saturated>0)sy/saturated else .5,
             luminanceX=if(totalL>1e-8)lx/totalL else .5,luminanceY=if(totalL>1e-8)ly/totalL else .5,
-            coolCoverage=cold.toDouble()/n,edgeDensity=edges/n,complexity=(edges/n*2+variation*2).coerceIn(0.0,1.0),grid=spatial,palette=palette)
+            coolCoverage=cold.toDouble()/n,edgeDensity=edges/n,complexity=(edges/n*2+variation*2).coerceIn(0.0,1.0),grid=spatial,palette=palette,
+            directions=orientations.indices.sortedByDescending { orientations[it] }.fold(mutableListOf<Int>()) { selected,i ->
+                if(selected.size<3 && selected.none { min(abs(it-i),18-abs(it-i))<3 })selected+=i; selected
+            }.filter { orientations[it]>0 }.map { EdgeDirection(it*10.0+5,orientations[it]/orientations.sum().coerceAtLeast(1e-9)) })
     }
     private class Accumulator {
-        var count=0; var r=0.0; var g=0.0; var b=0.0; var x=0.0; var y=0.0; var x2=0.0; var y2=0.0
+        var count=0; var r=0.0; var g=0.0; var b=0.0; var x=0.0; var y=0.0; var x2=0.0; var y2=0.0; var xy=0.0
+        var gxx=0.0; var gyy=0.0; var gxy=0.0
+        fun angle():Double = .5*atan2(2*(xy/max(1,count)-x*y/max(1,count).toDouble().pow(2)),
+            x2/max(1,count)-(x/max(1,count)).pow(2)-y2/max(1,count)+(y/max(1,count)).pow(2))*180/PI
+        fun coherence():Double {
+            val n=max(1,count); val vx=max(0.0,x2/n-(x/n).pow(2)); val vy=max(0.0,y2/n-(y/n).pow(2)); val cv=xy/n-x*y/n.toDouble().pow(2)
+            return (sqrt((vx-vy).pow(2)+4*cv*cv)/(vx+vy).coerceAtLeast(1e-9)).coerceIn(0.0,1.0)
+        }
         var luma=0.0; var saturation=0.0; var edge=0.0; var contrast=0.0; var importance=0.0; var dark=0
         fun color()=argb(r/max(1,count),g/max(1,count),b/max(1,count))
         fun add(c:DoubleArray,px:Double,py:Double,l:Double,s:Double,e:Double,ct:Double,imp:Double,low:Boolean) {
-            count++; r+=c[0]; g+=c[1]; b+=c[2]; x+=px; y+=py; x2+=px*px; y2+=py*py
+            count++; r+=c[0]; g+=c[1]; b+=c[2]; x+=px; y+=py; x2+=px*px; y2+=py*py; xy+=px*py
             luma+=l; saturation+=s; edge+=e; contrast+=ct; importance+=imp; if(low)dark++
         }
     }
