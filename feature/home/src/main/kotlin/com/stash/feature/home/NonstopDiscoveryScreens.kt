@@ -45,6 +45,7 @@ import com.stash.core.ui.components.CrispChipRow
 import com.stash.core.ui.components.bottomChromePadding
 import com.stash.core.ui.ambient.LocalAlbumChrome
 import com.stash.data.ytmusic.model.AlbumSummary
+import com.stash.core.data.mix.MixBuildState
 
 
 @Composable
@@ -75,7 +76,25 @@ fun NonstopExploreScreen(
                 )
             }
         }
+        // Real catalog album takes the editorial lead. Opens the real album route.
+        // The button label is "Abrir" because this destination does NOT start playback.
         if (state.newReleases.isNotEmpty()) {
+            item {
+                val lead = state.newReleases.first()
+                Box(Modifier.padding(horizontal = 20.dp)) {
+                    NonstopEditorialHero(
+                        label = stringResource(R.string.nonstop_explore_releases),
+                        title = lead.title,
+                        subtitle = lead.artist,
+                        artUrl = lead.thumbnailUrl,
+                        onPlay = { onOpenAlbum(lead) },
+                        onOpen = { onOpenAlbum(lead) },
+                        primaryActionLabel = "Abrir",
+                    )
+                }
+            }
+        }
+        if (state.newReleases.size > 1) {
             item {
                 DiscoverySectionLabel(stringResource(R.string.nonstop_explore_releases), stringResource(R.string.nonstop_explore_arrivals))
                 Spacer(Modifier.height(12.dp))
@@ -83,7 +102,7 @@ fun NonstopExploreScreen(
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     contentPadding = PaddingValues(horizontal = 20.dp),
                 ) {
-                    items(state.newReleases, key = { it.id }) { album ->
+                    items(state.newReleases.drop(1), key = { it.id }) { album ->
                         AlbumSquareCard(title = album.title, artist = album.artist, thumbnailUrl = album.thumbnailUrl, year = null, onClick = { onOpenAlbum(album) })
                     }
                 }
@@ -160,7 +179,29 @@ fun NonstopRadioScreen(
                 radio = true,
             )
         }
-        if (state.radios.isNotEmpty()) {
+        // Spotlight a READY radio generated from the user's actual catalog.
+        // On-play uses the existing music queue; body opens the playlist.
+        val spotlightRadio = state.radios.firstOrNull {
+            it.buildState == MixBuildState.READY && it.artUrl != null
+        }
+        if (spotlightRadio != null) {
+            item(key = "radio_editorial_spotlight") {
+                Box(Modifier.padding(horizontal = 20.dp)) {
+                    NonstopEditorialHero(
+                        label = stringResource(R.string.nonstop_radio_your_stations),
+                        title = spotlightRadio.title,
+                        subtitle = stringResource(R.string.nonstop_radio_stations_subtitle),
+                        artUrl = spotlightRadio.artUrl,
+                        onPlay = { viewModel.playMix(spotlightRadio.id) },
+                        onOpen = { onOpenMix(spotlightRadio.id) },
+                    )
+                }
+            }
+        }
+        val remainingRadios =
+            if (spotlightRadio != null) state.radios.filterNot { it.id == spotlightRadio.id }
+            else state.radios
+        if (remainingRadios.isNotEmpty()) {
             item {
                 DiscoverySectionLabel(stringResource(R.string.nonstop_radio_your_stations), stringResource(R.string.nonstop_radio_stations_subtitle))
                 Spacer(Modifier.height(14.dp))
@@ -168,7 +209,7 @@ fun NonstopRadioScreen(
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     contentPadding = PaddingValues(horizontal = 20.dp),
                 ) {
-                    items(state.radios, key = { it.id }) { mix ->
+                    items(remainingRadios, key = { it.id }) { mix ->
                         MixRailCard(
                             title = mix.title,
                             artUrl = mix.artUrl,

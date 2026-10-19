@@ -61,3 +61,11 @@
 - Criar seção “Redescobertas” apenas se houver dados reais de artistas escutados.
 - Refinar tamanhos de imagens, tipografia e densidade como na referência aprovada, mantendo scroll fluido.
 - Capturar screenshots do app real para aprovação estética.
+
+## Revisão editorial incremental (2026-10-19)
+- Home: card grande com capa real do Discover/mix, scrim para texto, navegação e play separados; mantém fallback de carregamento existente.
+- Explorar: primeiro lançamento real lidera com banner editorial clicável; botão explicitamente **Abrir** e demais lançamentos aparecem no trilho sem duplicação.
+- Rádio: estação real com arte e mix READY lidera com botão **Ouvir** (playMix); demais rádios no trilho existente.
+- Buscar: campo neutro e foco cromático discreto seguindo a música atual.
+- Biblioteca: cabeçalho e ação de shuffle com acento cromático real, sem aplicar wash forte ao catálogo.
+- Nenhuma dessas mudanças representa player v8 final no Android; build, screenshots e teste manual continuam necessários.

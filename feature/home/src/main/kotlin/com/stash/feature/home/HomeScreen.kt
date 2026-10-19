@@ -504,6 +504,7 @@ fun HomeScreen(
 
             if (quickMixes.isNotEmpty()) {
                 item(key = "home_quick_discovery") {
+                    SectionHeader(title = stringResource(R.string.nostop_home_made_for_you))
                     HomeQuickMixRow(
                         mixes = quickMixes,
                         onMixClick = { mix -> openMix(mix.id) },

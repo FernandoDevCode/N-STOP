@@ -36,7 +36,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
-import com.stash.core.ui.ambient.LocalAlbumChrome
 
 /**
  * Actual Home editorial hero. Never synthesizes covers, track metadata or
@@ -56,10 +55,12 @@ internal fun NonstopEditorialHero(
     onOpen: () -> Unit,
     onCreateMix: (() -> Unit)? = null,
     onLongPress: (() -> Unit)? = null,
+    primaryActionLabel: String = "Ouvir",
+    modifier: Modifier = Modifier,
 ) {
     val shape = RoundedCornerShape(20.dp)
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(228.dp)
             .clip(shape)
@@ -129,7 +130,6 @@ internal fun NonstopEditorialHero(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                val accent = LocalAlbumChrome.current.selectedTab
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(50))
@@ -146,7 +146,7 @@ internal fun NonstopEditorialHero(
                         modifier = Modifier.size(21.dp),
                     )
                     Text(
-                        text = "Ouvir",
+                        text = primaryActionLabel,
                         color = Color(0xFF101214),
                         fontWeight = FontWeight.SemiBold,
                         style = MaterialTheme.typography.labelLarge,
