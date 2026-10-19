@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.stash.core.model.Track
+import com.stash.core.ui.ambient.LocalAlbumChrome
 
 /**
  * The current REAL music track anchors the personalized Home even when
@@ -47,8 +48,8 @@ internal fun NonstopListeningCard(
 ) {
     val shape = RoundedCornerShape(18.dp)
     val artwork = track.albumArtPath ?: track.albumArtUrl
-    val darkCanvas = Color(0xFF131522)
-    val lavender = Color(0xFFCDB4FF)
+    val darkCanvas = Color(0xFF14181C)
+    val accent = LocalAlbumChrome.current.selectedTab
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -62,12 +63,14 @@ internal fun NonstopListeningCard(
         Row(
             modifier = Modifier.fillMaxWidth().height(134.dp)
                 .clip(shape)
+                .background(darkCanvas, shape)
                 .background(
-                    Brush.linearGradient(
-                        listOf(Color(0xFF352347), darkCanvas, Color(0xFF14303A)),
+                    Brush.horizontalGradient(
+                        listOf(accent.copy(alpha = 0.17f), Color.Transparent, accent.copy(alpha = 0.055f)),
                     ),
+                    shape,
                 )
-                .border(1.dp, Color.White.copy(alpha = 0.10f), shape)
+                .border(1.dp, accent.copy(alpha = 0.22f), shape)
                 .clickable(onClick = onOpenPlayer)
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -75,11 +78,11 @@ internal fun NonstopListeningCard(
         ) {
             Box(
                 Modifier.size(110.dp).clip(RoundedCornerShape(12.dp))
-                    .background(Color(0xFF372D47)),
+                    .background(Color(0xFF262A30)),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(Icons.Filled.Headphones, contentDescription = null,
-                    modifier = Modifier.size(36.dp), tint = lavender)
+                    modifier = Modifier.size(36.dp), tint = accent)
                 if (artwork != null) {
                     AsyncImage(
                         model = artwork, contentDescription = null,
@@ -94,7 +97,7 @@ internal fun NonstopListeningCard(
                 Text(
                     stringResource(R.string.nostop_home_resume_label).uppercase(),
                     style = MaterialTheme.typography.labelSmall,
-                    color = lavender,
+                    color = accent,
                     letterSpacing = androidx.compose.ui.unit.TextUnit.Unspecified,
                 )
                 Text(

@@ -2,6 +2,7 @@ package com.stash.core.ui.components
 
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -17,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.stash.core.ui.ambient.LocalAlbumChrome
 import com.stash.core.ui.theme.StashTheme
 
 /**
@@ -44,6 +46,7 @@ fun CrispChipRow(
     contentPadding: PaddingValues = PaddingValues(horizontal = 20.dp),
 ) {
     val extendedColors = StashTheme.extendedColors
+    val activeAccent = LocalAlbumChrome.current.selectedTab
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -60,16 +63,17 @@ fun CrispChipRow(
                 modifier = Modifier.semantics { this.selected = isActive },
                 shape = RoundedCornerShape(16.dp),
                 color = if (isActive) {
-                    MaterialTheme.colorScheme.primary
+                    MaterialTheme.colorScheme.surfaceVariant
                 } else {
                     extendedColors.elevatedSurface
                 },
+                border = if (isActive) BorderStroke(1.dp, activeAccent.copy(alpha = 0.66f)) else null,
             ) {
                 Text(
                     text = chip,
                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                     color = if (isActive) {
-                        MaterialTheme.colorScheme.onPrimary
+                        activeAccent
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
