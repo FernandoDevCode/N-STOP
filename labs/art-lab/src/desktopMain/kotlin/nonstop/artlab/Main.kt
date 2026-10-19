@@ -31,16 +31,35 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import nonstop.artlab.features.contrast
 
-fun main(args: Array<String>) = application {
-    Window(onCloseRequest=::exitApplication,title="NØNSTOP Art Lab v8 · Fase 1B · ANÁLISE CLÁSSICA",
-        state=rememberWindowState(width=1280.dp,height=900.dp)) {
+fun main(args: Array<String>) {
+    if("--validate-micro" in args) {
+        System.setProperty("java.awt.headless","true")
+        runMicroValidation()
+        return
+    }
+    if(args.any { it=="--validate-procedural" || it=="--cache-probe" }) {
+        System.setProperty("java.awt.headless","true")
+        runProceduralValidation(args)
+        return
+    }
+    if(args.any { it=="--validate-offscreen" || it=="--capture-suite" }) {
+        System.setProperty("java.awt.headless","true")
+        runOffscreenValidation(args)
+        return
+    }
+    launchLab()
+}
+private fun launchLab() = application {
+    val windowState=rememberWindowState(width=1280.dp,height=900.dp)
+    Window(onCloseRequest=::exitApplication,title="NØNSTOP Art Lab v8 · Procedural Art Director",
+        state=windowState) {
         MaterialTheme(colorScheme=darkColorScheme(background=Color(0xff080d17),surface=Color(0xff111a29))) {
-            Surface { ArtLab(args.contains("--capture-suite"),args.firstOrNull { it.startsWith("--cycle=") }?.substringAfter('=') ?: "manual") }
+            Surface { ArtLab(active=!windowState.isMinimized) }
         }
     }
 }
 
-@Composable private fun ArtLab(captureSuite:Boolean,cycle:String) {
+@Composable private fun ArtLab(active:Boolean) {
     val font=FontFamily(Font(Res.font.inter_regular,FontWeight.Normal),Font(Res.font.inter_semibold,FontWeight.SemiBold))
     val scope=rememberCoroutineScope()
     val assets=remember { DesktopAssets() }
@@ -56,30 +75,40 @@ fun main(args: Array<String>) = application {
     var nativePixels by remember { mutableStateOf(false) }
     var largeFont by remember { mutableStateOf(false) }
     var debug by remember { mutableStateOf(DebugView.FINAL) }
+    var comparisonMode by remember { mutableStateOf(ComparisonMode.PRODUCAO) }
     var notice by remember { mutableStateOf("") }
-    var reduceMotion by remember { mutableStateOf(true) }
+    var reduceMotion by remember { mutableStateOf(false) }
     var transitions by remember { mutableStateOf(true) }
+    var microEnabled by remember { mutableStateOf(true) }
+    var labAudio by remember { mutableStateOf<LabAudio?>(null) }
+    var audioNotice by remember { mutableStateOf("Sem fonte de áudio — play em repouso") }
     val layers=rememberGraphicsLayer()
+    var captureRequested by remember { mutableStateOf(false) }
     val viewports=listOf(864 to 1536,941 to 1672,1080 to 2340,720 to 1280)
     val (vw,vh)=viewports[viewport]
     val album=albums[selected]
     val recipe=asset.recipe
+    val displayCover=remember(album,asset,comparisonMode) { comparisonCover(album,asset,comparisonMode) }
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             val file=File("build/exports/catalog-manifest.json").apply { parentFile.mkdirs() }
-            file.writeText(recipeJson.encodeToString(catalogManifest(assets,validationCatalog)))
+            file.writeText(recipeJson.encodeToString(validationCatalog))
         }
     }
     LaunchedEffect(album) {
         loading=true
         asset=CoverAsset(message="Carregando…")
-        asset=withContext(Dispatchers.IO) { assets.load(album) }
+        asset=withContext(Dispatchers.IO) { assets.load(album) { isActive } }
         loading=false
     }
     fun select(index:Int) { selected=(index+albums.size)%albums.size; player=player.copy(lyrics=false); playerOpen=true }
     suspend fun capture(name:String) {
-        val bitmap=layers.toImageBitmap()
-        val directory=File("build/captures-1b/cycle-${cycle.filter { it.isLetterOrDigit() || it=='-' }}").apply { mkdirs() }
+        captureRequested=true
+        val bitmap=try {
+            withFrameNanos { }; withFrameNanos { }
+            layers.toImageBitmap()
+        } finally { captureRequested=false }
+        val directory=File("build/captures-procedural/manual").apply { mkdirs() }
         val file=File(directory,"$name.png")
         withContext(Dispatchers.IO) { org.jetbrains.skia.Image.makeFromBitmap(bitmap.asSkiaBitmap()).use { image ->
             image.encodeToData(EncodedImageFormat.PNG)!!.use { file.writeBytes(it.bytes) }
@@ -91,47 +120,10 @@ fun main(args: Array<String>) = application {
         }
         notice="Captura real do layer Compose: ${file.absolutePath}"
     }
-    LaunchedEffect(captureSuite) {
-        if(captureSuite) {
-            delay(1800)
-            // Phase 1B benchmark intentionally visits ONLY the two reference entries.
-            for(i in listOf(0,1)) {
-                viewport=if(i==0) 1 else 0
-                select(i)
-                delay(900)
-                while(loading) delay(100)
-                delay(250)
-                val dimensions=viewports[viewport]
-                capture("reference-${i+1}-${dimensions.first}x${dimensions.second}")
-                if(cycle=="1" || cycle=="3") {
-                    debug=DebugView.LIGHTS; delay(250); capture("reference-${i+1}-lights")
-                    debug=DebugView.BUTTON; delay(250); capture("reference-${i+1}-button")
-                    debug=DebugView.FINAL
-                    for(p in listOf(0f,.25f,.5f,1f)) { player=player.copy(progress=p); delay(200); capture("reference-${i+1}-progress-${(p*100).toInt()}") }
-                    player=player.copy(lyrics=true); delay(250); capture("reference-${i+1}-lyrics")
-                    player=PlayerState()
-                }
-            }
-            select(0)
-            viewport=1
-            delay(800)
-            if(cycle=="1" || cycle=="3") {
-                select(1); viewport=0; delay(700)
-                largeFont=true; delay(400); capture("font-150-864x1536-long-title")
-                select(0); largeFont=false; delay(700)
-                viewport=2; delay(500); capture("viewport-1080x2340")
-                largeFont=true; delay(500); capture("font-150-1080x2340")
-            }
-            largeFont=false; viewport=0; player=PlayerState()
-            notice="SUITE DE DUAS CAPAS CONCLUÍDA — ciclo $cycle. Aprovação visual pendente."
-            File("build/captures-1b/cycle-$cycle/complete.txt").writeText(ClassicalDirector.VERSION)
-            println("ART_LAB_CAPTURE_SUITE_COMPLETE cycle=$cycle")
-        }
-    }
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(12.dp)) {
         Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             Text("NØNSTOP / ART LAB v8",fontFamily=font,fontWeight=FontWeight.SemiBold,fontSize=19.sp)
-            Text("FASE 1B · CONTROLES SIMULADOS",color=Color(0xffadbcd0),fontSize=11.sp)
+            Text("PROCEDURAL · CONTROLES SIMULADOS",color=Color(0xffadbcd0),fontSize=11.sp)
             Spacer(Modifier.weight(1f))
             TextButton(onClick={galleryVisible=!galleryVisible}) { Text("Galeria") }
             TextButton(onClick={diagnostics=!diagnostics}) { Text("Diagnóstico") }
@@ -151,7 +143,7 @@ fun main(args: Array<String>) = application {
                 }
             }) { Text("Carregar capa local") }
         }
-        Text("ANÁLISE CLÁSSICA DE PIXELS • IA indisponível — sem modelo neural • benchmark: apenas 2 capas",color=Color(0xffd7bd88),fontSize=12.sp)
+        Text("DIREÇÃO PROCEDURAL ESTÁTICA • análise clássica de pixels • sem IA • benchmark: 12 capas",color=Color(0xffd7bd88),fontSize=12.sp)
         Spacer(Modifier.height(8.dp))
         Row(Modifier.weight(1f),horizontalArrangement=Arrangement.spacedBy(12.dp)) {
             if(galleryVisible) Column(Modifier.width(250.dp).fillMaxHeight().verticalScroll(rememberScrollState())) {
@@ -165,7 +157,7 @@ fun main(args: Array<String>) = application {
                                 .background(if(index==selected) Color(0xff273c55) else Color(0xff121b29))
                                 .clickable { select(index) }.padding(8.dp)) {
                                 var thumbnail by remember(item) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
-                                LaunchedEffect(item) { thumbnail=withContext(Dispatchers.IO) { assets.load(item).cover } }
+                                LaunchedEffect(item) { thumbnail=withContext(Dispatchers.IO) { assets.thumbnail(item) } }
                                 Box(Modifier.size(105.dp).background(Color(0xff080d16)),contentAlignment=Alignment.Center) {
                                     if(thumbnail!=null) Image(thumbnail!!,item.album,Modifier.fillMaxSize(),contentScale=androidx.compose.ui.layout.ContentScale.Crop)
                                     else Text("CAPA\nAUSENTE",fontSize=11.sp,color=Color(0xff8c9bb1))
@@ -190,8 +182,11 @@ fun main(args: Array<String>) = application {
                 } else {
                 Row(verticalAlignment=Alignment.CenterVertically) {
                     TextButton(onClick={viewport=(viewport+1)%viewports.size}) { Text("${vw}×${vh} ▾") }
+                    TextButton(onClick={comparisonMode=if(comparisonMode==ComparisonMode.PRODUCAO)ComparisonMode.FIDELIDADE else ComparisonMode.PRODUCAO}) {
+                        Text(if(comparisonMode==ComparisonMode.PRODUCAO)"PRODUÇÃO" else "FIDELIDADE")
+                    }
                     TextButton(onClick={nativePixels=!nativePixels}) { Text(if(nativePixels) "100% pixels" else "Ajustar à janela") }
-                    TextButton(onClick={scope.launch { capture("manual-${selected+1}-${vw}x$vh") }}) { Text("Capturar") }
+                    TextButton(onClick={scope.launch { capture("manual-${selected+1}-${comparisonMode.name.lowercase()}-${vw}x$vh") }}) { Text("Capturar") }
                 }
                 BoxWithConstraints(Modifier.fillMaxSize().background(Color(0xff030509))) {
                     val density=LocalDensity.current
@@ -202,12 +197,15 @@ fun main(args: Array<String>) = application {
                         CompositionLocalProvider(LocalDensity provides Density(1f,if(largeFont) 1.5f else 1f)) {
                             Layout(content={
                                 Crossfade(album to asset,animationSpec=tween(if(reduceMotion || !transitions)0 else 350),label="cover recipe") { (frameAlbum,frameAsset) ->
-                                V8Renderer(frameAlbum,frameAsset.cover,frameAsset.texture,frameAsset.recipe,player,{player=it},{select(selected-1)},{select(selected+1)},
+                                V8Renderer(frameAlbum,if(frameAlbum==album)displayCover else frameAsset.cover,frameAsset.texture,frameAsset.recipe,player,{player=it},{select(selected-1)},{select(selected+1)},
                                     {playerOpen=false; galleryVisible=true},{diagnostics=!diagnostics},font,debug,if(largeFont)1.5f else 1f,
                                     Modifier.fillMaxSize().drawWithContent {
-                                        layers.record { this@drawWithContent.drawContent() }
-                                        drawLayer(layers)
-                                    })
+                                        if(captureRequested) {
+                                            layers.record { this@drawWithContent.drawContent() }
+                                            drawLayer(layers)
+                                        } else drawContent()
+                                    },microOptions=MicroOptions(enabled=microEnabled,reducedMotion=reduceMotion,
+                                        active=active && playerOpen && frameAlbum==album,audio=labAudio?.envelope))
                                 }
                             }) { measurables,_ ->
                                 val child=measurables.single().measure(Constraints.fixed(vw,vh))
@@ -225,8 +223,13 @@ fun main(args: Array<String>) = application {
                 Text("${album.artist} — ${album.album}",fontWeight=FontWeight.SemiBold)
                 Text("${album.status}\n${album.source ?: "Sem fonte verificável disponível; imagem ausente."}",fontSize=11.sp)
                 Text(if(loading) "Carregando fora da UI thread…" else asset.message,fontSize=12.sp)
-                Text("IA: nenhum modelo\nReceita: ${recipe.analysisMetadata.source}\nMotor: ${recipe.analysisMetadata.engineVersion}\nConfiança neural: indisponível\nCache: ${asset.cacheOrigin}\nWall total: ${"%.2f".format(asset.timings.totalMs)} ms\nCPU total: ${asset.timings.cpuMs?.let { "%.2f".format(it) } ?: "não medido"} ms\nDecode / features / direção / textura: ${listOf(asset.timings.decodeMs,asset.timings.featuresMs,asset.timings.directionMs,asset.timings.textureMs).joinToString(" / ") { "%.2f".format(it) }} ms\nHash: ${asset.hash}",fontSize=11.sp)
+                Text("Exibição: $comparisonMode\nAnálise: sempre capa oficial (ou arquivo local)\nIA: nenhum modelo\nReceita: ${recipe.analysisMetadata.source}\nMotor: ${recipe.analysisMetadata.engineVersion}\nConfiança neural: indisponível\nCache: ${asset.cacheOrigin}\nWall total: ${"%.2f".format(asset.timings.totalMs)} ms\nCPU total: ${asset.timings.cpuMs?.let { "%.2f".format(it) } ?: "não medido"} ms\nDecode / features / direção / textura: ${listOf(asset.timings.decodeMs,asset.timings.featuresMs,asset.timings.directionMs,asset.timings.textureMs).joinToString(" / ") { "%.2f".format(it) }} ms\nHash: ${asset.hash}",fontSize=11.sp)
                 recipe.archetypeScores.entries.sortedByDescending { it.value }.take(3).forEach { Text("${it.key}: ${"%.3f".format(it.value)} (heurística)",fontSize=11.sp) }
+                Text("Família: ${recipe.family}\nMistura: ${recipe.familyWeights}\nMaterial: ${recipe.controlSurface.material}\nSeed: ${recipe.procedural.seed}\nGeração procedural: ${"%.2f".format(asset.timings.generationMs)} ms\nRGBA retido (estimativa): ${"%.2f".format(asset.retainedRasterBytes/1048576.0)} MiB",fontSize=11.sp)
+                listOf("Ambiente" to recipe.colors.environmental,"Interação" to recipe.colors.interaction,"Acento" to recipe.colors.accent).forEach { (label,color) ->
+                    Row(verticalAlignment=Alignment.CenterVertically) { Box(Modifier.size(20.dp).background(Color(color))); Text(" $label #${color.toString(16)}",fontSize=11.sp) }
+                }
+                Text("Parâmetros: ${recipe.procedural}",fontSize=11.sp)
                 recipe.analysisMetadata.fiveSignals.forEach { Text(it,fontSize=11.sp) }
                 Text("${recipe.analysisMetadata.fallbackReason}",fontSize=10.sp)
                 asset.importance?.let { Image(it,"Mapa de importância local 8×8; não saliência humana",Modifier.size(150.dp)) }
@@ -245,6 +248,28 @@ fun main(args: Array<String>) = application {
                 TextButton(onClick={largeFont=!largeFont}) { Text("Fonte: ${if(largeFont) "150%" else "100%"}") }
                 Row(verticalAlignment=Alignment.CenterVertically) { Checkbox(transitions,{transitions=it}); Text("Transição suave",fontSize=11.sp) }
                 Row(verticalAlignment=Alignment.CenterVertically) { Checkbox(reduceMotion,{reduceMotion=it}); Text("Reduzir movimento",fontSize=11.sp) }
+                Text("PLAYER_MICRO_INTERACTIONS_V1",fontSize=11.sp)
+                Row(verticalAlignment=Alignment.CenterVertically) { Checkbox(microEnabled,{microEnabled=it}); Text("Microinterações",fontSize=11.sp) }
+                Text("$audioNotice\n${labAudio?.source ?: "Carregue WAV para medir RMS ou use a fixture PCM identificada."}",fontSize=11.sp)
+                labAudio?.let { audio -> Text("${audio.name}\nEnvelope: ${audio.envelope.size} janelas; ${"%.2f".format(audio.envelope.durationMillis/1000)} s; análise ${"%.2f".format(audio.analysisMs)} ms\nPrévia visual silenciosa; play pausa/retoma, seek reposiciona o envelope.",fontSize=10.sp) }
+                Button(onClick={
+                    SwingUtilities.invokeLater {
+                        val dialog=FileDialog(null as Frame?,"Analisar energia de WAV local (prévia silenciosa)",FileDialog.LOAD)
+                        dialog.isVisible=true
+                        val file=dialog.file?.let { File(dialog.directory,it) }; dialog.dispose()
+                        if(file!=null)scope.launch {
+                            audioNotice="Analisando PCM fora da UI…"
+                            val result=withContext(Dispatchers.IO) { runCatching { DesktopAudioEnergy.load(file) } }
+                            result.onSuccess { labAudio=it; player=player.copy(progress=0f); audioNotice="RMS medido de WAV local" }
+                                .onFailure { audioNotice="Falha no WAV: ${it.message}" }
+                        }
+                    }
+                }) { Text("Carregar áudio WAV") }
+                TextButton(onClick={scope.launch {
+                    labAudio=withContext(Dispatchers.Default) { DesktopAudioEnergy.fixture() }
+                    player=player.copy(progress=0f); audioNotice="Fixture PCM — não é áudio do álbum"
+                }}) { Text("Iniciar PCM de teste (8 s)") }
+                TextButton(onClick={labAudio=null; audioNotice="Sem fonte de áudio — play em repouso"}) { Text("Remover fonte de áudio") }
                 Text("DEPURAÇÃO: ${debug.name}",fontSize=11.sp)
                 DebugView.entries.forEach { mode -> TextButton(onClick={debug=mode}) { Text(mode.name) } }
                 Button(onClick={

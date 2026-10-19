@@ -6,6 +6,26 @@ import nonstop.artlab.direction.*
 import kotlinx.serialization.encodeToString
 
 class ClassicalFeaturesTest {
+    @Test fun directionalEvidenceRotatesWithPixelsAndUniformInputIsConservative() {
+        fun band(vertical:Boolean):ImageFeatures {
+            val image=IntArray(128*128) { i ->
+                val x=i%128; val y=i/128
+                if(if(vertical)x in 48..55 && y in 5..120 else y in 48..55 && x in 5..120)0xff00ffff.toInt() else 0xff000000.toInt()
+            }
+            return ClassicalFeatureExtractor().analyze(PixelImage(128,128,image))
+        }
+        val horizontal=band(false); val vertical=band(true)
+        val a=horizontal.palette.first { it.saturation>.8 }; val b=vertical.palette.first { it.saturation>.8 }
+        assertTrue(a.coherence>.9 && b.coherence>.9)
+        assertTrue(kotlin.math.abs(a.orientation)<1)
+        assertTrue(kotlin.math.abs(kotlin.math.abs(b.orientation)-90)<1)
+        assertNotEquals(horizontal.directions,vertical.directions)
+        val plain=ClassicalFeatureExtractor().analyze(fixture(0xff000000.toInt()))
+        assertTrue(plain.directions.isEmpty())
+        assertTrue(ClassicalDirector.direct(plain,"opaque").directionalDetails.isEmpty())
+        val r=ClassicalDirector.direct(horizontal,"opaque")
+        assertFalse(r.copy(directionalDetails=listOf(DirectionalDetail(.5f,.5f,Float.NaN,.2f,.01f,0xffffffff,.2f,1f))).isValid())
+    }
     private fun fixture(color:Int) = PixelImage(64,64,IntArray(4096) { color })
     @Test fun blackWhiteAndMonochromeHaveFiniteNormalizedFeaturesAndLegibleRecipes() {
         for(c in listOf(0xff000000.toInt(),0xffffffff.toInt(),0xff777777.toInt(),0xff001aff.toInt())) {
@@ -36,11 +56,11 @@ class ClassicalFeaturesTest {
         assertTrue(a.saturatedX<.2); assertTrue(b.saturatedX>.8)
         assertTrue(a.grid.first().importance>0)
         val ra=ClassicalDirector.direct(a,"identical-id"); val rb=ClassicalDirector.direct(b,"identical-id")
-        assertNotEquals(ra.lights,rb.lights)
+        assertNotEquals(ra.accents,rb.accents)
     }
     @Test fun allRecipeNumericAndContrastBoundariesRejectInvalidData() {
         val r=baselineRecipe("test")
-        assertFalse(r.copy(controlSurface=r.controlSurface.copy(specularIntensity=Float.NaN)).isValid())
+        assertFalse(r.copy(controlSurface=r.controlSurface.copy(haloIntensity=Float.NaN)).isValid())
         assertFalse(r.copy(lights=listOf(r.lights[0].copy(color=-1))).isValid())
         assertFalse(r.copy(lyrics=r.lyrics.copy(alphaProgression=listOf(Float.POSITIVE_INFINITY))).isValid())
         assertFalse(r.copy(controlSurface=r.controlSurface.copy(ink=r.controlSurface.fill[0].color)).isValid())

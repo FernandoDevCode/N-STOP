@@ -5,6 +5,7 @@ import androidx.compose.ui.graphics.toComposeImageBitmap
 import nonstop.artlab.catalog.*
 import nonstop.artlab.direction.*
 import nonstop.artlab.features.*
+import nonstop.artlab.renderer.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import java.awt.RenderingHints
@@ -16,21 +17,28 @@ import java.security.MessageDigest
 import javax.imageio.ImageIO
 import kotlin.math.*
 
-@Serializable data class AnalysisArtifact(val version:String,val features:ImageFeatures,val recipe:ArtRecipe)
+@Serializable data class AnalysisArtifact(val version:String,val features:ImageFeatures,val recipe:ArtRecipe,val textureHashes:List<String> = emptyList())
 data class PhaseTimings(val decodeMs:Double=0.0,val featuresMs:Double=0.0,val directionMs:Double=0.0,
-    val textureMs:Double=0.0,val totalMs:Double=0.0,val cpuMs:Double?=null)
+    val textureMs:Double=0.0,val totalMs:Double=0.0,val cpuMs:Double?=null,val generationMs:Double=0.0)
 enum class CacheOrigin { MISS, MEMORY, DISK }
-data class CoverAsset(val cover:ImageBitmap?=null,val texture:ImageBitmap?=null,val importance:ImageBitmap?=null,
+data class CoverAsset(val cover:ImageBitmap?=null,val texture:AtmosphereBitmaps?=null,val importance:ImageBitmap?=null,
     val hash:String="missing",val message:String="Capa indisponível",val preparationMs:Double?=null,
     val cacheHit:Boolean=false,val cacheOrigin:CacheOrigin=CacheOrigin.MISS,
-    val recipe:ArtRecipe=baselineRecipe("missing"),val features:ImageFeatures?=null,val timings:PhaseTimings=PhaseTimings())
+    val recipe:ArtRecipe=baselineRecipe("missing"),val features:ImageFeatures?=null,val timings:PhaseTimings=PhaseTimings()) {
+    /** Known retained RGBA pixels only; excludes JVM/native overhead and transient allocations. */
+    val retainedRasterBytes:Long get() = (cover?.let { it.width.toLong()*it.height*4 } ?: 0)+
+        (if(texture!=null)5L*192*342*4 else 0)+(importance?.let { it.width.toLong()*it.height*4 } ?: 0)
+}
 
 /** Disk cache identity is content + policy + pipeline version, never catalog identity. */
 class DesktopAssets(private val cacheDirectory:File=File("build/art-cache"),
-    private val pipelineVersion:String=ClassicalDirector.VERSION,private val policy:FeaturePolicy=FeaturePolicy()) {
-    private val cache=mutableMapOf<String,CoverAsset>()
+    private val pipelineVersion:String=ClassicalDirector.VERSION,private val policy:FeaturePolicy=FeaturePolicy(),
+    private val memoryLimit:Int=3) {
+    init { require(memoryLimit in 1..12) }
+    private val cache=linkedMapOf<String,CoverAsset>()
     var analysisCount=0; private set
-    @Synchronized fun load(album:Album):CoverAsset = runCatching {
+    @Synchronized fun load(album:Album,shouldContinue:()->Boolean={true}):CoverAsset = runCatching {
+        if(!shouldContinue())return CoverAsset(message="Preparação substituída por outra seleção")
         val start=System.nanoTime()
         val path=album.resource ?: return CoverAsset()
         val bytes=if(album.status==ArtworkStatus.LOCAL) {
@@ -39,20 +47,23 @@ class DesktopAssets(private val cacheDirectory:File=File("build/art-cache"),
         val hash=sha256(bytes)
         if(album.status==ArtworkStatus.OFFICIAL_COVER) require(hash==album.sha256) { "Checksum da capa oficial diverge do manifesto" }
         val key=sha256((hash+pipelineVersion+recipeJson.encodeToString(policy)).encodeToByteArray())
-        cache[key]?.let { return it.copy(cacheHit=true,cacheOrigin=CacheOrigin.MEMORY,
+        cache.remove(key)?.let { cache[key]=it; return it.copy(cacheHit=true,cacheOrigin=CacheOrigin.MEMORY,
             preparationMs=(System.nanoTime()-start)/1e6,timings=PhaseTimings(totalMs=(System.nanoTime()-start)/1e6)) }
         val bean=ManagementFactory.getThreadMXBean()
         val cpuStart=if(bean.isCurrentThreadCpuTimeSupported && bean.isThreadCpuTimeEnabled)bean.currentThreadCpuTime else null
         var mark=System.nanoTime()
         val decoded=decode(bytes)
+        if(!shouldContinue())return CoverAsset(message="Preparação substituída por outra seleção")
         val decodeMs=(System.nanoTime()-mark)/1e6
         val directory=File(cacheDirectory,key)
         val artifactFile=File(directory,"analysis.json")
-        val textureFile=File(directory,"atmosphere.png")
+        val textureFiles=listOf("deep","diffuse","accents","directional","composite").map { File(directory,"$it.png") }
+        var generationMs=0.0
         val persisted=runCatching {
             val a=recipeJson.decodeFromString<AnalysisArtifact>(artifactFile.readText())
             require(a.version==pipelineVersion && a.recipe.sourceImageHash==hash && a.recipe.isValid() && a.features.isValid())
-            require(textureFile.isFile && ImageIO.read(textureFile)!=null)
+            require(a.textureHashes.size==textureFiles.size && textureFiles.zip(a.textureHashes).all { (file,digest) -> sha256(file.readBytes())==digest })
+            require(textureFiles.all { it.isFile && ImageIO.read(it)?.let { image -> image.width==192 && image.height==342 }==true })
             a
         }.getOrNull()
         var featuresMs=0.0; var directionMs=0.0
@@ -68,24 +79,49 @@ class DesktopAssets(private val cacheDirectory:File=File("build/art-cache"),
             AnalysisArtifact(pipelineVersion,features,recipe)
         }
         mark=System.nanoTime()
-        val texture=if(persisted!=null) ImageIO.read(textureFile) ?: error("Textura de cache inválida")
-            else blurFullImage(resize(decoded,192),artifact.recipe.artBlurRadiusDp)
+        if(!shouldContinue())return CoverAsset(message="Preparação substituída por outra seleção")
+        val textures=if(persisted!=null) textureFiles.map { ImageIO.read(it) ?: error("Máscara de cache inválida") }
+            else {
+                val generationStart=System.nanoTime()
+                val layers=AtmospherePrecomputer.render(artifact.recipe)
+                val pixels=listOf(layers.deep,layers.diffuse,layers.accents,layers.directional,compositeAtmosphere(layers))
+                generationMs=(System.nanoTime()-generationStart)/1e6
+                pixels.map(::buffered)
+            }
         val importance=importanceImage(artifact.features)
         if(persisted==null) {
             directory.mkdirs()
-            ImageIO.write(texture,"png",textureFile)
-            artifactFile.writeText(recipeJson.encodeToString(artifact))
+            textures.zip(textureFiles).forEach { (image,file) -> ImageIO.write(image,"png",file) }
+            artifactFile.writeText(recipeJson.encodeToString(artifact.copy(textureHashes=textureFiles.map { sha256(it.readBytes()) })))
         }
+        val bitmaps=textures.map { it.toComposeImageBitmap() }
+        val coverBitmap=decoded.toComposeImageBitmap()
+        val importanceBitmap=importance.toComposeImageBitmap()
+        // Include native bitmap preparation in the reported wall/CPU cost, before publishing
+        // the ready asset. Procedural generation remains its own independent measurement.
         val textureMs=(System.nanoTime()-mark)/1e6
         val totalMs=(System.nanoTime()-start)/1e6
         val cpuMs=cpuStart?.let { (bean.currentThreadCpuTime-it)/1e6 }
-        CoverAsset(decoded.toComposeImageBitmap(),texture.toComposeImageBitmap(),importance.toComposeImageBitmap(),hash,
+        CoverAsset(coverBitmap,AtmosphereBitmaps(bitmaps[0],bitmaps[1],bitmaps[2],bitmaps[3],bitmaps[4]),importanceBitmap,hash,
             "Análise clássica da capa completa; sem modelo neural",totalMs,persisted!=null,
             if(persisted!=null) CacheOrigin.DISK else CacheOrigin.MISS,artifact.recipe,artifact.features,
-            PhaseTimings(decodeMs,featuresMs,directionMs,textureMs,totalMs,cpuMs)).also { cache[key]=it }
+            PhaseTimings(decodeMs,featuresMs,directionMs,textureMs,totalMs,cpuMs,generationMs)).also {
+                cache[key]=it
+                while(cache.size>memoryLimit)cache.remove(cache.keys.first())
+            }
     }.getOrElse { CoverAsset(message="Falha de decode/análise — fallback: ${it.message}") }
 
-    private fun decode(bytes:ByteArray):BufferedImage = ImageIO.createImageInputStream(ByteArrayInputStream(bytes)).use { stream ->
+    /** Gallery thumbnails never run direction/precomputation or populate the full asset cache. */
+    fun thumbnail(album:Album):ImageBitmap? = runCatching {
+        val path=album.resource ?: return null
+        val bytes=if(album.status==ArtworkStatus.LOCAL) {
+            val file=File(path); require(file.length()<=20*1024*1024); file.readBytes()
+        } else javaClass.getResourceAsStream("/$path")?.use { it.readBytes() } ?: return null
+        if(album.status==ArtworkStatus.OFFICIAL_COVER) require(sha256(bytes)==album.sha256)
+        resize(decode(bytes,128),128).toComposeImageBitmap()
+    }.getOrNull()
+
+    private fun decode(bytes:ByteArray,maxEdge:Int=1600):BufferedImage = ImageIO.createImageInputStream(ByteArrayInputStream(bytes)).use { stream ->
         val readers=ImageIO.getImageReaders(stream); require(readers.hasNext()) { "PNG/JPEG inválido" }
         val reader=readers.next()
         try {
@@ -94,7 +130,7 @@ class DesktopAssets(private val cacheDirectory:File=File("build/art-cache"),
             val w=reader.getWidth(0); val h=reader.getHeight(0)
             require(w>0 && h>0 && w.toLong()*h<=40_000_000L) { "Imagem maior que 40 MP ou dimensões inválidas" }
             val param=reader.defaultReadParam
-            val sub=((max(w,h)+1599)/1600).coerceAtLeast(1)
+            val sub=((max(w,h)+maxEdge-1)/maxEdge).coerceAtLeast(1)
             param.setSourceSubsampling(sub,sub,0,0)
             reader.read(0,param)
         } finally { reader.dispose() }
@@ -108,29 +144,8 @@ class DesktopAssets(private val cacheDirectory:File=File("build/art-cache"),
         }
         return result
     }
-    /** Clamped separable Gaussian: all edges and corners survive; no center crop at any step. */
-    internal fun blurFullImage(image:BufferedImage,radiusDp:Float):BufferedImage {
-        val w=image.width; val h=image.height
-        val sigma=(radiusDp/432.0*max(w,h)).coerceAtLeast(.5)
-        val radius=ceil(sigma*3).toInt().coerceAtMost(48)
-        val weights=DoubleArray(radius*2+1) { exp(-((it-radius).toDouble().pow(2))/(2*sigma*sigma)) }
-        val sum=weights.sum(); weights.indices.forEach { weights[it]/=sum }
-        var source=image.getRGB(0,0,w,h,null,0,w)
-        for(horizontal in listOf(true,false)) {
-            val target=IntArray(source.size)
-            for(y in 0 until h) for(x in 0 until w) {
-                var r=0.0; var g=0.0; var b=0.0
-                for(k in -radius..radius) {
-                    val xx=if(horizontal)(x+k).coerceIn(0,w-1) else x
-                    val yy=if(horizontal)y else (y+k).coerceIn(0,h-1)
-                    val c=source[yy*w+xx]; val weight=weights[k+radius]
-                    r+=((c shr 16)and 255)*weight; g+=((c shr 8)and 255)*weight; b+=(c and 255)*weight
-                }
-                target[y*w+x]=(0xff000000L or (r.roundToInt().toLong() shl 16) or (g.roundToInt().toLong() shl 8) or b.roundToInt().toLong()).toInt()
-            }
-            source=target
-        }
-        return BufferedImage(w,h,BufferedImage.TYPE_INT_RGB).apply { setRGB(0,0,w,h,source,0,w) }
+    private fun buffered(p:PixelImage) = BufferedImage(p.width,p.height,BufferedImage.TYPE_INT_ARGB).apply {
+        setRGB(0,0,p.width,p.height,p.argb,0,p.width)
     }
     private fun importanceImage(features:ImageFeatures):BufferedImage {
         val size=features.policy.gridSize
@@ -146,4 +161,14 @@ fun catalogManifest(assets:DesktopAssets,albums:List<Album>) = albums.map { albu
     val asset=if(album.resource!=null)assets.load(album) else CoverAsset()
     CatalogManifestEntry(album.artist,album.album,if(asset.cover==null)"missing" else "available",album.status,
         album.source,asset.hash.takeUnless { it=="missing" },if(album.status==ArtworkStatus.REFERENCE_EXTRACT)album.sha256 else null)
+}
+
+/** Display selection never participates in feature extraction or cache identity. */
+enum class ComparisonMode { FIDELIDADE, PRODUCAO }
+fun comparisonCover(album:Album,asset:CoverAsset,mode:ComparisonMode):ImageBitmap? {
+    if(mode==ComparisonMode.PRODUCAO || album.status!=ArtworkStatus.OFFICIAL_COVER)return asset.cover
+    val filename=album.resource?.substringAfterLast('/')?.substringBeforeLast('.') ?: return asset.cover
+    return DesktopAssets::class.java.getResourceAsStream("/$filename.png")?.use {
+        org.jetbrains.skia.Image.makeFromEncoded(it.readBytes()).toComposeImageBitmap()
+    } ?: asset.cover
 }

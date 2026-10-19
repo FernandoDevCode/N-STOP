@@ -1,5 +1,5 @@
 # NØNSTOP — PLAYER V8 ART LAB — ESPECIFICAÇÃO NORMATIVA
-**Versão:** 1.1 · **Data:** 2026-10-17 · **Branch:** `feat/nonstop-v8-art-lab` · **Estado:** aprovada para construção do laboratório; NÃO aprova integração ao app principal.
+**Versão:** 1.4 · **Data:** 2026-10-18 · **Branch:** `feat/nonstop-v8-art-lab` · **Estado:** laboratório procedural e PLAYER_MICRO_INTERACTIONS_V1 autorizados; NÃO aprova integração ao app principal.
 
 ## 0. Contrato de interpretação
 1. **Fonte de verdade única para v8:** este documento. `docs/PLAYER_V7_VISUAL_FIDELITY.md` e demais documentos v7 servem SOMENTE como histórico e referência das funcionalidades intocáveis; em conflitos, este documento prevalece.
@@ -76,14 +76,14 @@ Normalizar esses sinais para não dominar capas muito escuras, claras ou monocro
 | MONOCHROME_EDITORIAL | saturação baixa, formas de alto contraste | material neutro, profundidade por luminância |
 | PHOTO_PORTRAIT | evidência forte de estilo retrato/fotografia, se IA sustentar | luz respeitando área central e identidade fotográfica |
 | MULTICOLOR_GRAPHIC | cobertura cromática extensa e equilibrada | seleção de 1–2 acentos, fundo unificador profundo |
-| PREMIUM_FALLBACK | evidência inconclusiva | canvas escuro com duas luzes sutis, arte desfocada, botão refinado |
+| PREMIUM_FALLBACK | evidência inconclusiva | canvas escuro com duas luzes sutis, textura abstrata, botão refinado |
 Os arquétipos **não** devem virar um `when` rígido exclusivo: o diretor pode misturar no máximo dois tratamentos compatíveis, com pesos registrados. Exigir limites de saturação, luminância e legibilidade no resultado. Se houver conflito entre IA e features, usar estratégia conservadora e mostrar divergência no painel diagnóstico.
 
 ## 7. Receita tipada: contrato mínimo
 Representar em data classes Kotlin serializáveis, sem strings mágicas:
 - `schemaVersion`, `sourceImageHash`, `modelVersion`, `confidence`, `archetypeScores`
-- `canvasColor`, `scrimTop`, `scrimBottom`, `artTextureOpacity`, `artBlurRadiusDp`
-- `lights[]` com `x`, `y`, `radiusX`, `radiusY`, `color`, `intensity`, `falloff` e `motionAmplitude` (posições relativas)
+- Receita v3: `canvasColor`, `scrimTop`, `scrimBottom`; `environment` (regiões profundas, grain, warp); `accents[]`; `directionalDetails[]` (posição, orientação axial, extensão, largura, cor, intensidade, coerência). `artTextureOpacity` e `artBlurRadiusDp` foram removidos na Fase 1B.2.
+- `lights[]` (iluminação difusa) e regiões/acentos com `x`, `y`, `radiusX`, `radiusY`, `color`, `intensity`, `falloff` (posições relativas). `motionAmplitude` permanece removido; não há parâmetro de movimento sem comportamento.
 - `controlSurface`: fill base/gradient stops, specular highlight, outer halo color/intensity/radius, ink color
 - `progress`: fill/track, até N paradas cromáticas com localização espacial fixa [0,1], thumb/halo
 - `lyrics`: foreground active/future, alpha progression e surface treatment (mesmo sem letras reais no laboratório)
@@ -93,7 +93,7 @@ Saneamento **obrigatório** de todos os valores, checagem de contraste/NaN, limi
 ## 8. Renderização: fidelidade antes de técnica
 - **Objetivo:** emulação perceptiva fiel das referências, não cópia literal dos shaders imaginados no mockup.
 - **Proibido como padrão:** efeitos custosos refeitos a cada frame, blur de bitmap integral contínuo, IA na thread UI, backgrounds de cor chapada, glow retangular ou bounds visíveis, bordas cinza artificiais, rainbow decorativo sem suporte na capa.
-- Compositor inicial **sem shader customizado obrigatório**: textura reduzida/fortemente desfocada gerada uma vez, camadas Compose com gradientes radiais/elípticos, scrims, imagens em cache, gradientes e efeitos estáticos/movimentação lenta dos offsets.
+- Compositor inicial **sem shader customizado obrigatório**: máscaras/texturas abstratas reduzidas geradas uma vez a partir da receita, camadas Compose com gradientes radiais/elípticos, scrims, imagens em cache, gradientes e efeitos estáticos/movimentação lenta dos offsets.
 - Cada fonte luminosa deve ter radius e centro independentes, com caída até alpha zero e sem clipping quadrado. Cor/posição partem da `ArtRecipe`.
 - Luz principal e secundária não devem lavar informações nem transformar as artes em gradiente chapado. Fundo escuro preserva detalhes de luminância; capa continua protagonista.
 - Botão play circular: preenchimento material (gradiente/reflexo interno), ícone contrastante centrado, **halo externo realmente visível e contínuo**, sem quadrado. Dimensionar glow à aparência referência; checar captura antes de ajustar.
@@ -107,7 +107,7 @@ Saneamento **obrigatório** de todos os valores, checagem de contraste/NaN, limi
 ## 9. Geometria mestra e responsividade
 **As duas referências definem o layout**, não capturas v7. Durante o primeiro sprint criar arquivo `reference-measurements.md` com largura/altura real dos dois PNGs, retângulos de capa/barra/bloco título/controles/LETRAS, tamanhos e offsets em pixels, normalizados para [0,1]. Exigir inspeção visual e, quando houver incerteza, documentar tolerância em vez de inventar precisão.
 - Layout principal: topo mínimo (fechar/esquerda, menu/direita), capa grande quadrada, progresso imediatamente abaixo da arte, informação editorial e coração independente, transporte com play dominante, alça LETRAS integrada à base.
-- Capa quadrada com `ContentScale.Crop` se necessário sem distorcer; manter composição e alinhamento.
+- Capa sem distorção, com `ContentScale.Crop`. Na Fase 1B.2, envelope comum concilia os retângulos levemente não quadrados medidos nos mestres (largura .834W, altura limitada a .4597H); em viewports altos a capa permanece quadrada. Mesma geometria nos dois modos e sem ajustes por identidade.
 - Tipografia semibold/editorial; título até duas linhas; artista/álbum legíveis; sem marquee no cabeçalho compacto das letras.
 - Áreas de toque >=48dp; gestos não interceptam seek/scroll.
 - Player escala com insets, densidade e dimensão do painel, mantendo hierarquia; nunca fazer sobreposição em fontes aumentadas.
@@ -275,3 +275,142 @@ Ao final de cada fase informar:
   não foram validados. Detalhes medidos e arquivos estão em `reference-measurements.md`.
 - Estado: motor clássico funcional; **visual NOT PASSED / validação do usuário pendente**.
   Sem aprovação estética automática, integração de produção, commit, push ou merge.
+
+
+## 19. Decisão 2026-10-17 — Fase 1B.2 / compositor abstrato
+
+- Partida: `408f5f668fcbb02589e2d378c81eb8ae48f43f25`, branch
+  `feat/nonstop-v8-art-lab`. Preservar laboratório, catálogo, controles, cache e fronteira
+  commonMain/Desktop. App principal e dez placeholders fora desta etapa.
+- **Quatro componentes obrigatórios:** ambiente profundo, iluminação difusa, acentos locais,
+  detalhes direcionais. `AtmospherePrecomputer` comum recebe somente `ArtRecipe` v3,
+  nunca o bitmap. Gerar quatro máscaras 192×342 com quedas contínuas e uma composição
+  opaca em cache para reduzir overdraw. Não reamostrar a capa como fundo; textos, rostos
+  e formas não são copiados. Sem shaders personalizados e sem análise por frame.
+- Ambiente profundo combina até cinco regiões cromáticas espaçadas, deformação suave e
+  granulação analítica determinística. Luzes e acentos têm alcance/queda independentes.
+  Todos os parâmetros de estilo da receita têm consumidor; caches de v2 são invalidados
+  pela versão do pipeline e pela validação do schema.
+- Features v3 acrescentam orientação/coerência por covariância dos grupos cromáticos,
+  histograma axial de gradientes RGB e tensor de estrutura por célula 8×8. Coerência
+  mede anisotropia, **não confiança semântica**. Direções locais fracas são omitidas;
+  padrões esparsos usam segmentos cromáticos alongados somente se coerência >.45,
+  reflexo neutro >.5; padrões densos usam detalhes locais discretos >.18.
+- Materiais de controle: preenchimento/reflexo contido, aro espectral ou linear, halo
+  circular com máscara até zero. Famílias cromáticas de 30° mantêm os pequenos sinais
+  vermelhos que antes eram absorvidos pelo grupo laranja, sem inserir novas cores por nome.
+- **FIDELIDADE** exibe somente o recorte da arte do mockup aprovado; **PRODUÇÃO** exibe
+  a capa oficial verificada. Ambos recebem exatamente a receita analisada da capa oficial.
+  Recortes não participam de features/cache/direção. Modos alteram a exibição, não o motor.
+- Geometria compartilhada corrige a extensão vertical da capa, usa âncora própria para
+  progresso e ajusta espaçamento do transporte pela redução tipográfica medida do título.
+  Removida decisão de tamanho por comprimento do nome. Inter permanece fallback explícito.
+- Validação exclusivamente nas duas capas, até três ciclos em
+  `validation/phase-1b2/cycle-1..3`. Capturas reais de `ImageComposeScene`/Skia em 941×1672
+  e 864×1536; comparações sem redimensionar mestre/render. Nenhuma janela, captura da tela,
+  troca de foco ou entrada global é necessária. `--capture-suite` também usa o caminho
+  offscreen; o processo termina automaticamente.
+- Estados automáticos: dois modos, 0/25/50/100%, pausa por ação semântica Compose, seek por
+  evento interno à cena preservando pausa, fonte 150%, letras demo, iluminação e botão
+  isolados. Verificar gradiente fixo e quatro cantos externos do halo nos pixels reais.
+- Testes: determinismo, JSON/NaN/contraste, orientação de fixtures rotacionadas, resposta
+  efetiva de cada camada, bordas transparentes/continuidade das máscaras, cache memória/
+  disco/invalidação/reparo, nomes alterados e receitas diferentes. Performance é medida
+  por fase e em 12 frames raster aquecidos por modo; não é benchmark de GPU/Android/60 FPS.
+- Três ciclos encerram esta calibração. Limites e números medidos em
+  `reference-measurements.md`; não continuar ajustando indefinidamente nem afirmar que
+  covariâncias recuperam a geometria semântica de um prisma ou cenário.
+- Motor continua **clássico, sem modelo neural**. Visual **NOT PASSED / aguarda o usuário**.
+  Sem integração, commit, push ou merge.
+
+## 20. Decisão 2026-10-18 — Procedural Art Director (pedido explícito do usuário)
+
+Esta decisão registra a evolução de escopo solicitada em “NØNSTOP v8 — IMPLEMENTAÇÃO
+DO PROCEDURAL ART DIRECTOR”. Preserva os avanços da Fase 1B.2 e prevalece sobre as
+restrições de rodada/IA anteriores **nesta execução**:
+
+- Benchmark ampliado expressamente para as **12 capas originais** do §10, mais oito
+  fixtures sintéticas. A antiga restrição a duas capas encerrou-se por este pedido;
+  isso não representa aprovação estética dos resultados anteriores ou atuais.
+- Pipeline atual exclusivamente clássico/procedural, **sem IA/inferência, modelo,
+  download de pesos ou IA generativa**. Adaptador opcional histórico não é executado.
+- Seis famílias combináveis (no máximo duas): prismático/acentos isolados, cromático
+  denso, editorial/natural, contraste dramático, luminoso seletivo e minimalista/
+  monocromático; composição neutra para evidência inconclusiva. Escores são heurísticos.
+- Receita v4 acrescenta `family`, `familyWeights`, `colors` (ambiental/interação/acento)
+  e `procedural` (seed, escala, oitavas, rugosidade, orgânico, névoa, curvas e vinheta).
+  `ControlMaterial` distingue prismático, preenchido fosco e editorial. Campos de
+  reflexo especular foram removidos; o coração tem contorno/preenchimento reais.
+- Seed FNV-1a de 32 bits sobre hash opaco + versão do motor. Identidade não seleciona
+  estilos/cores; testes com hashes diferentes verificam igualdade dos demais parâmetros.
+  Ruído de valor interpolado e fractal multiescala, máscaras orgânicas, névoa, curvas,
+  campos espaciais, feixes discretos e vinheta são gerados por código uma vez. Nenhum
+  bitmap da capa entra no compositor; não há reconstrução semântica/figurativa.
+- As quatro máscaras de diagnóstico e a composição opaca 192×342 são persistidas,
+  com versão/política/hash da capa e SHA-256 dos PNGs. A UI exibe uma textura estática;
+  geração e IO usam worker. Fallback imediato e descarte de seleções substituídas.
+  Cache em memória limita assets completos a três; galeria decodifica thumbnails
+  de até 128 px sem iniciar análise/geração de fundos.
+- Capas verificadas no catálogo Apple Music/iTunes: edição, origem, copyright,
+  checksum e disponibilidade em `labs/art-lab/cover-sources.json`; respostas oficiais
+  das novas aquisições em `labs/art-lab/validation/sources/`. Uso local experimental,
+  sem concessão de direitos de redistribuição. Script de aquisição reproduzível.
+- Execução `--validate-procedural --cycle=N`: renderer Compose/Skia real offscreen,
+  12 capas e oito fixtures, estados, comparações dos mestres, contato do conjunto,
+  dois viewports e tempos por fase. `--cache-probe --cycle=N` inicia outro processo
+  e exige hits em disco sem análise/geração e com receitas/pixels idênticos.
+- A fixture “bright-photo-surrogate” é explicitamente **sintética**, testa luminância
+  e textura, não reconhecimento de fotografia. Capas fotográficas reais também
+  estão no benchmark. Métricas RGBA são estimativas calculadas de pixels retidos,
+  excluem runtime/temporários; raster CPU offscreen não mede GPU, Redmi ou 60 FPS.
+- Evidências e limites medidos continuam no registro `reference-measurements.md`.
+  Aprovação estética final exclusivamente do usuário; sem integração Android/
+  produção, sem computer-use, janela visível, commit, push ou merge.
+
+## 21. Decisão 2026-10-18 — PLAYER_MICRO_INTERACTIONS_V1
+
+Pedido explícito do usuário: glow da agulha, trail apenas durante drag e resposta
+suave do aro/halo à energia do áudio. Esta decisão autoriza essas microanimações
+locais; o fundo procedural permanece estático. Preserva o diretor/receitas/cache v4.2,
+a geometria e todos os limites de produção das etapas anteriores.
+
+- Métricas em dp na base lógica de 432 dp do renderer, escaladas com o viewport,
+  como os demais controles. Glow sempre presente no modo normal: raio 6 dp/alpha .18;
+  drag 10 dp/.34, escala da agulha até 1.08; tween smoothstep de 180 ms. Hover, foco
+  e pressão usam intensidades intermediárias. Cor amostrada do gradiente fixo da barra.
+- Trail: pool de 80 slots, oito partículas por emissão nominal de 36 ms, vida 220–280 ms,
+  tamanho inicial e de desenho 2–6 dp (menor nas famílias discretas), alpha inicial
+  .10–.18. Fade quadrático, sem emissão depois do release/cancelamento. Sem recuperar
+  emissões perdidas em um frame atrasado. Faixa de desenho de ±8 dp da barra, protegendo
+  os rótulos de tempo e o texto. Cores de cada emissão vêm do progresso naquela posição.
+- PCM: porta comum `AudioEnergySource`, acumulador de RMS AC por canal em janelas de
+  20 ms; estéreo em oposição de fase não se cancela. WAV local é decodificado/analisado
+  em worker para um envelope leve, com referência global p95 e noise gate .003. Nenhuma
+  análise de áudio por frame. WAV até 256 MiB/30 min, 1–8 canais, 8–192 kHz, conforme o
+  suporte do Java Sound. Erro de entrada é mostrado no diagnóstico.
+- Envelope visual: attack τ=180 ms, release τ=360 ms; coeficientes exponenciais baseados
+  no delta real, com passo visual limitado a 48 ms contra saltos após stalls. Aro existente
+  até +1.5 dp; halo até +6 dp/+ .12 alpha; escala somente do corpo até 1.02. Cor e material
+  ficam estáveis. Materiais foscos não ganham aro decorativo; respondem pelo halo e escala.
+- Ganhos combinados pelos pesos das famílias da receita, sem nomes/IDs: prismático 1.0,
+  denso .70, editorial .35, dramático .70 com halo concentrado, luminoso .60, minimalista
+  .20 e fallback .25. Não há regra por álbum nem modificação da receita a cada batida.
+- Sem fonte de áudio, o play fica em repouso. Lab oferece WAV e fixture PCM de teste
+  identificada. A prévia é **silenciosa**, usa relógio visual (play/pausa/seek) e não
+  representa o áudio dos álbuns da galeria. Não integra Media3, reprodução ou captura
+  de áudio do sistema. A validação das seis capas usa a mesma fixture PCM medida.
+- Frame loop apenas enquanto necessário; alterações observadas em draw/layer, sem
+  recompor layout por energia. Sem redraw em energia estável/silêncio. Redução de
+  movimento mantém feedback de foco/pressão, desativa partículas, pulso e escala.
+  Janela minimizada, controles ocultos ou microinterações desligadas suspendem efeitos.
+  A gravação do player em GraphicsLayer agora ocorre somente para captura manual.
+- Validação em Pink Floyd, Megadeth, Nirvana, Thriller, Abbey Road e Daft Punk:
+  `--validate-micro`, Compose/Skia headless real com eventos locais de pointer/foco,
+  snapshots, filmstrips e GIFs. Medições alternam três rodadas de 20 frames/modo,
+  comparando idle e seek equivalentes com efeitos ligados/desligados. GIFs mostram
+  recortes da barra e transporte e têm paleta limitada; PNGs completos são a evidência
+  de cor/layout. Partículas usam dois discos antialiasados tênues, evitando um novo
+  gradiente nativo por partícula/frame; halos continuam com gradiente radial suave.
+- Dados medidos e limitações no registro `reference-measurements.md`. Sem IA, shader
+  customizado, fundo animado, interface nativa automatizada, integração de produção,
+  commit, push ou merge. Aprovação estética permanece exclusivamente do usuário.
