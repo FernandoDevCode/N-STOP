@@ -76,4 +76,14 @@
     <string name="nonstop_editorial_open">Abrir</string>
     <string name="nonstop_home_rediscovery">Redescobertas</string>
     <string name="nonstop_home_open_artist">Abrir artista %1$s</string>
+    <string name="nonstop_home_shortcut_explore">Explorar</string>
+    <string name="nonstop_home_shortcut_radio">Rádio</string>
+    <string name="nonstop_home_shortcut_search">Buscar</string>
+    <string name="nonstop_home_shortcut_explore_subtitle">Novas músicas</string>
+    <string name="nonstop_home_shortcut_radio_subtitle">Estações reais</string>
+    <string name="nonstop_home_shortcut_search_subtitle">Encontre uma música</string>
+    <string name="nonstop_home_empty_eyebrow">DESCUBRA MÚSICA</string>
+    <string name="nonstop_home_empty_title">Sua próxima favorita começa aqui.</string>
+    <string name="nonstop_home_empty_subtitle">Encontre álbuns, artistas e novos sons.</string>
+    <string name="nonstop_home_empty_action">Explorar músicas</string>
 </resources>

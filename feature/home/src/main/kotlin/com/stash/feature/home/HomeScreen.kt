@@ -168,6 +168,9 @@ fun HomeScreen(
     onNavigateToPlaylist: (Long) -> Unit = {},
     onNavigateToLibrary: () -> Unit = {},
     onNavigateToArtist: (String) -> Unit = {},
+    onNavigateToExplore: () -> Unit = {},
+    onNavigateToRadio: () -> Unit = {},
+    onNavigateToSearch: () -> Unit = {},
     onNavigateToNowPlaying: () -> Unit = {},
     onNavigateToAlbum: (AlbumSummary) -> Unit = {},
     onSeeAllPlaylists: (String) -> Unit = {},
@@ -249,149 +252,6 @@ fun HomeScreen(
         // Edge to edge under the glass mini player + tab bar: they blur the feed as it scrolls by.
         contentPadding = PaddingValues(bottom = bottomChromePadding(120.dp)),
     ) {
-        // ── App title row: wordmark + social icons ────────────────────
-        // v0.9.13: empty space to the right of the wordmark holds quick
-        // links to the project (GitHub, X). Supporter pill moves back
-        // to its own full-width row below.
-        item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // One ink (owner, 2026-10-11): white on dark / aubergine on light, and while a song
-                // plays the contrast-checked tint of its mood colour, crossfading over 800 ms. Read
-                // at draw time, so the crossfade redraws the wordmark without recomposing the feed.
-                // Editorial Home: no logo or greeting; preserve working utility actions.
-                Spacer(modifier = Modifier.weight(1f))
-
-                // Streaming-mode quick-access chip. Tap → opens the
-                // StreamingModeSheet for the picker. Gated on
-                // STREAMING_ENGINE_ENABLED inside the composable so it
-                // renders nothing when the flag is off.
-                StreamingModeChip(
-                    streamingEnabled = streamingEnabled,
-                    onClick = { showStreamingSheet = true },
-                )
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                val socialUriHandler = LocalUriHandler.current
-                androidx.compose.material3.IconButton(
-                    onClick = { socialUriHandler.openUri(STASH_DISCORD_URL) },
-                    modifier = Modifier.size(40.dp),
-                ) {
-                    androidx.compose.material3.Icon(
-                        painter = androidx.compose.ui.res.painterResource(
-                            id = R.drawable.ic_discord,
-                        ),
-                        contentDescription = "Join the Stash Discord",
-                        tint = androidx.compose.ui.graphics.Color(0xFF5865F2),
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-
-                var showHelpMenu by remember { mutableStateOf(false) }
-                Box {
-                    androidx.compose.material3.IconButton(
-                        onClick = { showHelpMenu = true },
-                        modifier = Modifier.size(40.dp),
-                    ) {
-                        androidx.compose.material3.Icon(
-                            imageVector = Icons.Filled.Build,
-                            contentDescription = "Report an issue or help translate",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                    DropdownMenu(
-                        expanded = showHelpMenu,
-                        onDismissRequest = { showHelpMenu = false },
-                    ) {
-                        DropdownMenuItem(
-                            text = {
-                                Column {
-                                    Text(
-                                        text = stringResource(R.string.nostop_home_report_issue),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                    )
-                                    Text(
-                                        text = stringResource(R.string.nostop_home_report_hint),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Filled.Build,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            },
-                            onClick = {
-                                showHelpMenu = false
-                                // The diagnostics preview first (Share / Copy), with
-                                // the GitHub link at its foot — a bug filed with the
-                                // report attached is one nobody has to ask about.
-                                onReportIssue()
-                            },
-                        )
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        DropdownMenuItem(
-                            text = {
-                                Column {
-                                    Text(
-                                        text = stringResource(R.string.nostop_home_translate),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                    )
-                                    Text(
-                                        text = stringResource(R.string.nostop_home_crowdin),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Filled.Language,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            },
-                            onClick = {
-                                showHelpMenu = false
-                                runCatching { socialUriHandler.openUri(STASH_CROWDIN_URL) }
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    text = stringResource(R.string.nostop_home_request_access),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Filled.OpenInNew,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            },
-                            onClick = {
-                                showHelpMenu = false
-                                runCatching { socialUriHandler.openUri(STASH_TRANSLATE_ACCESS_FORM_URL) }
-                            },
-                        )
-                    }
-                }
-            }
-        }
-
         item(key = "nonstop_media_filters") {
             NonstopMediaFilters(
                 selected = selectedMediaTab,
@@ -400,6 +260,14 @@ fun HomeScreen(
             )
         }
         if (selectedMediaTab == 0) {
+            item(key = "editorial_action_shortcuts") {
+                NonstopEditorialShortcuts(
+                    onExplore = onNavigateToExplore,
+                    onRadio = onNavigateToRadio,
+                    onSearch = onNavigateToSearch,
+                )
+                Spacer(Modifier.height(12.dp))
+            }
         // Editorial feature begins the Music feed, before personalized rails and current listening.
         // ── Discover hero pager (Daily Discover + your Stash mixes) ──
         // A mix created from the hero's ＋ ring lands right here as an
@@ -418,21 +286,15 @@ fun HomeScreen(
             val heroBuilding = uiState.heroBuilding && !heroMinimized
             val mixPages = uiState.yourMixes
             when {
-                uiState.isLoading -> DiscoverHeroCard(
-                    label = stringResource(R.string.nostop_home_updated_daily),
-                    title = stringResource(R.string.nostop_home_discover),
-                    subtitle = "",
-                    artUrl = null,
-                    onPlay = {},
-                    onOpen = {},
-                    loading = true,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-                uiState.showColdStartCard -> PersonalizeCard(
-                    onConnect = onNavigateToSettings,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-                hero == null && !heroBuilding && mixPages.isEmpty() -> Unit // minimized, nothing to page
+                uiState.isLoading || uiState.showColdStartCard ||
+                    (hero == null && !heroBuilding && mixPages.isEmpty()) -> {
+                    if (!heroMinimized) {
+                        NonstopEmptyDiscoveryHero(
+                            onExplore = onNavigateToExplore,
+                            modifier = Modifier.padding(horizontal = 20.dp),
+                        )
+                    }
+                }
                 else -> {
                     val heroPages = if (hero != null || heroBuilding) 1 else 0
                     val pageCount = heroPages + mixPages.size
@@ -520,14 +382,7 @@ fun HomeScreen(
                     Spacer(Modifier.height(12.dp))
                 }
             }
-            // A real listening surface must survive an empty personal-library
-            // sync: the current track exists even when no playlists do.
-            listeningState.currentTrack?.let { activeTrack ->
-                item(key = "nonstop_listening_now") {
-                    NonstopListeningCard(activeTrack, onOpenPlayer = onNavigateToNowPlaying)
-                    Spacer(Modifier.height(10.dp))
-                }
-            }
+            // Persistent mini-player covers current playback; no duplicate 134dp card.
 
         // ── Lossless connect nudge ───────────────────────────────────
         // Shown when the user has lossless toggled OFF and hasn't
@@ -808,6 +663,151 @@ fun HomeScreen(
                 NonstopOtherMediaNotice(selectedMediaTab)
             }
         }
+        // Streaming/help/social utilities remain accessible after the content.
+        // ── Functional footer actions, retained but removed from editorial first screen ────────────────────
+        // v0.9.13: empty space to the right of the wordmark holds quick
+        // links to the project (GitHub, X). Supporter pill moves back
+        // to its own full-width row below.
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // One ink (owner, 2026-10-11): white on dark / aubergine on light, and while a song
+                // plays the contrast-checked tint of its mood colour, crossfading over 800 ms. Read
+                // at draw time, so the crossfade redraws the wordmark without recomposing the feed.
+                // Editorial Home: no logo or greeting; preserve working utility actions.
+                Spacer(modifier = Modifier.weight(1f))
+
+                // Streaming-mode quick-access chip. Tap → opens the
+                // StreamingModeSheet for the picker. Gated on
+                // STREAMING_ENGINE_ENABLED inside the composable so it
+                // renders nothing when the flag is off.
+                StreamingModeChip(
+                    streamingEnabled = streamingEnabled,
+                    onClick = { showStreamingSheet = true },
+                )
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                val socialUriHandler = LocalUriHandler.current
+                androidx.compose.material3.IconButton(
+                    onClick = { socialUriHandler.openUri(STASH_DISCORD_URL) },
+                    modifier = Modifier.size(40.dp),
+                ) {
+                    androidx.compose.material3.Icon(
+                        painter = androidx.compose.ui.res.painterResource(
+                            id = R.drawable.ic_discord,
+                        ),
+                        contentDescription = "Join the Stash Discord",
+                        tint = androidx.compose.ui.graphics.Color(0xFF5865F2),
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+
+                var showHelpMenu by remember { mutableStateOf(false) }
+                Box {
+                    androidx.compose.material3.IconButton(
+                        onClick = { showHelpMenu = true },
+                        modifier = Modifier.size(40.dp),
+                    ) {
+                        androidx.compose.material3.Icon(
+                            imageVector = Icons.Filled.Build,
+                            contentDescription = "Report an issue or help translate",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showHelpMenu,
+                        onDismissRequest = { showHelpMenu = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(
+                                        text = stringResource(R.string.nostop_home_report_issue),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.nostop_home_report_hint),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Filled.Build,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            },
+                            onClick = {
+                                showHelpMenu = false
+                                // The diagnostics preview first (Share / Copy), with
+                                // the GitHub link at its foot — a bug filed with the
+                                // report attached is one nobody has to ask about.
+                                onReportIssue()
+                            },
+                        )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(
+                                        text = stringResource(R.string.nostop_home_translate),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.nostop_home_crowdin),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Filled.Language,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            },
+                            onClick = {
+                                showHelpMenu = false
+                                runCatching { socialUriHandler.openUri(STASH_CROWDIN_URL) }
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = stringResource(R.string.nostop_home_request_access),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Filled.OpenInNew,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            },
+                            onClick = {
+                                showHelpMenu = false
+                                runCatching { socialUriHandler.openUri(STASH_TRANSLATE_ACCESS_FORM_URL) }
+                            },
+                        )
+                    }
+                }
+            }
+        }
+
+
     }
 
     // ── Streaming privacy disclosure (first-use only) ────────────────────
