@@ -780,7 +780,7 @@ private fun PlayerV7Content(
                 canSkip = !isListener, onPlayPause = viewModel::onPlayPauseClick,
                 onPrevious = viewModel::onSkipPrevious, onNext = viewModel::onSkipNext,
                 onShuffle = viewModel::onToggleShuffle, onRepeat = viewModel::onCycleRepeatMode,
-                onReact = if (room != null) together::react else null)
+                reaction = if (room != null) { { com.stash.feature.nowplaying.listen.ReactionButton(onReact = together::react) } } else null)
         }
         val onCoverBitmap: (android.graphics.Bitmap?) -> Unit = { bitmap ->
             if (paletteArtModel != artModel) {

@@ -22,6 +22,9 @@ import com.stash.core.ui.components.GlassCard
 fun PersonalizeCard(
     onConnect: () -> Unit,
     modifier: Modifier = Modifier,
+    title: String = "Personalize your Home",
+    description: String = "Connect a service and run a sync so Stash can tailor daily discovery to your taste.",
+    actionLabel: String = "Get started",
 ) {
     GlassCard(modifier = modifier.fillMaxWidth()) {
         Column(
@@ -29,17 +32,17 @@ fun PersonalizeCard(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(
-                text = "Personalize your Home",
+                text = title,
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
-                text = "Connect a service and run a sync so Stash can tailor daily discovery to your taste.",
+                text = description,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Button(onClick = onConnect) {
-                Text("Get started")
+                Text(actionLabel)
             }
         }
     }

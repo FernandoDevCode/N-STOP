@@ -33,7 +33,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalConfiguration
+
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -43,15 +43,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
-import com.stash.core.data.prefs.NowPlayingAction
+
 import com.stash.core.model.RepeatMode
 import com.stash.core.ui.ambient.rememberReducedMotion
 import com.stash.feature.nowplaying.ui.PlayerArtDirection
 import com.stash.feature.nowplaying.ui.PlayerColorMode
 import com.stash.feature.nowplaying.ui.rememberNpArtRequest
 
-private val V7White = Color(0xFFF5F6F9)
-private val V7Muted = Color(0xFFA5ACBF)
+internal val V7White = Color(0xFFF5F6F9)
+internal val V7Muted = Color(0xFFA5ACBF)
 
 /** Real artwork texture plus softly crossfaded art direction. Entire effect is window-clipped. */
 @Composable
@@ -190,7 +190,7 @@ internal fun PlayerV7Transport(
     onNext: () -> Unit,
     onShuffle: () -> Unit,
     onRepeat: () -> Unit,
-    onReact: ((String) -> Unit)? = null,
+    reaction: @Composable (() -> Unit)? = null,
 ) {
     val reduced = rememberReducedMotion()
     val duration = if (reduced) 0 else 900
@@ -202,7 +202,7 @@ internal fun PlayerV7Transport(
     val circleSize = if (compact) 50.dp else 64.dp
     Row(Modifier.fillMaxWidth().height(if (compact) 64.dp else 100.dp),
         horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-        if (onReact != null) Spacer(Modifier.size(48.dp)) else IconButton(onClick = onShuffle) {
+        if (reaction != null) Spacer(Modifier.size(48.dp)) else IconButton(onClick = onShuffle) {
             Icon(Icons.Default.Shuffle, stringResource(R.string.nostop_np_shuffle),
                 tint = if (uiState.shuffleEnabled) accent else V7Muted, modifier = Modifier.size(if (compact) 22.dp else 26.dp))
         }
@@ -251,68 +251,12 @@ internal fun PlayerV7Transport(
             Icon(Icons.Default.SkipNext, stringResource(R.string.nostop_np_next),
                 tint = V7White.copy(alpha = if (canSkip) 1f else .25f), modifier = Modifier.size(if (compact) 28.dp else 36.dp))
         }
-        if (onReact != null) com.stash.feature.nowplaying.listen.ReactionButton(onReact = onReact)
+        if (reaction != null) reaction()
         else IconButton(onClick = onRepeat) {
             Icon(if (uiState.repeatMode == RepeatMode.ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
                 stringResource(R.string.nostop_np_repeat),
                 tint = if (uiState.repeatMode == RepeatMode.OFF) V7Muted.copy(alpha = .65f) else accent,
                 modifier = Modifier.size(if (compact) 22.dp else 26.dp))
-        }
-    }
-}
-
-/** One anchored, scrollable menu includes ALL available actions, including previously pinned ones. */
-@Composable
-internal fun PlayerV7Menu(
-    expanded: Boolean,
-    onExpanded: (Boolean) -> Unit,
-    actions: List<NowPlayingAction>,
-    visualState: ActionVisualState,
-    accent: Color,
-    onAction: (NowPlayingAction) -> Unit,
-    onTimer: () -> Unit,
-    onAudio: () -> Unit,
-) {
-    val maxHeight = (LocalConfiguration.current.screenHeightDp * .72f).dp
-    var moreActions by remember(expanded) { mutableStateOf(false) }
-    Box {
-        IconButton(onClick = { onExpanded(true) }, modifier = Modifier.size(40.dp).clip(CircleShape)
-            .background(Color.White.copy(alpha = .025f)).border(.6.dp, Color.White.copy(alpha = .12f), CircleShape)) {
-            Icon(Icons.Default.MoreVert, stringResource(R.string.v7_actions), tint = V7White, modifier = Modifier.size(25.dp))
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { onExpanded(false) },
-            modifier = Modifier.widthIn(min = 242.dp, max = 280.dp).heightIn(max = maxHeight),
-            shape = RoundedCornerShape(20.dp), containerColor = Color(0xFA091019),
-            tonalElevation = 0.dp, shadowElevation = 8.dp,
-            border = androidx.compose.foundation.BorderStroke(.5.dp, Color(0xFF323A48))) {
-            fun closeThen(action: () -> Unit) { onExpanded(false); action() }
-            @Composable fun item(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, active: Boolean = false, click: () -> Unit) {
-                DropdownMenuItem(text = { Text(label, fontSize = 13.sp, color = V7White) },
-                    leadingIcon = { Icon(icon, null, tint = if (active) accent else V7White, modifier = Modifier.size(22.dp)) },
-                    onClick = { closeThen(click) }, contentPadding = PaddingValues(horizontal = 18.dp, vertical = 4.dp))
-            }
-            if (NowPlayingAction.QUEUE in actions) item(stringResource(R.string.v7_queue), actionVisual(NowPlayingAction.QUEUE, visualState).icon) { onAction(NowPlayingAction.QUEUE) }
-            item(stringResource(R.string.v7_timer), Icons.Default.Timer, click = onTimer)
-            item(stringResource(R.string.v7_audio), Icons.Outlined.GraphicEq, click = onAudio)
-            val primary = listOf(NowPlayingAction.LISTEN_TOGETHER, NowPlayingAction.SHARE)
-            primary.filter { it in actions }.forEach { action ->
-                val visual = actionVisual(action, visualState)
-                item(stringResource(if (action == NowPlayingAction.LISTEN_TOGETHER) R.string.v7_together else R.string.v7_share),
-                    visual.icon, visual.active) { onAction(action) }
-            }
-            val secondary = actions.filter { it != NowPlayingAction.QUEUE && it !in primary }
-            if (secondary.isNotEmpty()) {
-                DropdownMenuItem(text = { Text(stringResource(R.string.v7_more), fontSize = 13.sp, color = V7Muted) },
-                    trailingIcon = { Icon(if (moreActions) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        null, tint = V7Muted) }, onClick = { moreActions = !moreActions })
-                if (moreActions) {
-                    HorizontalDivider(color = Color.White.copy(alpha = .08f))
-                    secondary.forEach { action ->
-                        val visual = actionVisual(action, visualState)
-                        item(visual.label, visual.icon, visual.active) { onAction(action) }
-                    }
-                }
-            }
         }
     }
 }

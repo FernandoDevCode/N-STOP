@@ -21,4 +21,8 @@ abstract class AuthModule {
     @Binds
     @Singleton
     abstract fun bindTokenManager(impl: TokenManagerImpl): TokenManager
+
+    @Binds
+    @Singleton
+    abstract fun bindTokenStore(impl: com.stash.core.auth.store.EncryptedTokenStore): com.stash.core.auth.store.TokenStore
 }

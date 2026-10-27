@@ -1,18 +1,13 @@
 package com.stash.core.ui.theme
 
-import android.app.Activity
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalView
-import androidx.core.view.WindowCompat
 
 // ── Color schemes ────────────────────────────────────────────────────────
 
@@ -115,7 +110,7 @@ val LocalIsAmoledTheme = staticCompositionLocalOf { false }
  * and any `animateColorAsState` wrappers can animate between the two sets.
  *
  * The system status-bar and navigation-bar icon colors are updated via a
- * [SideEffect] so they flip in sync with the in-app theme.
+ * platform side effect so they flip in sync with the in-app theme.
  */
 @Composable
 fun StashTheme(
@@ -131,23 +126,7 @@ fun StashTheme(
     }
     val extendedColors = if (darkTheme) StashExtendedColorsDark else StashExtendedColorsLight
 
-    val view = LocalView.current
-    if (!view.isInEditMode) {
-        SideEffect {
-            val window = (view.context as Activity).window
-            window.statusBarColor = Color.Transparent.toArgb()
-            window.navigationBarColor = Color.Transparent.toArgb()
-            // No system scrim behind 3-button navigation: the glass tab bar (and Now Playing's
-            // ambient) run down under the system bar and carry its contrast themselves.
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                window.isNavigationBarContrastEnforced = false
-            }
-            val insetsController = WindowCompat.getInsetsController(window, view)
-            // Light status-bar icons on dark theme, dark icons on light theme.
-            insetsController.isAppearanceLightStatusBars = !darkTheme
-            insetsController.isAppearanceLightNavigationBars = !darkTheme
-        }
-    }
+    UpdatePlatformSystemBars(darkTheme)
 
     CompositionLocalProvider(
         LocalStashColors provides extendedColors,

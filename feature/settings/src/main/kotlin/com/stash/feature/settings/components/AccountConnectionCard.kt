@@ -74,6 +74,7 @@ fun AccountConnectionCard(
     needsActionLabel: String = "Finish connecting",
     onNeedsAction: (() -> Unit)? = null,
     expired: Boolean = false,
+    enabled: Boolean = true,
     extraContent: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     val extendedColors = StashTheme.extendedColors
@@ -163,6 +164,7 @@ fun AccountConnectionCard(
                             Column(horizontalAlignment = Alignment.End) {
                                 Button(
                                     onClick = onConnect,
+                                    enabled = enabled,
                                     colors = ButtonDefaults.buttonColors(
                                         containerColor = accentColor,
                                         contentColor = Color.White,
@@ -172,6 +174,7 @@ fun AccountConnectionCard(
                                 }
                                 TextButton(
                                     onClick = onDisconnect,
+                                    enabled = enabled,
                                     colors = ButtonDefaults.textButtonColors(
                                         contentColor = MaterialTheme.colorScheme.error,
                                     ),
@@ -182,6 +185,7 @@ fun AccountConnectionCard(
                         } else if (needsAction && onNeedsAction != null) {
                             Button(
                                 onClick = onNeedsAction,
+                                    enabled = enabled,
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = accentColor,
                                     contentColor = Color.White,
@@ -192,6 +196,7 @@ fun AccountConnectionCard(
                         } else {
                             OutlinedButton(
                                 onClick = onDisconnect,
+                                    enabled = enabled,
                                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
                                 colors = ButtonDefaults.outlinedButtonColors(
                                     contentColor = MaterialTheme.colorScheme.error,
@@ -204,6 +209,7 @@ fun AccountConnectionCard(
                     else -> {
                         Button(
                             onClick = onConnect,
+                                    enabled = enabled,
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = accentColor,
                                 contentColor = Color.White,

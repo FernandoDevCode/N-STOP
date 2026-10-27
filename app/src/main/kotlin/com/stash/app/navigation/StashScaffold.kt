@@ -360,44 +360,19 @@ fun StashScaffold(
 private const val NAV_BAR_SLIDE_MS = 350 // = StashNavHost SLIDE_DURATION_MS, so bar and player move as one
 
 @Composable
-private fun StashBottomBar(
-    currentRoute: String?,
-    onNavigate: (TopLevelDestination) -> Unit,
-) {
-    androidx.compose.foundation.layout.Row(
-        Modifier.fillMaxWidth()
-            .background(com.stash.core.ui.theme.NonstopDesign.Background)
-            .windowInsetsPadding(WindowInsets.navigationBars)
-            .padding(horizontal = 2.dp, vertical = 4.dp),
-    ) {
-        TopLevelDestination.bottomTabs.forEachIndexed { index, dest ->
-            val selected = currentRoute == dest.route::class.qualifiedName
-            val label = stringResource(when (dest) {
-                TopLevelDestination.HOME -> R.string.nostop_nav_home
-                TopLevelDestination.EXPLORE -> R.string.nonstop_nav_explore
-                TopLevelDestination.RADIO -> R.string.nonstop_nav_radio
-                TopLevelDestination.LIBRARY -> R.string.nostop_nav_library
-                else -> R.string.nostop_nav_search
-            })
-            Column(
-                modifier = Modifier.weight(1f).height(48.dp)
-                    .selectable(selected,
-                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                        indication = null,
-                        role = androidx.compose.ui.semantics.Role.Tab,
-                        onClick = { onNavigate(dest) }),
-                horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
-                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(5.dp),
-            ) {
-                com.stash.core.ui.components.NonstopNavIcon(index, selected, Modifier.size(26.dp))
-                Text(label, maxLines = 1, softWrap = false,
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        letterSpacing = 0.sp,
-                        shadow = if (selected) androidx.compose.ui.graphics.Shadow(
-                            com.stash.core.ui.theme.NonstopDesign.Violet, Offset.Zero, 16f) else null),
-                    color = if (selected) com.stash.core.ui.theme.NonstopDesign.ActiveInk
-                        else com.stash.core.ui.theme.NonstopDesign.Secondary)
-            }
-        }
+private fun StashBottomBar(currentRoute: String?, onNavigate: (TopLevelDestination) -> Unit) {
+    val destinations = TopLevelDestination.bottomTabs
+    val labels = destinations.map { dest ->
+        stringResource(when (dest) {
+            TopLevelDestination.HOME -> R.string.nostop_nav_home
+            TopLevelDestination.EXPLORE -> R.string.nonstop_nav_explore
+            TopLevelDestination.RADIO -> R.string.nonstop_nav_radio
+            TopLevelDestination.LIBRARY -> R.string.nostop_nav_library
+            else -> R.string.nostop_nav_search
+        })
     }
+    com.stash.core.ui.components.NonstopBottomNavigation(
+        labels, destinations.indexOfFirst { currentRoute == it.route::class.qualifiedName },
+        onSelect = { onNavigate(destinations[it]) },
+    )
 }

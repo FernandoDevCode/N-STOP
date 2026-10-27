@@ -16,19 +16,8 @@ import dagger.Provides
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
-import javax.inject.Qualifier
 import javax.inject.Singleton
 import okhttp3.OkHttpClient
-
-/**
- * Qualifier for the LRCLIB base URL [String] consumed by
- * [com.stash.data.lyrics.source.LrclibLyricsSource]. A qualifier is
- * required so Dagger can disambiguate from other module-level
- * `@Provides String` bindings in the SingletonComponent graph.
- */
-@Qualifier
-@Retention(AnnotationRetention.BINARY)
-annotation class LrclibBaseUrl
 
 /**
  * Hilt wiring for the `:data:lyrics` module.
