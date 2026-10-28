@@ -1,0 +1,12 @@
+{
+  "PINK_FLOYD": {
+    "material_min_contrast_36_samples": 14.981622120997548,
+    "official_hash": "7b5ad4cdeed66d53928f485667e8d5bf764529d4d7c45fb620f1ea31913445cb",
+    "directional_count": 8
+  },
+  "MEGADETH": {
+    "material_min_contrast_36_samples": 8.605855685273331,
+    "official_hash": "3a1ef3872b81e1dbccbc60673f1e5f20db80e222b7d3414b2c85be3b6a227c6e",
+    "directional_count": 3
+  }
+}

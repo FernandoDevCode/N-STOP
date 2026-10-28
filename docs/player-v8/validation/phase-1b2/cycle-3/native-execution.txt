@@ -1,0 +1,15 @@
+Native launcher exit code: 0
+Command: NonstopArtLab.exe --validate-offscreen --cycle=3
+Working directory: labs/art-lab
+No desktop windows or global input.
+ART_LAB_OFFSCREEN_COMPLETE C:\Users\User\Documents\GitHub\Spotify\Stash\docs\player-v8\validation\phase-1b2\cycle-3
+PINK_FLOYD analysis DISK: PhaseTimings(decodeMs=238.6613, featuresMs=0.0, directionMs=0.0, textureMs=160.1933, totalMs=651.8016, cpuMs=296.875)
+PINK_FLOYD FIDELIDADE offscreen CPU raster warm frames n=12: median=29.4293 ms max=30.4961 ms
+PINK_FLOYD PRODUCAO offscreen CPU raster warm frames n=12: median=33.2455 ms max=34.799 ms
+PINK_FLOYD internal Compose seek: paused state preserved, progress=0.6198726
+PINK_FLOYD memory lookup 2.2461 ms; mode-independent recipe verified
+MEGADETH analysis DISK: PhaseTimings(decodeMs=28.4921, featuresMs=0.0, directionMs=0.0, textureMs=36.2532, totalMs=116.3607, cpuMs=62.5)
+MEGADETH FIDELIDADE offscreen CPU raster warm frames n=12: median=25.2343 ms max=26.1365 ms
+MEGADETH PRODUCAO offscreen CPU raster warm frames n=12: median=27.5675 ms max=28.1763 ms
+MEGADETH internal Compose seek: paused state preserved, progress=0.6191401
+MEGADETH memory lookup 3.1402 ms; mode-independent recipe verified

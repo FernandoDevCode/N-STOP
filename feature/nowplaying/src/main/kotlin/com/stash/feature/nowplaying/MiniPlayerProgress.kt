@@ -2,6 +2,8 @@ package com.stash.feature.nowplaying
 
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -16,6 +18,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
@@ -102,42 +106,86 @@ internal fun rememberMiniPlayerSeekState(
     return seek
 }
 
-/** Owns only downs in the contour corridor, excluding measured controls. Initial-pass
- * arbitration is explicit so child click/swipe handlers never claim a seek. A down
- * anywhere else is untouched and cannot acquire seek ownership later in its gesture. */
-internal fun Modifier.miniPlayerSeekInput(
+/** Classifies the first down as control, path seek or body tap and never changes ownership. */
+internal fun Modifier.miniPlayerGestureInput(
     seek: MiniPlayerSeekState,
     durationMs: Long,
     cornerRadius: Dp,
     enabled: Boolean,
     onSeek: (Long) -> Unit,
+    onExpand: () -> Unit,
+    bodyInteractions: MutableInteractionSource,
     controlsBounds: () -> Rect = { Rect.Zero },
-) = pointerInput(seek, durationMs, cornerRadius, enabled) {
-    val rail = MiniPlayerRail(size.width.toFloat(), size.height.toFloat(), cornerRadius.toPx())
+    artworkBounds: () -> Rect = { Rect.Zero },
+) = pointerInput(seek, durationMs, cornerRadius, enabled, onSeek, onExpand, bodyInteractions) {
+    val radius = cornerRadius.toPx()
+    val geometry = MiniPlayerRail(size.width.toFloat(), size.height.toFloat(), radius)
+    val path = Path().also(geometry::writePath)
+    val measuredLength = PathMeasure().apply { setPath(path, false) }.length
+    val rail = MiniPlayerRail(size.width.toFloat(), size.height.toFloat(), radius, measuredLength)
+    val corridor = MiniProgressTouchWidth.toPx()
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = true, pass = PointerEventPass.Initial)
-        if (!enabled || down.position.x < 0f || down.position.x > size.width ||
-            down.position.y < rail.cy || down.position.y > size.height ||
-            controlsBounds().contains(down.position) ||
-            (rail.point(rail.fraction(down.position)) - down.position).getDistance() > 7.dp.toPx()) return@awaitEachGesture
-        down.consume()
-        seek.begin(rail.fraction(down.position))
-        seek.move(rail.fraction(down.position), down.uptimeMillis)
+        val insideCard = down.position.x in 0f..size.width.toFloat() &&
+            down.position.y in 0f..size.height.toFloat()
+        if (!insideCard || controlsBounds().contains(down.position)) return@awaitEachGesture
+        val ownsSeek = enabled && !artworkBounds().contains(down.position) &&
+            rail.distanceTo(down.position) <= corridor
+
+        if (ownsSeek) {
+            // Classification is final on the first down. Consuming it in Initial prevents the
+            // descendant swipe detector from ever promoting this seek to Expand.
+            down.consume()
+            seek.begin(rail.fraction(down.position))
+            seek.move(rail.fraction(down.position), down.uptimeMillis)
+            try {
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                    if (change.isConsumed || event.changes.any { it.id != down.id && it.pressed }) break
+                    change.consume()
+                    seek.move(rail.fraction(change.position), change.uptimeMillis)
+                    if (!change.pressed) {
+                        // Tap and drag both commit on successful up. Preview followed every move;
+                        // cancellation and multi-touch never commit.
+                        onSeek(seek.finish(durationMs))
+                        break
+                    }
+                }
+            } finally {
+                if (seek.dragging) seek.clear()
+            }
+            return@awaitEachGesture
+        }
+
+        // Body taps are deliberately recognized here rather than by another clickable detector.
+        // A drag consumed by swipe-to-skip, a Home-style vertical move, multi-touch or cancellation
+        // can therefore never release as an accidental Expand.
+        val press = PressInteraction.Press(down.position)
+        bodyInteractions.tryEmit(press)
+        var finished = false
+        var cleanTap = true
         try {
             while (true) {
-                val event = awaitPointerEvent(PointerEventPass.Initial)
+                val event = awaitPointerEvent(PointerEventPass.Final)
                 val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                if (change.isConsumed || event.changes.any { it.id != down.id && it.pressed }) break
-                change.consume()
-                seek.move(rail.fraction(change.position), change.uptimeMillis)
+                if (change.isConsumed || event.changes.any { it.id != down.id && it.pressed } ||
+                    (change.position - down.position).getDistance() > viewConfiguration.touchSlop ||
+                    change.position.x !in 0f..size.width.toFloat() ||
+                    change.position.y !in 0f..size.height.toFloat()) cleanTap = false
                 if (!change.pressed) {
-                    onSeek(seek.finish(durationMs))
+                    if (cleanTap) {
+                        bodyInteractions.tryEmit(PressInteraction.Release(press))
+                        onExpand()
+                    } else {
+                        bodyInteractions.tryEmit(PressInteraction.Cancel(press))
+                    }
+                    finished = true
                     break
                 }
             }
         } finally {
-            // Cancellation, track/duration changes or a second finger never commit a seek.
-            if (seek.dragging) seek.clear()
+            if (!finished) bodyInteractions.tryEmit(PressInteraction.Cancel(press))
         }
     }
 }
@@ -170,3 +218,5 @@ internal fun MiniPlayerSeekTarget(
 // Semantics bounds cover the corner height; this node is overlaid, never a layout row.
 internal val MiniProgressHeight = 13.dp
 internal val MiniProgressCorner = 13.dp
+/** One-sided inward touch corridor; the visible stroke and card geometry are unchanged. */
+internal val MiniProgressTouchWidth = 14.dp

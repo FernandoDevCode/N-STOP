@@ -1,0 +1,227 @@
+{
+    "schemaVersion": 2,
+    "sourceImageHash": "7b5ad4cdeed66d53928f485667e8d5bf764529d4d7c45fb620f1ea31913445cb",
+    "modelVersion": "none",
+    "confidence": null,
+    "archetypeScores": {
+        "PRISMATIC_ACCENTS": 0.9179077,
+        "COOL_DEPTH": 0.0020067114,
+        "CINEMATIC_DENSE": 0.01504012,
+        "DARK_SYMBOLIC": 0.42773896,
+        "WARM_DIFFUSE": 0.0016562473,
+        "MONOCHROME_EDITORIAL": 0.0,
+        "MULTICOLOR_GRAPHIC": 0.049369723
+    },
+    "canvasColor": 4278453767,
+    "scrimTop": 0.30656737,
+    "scrimBottom": 0.5541046,
+    "artTextureOpacity": 0.24395569,
+    "artBlurRadiusDp": 17.014893,
+    "lights": [
+        {
+            "x": 0.25683594,
+            "y": 0.0881431,
+            "radiusX": 0.42,
+            "radiusY": 0.29,
+            "color": 4292471795,
+            "intensity": 0.3671631,
+            "falloff": 2.0
+        },
+        {
+            "x": 0.8101223,
+            "y": 0.0877072,
+            "radiusX": 0.29906502,
+            "radiusY": 0.12142686,
+            "color": 4293288736,
+            "intensity": 0.29373047,
+            "falloff": 1.8
+        },
+        {
+            "x": 0.8177106,
+            "y": 0.11152898,
+            "radiusX": 0.29627565,
+            "radiusY": 0.122986116,
+            "color": 4293318149,
+            "intensity": 0.29373047,
+            "falloff": 1.8
+        },
+        {
+            "x": 0.7809557,
+            "y": 0.12283391,
+            "radiusX": 0.29033318,
+            "radiusY": 0.12449668,
+            "color": 4281132647,
+            "intensity": 0.29373047,
+            "falloff": 1.8
+        },
+        {
+            "x": 0.63328314,
+            "y": 0.16171266,
+            "radiusX": 0.35707408,
+            "radiusY": 0.17527604,
+            "color": 4284862694,
+            "intensity": 0.29373047,
+            "falloff": 1.8
+        },
+        {
+            "x": 0.8101223,
+            "y": 0.8390597,
+            "radiusX": 0.33,
+            "radiusY": 0.21,
+            "color": 4290728475,
+            "intensity": 0.13768616,
+            "falloff": 2.2
+        },
+        {
+            "x": 0.7809557,
+            "y": 0.84388965,
+            "radiusX": 0.33,
+            "radiusY": 0.21,
+            "color": 4280598358,
+            "intensity": 0.13768616,
+            "falloff": 2.2
+        },
+        {
+            "x": 0.63328314,
+            "y": 0.8492355,
+            "radiusX": 0.33,
+            "radiusY": 0.21,
+            "color": 4283739839,
+            "intensity": 0.13768616,
+            "falloff": 2.2
+        }
+    ],
+    "controlSurface": {
+        "fill": [
+            {
+                "position": 0.0,
+                "color": 4279840049
+            },
+            {
+                "position": 1.0,
+                "color": 4279180575
+            }
+        ],
+        "specular": 4293917439,
+        "haloColor": 4287817205,
+        "haloIntensity": 0.31641847,
+        "haloRadius": 0.14205231,
+        "ink": 4294507519,
+        "rim": [
+            {
+                "position": 0.0,
+                "color": 4294076450
+            },
+            {
+                "position": 0.25,
+                "color": 4294107653
+            },
+            {
+                "position": 0.5,
+                "color": 4281266797
+            },
+            {
+                "position": 0.75,
+                "color": 4283816178
+            },
+            {
+                "position": 1.0,
+                "color": 4294076450
+            }
+        ],
+        "haloSpectrum": [
+            {
+                "position": 0.0,
+                "color": 4294076450
+            },
+            {
+                "position": 0.25,
+                "color": 4294107653
+            },
+            {
+                "position": 0.5,
+                "color": 4281266797
+            },
+            {
+                "position": 0.75,
+                "color": 4283816178
+            },
+            {
+                "position": 1.0,
+                "color": 4294076450
+            }
+        ],
+        "spectrumRotation": 135.0,
+        "specularIntensity": 0.12820923
+    },
+    "progress": {
+        "fill": [
+            {
+                "position": 0.0,
+                "color": 4294929956
+            },
+            {
+                "position": 0.096812196,
+                "color": 4294962693
+            },
+            {
+                "position": 0.32285836,
+                "color": 4281466739
+            },
+            {
+                "position": 0.46,
+                "color": 4283294463
+            },
+            {
+                "position": 1.0,
+                "color": 4283294463
+            }
+        ],
+        "track": 4281349189,
+        "thumb": 4290178553,
+        "halo": 4288801015
+    },
+    "lyrics": {
+        "active": 4294507519,
+        "future": 4288326851,
+        "alphaProgression": [
+            0.72,
+            1.0,
+            0.52,
+            0.36,
+            0.24
+        ],
+        "surface": 1073873411
+    },
+    "analysisMetadata": {
+        "source": "CLASSICAL_PIXELS",
+        "fallbackReason": "Modelo neural ausente; direção clássica determinística. Scores são evidências heurísticas, não probabilidades.",
+        "measuredFeatures": {
+            "lowFraction": 0.950531005859375,
+            "midFraction": 0.0377349853515625,
+            "highFraction": 0.0117340087890625,
+            "meanLuminance": 0.01576419603420001,
+            "meanSaturation": 0.04792547861069741,
+            "saturatedFraction": 0.0287322998046875,
+            "saturatedX": 0.8026866619091875,
+            "saturatedY": 0.41657988416091346,
+            "coolCoverage": 0.01629638671875,
+            "edgeDensity": 0.02888601453368014,
+            "complexity": 0.4952720290673603,
+            "sparseSpectral": 0.91790771484375,
+            "perceptualHueDiversity": 1.0
+        },
+        "engineVersion": "classical-1b-c2",
+        "fiveSignals": [
+            "Área negativa escura: 0.950531005859375",
+            "Cobertura fria: 0.01629638671875",
+            "Pequenos sinais saturados: 0.0287322998046875; centro 0.8026866619091875,0.41657988416091346",
+            "Grupos cromáticos separados em OKLab: 6",
+            "Bordas: 0.02888601453368014; complexidade: 0.4952720290673603"
+        ],
+        "treatmentWeights": {
+            "PRISMATIC_ACCENTS": 0.6821313,
+            "DARK_SYMBOLIC": 0.3178687
+        }
+    }
+}

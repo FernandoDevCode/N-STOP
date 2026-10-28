@@ -1,0 +1,2 @@
+MISS
+PhaseTimings(decodeMs=210.7533, featuresMs=167.0282, directionMs=10.3256, textureMs=136.8299, totalMs=601.6424, cpuMs=265.625)

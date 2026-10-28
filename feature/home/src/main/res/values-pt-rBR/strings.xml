@@ -30,8 +30,11 @@
     <string name="nostop_home_connect">Conectar →</string>
     <string name="nonstop_filter_music">Música</string>
     <string name="nonstop_filter_podcasts">Podcasts</string>
-    <string name="nonstop_filter_audiobooks">Audiobooks</string>
-    <string name="nonstop_media_coming_soon">A reprodução de audiobooks será integrada em uma próxima etapa. Os podcasts já estão disponíveis na aba Podcasts.</string>
+    <string name="nonstop_filter_audiobooks">Audiolivros</string>
+    <string name="nonstop_genre_all">Todos</string>
+    <string name="nonstop_genre_electronic">Eletrônica</string>
+    <string name="nonstop_genre_classical">Clássica</string>
+    <string name="nonstop_media_coming_soon">A reprodução de audiolivros será integrada em uma próxima etapa. Os podcasts já estão disponíveis na aba Podcasts.</string>
     <string name="nonstop_explore_title">Explorar</string>
     <string name="nonstop_explore_subtitle">Novos sons, artistas e caminhos para ouvir.</string>
     <string name="nonstop_explore_releases">Novos lançamentos</string>

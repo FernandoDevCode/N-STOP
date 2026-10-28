@@ -8,15 +8,21 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 
-/** One metric for painting and seeking: two quarter circles and their common tangent. */
-internal class MiniPlayerRail(width: Float, height: Float, radius: Float) {
+/** One metric for painting, hit-testing and seeking: two quarter circles and their tangent. */
+internal class MiniPlayerRail(
+    width: Float,
+    height: Float,
+    radius: Float,
+    measuredLength: Float? = null,
+) {
     val r = radius.coerceAtMost(width / 2f).coerceAtLeast(.1f)
     val left = r
     val right = (width - r).coerceAtLeast(left)
     val cy = height - r
     val arc = (PI * r / 2).toFloat()
     val straight = right - left
-    val length = 2 * arc + straight
+    /** May be supplied by Compose PathMeasure so rendering and seek share its effective length. */
+    val length = measuredLength?.takeIf { it.isFinite() && it > 0f } ?: (2 * arc + straight)
 
     /** Same circular corners as the card's RoundedCornerShape; no horizontal inset. */
     fun writePath(path: Path) {
@@ -72,4 +78,7 @@ internal class MiniPlayerRail(width: Float, height: Float, radius: Float) {
         }
         return (distance / length).coerceIn(0f, 1f)
     }
+
+    /** Distance to the actual curved rail, not to a rectangular strip around the card. */
+    fun distanceTo(point: Offset): Float = (this.point(fraction(point)) - point).getDistance()
 }

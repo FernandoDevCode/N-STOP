@@ -1,0 +1,10 @@
+
+
+
+{
+ "resultCount":1,
+ "results": [
+{"wrapperType":"collection", "collectionType":"Album", "artistId":2715720, "collectionId":1442845779, "amgArtistId":353484, "artistName":"Kanye West", "collectionName":"Graduation", "collectionCensoredName":"Graduation", "artistViewUrl":"https://music.apple.com/us/artist/kanye-west/2715720?uo=4", "collectionViewUrl":"https://music.apple.com/us/album/graduation/1442845779?uo=4", "artworkUrl60":"https://is1-ssl.mzstatic.com/image/thumb/Music128/v4/39/25/2d/39252d65-2d50-b991-0962-f7a98a761271/00602517483507.rgb.jpg/60x60bb.jpg", "artworkUrl100":"https://is1-ssl.mzstatic.com/image/thumb/Music128/v4/39/25/2d/39252d65-2d50-b991-0962-f7a98a761271/00602517483507.rgb.jpg/100x100bb.jpg", "collectionPrice":9.99, "collectionExplicitness":"cleaned", "contentAdvisoryRating":"Clean", "trackCount":14, "copyright":"℗ 2007 UMG Recordings, Inc.", "country":"USA", "currency":"USD", "releaseDate":"2007-01-01T08:00:00Z", "primaryGenreName":"Hip-Hop/Rap"}]
+}
+
+

@@ -47,6 +47,8 @@ dependencies {
     implementation(libs.kotlinx.coroutines.guava)
 
     testImplementation("junit:junit:4.13.2")
+    // Stage-3 integration captures exercise the actual Home and compact transport together.
+    testImplementation(project(":feature:nowplaying"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
     testImplementation("com.google.truth:truth:1.4.4")
     // Matches the test harness in :feature:library — see MixOfflineTapGuardTest.

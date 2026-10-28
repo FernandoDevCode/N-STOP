@@ -19,11 +19,17 @@ import org.junit.runner.RunWith
 import org.robolectric.ParameterizedRobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.ParameterizedRobolectricTestRunner.Parameters
+import kotlin.math.abs
 
 /** Android Compose layouts, not a Desktop preview. No production fixtures or network calls. */
 @RunWith(ParameterizedRobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "pt-rBR-w480dp-h960dp-mdpi")
-class SonoraHomeLayoutTest(private val width: Int, private val scale: Float, private val theme: String) {
+class SonoraHomeLayoutTest(
+    private val width: Int,
+    private val height: Int,
+    private val scale: Float,
+    private val theme: String,
+) {
     @get:Rule val compose = createComposeRule()
 
     @Test fun filtersAndEditorialContentRemainUsable() {
@@ -35,7 +41,7 @@ class SonoraHomeLayoutTest(private val width: Int, private val scale: Float, pri
             VisualTheme(dark = theme != "light", amoled = theme == "amoled") {
                 SonoraHomeTheme {
                     CompositionLocalProvider(LocalDensity provides Density(1f, scale)) {
-                        Column(Modifier.requiredWidth(width.dp).height(800.dp).testTag("viewport")
+                        Column(Modifier.requiredSize(width.dp, height.dp).testTag("viewport")
                             .verticalScroll(rememberScrollState())) {
                             NonstopMediaFilters(tab, { tab = it })
                             SonoraHeroCard("Descoberta disponível", "Um título editorial muito longo para testar a adaptação da Home",
@@ -52,9 +58,17 @@ class SonoraHomeLayoutTest(private val width: Int, private val scale: Float, pri
         }
         compose.onNodeWithTag("viewport").assertWidthIsEqualTo(width.dp)
         compose.onNodeWithText("Música").assertIsSelected().assertHeightIsAtLeast(48.dp)
-        compose.onNodeWithText("Audiobooks").performScrollTo().performClick().assertIsSelected()
+        compose.onNodeWithText("Audiolivros").performScrollTo().performClick().assertIsSelected()
         compose.onNodeWithText("Podcasts").performScrollTo().performClick().assertIsSelected()
         compose.onNodeWithText("Música").performScrollTo().performClick().assertIsSelected()
+        if (scale == 1f) {
+            val tabs = listOf("Música", "Podcasts", "Audiolivros").map {
+                compose.onNodeWithText(it).fetchSemanticsNode().boundsInRoot
+            }
+            check(tabs.zipWithNext().all { (left, right) -> abs(left.top - right.top) < 1f })
+            val centerGaps = tabs.zipWithNext().map { (left, right) -> right.center.x - left.center.x }
+            check(abs(centerGaps[0] - centerGaps[1]) < 1f)
+        }
         compose.onNodeWithText("Ouvir agora").performScrollTo().performClick()
         compose.onNodeWithText("Abrir playlist").performScrollTo().performClick()
         compose.onNodeWithText("Criar mix").performScrollTo().performClick()
@@ -66,10 +80,17 @@ class SonoraHomeLayoutTest(private val width: Int, private val scale: Float, pri
     }
 
     companion object {
-        @JvmStatic @Parameters(name = "{0}dp-font{1}-{2}")
-        fun sizes(): List<Array<Any>> = listOf(280, 320, 360, 390, 412, 480).flatMap { width ->
-            listOf(1f, 1.25f, 1.5f).flatMap { scale ->
-                listOf("dark", "light", "amoled").map { theme -> arrayOf<Any>(width, scale, theme) }
+        @JvmStatic @Parameters(name = "{0}x{1}-font{2}-{3}")
+        fun sizes(): List<Array<Any>> = listOf(
+            320 to 568,
+            360 to 640,
+            360 to 800,
+            393 to 873,
+        ).flatMap { (width, height) ->
+            listOf(1f, 1.5f).flatMap { scale ->
+                listOf("dark", "light", "amoled").map { theme ->
+                    arrayOf<Any>(width, height, scale, theme)
+                }
             }
         }
     }

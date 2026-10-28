@@ -1,0 +1,254 @@
+{
+    "schemaVersion": 4,
+    "sourceImageHash": "0fb58fc1cfe071868251d2b473758251a2085179a143c173448e6d48cbaa94dc",
+    "family": "MINIMAL_MONOCHROME",
+    "familyWeights": {
+        "MINIMAL_MONOCHROME": 1.0
+    },
+    "colors": {
+        "environmental": 4279705643,
+        "interaction": 4291154136,
+        "accent": 4289377987
+    },
+    "procedural": {
+        "seed": 4010366363,
+        "noiseScale": 2.8,
+        "octaves": 4,
+        "roughness": 0.5,
+        "organic": 0.16,
+        "mist": 0.07,
+        "curves": 0.012,
+        "vignette": 0.28
+    },
+    "modelVersion": "none",
+    "confidence": null,
+    "archetypeScores": {
+        "PRISMATIC_ACCENTS": 0.0,
+        "COOL_DEPTH": 0.0,
+        "CINEMATIC_DENSE": 0.0,
+        "DARK_SYMBOLIC": 1.0,
+        "WARM_DIFFUSE": 0.0,
+        "MONOCHROME_EDITORIAL": 0.5,
+        "MULTICOLOR_GRAPHIC": 0.0
+    },
+    "canvasColor": 4278650631,
+    "favoriteColor": 4289377987,
+    "scrimTop": 0.38,
+    "scrimBottom": 0.6,
+    "environment": {
+        "regions": [
+            {
+                "x": 0.0625,
+                "y": 0.0625,
+                "radiusX": 0.62,
+                "radiusY": 0.44,
+                "color": 4285229931,
+                "intensity": 0.55,
+                "falloff": 1.6
+            },
+            {
+                "x": 0.3125,
+                "y": 0.0625,
+                "radiusX": 0.62,
+                "radiusY": 0.44,
+                "color": 4285229931,
+                "intensity": 0.55,
+                "falloff": 1.6
+            },
+            {
+                "x": 0.5625,
+                "y": 0.0625,
+                "radiusX": 0.62,
+                "radiusY": 0.44,
+                "color": 4285229931,
+                "intensity": 0.55,
+                "falloff": 1.6
+            },
+            {
+                "x": 0.8125,
+                "y": 0.0625,
+                "radiusX": 0.62,
+                "radiusY": 0.44,
+                "color": 4285229931,
+                "intensity": 0.55,
+                "falloff": 1.6
+            },
+            {
+                "x": 0.0625,
+                "y": 0.3125,
+                "radiusX": 0.62,
+                "radiusY": 0.44,
+                "color": 4285229931,
+                "intensity": 0.55,
+                "falloff": 1.6
+            }
+        ],
+        "grain": 0.012,
+        "warp": 0.12
+    },
+    "accents": [
+        {
+            "x": 0.0625,
+            "y": 0.0625,
+            "radiusX": 0.14,
+            "radiusY": 0.09,
+            "color": 4293283920,
+            "intensity": 0.0,
+            "falloff": 3.0
+        },
+        {
+            "x": 0.3125,
+            "y": 0.0625,
+            "radiusX": 0.14,
+            "radiusY": 0.09,
+            "color": 4293283920,
+            "intensity": 0.0,
+            "falloff": 3.0
+        }
+    ],
+    "directionalDetails": [],
+    "lights": [
+        {
+            "x": 0.0625,
+            "y": 0.0625,
+            "radiusX": 0.32,
+            "radiusY": 0.26,
+            "color": 4290295992,
+            "intensity": 0.13,
+            "falloff": 2.5
+        },
+        {
+            "x": 0.3125,
+            "y": 0.0625,
+            "radiusX": 0.32,
+            "radiusY": 0.26,
+            "color": 4290295992,
+            "intensity": 0.13,
+            "falloff": 2.5
+        },
+        {
+            "x": 0.5625,
+            "y": 0.0625,
+            "radiusX": 0.32,
+            "radiusY": 0.26,
+            "color": 4290295992,
+            "intensity": 0.13,
+            "falloff": 2.5
+        },
+        {
+            "x": 0.8125,
+            "y": 0.0625,
+            "radiusX": 0.32,
+            "radiusY": 0.26,
+            "color": 4290295992,
+            "intensity": 0.13,
+            "falloff": 2.5
+        },
+        {
+            "x": 0.0625,
+            "y": 0.3125,
+            "radiusX": 0.32,
+            "radiusY": 0.26,
+            "color": 4290295992,
+            "intensity": 0.13,
+            "falloff": 2.5
+        }
+    ],
+    "controlSurface": {
+        "fill": [
+            {
+                "position": 0.0,
+                "color": 4279309336
+            },
+            {
+                "position": 1.0,
+                "color": 4279177233
+            }
+        ],
+        "haloColor": 4291154136,
+        "haloIntensity": 0.16,
+        "haloRadius": 0.155,
+        "ink": 4294638847,
+        "rim": [
+            {
+                "position": 0.0,
+                "color": 4285428856
+            },
+            {
+                "position": 1.0,
+                "color": 4282533449
+            }
+        ],
+        "haloSpectrum": [],
+        "spectrumRotation": 135.0,
+        "diameterRatio": 0.1574,
+        "material": "EDITORIAL"
+    },
+    "progress": {
+        "fill": [
+            {
+                "position": 0.0,
+                "color": 4294309365
+            },
+            {
+                "position": 1.0,
+                "color": 4294309365
+            }
+        ],
+        "track": 4281349189,
+        "thumb": 4291154136,
+        "halo": 4291154136
+    },
+    "lyrics": {
+        "active": 4294507519,
+        "future": 4288326851,
+        "alphaProgression": [
+            0.72,
+            1.0,
+            0.52,
+            0.36,
+            0.24
+        ],
+        "surface": 1073939203
+    },
+    "analysisMetadata": {
+        "source": "CLASSICAL_PIXELS",
+        "fallbackReason": "Direção por pixels; sem IA e sem reconhecimento semântico.",
+        "measuredFeatures": {
+            "lowFraction": 1.0,
+            "midFraction": 0.0,
+            "highFraction": 0.0,
+            "meanLuminance": 0.0,
+            "meanSaturation": 0.0,
+            "saturatedFraction": 0.0,
+            "saturatedX": 0.5,
+            "saturatedY": 0.5,
+            "coolCoverage": 0.0,
+            "edgeDensity": 0.0,
+            "complexity": 0.0,
+            "sparseSpectral": 0.0,
+            "perceptualHueDiversity": 0.0,
+            "directionPeak": 0.0,
+            "family.PRISMATIC": 0.0,
+            "family.DENSE_CHROMATIC": 0.0,
+            "family.EDITORIAL_NATURAL": 0.15,
+            "family.DRAMATIC_CONTRAST": 0.0,
+            "family.SELECTIVE_LUMINOUS": 0.0,
+            "family.MINIMAL_MONOCHROME": 1.0,
+            "luminanceRange": 0.0,
+            "spatialLuminanceDeviation": 0.0
+        },
+        "engineVersion": "procedural-art-director-4.2",
+        "fiveSignals": [
+            "Famílias: {MINIMAL_MONOCHROME=1.0}; detalhe=0.0; faixa tonal=0.0",
+            "Área negativa=1.0; sinais isolados=0.0",
+            "Diversidade perceptual=0.0; cobertura saturada=0.0",
+            "Cor ambiental: cobertura × dispersão; interação: contraste × saturação",
+            "Acento: contraste local; variação espacial de luminância=0.0"
+        ],
+        "treatmentWeights": {
+            "DARK_SYMBOLIC": 0.6666667,
+            "MONOCHROME_EDITORIAL": 0.33333334
+        }
+    }
+}

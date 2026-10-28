@@ -1,0 +1,176 @@
+[
+    {
+        "id": "PINK_FLOYD",
+        "family": "PRISMATIC",
+        "audioGain": 1.0,
+        "trailGain": 1.0,
+        "baseIdle": {
+            "medianMs": 31.0496,
+            "p95Ms": 33.6024,
+            "maxMs": 34.8323
+        },
+        "microIdle": {
+            "medianMs": 32.7399,
+            "p95Ms": 39.2343,
+            "maxMs": 48.6141
+        },
+        "baseSeek": {
+            "medianMs": 36.5031,
+            "p95Ms": 45.5885,
+            "maxMs": 46.9272
+        },
+        "microSeekAudio": {
+            "medianMs": 36.7304,
+            "p95Ms": 45.0164,
+            "maxMs": 48.9857
+        },
+        "maxParticles": 61,
+        "compositionsDuringAudioFrames": 0,
+        "inputVerified": true
+    },
+    {
+        "id": "MEGADETH",
+        "family": "DENSE_CHROMATIC",
+        "audioGain": 0.7,
+        "trailGain": 0.85,
+        "baseIdle": {
+            "medianMs": 30.3026,
+            "p95Ms": 32.2149,
+            "maxMs": 34.5492
+        },
+        "microIdle": {
+            "medianMs": 31.1532,
+            "p95Ms": 37.8891,
+            "maxMs": 43.2826
+        },
+        "baseSeek": {
+            "medianMs": 33.4672,
+            "p95Ms": 42.6015,
+            "maxMs": 46.1414
+        },
+        "microSeekAudio": {
+            "medianMs": 33.5758,
+            "p95Ms": 40.7607,
+            "maxMs": 45.9287
+        },
+        "maxParticles": 61,
+        "compositionsDuringAudioFrames": 0,
+        "inputVerified": true
+    },
+    {
+        "id": "NIRVANA",
+        "family": "DENSE_CHROMATIC",
+        "audioGain": 0.7,
+        "trailGain": 0.85,
+        "baseIdle": {
+            "medianMs": 31.1138,
+            "p95Ms": 40.7063,
+            "maxMs": 48.7342
+        },
+        "microIdle": {
+            "medianMs": 30.9815,
+            "p95Ms": 41.5383,
+            "maxMs": 49.2779
+        },
+        "baseSeek": {
+            "medianMs": 31.6296,
+            "p95Ms": 35.3408,
+            "maxMs": 37.6454
+        },
+        "microSeekAudio": {
+            "medianMs": 33.4539,
+            "p95Ms": 38.7917,
+            "maxMs": 43.5175
+        },
+        "maxParticles": 61,
+        "compositionsDuringAudioFrames": 0,
+        "inputVerified": true
+    },
+    {
+        "id": "THRILLER",
+        "family": "SELECTIVE_LUMINOUS",
+        "audioGain": 0.6457725,
+        "trailGain": 0.75,
+        "baseIdle": {
+            "medianMs": 30.5595,
+            "p95Ms": 32.9358,
+            "maxMs": 37.3139
+        },
+        "microIdle": {
+            "medianMs": 30.3969,
+            "p95Ms": 36.933,
+            "maxMs": 44.4195
+        },
+        "baseSeek": {
+            "medianMs": 31.517,
+            "p95Ms": 46.7729,
+            "maxMs": 55.5798
+        },
+        "microSeekAudio": {
+            "medianMs": 32.6171,
+            "p95Ms": 37.4885,
+            "maxMs": 44.0504
+        },
+        "maxParticles": 61,
+        "compositionsDuringAudioFrames": 0,
+        "inputVerified": true
+    },
+    {
+        "id": "ABBEY_ROAD",
+        "family": "DENSE_CHROMATIC",
+        "audioGain": 0.5387678,
+        "trailGain": 0.7348342,
+        "baseIdle": {
+            "medianMs": 30.1449,
+            "p95Ms": 31.8759,
+            "maxMs": 32.8569
+        },
+        "microIdle": {
+            "medianMs": 32.1515,
+            "p95Ms": 38.6794,
+            "maxMs": 40.7096
+        },
+        "baseSeek": {
+            "medianMs": 31.7986,
+            "p95Ms": 37.418,
+            "maxMs": 41.5549
+        },
+        "microSeekAudio": {
+            "medianMs": 34.3556,
+            "p95Ms": 43.5801,
+            "maxMs": 46.8834
+        },
+        "maxParticles": 61,
+        "compositionsDuringAudioFrames": 0,
+        "inputVerified": true
+    },
+    {
+        "id": "DAFT_PUNK",
+        "family": "PRISMATIC",
+        "audioGain": 1.0,
+        "trailGain": 1.0,
+        "baseIdle": {
+            "medianMs": 32.3612,
+            "p95Ms": 48.3049,
+            "maxMs": 50.7381
+        },
+        "microIdle": {
+            "medianMs": 33.6459,
+            "p95Ms": 50.468,
+            "maxMs": 53.7286
+        },
+        "baseSeek": {
+            "medianMs": 35.9874,
+            "p95Ms": 54.9464,
+            "maxMs": 99.7928
+        },
+        "microSeekAudio": {
+            "medianMs": 33.2923,
+            "p95Ms": 41.3105,
+            "maxMs": 44.7276
+        },
+        "maxParticles": 61,
+        "compositionsDuringAudioFrames": 0,
+        "inputVerified": true
+    }
+]

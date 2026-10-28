@@ -60,6 +60,8 @@ import com.stash.app.ambient.AlbumColorsViewModel
 import com.stash.core.ui.ambient.ProvideAlbumChrome
 import com.stash.core.ui.components.LocalBottomChromeInset
 import com.stash.core.ui.components.LocalChromeHazeState
+import com.stash.core.ui.components.sonoraBottomFade
+import androidx.compose.ui.platform.LocalDensity
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 
@@ -248,7 +250,10 @@ fun StashScaffold(
                 // under it is frosted all the way to the screen's edge. The cards above it keep
                 // clear of a side system bar (3-button navigation in landscape).
                 val cardInsets = Modifier.windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal))
-                Column(Modifier.background(MaterialTheme.colorScheme.background)) {
+                val density = LocalDensity.current
+                val navigationHeight = com.stash.core.ui.visual.VisualDesign.Size.Chrome +
+                    with(density) { WindowInsets.navigationBars.getBottom(this).toDp() }
+                Column(if (!onNowPlaying) Modifier.sonoraBottomFade(navigationHeight) else Modifier) {
                     AnimatedVisibility(
                         visible = !onNowPlaying,
                         modifier = cardInsets,
@@ -377,5 +382,6 @@ private fun StashBottomBar(currentRoute: String?, onNavigate: (TopLevelDestinati
         page = pages[index], player = null,
         actions = com.stash.core.ui.visual.VisualActions(onPage = { onNavigate(destinations[pages.indexOf(it)]) }),
         modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars),
+        backgroundVisible = false,
     )
 }

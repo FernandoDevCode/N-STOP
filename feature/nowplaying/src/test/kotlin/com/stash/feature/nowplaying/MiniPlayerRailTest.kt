@@ -42,4 +42,17 @@ class MiniPlayerRailTest {
         assertTrue((rail.point(join + .00001f) - rail.point(join - .00001f)).getDistance() < .01f)
         assertTrue(rail.point(join / 2).y < 24f)
     }
+
+    @Test fun touchCorridorFollowsTheMeasuredPathIncludingCurves() {
+        val rail = MiniPlayerRail(360f, 56f, 13f)
+        for (fraction in listOf(0f, .02f, .05f, .5f, .95f, .98f, 1f)) {
+            val point = rail.point(fraction)
+            val tangent = rail.tangent(fraction)
+            val inward = Offset(tangent.y, -tangent.x)
+            assertTrue(rail.distanceTo(point + inward * 13.5f) <= 14f)
+        }
+        // A rectangular lower-card overlay would accept this; the path corridor does not.
+        assertTrue(rail.distanceTo(Offset(180f, 40f)) > 14f)
+        assertEquals(rail.length * .5f, rail.fraction(rail.point(.5f)) * rail.length, .0001f)
+    }
 }

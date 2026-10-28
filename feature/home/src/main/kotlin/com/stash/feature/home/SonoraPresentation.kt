@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -26,6 +27,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -103,16 +106,53 @@ internal fun SonoraCardRail(title: String, modifier: Modifier = Modifier, action
 
 @Composable
 internal fun SonoraGenreFilters(filters: List<String>, selected: String, onSelect: (String) -> Unit) {
-    LazyRow(contentPadding = PaddingValues(horizontal = VisualDesign.Gutter),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = VisualDesign.Gutter),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         items(filters, key = { it }) { label ->
-            FilterChip(selected = selected == label, onClick = { onSelect(label) },
-                label = { Text(label, style = VisualDesign.Caption) },
-                modifier = Modifier.heightIn(min = 48.dp),
-                colors = FilterChipDefaults.filterChipColors(
-                    containerColor = VisualDesign.Surface,
-                    selectedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    labelColor = VisualDesign.Muted, selectedLabelColor = VisualDesign.Ink))
+            val active = selected == label
+            val displayLabel = when (label.trim().lowercase()) {
+                "all" -> stringResource(R.string.nonstop_genre_all)
+                "electronic" -> stringResource(R.string.nonstop_genre_electronic)
+                "classical" -> stringResource(R.string.nonstop_genre_classical)
+                else -> label
+            }
+            val shape = RoundedCornerShape(50)
+            Box(
+                Modifier
+                    .heightIn(min = 48.dp)
+                    .clip(shape)
+                    .selectable(active, role = Role.Tab, onClick = { onSelect(label) })
+                    .padding(vertical = 7.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    Modifier
+                        .height(34.dp)
+                        .background(
+                            if (active) MaterialTheme.colorScheme.surfaceVariant
+                            else VisualDesign.Surface.copy(alpha = .38f),
+                            shape,
+                        )
+                        .border(
+                            if (active) 1.dp else .5.dp,
+                            if (active) MaterialTheme.colorScheme.onSurface.copy(alpha = .52f)
+                            else MaterialTheme.colorScheme.outline.copy(alpha = .27f),
+                            shape,
+                        )
+                        .padding(horizontal = 13.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        displayLabel,
+                        style = VisualDesign.Caption,
+                        color = if (active) VisualDesign.Ink else VisualDesign.Muted,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                }
+            }
         }
     }
 }

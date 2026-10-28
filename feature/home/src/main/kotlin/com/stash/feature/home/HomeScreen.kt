@@ -383,18 +383,27 @@ fun HomeScreen(
         }
 
         // ── User-arranged sections (Settings > Appearance > Home layout) ──
-        // Order + visibility come from uiState.sections. The genre chips
-        // steer only the Qobuz rows, so they ride glued above the FIRST
-        // visible Qobuz section wherever the user placed it — and the old
-        // chips→header seam (16dp spacer stacked on the header's 12dp
-        // padding, 28dp of blank) tightens to 2dp + 12dp for that row.
-        val firstQobuzSection = uiState.sections.firstOrNull {
-            it == HomeSection.NEW_RELEASES ||
-                it == HomeSection.QOBUZ_PLAYLISTS ||
+        // Order + visibility still come from uiState.sections. Genre chips sit
+        // after a populated New Releases rail; when it is hidden or empty they
+        // attach to the first populated Qobuz row, without changing filter IDs.
+        val showGenreFilters = uiState.qobuzDiscoveryEnabled && uiState.genres.isNotEmpty()
+        val chipsAfterReleases = showGenreFilters && uiState.newReleases.isNotEmpty() &&
+            HomeSection.NEW_RELEASES in uiState.sections
+        val firstPopulatedQobuzSection = uiState.sections.firstOrNull { section ->
+            when (section) {
+                HomeSection.NEW_RELEASES -> uiState.newReleases.isNotEmpty()
+                HomeSection.QOBUZ_PLAYLISTS -> uiState.playlists.isNotEmpty()
+                HomeSection.TOP_ALBUMS -> uiState.topAlbums.isNotEmpty()
+                else -> false
+            }
+        }
+        val firstConfiguredQobuzSection = uiState.sections.firstOrNull {
+            it == HomeSection.NEW_RELEASES || it == HomeSection.QOBUZ_PLAYLISTS ||
                 it == HomeSection.TOP_ALBUMS
         }
+        val genreFallbackSection = firstPopulatedQobuzSection ?: firstConfiguredQobuzSection
         uiState.sections.forEach { section ->
-            val chipsLead = uiState.qobuzDiscoveryEnabled && section == firstQobuzSection
+            val chipsLead = showGenreFilters && !chipsAfterReleases && section == genreFallbackSection
             if (chipsLead) {
                 item(key = "section_genre_chips") {
                     Spacer(Modifier.height(14.dp))
@@ -439,6 +448,16 @@ fun HomeScreen(
                             onOpen = onNavigateToAlbum,
                             topSpacing = if (chipsLead) 2.dp else 16.dp,
                         )
+                    }
+                    if (chipsAfterReleases) {
+                        item(key = "section_genre_chips") {
+                            Spacer(Modifier.height(12.dp))
+                            SonoraGenreFilters(
+                                filters = uiState.genres.map { it.label },
+                                selected = uiState.selectedGenre,
+                                onSelect = viewModel::onSelectGenre,
+                            )
+                        }
                     }
                 }
                 HomeSection.QOBUZ_PLAYLISTS -> if (uiState.playlists.isNotEmpty()) {

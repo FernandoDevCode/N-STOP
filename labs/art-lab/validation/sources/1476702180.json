@@ -1,0 +1,10 @@
+
+
+
+{
+ "resultCount":1,
+ "results": [
+{"wrapperType":"collection", "collectionType":"Album", "artistId":722383, "collectionId":1476702180, "amgArtistId":71273, "artistName":"Joy Division", "collectionName":"Unknown Pleasures (2019 Digital Master)", "collectionCensoredName":"Unknown Pleasures (2019 Digital Master)", "artistViewUrl":"https://music.apple.com/us/artist/joy-division/722383?uo=4", "collectionViewUrl":"https://music.apple.com/us/album/unknown-pleasures-2019-digital-master/1476702180?uo=4", "artworkUrl60":"https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/13/90/c0/1390c072-4249-3739-7b3d-fd73ee4a5698/825646562831.jpg/60x60bb.jpg", "artworkUrl100":"https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/13/90/c0/1390c072-4249-3739-7b3d-fd73ee4a5698/825646562831.jpg/100x100bb.jpg", "collectionPrice":9.99, "collectionExplicitness":"notExplicit", "trackCount":10, "copyright":"℗ 1979, 2019 Warner Music UK Ltd", "country":"USA", "currency":"USD", "releaseDate":"1979-06-15T07:00:00Z", "primaryGenreName":"Goth Rock"}]
+}
+
+

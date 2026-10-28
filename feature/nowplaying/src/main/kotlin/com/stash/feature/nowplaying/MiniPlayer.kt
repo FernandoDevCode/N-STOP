@@ -8,6 +8,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,6 +51,7 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -65,6 +67,7 @@ import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.model.RepeatMode
 import com.stash.core.ui.components.ListenTogetherRole
 import com.stash.core.ui.components.LocalListenTogetherRole
+import com.stash.core.ui.components.sonoraMiniGlass
 import com.stash.feature.nowplaying.listen.ListenTogetherViewModel
 import com.stash.feature.nowplaying.listen.MiniSessionFaces
 import com.stash.feature.nowplaying.ui.hasNextInQueue
@@ -124,33 +127,46 @@ fun MiniPlayer(
         )
         val cardCoordinates = remember { mutableStateOf<LayoutCoordinates?>(null) }
         val controlsCoordinates = remember { mutableStateOf<LayoutCoordinates?>(null) }
+        val artworkCoordinates = remember { mutableStateOf<LayoutCoordinates?>(null) }
         val controlsBounds: () -> Rect = {
             val card = cardCoordinates.value
             val controls = controlsCoordinates.value
             if (card?.isAttached == true && controls?.isAttached == true)
                 card.localBoundingBoxOf(controls, clipBounds = false) else Rect.Zero
         }
+        val artworkBounds: () -> Rect = {
+            val card = cardCoordinates.value
+            val artwork = artworkCoordinates.value
+            if (card?.isAttached == true && artwork?.isAttached == true)
+                card.localBoundingBoxOf(artwork, clipBounds = false) else Rect.Zero
+        }
         Box(
             modifier = modifier
                 .fillMaxWidth()
                 .padding(start = MiniPlayerMargin, end = MiniPlayerMargin, bottom = 10.dp)
                 .onGloballyPositioned { cardCoordinates.value = it }
-                .miniPlayerSeekInput(seek, uiState.durationMs, MiniCornerRadius, seekEnabled,
-                    viewModel::onSeekTo, controlsBounds)
+                .miniPlayerGestureInput(
+                    seek = seek,
+                    durationMs = uiState.durationMs,
+                    cornerRadius = MiniCornerRadius,
+                    enabled = seekEnabled,
+                    onSeek = viewModel::onSeekTo,
+                    onExpand = onExpand,
+                    bodyInteractions = press,
+                    controlsBounds = controlsBounds,
+                    artworkBounds = artworkBounds,
+                )
                 .miniPlayerFriction(position, uiState.durationMs, seek, friction, controlsBounds)
-                .clip(MiniShape)
-                .background(androidx.compose.ui.graphics.Brush.horizontalGradient(
-                    if (com.stash.core.ui.visual.LocalVisualDark.current) listOf(Color(0xFF2C2B37), Color(0xFF20202C))
-                    else listOf(MaterialTheme.colorScheme.surface, MaterialTheme.colorScheme.surface)))
-                .then(Modifier.border(1.dp, com.stash.core.ui.visual.VisualDesign.Border, MiniShape))
+                .sonoraMiniGlass(MiniShape)
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = MiniHeight)
-                    .clickable(interactionSource = press, indication = ripple(), onClick = onExpand)
+                    .indication(press, ripple())
                     // Preserve swipe navigation for assistive technology as well.
                     .semantics {
+                        onClick("Open player") { onExpand(); true }
                         if (!isListener) {
                             customActions = buildList {
                                 if (canPrevious) add(CustomAccessibilityAction("Previous song") {
@@ -186,6 +202,10 @@ fun MiniPlayer(
                     ) {
                         val artModel = track?.albumArtPath ?: track?.albumArtUrl
                         val coverShape = RoundedCornerShape(6.dp)
+                        val artworkModifier = Modifier
+                            .size(37.dp)
+                            .onGloballyPositioned { artworkCoordinates.value = it }
+                            .clip(coverShape)
                         if (artModel != null) {
                             // Remembered per cover: a fresh request each recomposition makes Coil treat
                             // it as a new load.
@@ -197,15 +217,11 @@ fun MiniPlayer(
                                 model = artRequest,
                                 contentDescription = "Album art",
                                 contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .size(37.dp)
-                                    .clip(coverShape),
+                                modifier = artworkModifier,
                             )
                         } else {
                             Box(
-                                Modifier
-                                    .size(37.dp)
-                                    .clip(coverShape)
+                                artworkModifier
                                     .background(MaterialTheme.colorScheme.surfaceVariant),
                                 contentAlignment = Alignment.Center,
                             ) {

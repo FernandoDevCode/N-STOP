@@ -55,13 +55,32 @@ class MiniPlayerInteractionTest {
     @Test fun coverTitleArtistAndFreeSurfaceOpenWithoutSeeking() {
         // Coordinates measured in the actual component: margin14 + cover padding6.
         compose.onNodeWithTag("mini").performTouchInput { click(Offset(36f, 26f)) }
+        // The lower cover edge overlaps the curved rail's comfortable corridor; cover wins.
+        compose.onNodeWithTag("mini").performTouchInput { click(Offset(25f, 45f)) }
         compose.onNodeWithText("Test title", useUnmergedTree = true).performTouchInput { click() }
         compose.onNodeWithText("Test artist", useUnmergedTree = true).performTouchInput { click() }
         compose.onNodeWithTag("mini").performTouchInput { click(Offset(180f, 2f)) }
-        // Critical regression: one pixel above the seek row's upper boundary.
-        compose.onNodeWithTag("mini").performTouchInput { click(Offset(180f, 48f)) }
-        compose.runOnIdle { assertEquals(5, opens) }
+        // Outside the 14dp path corridor, a body down can never become seek later.
+        compose.onNodeWithTag("mini").performTouchInput { click(Offset(180f, 40f)) }
+        compose.runOnIdle { assertEquals(6, opens) }
         verify(exactly = 0) { vm.onSeekTo(any()) }
+    }
+
+    @Test fun directRailTapSeeksWithoutOpeningPlayer() {
+        compose.onNodeWithContentDescription("Playback progress").performTouchInput {
+            click(Offset(width / 2f, height - 1f))
+        }
+        verify(exactly = 1) { vm.onSeekTo(match { it in 49_000L..51_000L }) }
+        compose.runOnIdle { assertEquals(0, opens) }
+    }
+
+    @Test fun directNeedleTapSeeksWithoutOpeningPlayer() {
+        // Playback starts at 25%; this is the visible needle on the straight section.
+        compose.onNodeWithContentDescription("Playback progress").performTouchInput {
+            click(Offset(width * .25f, height - 1f))
+        }
+        verify(exactly = 1) { vm.onSeekTo(match { it in 23_000L..27_000L }) }
+        compose.runOnIdle { assertEquals(0, opens) }
     }
 
     @Test fun compactCardRetainsAccessibleButtons() {
@@ -91,11 +110,12 @@ class MiniPlayerInteractionTest {
 
     @Test fun startingAboveRailCannotBecomeSeekAfterCrossingBoundary() {
         compose.onNodeWithTag("mini").performTouchInput {
-            down(Offset(100f, 48f))
+            down(Offset(100f, 30f))
             moveTo(Offset(110f, 55f), 250)
             up()
         }
         verify(exactly = 0) { vm.onSeekTo(any()) }
+        compose.runOnIdle { assertEquals(0, opens) }
     }
 
     @Test fun curvedEndpointsAndAccessibleRangeReachExactTimes() {

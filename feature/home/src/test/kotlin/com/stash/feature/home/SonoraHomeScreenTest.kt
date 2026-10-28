@@ -12,6 +12,8 @@ import com.stash.core.data.prefs.HomeSection
 import com.stash.core.model.MusicSource
 import com.stash.core.ui.components.LocalBottomChromeInset
 import com.stash.core.ui.visual.VisualTheme
+import com.stash.data.ytmusic.model.AlbumSummary
+import com.stash.data.ytmusic.model.PlaylistSummary
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Rule
@@ -113,5 +115,35 @@ class SonoraHomeScreenTest {
         compose.onNodeWithText("Preparando seu Daily Discover…").assertIsDisplayed()
         compose.onNodeWithText("Personalize seu início").assertDoesNotExist()
         compose.onNodeWithText("Ouvir agora").assertDoesNotExist()
+    }
+
+    @Test fun genresFollowNewReleasesAndKeepOriginalFilterIdentifiers() {
+        state.value = HomeUiState(
+            isLoading = false,
+            sections = listOf(HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS),
+            newReleases = listOf(AlbumSummary("release", "Álbum fixture", "Artista", null, "2026")),
+            playlists = listOf(PlaylistSummary("playlist", "Playlist fixture", "Qobuz", null, 12)),
+        )
+        render()
+        val releases = compose.onNodeWithText("Novos lançamentos").fetchSemanticsNode().boundsInRoot
+        val genres = compose.onNodeWithText("Todos").fetchSemanticsNode().boundsInRoot
+        val playlists = compose.onNodeWithText("Playlists do Qobuz").fetchSemanticsNode().boundsInRoot
+        check(releases.top < genres.top && genres.top < playlists.top)
+        compose.onNodeWithText("Eletrônica").performClick()
+        compose.runOnIdle { verify(vm).onSelectGenre("Electronic") }
+    }
+
+    @Test fun genresMoveToFirstPopulatedQobuzSectionWhenReleasesAreEmpty() {
+        state.value = HomeUiState(
+            isLoading = false,
+            sections = listOf(HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS),
+            newReleases = emptyList(),
+            playlists = listOf(PlaylistSummary("playlist", "Playlist fixture", "Qobuz", null, 12)),
+        )
+        render()
+        compose.onNodeWithText("Novos lançamentos").assertDoesNotExist()
+        val genres = compose.onNodeWithText("Todos").fetchSemanticsNode().boundsInRoot
+        val playlists = compose.onNodeWithText("Playlists do Qobuz").fetchSemanticsNode().boundsInRoot
+        check(genres.top < playlists.top)
     }
 }

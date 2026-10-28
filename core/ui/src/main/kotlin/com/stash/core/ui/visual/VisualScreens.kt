@@ -310,15 +310,16 @@ typealias VisualArtwork = @Composable (String?, Modifier) -> Unit
 }
 
 @Composable fun VisualBottomBar(page: VisualPage, player: VisualPlayer?, actions: VisualActions,
-    modifier: Modifier = Modifier, artwork: VisualArtwork = { url, size -> VisualCover(url, size) }) {
-    Column(modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(if (LocalVisualDark.current) Color(0xE91A1A24) else VisualDesign.Surface, VisualDesign.Background)))) {
+    modifier: Modifier = Modifier, artwork: VisualArtwork = { url, size -> VisualCover(url, size) },
+    backgroundVisible: Boolean = true) {
+    Column(modifier.fillMaxWidth().then(if (backgroundVisible) Modifier.background(Brush.verticalGradient(listOf(if (LocalVisualDark.current) Color(0xE91A1A24) else VisualDesign.Surface, VisualDesign.Background))) else Modifier)) {
         player?.let { VisualMiniPlayer(it, actions, artwork) }
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val density = LocalDensity.current
             val measurer = rememberTextMeasurer()
             val availableLabelWidth = with(density) { ((maxWidth - 16.dp) / 5).roundToPx() }
             Row(Modifier.fillMaxWidth().height(VisualDesign.Size.Chrome).clipToBounds()
-                .background(VisualDesign.navigationSurface()).padding(horizontal = VisualDesign.Space.Small)) {
+                .then(if (backgroundVisible) Modifier.background(VisualDesign.navigationSurface()) else Modifier).padding(horizontal = VisualDesign.Space.Small)) {
                 listOf(VisualPage.Home, VisualPage.Explore, VisualPage.Radio, VisualPage.Search, VisualPage.Library).forEachIndexed { index, destination ->
                     val selected = page == destination
                     val label = listOf("Início", "Explorar", "Rádio", "Buscar", "Biblioteca")[index]

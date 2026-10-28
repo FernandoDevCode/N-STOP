@@ -1,0 +1,2 @@
+classical-1b2-c3
+Real ImageComposeScene raster; headless=true; no desktop windows or global input.

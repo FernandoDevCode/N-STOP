@@ -1,0 +1,177 @@
+{
+  "pipeline": "classical-1b2-c3",
+  "renderer": "V8Renderer / ImageComposeScene / Skia CPU raster",
+  "headless": true,
+  "desktop_input": false,
+  "esthetic_approval": "PENDING_USER",
+  "screenshots": [
+    {
+      "file": "compare-MEGADETH-fidelidade-864x1536.png",
+      "width": 1728,
+      "height": 1536,
+      "sha256": "6f0967d4642b53f82482f28873e99294b30f9bd2cf83b8b30f71a56d0ac444a1"
+    },
+    {
+      "file": "compare-MEGADETH-producao-864x1536.png",
+      "width": 1728,
+      "height": 1536,
+      "sha256": "73625fe545eee59c2f9ab707a3a2513f68a4cc4cf3dbc28fdb2a7c798b0c3fd2"
+    },
+    {
+      "file": "compare-PINK_FLOYD-fidelidade-941x1672.png",
+      "width": 1882,
+      "height": 1672,
+      "sha256": "f47ae728d0ad06fb7a3b73b8a8ed9d5affc827d3be53fc00b2dcb27db4a6e1cf"
+    },
+    {
+      "file": "compare-PINK_FLOYD-producao-941x1672.png",
+      "width": 1882,
+      "height": 1672,
+      "sha256": "4cb91253ea0b017c4c406e2baad455a4c25a372ede2ee7e8ff203893926b1c0a"
+    },
+    {
+      "file": "MEGADETH-button.png",
+      "width": 864,
+      "height": 1536,
+      "sha256": "7e0d2d35162dbe08e42bd55887dc0ff22f821fecc37916e918f6777c4bfb167d"
+    },
+    {
+      "file": "MEGADETH-fidelidade-864x1536.png",
+      "width": 864,
+      "height": 1536,
+      "sha256": "cd8bedca282719e8a156264d46dc0f6d0df995c533c8c5d752d8dd2d52567a43"
+    },
+    {
+      "file": "MEGADETH-font-150.png",
+      "width": 864,
+      "height": 1536,
+      "sha256": "d5266ad6039dc3ad155a5efde5b34a4640684bf82937c8fcbcbfd0dbd7d79956"
+    },
+    {
+      "file": "MEGADETH-layers.png",
+      "width": 864,
+      "height": 1536,
+      "sha256": "1681ced44cf525021d4a78ea56c06d92172a2be3993d00e396cfed3847bfc2e1"
+    },
+    {
+      "file": "MEGADETH-lyrics.png",
+      "width": 864,
+      "height": 1536,
+      "sha256": "c25d5462e19a49b113a1bd2fa8f03e0bb915b419bd66f6607cdeec7cc39183e2"
+    },
+    {
+      "file": "MEGADETH-paused-seek.png",
+      "width": 864,
+      "height": 1536,
+      "sha256": "7782ef75cbf9313315cbbd4164c6ea7b42beffeb96d3f9a22548167a574c0547"
+    },
+    {
+      "file": "MEGADETH-paused.png",
+      "width": 864,
+      "height": 1536,
+      "sha256": "a7277472cc1d9668171a598e7948cf4eadfa38cdc4cb79ae58b46e277ad0b5f8"
+    },
+    {
+      "file": "MEGADETH-producao-864x1536.png",
+      "width": 864,
+      "height": 1536,
+      "sha256": "8cf90ca13f76ed1c6584b261ad39faf612a0914d9cca8a19f7c72d916b9a06c7"
+    },
+    {
+      "file": "MEGADETH-progress-0.png",
+      "width": 864,
+      "height": 1536,
+      "sha256": "6ccca53bff8ba7eb646b98a3e0574bb85bbe7c39dcd7755a3d767b48a0886688"
+    },
+    {
+      "file": "MEGADETH-progress-100.png",
+      "width": 864,
+      "height": 1536,
+      "sha256": "a7277472cc1d9668171a598e7948cf4eadfa38cdc4cb79ae58b46e277ad0b5f8"
+    },
+    {
+      "file": "MEGADETH-progress-25.png",
+      "width": 864,
+      "height": 1536,
+      "sha256": "22125e7768ab9222e635854205f2c0cc781509b36a8d8a34c5600e57ff26332b"
+    },
+    {
+      "file": "MEGADETH-progress-50.png",
+      "width": 864,
+      "height": 1536,
+      "sha256": "6bd81aab055e3c8e2b38c95e72ceb3dbe75ce4b09de1184981f3b8dad3dd6596"
+    },
+    {
+      "file": "PINK_FLOYD-button.png",
+      "width": 941,
+      "height": 1672,
+      "sha256": "cb9863cb81754b66d202bb87baeca2fada55ad1d9d12d84f38e7ca2ba2617e32"
+    },
+    {
+      "file": "PINK_FLOYD-fidelidade-941x1672.png",
+      "width": 941,
+      "height": 1672,
+      "sha256": "e0303b8bde7b2a1755a8bc40c188698d9227b36964f7f11b2db4576cc8492e7a"
+    },
+    {
+      "file": "PINK_FLOYD-font-150.png",
+      "width": 941,
+      "height": 1672,
+      "sha256": "330abeef4edcf9371daf77536c49ddaf4ee92049e26679e0ab8d34b2852fa80a"
+    },
+    {
+      "file": "PINK_FLOYD-layers.png",
+      "width": 941,
+      "height": 1672,
+      "sha256": "023b6bcba84c2bfece33f08b94bf5e5888e5ba0835ab424db9fb3a6811dd2696"
+    },
+    {
+      "file": "PINK_FLOYD-lyrics.png",
+      "width": 941,
+      "height": 1672,
+      "sha256": "ab45c4430336c8a2fe1603348eb2ed52206680761557705e74dd099c18b4dd74"
+    },
+    {
+      "file": "PINK_FLOYD-paused-seek.png",
+      "width": 941,
+      "height": 1672,
+      "sha256": "8c177b41e8c2581f8c4fbfd2778000fcf1c5cff9dfda18f31e58d331227c4152"
+    },
+    {
+      "file": "PINK_FLOYD-paused.png",
+      "width": 941,
+      "height": 1672,
+      "sha256": "c67fcaf597bde14b367c6497972344effbbbbe5397cad3650fc5ea94dedde11a"
+    },
+    {
+      "file": "PINK_FLOYD-producao-941x1672.png",
+      "width": 941,
+      "height": 1672,
+      "sha256": "b2851f773edb62f464c49fc8a850851ca2097f4ffdac0a294131c8c7a26122a8"
+    },
+    {
+      "file": "PINK_FLOYD-progress-0.png",
+      "width": 941,
+      "height": 1672,
+      "sha256": "c5c5238cf5e42bfb5636e22db69caf6e9a31e763d4cc87ce0f0caf7f63756550"
+    },
+    {
+      "file": "PINK_FLOYD-progress-100.png",
+      "width": 941,
+      "height": 1672,
+      "sha256": "c67fcaf597bde14b367c6497972344effbbbbe5397cad3650fc5ea94dedde11a"
+    },
+    {
+      "file": "PINK_FLOYD-progress-25.png",
+      "width": 941,
+      "height": 1672,
+      "sha256": "c9ce36e126eb33c80c441d3963a104ccebaff0fbfce0d430a0035e342b396c05"
+    },
+    {
+      "file": "PINK_FLOYD-progress-50.png",
+      "width": 941,
+      "height": 1672,
+      "sha256": "7557f0951f7885b3bf74a0e34ae3d8530128b673aa9d89f2835a7bd076903b27"
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+procedural-art-director-4.2
+20 images, 30 warm CPU raster frames each. Real ImageComposeScene, no native windows/global input.
+Not GPU, Android, peak RAM or sustained FPS.
