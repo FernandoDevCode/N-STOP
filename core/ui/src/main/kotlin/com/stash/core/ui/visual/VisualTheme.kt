@@ -12,9 +12,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -37,6 +40,54 @@ object VisualDesign {
     val Heading = TextStyle(fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, lineHeight = 23.sp)
     val Body = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 13.sp, lineHeight = 18.sp)
     val Caption = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Normal, fontSize = 11.sp, lineHeight = 15.sp)
+    val Brand = TextStyle(fontFamily = Inter, fontSize = 21.sp, letterSpacing = 3.2.sp, fontWeight = FontWeight.Normal)
+    val PageTitle = Heading.copy(fontSize = 20.sp)
+    val HeroTitle = Heading.copy(fontSize = 27.sp, lineHeight = 32.sp)
+    val HeroArtist = Heading.copy(fontSize = 16.sp)
+    val CardTitle = Body.copy(fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp, letterSpacing = 0.sp)
+    val CardCaption = Caption.copy(fontSize = 10.sp, letterSpacing = 0.sp)
+    val NavigationLabel = Caption.copy(fontSize = 10.sp)
+
+    // A small vocabulary, preserving the approved 390dp presentation.
+    object Space {
+        val Tiny = 3.dp; val Small = 8.dp; val Medium = 12.dp
+        val Section = 24.dp; val Rail = 10.dp
+    }
+    object Size {
+        val Chrome = 62.dp; val Control = 40.dp; val NavigationIcon = 22.dp
+        val Hero = 304.dp; val HeroPadding = 18.dp
+        val CardWidth = 110.dp; val CardMinimum = 168.dp; val CardArtwork = 82.dp
+        val AlbumWidth = 104.dp; val RecentWidth = 80.dp; val MiniPlayer = 52.dp
+    }
+    object Radius {
+        val Card = 8.dp; val Hero = 11.dp; val Filter = 12.dp; val MiniPlayer = 13.dp
+    }
+    object Light {
+        val Core = Color(0xFFFCFAFF)
+        val Wide = Color(0xFFAA91F1); val Near = Color(0xFFE6D9FF)
+        val WideRadius = 7.dp; val NearRadius = 2.dp
+        const val WideAlpha = .95f; const val NearAlpha = .9f
+        const val TransitionMs = 220
+        const val RadioEnergy = .65f; const val LibraryEnergy = .8f
+        val Fallback = Color(0xFFC2B4FF)
+        val FallbackStrokes = listOf(15f to .02f, 12f to .04f, 9f to .07f, 7f to .12f, 5f to .2f, 3f to .3f)
+        val AmbientBase = listOf(Color(0xFF242431), Color(0xFF171820), Color(0xFF0E0F14))
+        val AmbientUpper = listOf(Color(0x556A6382), Color(0x154F495F), Color.Transparent)
+        val AmbientSide = listOf(Color(0x354B475F), Color(0x103B394A), Color.Transparent)
+    }
+    private val cardDark = listOf(Color(0xFF353243), Color(0xFF1D1C28))
+    private val filterSelected = listOf(Color(0xFF585472), Color(0xFF53506E), Color(0xFF4B4966))
+    private val filterIdle = listOf(Color(0xFF272737), Color(0xFF292A3B))
+    val FilterSelectedBorder = Color(0xFF706C91)
+    val FilterIdleBorder = Color(0xFF353547)
+    @Composable fun cardSurface() = Brush.verticalGradient(if (LocalVisualDark.current) cardDark else listOf(Surface, Surface))
+    @Composable fun filterSurface(selected: Boolean) = Brush.verticalGradient(
+        if (!LocalVisualDark.current) listOf(Surface, Surface) else if (selected) filterSelected else filterIdle)
+    @Composable fun navigationSurface() = Brush.verticalGradient(when {
+        !LocalVisualDark.current -> listOf(Surface, Background)
+        LocalVisualAmoled.current -> listOf(Color.Black, Color.Black)
+        else -> listOf(Color(0xFF15161D), Color(0xFF0E0F14))
+    })
     val scheme = darkColorScheme(primary = Color(0xFFE4DFFF), onPrimary = Color(0xFF101116),
         background = Color(0xFF101116), onBackground = Color(0xFFF2F1F7), surface = Color(0xFF22222F), onSurface = Color(0xFFF2F1F7),
         surfaceVariant = Color(0xFF22222F), onSurfaceVariant = Color(0xFFB3B1C8), outline = Color(0xFF414052),
@@ -57,9 +108,24 @@ object VisualDesign {
 
 @Composable fun VisualBackground(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
     Box(modifier.background(VisualDesign.Background)) {
-        if (LocalVisualDark.current && !LocalVisualAmoled.current) Box(Modifier.fillMaxSize().background(Brush.radialGradient(
-            listOf(Color(0xFF242532), Color(0xFF191A23), Color.Transparent),
-            center = Offset(160f, -90f), radius = 850f)))
+        if (LocalVisualDark.current && !LocalVisualAmoled.current) Box(Modifier.fillMaxSize().clipToBounds().drawWithCache {
+            val base = Brush.verticalGradient(VisualDesign.Light.AmbientBase)
+            val shoulder = Offset(size.width * .92f, size.height * .04f)
+            val edge = Offset(-size.width * .35f, size.height * .48f)
+            val upperLight = Brush.radialGradient(VisualDesign.Light.AmbientUpper,
+                shoulder, size.width * 1.12f)
+            val sideLight = Brush.radialGradient(VisualDesign.Light.AmbientSide,
+                edge, size.width * 1.15f)
+            onDrawBehind {
+                drawRect(base)
+                withTransform({ scale(1.1f, .72f, shoulder) }) {
+                    drawCircle(upperLight, size.width * 1.12f, shoulder)
+                }
+                withTransform({ scale(.85f, 1.4f, edge) }) {
+                    drawCircle(sideLight, size.width * 1.15f, edge)
+                }
+            }
+        })
         content()
     }
 }

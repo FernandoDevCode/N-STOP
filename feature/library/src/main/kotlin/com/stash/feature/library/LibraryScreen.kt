@@ -136,6 +136,7 @@ import com.stash.core.ui.selection.SelectionScaffoldOverlay
 import com.stash.core.ui.selection.SelectionState
 import com.stash.core.ui.theme.StashTheme
 import com.stash.core.common.extensions.pluralize
+import com.stash.core.ui.visual.*
 import com.stash.core.ui.components.bottomChromePadding
 
 /**
@@ -583,9 +584,7 @@ private fun LibraryContent(
 ) {
     Column(
         modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(top = 16.dp),
+            .fillMaxSize(),
     ) {
         // -- Heading + Import action --
         // SAF audio picker launched from the "Add tracks" icon button in
@@ -621,6 +620,8 @@ private fun LibraryContent(
             }
         }
 
+        VisualHeader(VisualActions(onSettings = onOpenSettings))
+        Text("Sua Biblioteca", Modifier.padding(horizontal = VisualDesign.Gutter, vertical = 12.dp), style = VisualDesign.PageTitle)
         // Compact header: title + Import (+), search, and sort/filter icons —
         // replaces the old heading row + the six stacked control bars.
         Row(
@@ -637,12 +638,6 @@ private fun LibraryContent(
                 .padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = stringResource(R.string.nostop_library_title),
-                style = MaterialTheme.typography.headlineLarge,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.weight(1f),
-            )
             // Shuffle stays in the always-visible header so it's reachable even
             // once the hero has scrolled away. It shuffles what you're looking
             // at: the liked list on the Liked tab (issue #402 — it used to
@@ -702,9 +697,10 @@ private fun LibraryContent(
 
         // -- Inline search (toggled by the header 🔍) — no permanent bar --
         if (searchOpen) {
-            GlassSearchBar(
+            VisualSearchField(
                 query = searchQuery,
-                onQueryChange = onSearchQueryChanged,
+                onQuery = onSearchQueryChanged,
+                onSearch = {},
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
             )
         }
@@ -748,11 +744,10 @@ private fun LibraryContent(
             stringResource(R.string.nostop_library_artists) to LibraryTab.ARTISTS,
             stringResource(R.string.nostop_library_albums) to LibraryTab.ALBUMS,
         )
-        com.stash.core.ui.components.CrispChipRow(
-            chips = chipTabs.map { it.first },
+        VisualFilters(
+            filters = chipTabs.map { it.first },
             selected = chipTabs.first { it.second == state.activeTab }.first,
             onSelect = { label -> onTabSelected(chipTabs.first { it.first == label }.second) },
-            modifier = Modifier.padding(vertical = 4.dp),
         )
 
         Spacer(modifier = Modifier.height(4.dp))
@@ -1006,8 +1001,7 @@ private fun LikedTab(
                             chips = sift.map { it.first },
                             selected = sift.firstOrNull { it.second == filter }?.first ?: "All",
                             onSelect = { label -> onSelectSource(sift.first { it.first == label }.second) },
-                            modifier = Modifier.padding(vertical = 4.dp),
-                        )
+                                        )
                     }
                 }
                 if (tracks.isEmpty()) {
@@ -1361,8 +1355,8 @@ private fun PlaylistsGrid(
     Box(Modifier.fillMaxSize()) {
         LazyVerticalGrid(
             state = gridState,
-            columns = GridCells.Fixed(2),
-            contentPadding = PaddingValues(start = 20.dp, top = 8.dp, end = 20.dp, bottom = bottomChromePadding(8.dp)),
+            columns = GridCells.Fixed(1),
+            contentPadding = PaddingValues(top = 8.dp, bottom = bottomChromePadding(8.dp)),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -1381,125 +1375,9 @@ private fun PlaylistsGrid(
                 }
             }
             items(playlists, key = { it.id }) { playlist ->
-                if (playlist.artUrl != null) {
-                    // Playlist with artwork: image background + dark overlay
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(140.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .combinedClickable(
-                                onClick = { onPlayPlaylist(playlist) },
-                                onLongClick = { selectedPlaylist = playlist },
-                            ),
-                    ) {
-                        AsyncImage(
-                            model = playlist.artUrl,
-                            contentDescription = "${playlist.name} artwork",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
-                        )
-                        // Dark scrim overlay for text legibility
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(
-                                    Brush.verticalGradient(
-                                        colors = listOf(
-                                            Color.Transparent,
-                                            Color.Black.copy(alpha = 0.7f),
-                                        ),
-                                        startY = 40f,
-                                    ),
-                                ),
-                        )
-                        // Text pinned to bottom
-                        Column(
-                            modifier = Modifier
-                                .align(Alignment.BottomStart)
-                                .padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Text(
-                                text = playlist.name,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = Color.White,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                SourceIndicator(source = playlist.source)
-                                Text(
-                                    text = pluralize(playlist.trackCount, "track"),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Color.White.copy(alpha = 0.8f),
-                                )
-                            }
-                        }
-                        // Inside the artwork Box, so TopEnd is the card's corner. It used to sit
-                        // after the Box, straight in the grid item, where align() resolved to an
-                        // outer BoxScope, did nothing, and the pin landed at the cell's top-start.
-                        if (playlist.pinned) {
-                            Icon(
-                                imageVector = Icons.Default.PushPin,
-                                contentDescription = "Pinned",
-                                tint = Color.White,
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(8.dp)
-                                    .size(16.dp),
-                            )
-                        }
-                    }
-                } else {
-                    // No artwork: keep the original GlassCard look
-                    GlassCard(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .combinedClickable(
-                                onClick = { onPlayPlaylist(playlist) },
-                                onLongClick = { selectedPlaylist = playlist },
-                            ),
-                    ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            // A pinned playlist without art showed no pin at all.
-                            Row(verticalAlignment = Alignment.Top) {
-                                Text(
-                                    text = playlist.name,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onBackground,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                if (playlist.pinned) {
-                                    Icon(
-                                        imageVector = Icons.Default.PushPin,
-                                        contentDescription = "Pinned",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier
-                                            .padding(start = 4.dp)
-                                            .size(16.dp),
-                                    )
-                                }
-                            }
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                SourceIndicator(source = playlist.source)
-                                Text(
-                                    text = pluralize(playlist.trackCount, "track"),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                    }
-                }
+                VisualLibraryRow(VisualCard(playlist.id.toString(), playlist.name,
+                    (if (playlist.pinned) "Fixada · " else "") + pluralize(playlist.trackCount, "track") + " · " + playlist.source.name,
+                    playlist.artUrl), { onPlayPlaylist(playlist) }, { selectedPlaylist = playlist })
             }
         }
         VerticalScrollbar(
@@ -2069,44 +1947,15 @@ private fun ArtistsGrid(
     Box(Modifier.fillMaxSize()) {
         LazyVerticalGrid(
             state = gridState,
-            columns = GridCells.Fixed(2),
-            contentPadding = PaddingValues(start = 20.dp, top = 8.dp, end = 20.dp, bottom = bottomChromePadding(8.dp)),
+            columns = GridCells.Fixed(1),
+            contentPadding = PaddingValues(top = 8.dp, bottom = bottomChromePadding(8.dp)),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) { header() }
             items(displayList, key = { it.name }) { artist ->
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp)
-                        .combinedClickable(
-                            onClick = { onPlayArtist(artist.name) },
-                            onLongClick = { selectedArtist = artist },
-                        ),
-                ) {
-                    ArtistAvatar(
-                        name = artist.name,
-                        photoUrl = artist.photoUrl,
-                        artUrl = artist.artUrl,
-                        size = 72.dp,
-                    )
-                    Text(
-                        text = artist.name,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center,
-                    )
-                    Text(
-                        text = pluralize(artist.trackCount, "track"),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                VisualLibraryRow(VisualCard(artist.name, artist.name, pluralize(artist.trackCount, "track"),
+                    artist.photoUrl ?: artist.artUrl, round = true), { onPlayArtist(artist.name) }, { selectedArtist = artist })
             }
 
             // Collapsible section for single-track artists
@@ -2283,79 +2132,16 @@ private fun AlbumsGrid(
     Box(Modifier.fillMaxSize()) {
         LazyVerticalGrid(
             state = gridState,
-            columns = GridCells.Fixed(2),
-            contentPadding = PaddingValues(start = 20.dp, top = 8.dp, end = 20.dp, bottom = bottomChromePadding(8.dp)),
+            columns = GridCells.Fixed(1),
+            contentPadding = PaddingValues(top = 8.dp, bottom = bottomChromePadding(8.dp)),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) { header() }
             items(displayList, key = { "${it.name}|${it.artist}" }) { album ->
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                        .combinedClickable(
-                            onClick = { onOpenAlbum(album) },
-                            onLongClick = { selectedAlbum = album },
-                        ),
-                ) {
-                    // Album art: try local path, then remote URL, then fallback icon.
-                    // AlbumArtwork also falls back to the icon while a remote
-                    // image is loading or after it errors — a failed URL used to
-                    // render as an empty grey box.
-                    val artModel = album.artPath ?: album.artUrl
-                    AlbumArtwork(
-                        model = artModel,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(120.dp)
-                            .clip(RoundedCornerShape(8.dp)),
-                    ) {
-                        Surface(
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(8.dp)
-                                .size(32.dp)
-                                .clip(CircleShape)
-                                .clickable { onPlayAlbum(album.name, album.artist) },
-                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
-                            shape = CircleShape,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = "Play ${album.name}",
-                                tint = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.padding(4.dp),
-                            )
-                        }
-                    }
-                    Text(
-                        text = album.name,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Text(
-                            text = album.artist,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false),
-                        )
-                        Text(
-                            text = "· ${album.trackCount}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+                VisualLibraryRow(VisualCard("${album.name}|${album.artist}", album.name,
+                    "${album.artist} · ${album.trackCount}", album.artPath ?: album.artUrl),
+                    { onOpenAlbum(album) }, { selectedAlbum = album })
             }
 
             // Collapsible section for single-track albums

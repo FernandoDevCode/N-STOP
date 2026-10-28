@@ -60,7 +60,10 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
     state: PlayerState, onState: (PlayerState) -> Unit, previous: () -> Unit, next: () -> Unit,
     onClose: () -> Unit, onMenu: () -> Unit, font: FontFamily, debug: DebugView = DebugView.FINAL,
     fontScale: Float = 1f, modifier: Modifier = Modifier,
-    microOptions:MicroOptions=MicroOptions(),microState:PlayerMicroState?=null) {
+    microOptions:MicroOptions=MicroOptions(),microState:PlayerMicroState?=null,
+    production: Boolean = false, seekEnabled: Boolean = true, repeatOne: Boolean = false,
+    onInfo: () -> Unit = {}, coverContent: (@Composable (Modifier) -> Unit)? = null,
+    lyricsContent: (@Composable (Modifier, Float) -> Unit)? = null) {
     val r = remember(recipe) { safeRecipe(recipe) }
     val micro=microState ?: remember(r.sourceImageHash) { PlayerMicroState() }
     val profile=remember(r.familyWeights) { MicroProfile.from(r) }
@@ -121,11 +124,12 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
             Brush.verticalGradient(0f to Color.Black.copy(alpha=r.scrimTop),.5f to Color.Transparent,1f to Color.Black.copy(alpha=r.scrimBottom))))
         if (debug == DebugView.FINAL) {
             RoundControl("Recolher player", "down", Modifier.offset((inset-24*u).dp,(h*.027f-4*u).dp).size((48*u).dp),onClose,outlined=true)
-            RoundControl("Diagnóstico", "menu", Modifier.offset((w-inset-24*u).dp,(h*.027f-4*u).dp).size((48*u).dp),onMenu,outlined=true)
+            RoundControl(if (production) "Opções da faixa" else "Diagnóstico", "menu", Modifier.offset((w-inset-24*u).dp,(h*.027f-4*u).dp).size((48*u).dp),onMenu,outlined=true)
         }
         if (showArt && !state.lyrics) {
             Box(Modifier.offset(((w-artSize)/2).dp,artY.dp).size(artSize.dp,artHeight.dp).clip(RoundedCornerShape((15*u).dp))) {
-                if (cover != null) Image(cover,"${album.artist} — ${album.album}; ${album.status}",Modifier.fillMaxSize(),contentScale=ContentScale.Crop)
+                if (coverContent != null) coverContent(Modifier.fillMaxSize())
+                else if (cover != null) Image(cover,"${album.artist} — ${album.album}; ${album.status}",Modifier.fillMaxSize(),contentScale=ContentScale.Crop)
                 else Box(Modifier.fillMaxSize().background(Color(0xff131b29)),contentAlignment=Alignment.Center) {
                     Text("CAPA INDISPONÍVEL\n${album.album}", color=muted, fontFamily=font,
                         fontSize=(17*u).sp,lineHeight=(24*u).sp,modifier=Modifier.padding((24*u).dp))
@@ -133,31 +137,33 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
             }
         }
         if (debug == DebugView.FINAL && !state.lyrics) {
-            ProgressBar(state.progress,r,micro,microOptions,u,Modifier.offset(inset.dp,(seekY-24*u).dp).size(contentWidth.dp,(48*u).dp)) {
-                onState(state.copy(progress=it))
+            ProgressBar(state.progress,r,micro,microOptions,u,Modifier.offset(inset.dp,(seekY-24*u).dp).size(contentWidth.dp,(48*u).dp), enabled=seekEnabled) {
+                if (seekEnabled) onState(state.copy(progress=it))
             }
             Row(Modifier.offset(inset.dp,(seekY+11*u).dp).width(contentWidth.dp),horizontalArrangement=Arrangement.SpaceBetween) {
                 val total=album.durationSeconds
                 Text(if(total!=null) time((total*state.progress).roundToInt()) else "—:—",color=muted,fontSize=(11*u).sp,fontFamily=font)
                 Text(total?.let(::time) ?: "—:—",color=muted,fontSize=(11*u).sp,fontFamily=font)
             }
-            Text(title,Modifier.offset(inset.dp,titleY.dp).width((contentWidth-33*u).dp),color=text,
+            Text(title,Modifier.offset(inset.dp,titleY.dp).width((contentWidth-33*u).dp).clickable(onClick=onInfo),color=text,
                 fontSize=(titleSize*u).sp,fontFamily=font,fontWeight=FontWeight.SemiBold,
                 maxLines=2,overflow=TextOverflow.Ellipsis,lineHeight=(titleSize*1.16f*u).sp,letterSpacing=0.sp)
-            Text(metadata,Modifier.offset(inset.dp,metadataY.dp).width((contentWidth-20*u).dp),
+            Text(metadata,Modifier.offset(inset.dp,metadataY.dp).width((contentWidth-20*u).dp).clickable(onClick=onInfo),
                 color=muted,fontSize=(16*u).sp,lineHeight=(20*u).sp,fontFamily=font,maxLines=2,overflow=TextOverflow.Ellipsis,letterSpacing=0.sp)
-            RoundControl(if(state.liked) "Remover favorito (simulação)" else "Favoritar (simulação)","heart",
+            RoundControl(if(state.liked) "Remover favorito" else "Favoritar","heart",
                 Modifier.offset((w-inset-34*u).dp,(titleY-2*u).dp).size((48*u).dp),
                 { onState(state.copy(liked=!state.liked)) },if(state.liked) Color(r.favoriteColor) else muted,heartFilled=state.liked)
             val buttonSize=w*r.controlSurface.diameterRatio/.85f
             val small=48*u
             listOf(.135f,.315f,.685f,.865f).forEachIndexed { i,x ->
-                val labels=listOf("Aleatório (simulação)","Capa anterior","Próxima capa","Repetir (simulação)")
+                val labels=if (production) listOf("Aleatório", "Faixa anterior", "Próxima faixa", if (repeatOne) "Repetir uma faixa" else if (state.repeat) "Repetir todas" else "Repetição desligada") else listOf("Aleatório (simulação)","Capa anterior","Próxima capa","Repetir (simulação)")
                 val icons=listOf("shuffle","previous","next","repeat")
                 RoundControl(labels[i],icons[i],Modifier.offset((w*x-small/2).dp,(controlsY-small/2).dp).size(small.dp),{
                     when(i) { 0 -> onState(state.copy(shuffle=!state.shuffle)); 1 -> previous(); 2 -> next(); 3 -> onState(state.copy(repeat=!state.repeat)) }
                 },if((i==0 && state.shuffle)||(i==3 && state.repeat)) Color(r.progress.thumb) else if(i==3) muted else text)
             }
+            if (production && repeatOne) Text("1", Modifier.offset((w*.865f+9*u).dp,(controlsY-19*u).dp),
+                color=Color(r.progress.thumb),fontFamily=font,fontSize=(10*u).sp)
             PlayControl(r,state.playing,w,micro,microOptions,profile,Modifier.offset((w/2-buttonSize/2).dp,(controlsY-buttonSize/2).dp).size(buttonSize.dp)) {
                 onState(state.copy(playing=!state.playing))
             }
@@ -173,14 +179,7 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
         }
         if (debug==DebugView.BUTTON) PlayControl(r,state.playing,w,micro,microOptions,profile,Modifier.align(Alignment.Center).size((w*r.controlSurface.diameterRatio/.85f).dp)) { onState(state.copy(playing=!state.playing)) }
         if (debug==DebugView.FINAL && state.lyrics) {
-            Column(Modifier.offset(inset.dp,artY.dp).width(contentWidth.dp),verticalArrangement=Arrangement.spacedBy((20*u).dp)) {
-                Text(album.track ?: album.album,color=text,fontSize=(22*u).sp,lineHeight=(28*u).sp,fontFamily=font,fontWeight=FontWeight.SemiBold,maxLines=2,overflow=TextOverflow.Ellipsis)
-                Text("LETRAS · DEMONSTRAÇÃO\nSem letras reais ou versos atribuídos à faixa",color=muted,fontSize=(13*u).sp,lineHeight=(18*u).sp,fontFamily=font)
-                repeat(5) { i -> Text("Linha de teste ${i+1}",color=(if(i==1) Color(r.lyrics.active) else Color(r.lyrics.future)).copy(alpha=r.lyrics.alphaProgression[i.coerceAtMost(r.lyrics.alphaProgression.lastIndex)]),
-                    fontSize=(26*u).sp,lineHeight=(33*u).sp,fontFamily=font,fontWeight=FontWeight.SemiBold) }
-                Text("Voltar ao player",color=text,fontSize=(16*u).sp,fontFamily=font,
-                    modifier=Modifier.heightIn(min=(48*u).dp).clickable { onState(state.copy(lyrics=false)) }.padding((12*u).dp))
-            }
+            lyricsContent?.invoke(Modifier.offset(inset.dp,artY.dp).width(contentWidth.dp), u)
         }
     }
 }
@@ -188,7 +187,7 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
 fun progressX(fraction: Float,width: Float) = fraction.coerceIn(0f,1f)*width
 private fun time(seconds:Int) = "${seconds/60}:${(seconds%60).toString().padStart(2,'0')}"
 
-@Composable private fun ProgressBar(value:Float,r:ArtRecipe,micro:PlayerMicroState,options:MicroOptions,unit:Float,modifier:Modifier,onSeek:(Float)->Unit) {
+@Composable private fun ProgressBar(value:Float,r:ArtRecipe,micro:PlayerMicroState,options:MicroOptions,unit:Float,modifier:Modifier,enabled:Boolean=true,onSeek:(Float)->Unit) {
     val latestSeek by rememberUpdatedState(onSeek)
     val latestValue by rememberUpdatedState(value)
     val latestRecipe by rememberUpdatedState(r)
@@ -197,17 +196,18 @@ private fun time(seconds:Int) = "${seconds/60}:${(seconds%60).toString().padStar
     val focused by interactions.collectIsFocusedAsState()
     LaunchedEffect(hovered,focused,micro) { micro.hover(hovered); micro.focus(focused) }
     DisposableEffect(micro) { onDispose { micro.endDrag(); micro.hover(false); micro.focus(false) } }
-    Canvas(modifier.semantics { contentDescription="Progresso demonstrativo"; progressBarRangeInfo=ProgressBarRangeInfo(value,0f..1f)
-        setProgress { if(it.isFinite()) { onSeek(it.coerceIn(0f,1f)); true } else false } }
+    Canvas(modifier.semantics { contentDescription="Progresso"; progressBarRangeInfo=ProgressBarRangeInfo(value,0f..1f)
+        if (!enabled) disabled()
+        setProgress { if(enabled && it.isFinite()) { onSeek(it.coerceIn(0f,1f)); true } else false } }
         .hoverable(interactions).onKeyEvent { event ->
             val p=when(event.key) { Key.DirectionLeft -> latestValue-.01f; Key.DirectionRight -> latestValue+.01f; Key.MoveHome -> 0f; Key.MoveEnd -> 1f; else -> null }
-            if(p==null)false else { micro.keyPress(event.type==KeyEventType.KeyDown); if(event.type==KeyEventType.KeyDown)latestSeek(p.coerceIn(0f,1f)); true }
+            if(!enabled || p==null)false else { micro.keyPress(event.type==KeyEventType.KeyDown); if(event.type==KeyEventType.KeyDown)latestSeek(p.coerceIn(0f,1f)); true }
         }.focusable(interactionSource=interactions)
-        .pointerInput(micro) { detectTapGestures(onPress={
+        .pointerInput(micro,enabled) { if (enabled) detectTapGestures(onPress={
             micro.press(true)
             try { tryAwaitRelease() } finally { micro.press(false) }
         }) { latestSeek((it.x/size.width).coerceIn(0f,1f)) } }
-        .pointerInput(micro) { detectHorizontalDragGestures(
+        .pointerInput(micro,enabled) { if (enabled) detectHorizontalDragGestures(
             onDragStart={ p -> val fraction=(p.x/size.width).coerceIn(0f,1f); micro.beginDrag(fraction,progressColorAt(latestRecipe,fraction)); latestSeek(fraction) },
             onDragEnd={micro.endDrag()},onDragCancel={micro.endDrag()}) { change,_ ->
                 change.consume(); val fraction=(change.position.x/size.width).coerceIn(0f,1f)
@@ -272,7 +272,7 @@ private fun time(seconds:Int) = "${seconds/60}:${(seconds%60).toString().padStar
             scaleX=1f+.02f*amount; scaleY=scaleX
         }.clip(CircleShape)
             .background(Brush.linearGradient(*r.controlSurface.fill.map { it.position to Color(it.color) }.toTypedArray()))
-            .clickable(role=Role.Button,onClickLabel=if(playing) "Pausar (simulação)" else "Reproduzir (simulação)",onClick=onClick),contentAlignment=Alignment.Center) {
+            .clickable(role=Role.Button,onClickLabel=if(playing) "Pausar" else "Reproduzir",onClick=onClick),contentAlignment=Alignment.Center) {
             Canvas(Modifier.fillMaxSize()) {
                 micro.revision
                 val surface=r.controlSurface

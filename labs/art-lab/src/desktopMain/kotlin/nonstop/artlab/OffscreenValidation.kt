@@ -49,7 +49,7 @@ fun runOffscreenValidation(args:Array<String>) {
                 val font=FontFamily(Font(Res.font.inter_regular,FontWeight.Normal),Font(Res.font.inter_semibold,FontWeight.SemiBold))
                 MaterialTheme(colorScheme=darkColorScheme()) {
                   CompositionLocalProvider(LocalDensity provides Density(1f,fontScale)) {
-                    V8Renderer(album,cover,asset.texture,asset.recipe,state,{state=it},{},{},{},{},font,debug,
+                    LabV8Renderer(album,cover,asset.texture,asset.recipe,state,{state=it},{},{},{},{},font,debug,
                         fontScale=fontScale,modifier=Modifier.fillMaxSize())
                   }
                 }

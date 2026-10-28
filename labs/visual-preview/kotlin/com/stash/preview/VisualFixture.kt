@@ -119,18 +119,19 @@ private fun region(key: String): ArtRegion? = when {
 }
 
 @Composable fun VisualPreview(initialPage: VisualPage = VisualPage.Home,
-    initialStatus: VisualStatus = VisualStatus.Content, dark: Boolean = true, amoled: Boolean = false, artwork: VisualArtwork) {
+    initialStatus: VisualStatus = VisualStatus.Content, dark: Boolean = true, amoled: Boolean = false,
+    scenario: VisualScenario = VisualScenario.Approved, artwork: VisualArtwork) {
     var page by rememberSaveable { mutableStateOf(initialPage) }
     var filter by rememberSaveable(page) { mutableStateOf(VisualFixture.screen(page).selectedFilter) }
     var query by rememberSaveable { mutableStateOf("") }
     var playing by rememberSaveable { mutableStateOf(true) }
     var liked by rememberSaveable { mutableStateOf(false) }
     var dialog by remember { mutableStateOf<String?>(null) }
-    var status by remember { mutableStateOf(initialStatus) }
-    val source = VisualFixture.screen(page)
+    var status by remember(scenario, initialStatus) { mutableStateOf(if (initialStatus == VisualStatus.Content) scenario.screen(page).status else initialStatus) }
+    val source = scenario.screen(page)
     val state = source.copy(selectedFilter = filter, query = query, status = status,
         rows = source.rows.filter { it.title.contains(query, true) },
-        message = if (status == VisualStatus.Error) "Não foi possível carregar. Tente novamente." else "Sua biblioteca ainda está vazia.")
+        message = source.message.ifBlank { if (status == VisualStatus.Error) "Não foi possível carregar. Tente novamente." else "Sua biblioteca ainda está vazia." })
     val actions = VisualActions(onPage = { page = it; query = "" }, onFilter = { filter = it },
         onCard = { dialog = "Prévia de ${it}" }, onMore = { dialog = "Opções de ${it}" }, onSection = { dialog = "Seção ${it}" },
         onQuery = { query = it }, onSearch = { if (page != VisualPage.Search) page = VisualPage.Search else dialog = "Busca de demonstração: $query" },
@@ -142,7 +143,7 @@ private fun region(key: String): ArtRegion? = when {
         VisualBackground(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize()) {
                 Box(Modifier.weight(1f)) { key(page) { VisualScreen(state, actions, artwork = artwork) } }
-                VisualBottomBar(page, VisualFixture.player.copy(playing = playing, card = VisualFixture.player.card.copy(liked = liked)), actions, artwork = artwork)
+                VisualBottomBar(page, scenario.player()?.let { it.copy(playing = playing, card = it.card.copy(liked = liked)) }, actions, artwork = artwork)
             }
         }
         dialog?.let { text -> AlertDialog(onDismissRequest = { dialog = null }, title = { Text(text) },

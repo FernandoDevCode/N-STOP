@@ -177,6 +177,7 @@ private fun PlayerV7Content(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val track = uiState.currentTrack
+    var useClassicPlayer by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     val resolvingArtist by viewModel.resolvingArtist.collectAsStateWithLifecycle()
     val isDownloadingCurrent by viewModel.isDownloadingCurrent.collectAsStateWithLifecycle()
     val exportingLyricsTrackId by viewModel.exportingLyricsTrackId.collectAsStateWithLifecycle()
@@ -752,8 +753,9 @@ private fun PlayerV7Content(
         )
     }
 
+    val useV8 = !useClassicPlayer && !reading && room == null && track != null
     Box(Modifier.holdHeightWhileLeaving().fillMaxSize().background(Color(0xFF05080D))) {
-        PlayerV7Backdrop(artModel, resolvedDirection, ambientAnimationEnabled)
+        if (!useV8) PlayerV7Backdrop(artModel, resolvedDirection, ambientAnimationEnabled)
         val navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
         val reduced = com.stash.core.ui.ambient.rememberReducedMotion()
         val progress: @Composable () -> Unit = {
@@ -790,6 +792,29 @@ private fun PlayerV7Content(
             if (bitmap == null) artDirection = PlayerArtDirection.Neutral
             else if (bitmap !== directionBitmap) directionBitmap = bitmap
         }
+        if (useV8) {
+            Box(Modifier.fillMaxSize().padding(bottom = navBarInset).statusBarsPadding()) {
+                V8PlayerSurface(uiState, playerPosition, viewModel, onDismiss,
+                    onMenu = { showOptionsSheet = true }, onFailure = { useClassicPlayer = true },
+                    cover = { coverModifier, image ->
+                        SwipeableArt(trackKey = track?.let { it.id to uiState.currentIndex },
+                            gesturesEnabled = true, canNext = canSwipeNext, canPrevious = canSwipePrevious,
+                            canSeek = uiState.isSeekable && uiState.durationMs > 0,
+                            positionMs = { playerPosition.value }, durationMs = uiState.durationMs,
+                            onNext = viewModel::onSkipNext, onPrevious = viewModel::onSwipePrevious,
+                            onSeekTo = viewModel::onSeekTo) { swipeModifier ->
+                            Box(coverModifier.then(swipeModifier)) { image() }
+                        }
+                    })
+                Box(Modifier.align(Alignment.TopEnd).padding(top = 12.dp, end = 24.dp)) {
+                    PlayerV7Menu(expanded = showOptionsSheet, onExpanded = { showOptionsSheet = it },
+                        actions = menuActions(emptySet(), actionCtx), visualState = visualState,
+                        accent = dynamicProgress, onAction = onAction,
+                        onTimer = { showSleepTimerSheet = true }, onAudio = { showSignalPath = true },
+                        showTrigger = false, onClassicPlayer = { useClassicPlayer = true })
+                }
+            }
+        } else
         Column(Modifier.fillMaxSize().padding(bottom = navBarInset).statusBarsPadding()) {
             PlayerV7TopBar(onClose = if (reading) viewModel::onDismissLyrics else onDismiss) {
                 PlayerV7Menu(expanded = showOptionsSheet, onExpanded = { showOptionsSheet = it },

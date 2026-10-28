@@ -17,6 +17,11 @@ import com.stash.core.ui.components.SectionHeader
 import com.stash.feature.settings.components.*
 
 fun main(args: Array<String>) {
+    if ("--capture-system" in args) {
+        System.setProperty("java.awt.headless", "true")
+        captureVisualPreview()
+        captureVisualSystem(); return
+    }
     if ("--capture-visual" in args) {
         System.setProperty("java.awt.headless", "true")
         captureVisualPreview(); return
@@ -44,7 +49,7 @@ fun main(args: Array<String>) {
             state = windowState,
         ) {
             CompositionLocalProvider(LocalDesktopWindowVisible provides !windowState.isMinimized) {
-                if (preview) DesktopVisualPreview()
+                if (preview) DesktopVisualPreview(com.stash.preview.VisualScenario.parse(args.firstOrNull { it.startsWith("--visual-scenario=") }?.substringAfter('=')))
                 else if ("--workbench" in args) DesktopWorkbench() else DesktopApp(checkNotNull(controller))
             }
         }

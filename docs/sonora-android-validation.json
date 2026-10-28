@@ -1,0 +1,90 @@
+{
+  "date": "2026-10-28",
+  "timezone": "America/Sao_Paulo",
+  "apk": {
+    "path": "C:\\Users\\User\\Documents\\GitHub\\Spotify\\Stash\\app\\build\\outputs\\apk\\debug\\app-debug.apk",
+    "bytes": 185686736,
+    "sha256": "6db002fa735be6e65c536c15082ded380ec95cb58c4d57ca21820efc8f8a7e98",
+    "applicationId": "com.stash.app.debug",
+    "versionName": "0.9.114",
+    "versionCode": 150,
+    "signatureVerified": true,
+    "dex": {
+      "shared_renderer": true,
+      "android_v8_host": true,
+      "media_service": true,
+      "visual_components": true,
+      "lab_catalog": false,
+      "lab_fixtures": false,
+      "lab_demo_lyrics": false,
+      "lab_desktop_host": false
+    }
+  },
+  "tests": {
+    "home": {
+      "tests": 66,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "classes": 11
+    },
+    "search": {
+      "tests": 133,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "classes": 14
+    },
+    "library": {
+      "tests": 155,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "classes": 23
+    },
+    "nowplaying": {
+      "tests": 259,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "classes": 38
+    },
+    "media": {
+      "tests": 891,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "classes": 102
+    },
+    "art_android": {
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "classes": 1
+    },
+    "visual_desktop": {
+      "tests": 179,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "classes": 31
+    },
+    "art_lab": {
+      "tests": 26,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "classes": 7
+    }
+  },
+  "totalTests": 1711,
+  "androidExecution": {
+    "performed": false,
+    "reason": "No connected ADB device or installed emulator/AVD",
+    "physicalPlaybackValidated": false
+  },
+  "visualApproval": false,
+  "neuralInference": false,
+  "audioEnergySourceConnected": false
+}

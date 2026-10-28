@@ -1,5 +1,11 @@
 # NØNSTOP Art Lab v8 — Procedural Art Director
 
+**Atualização 28/10/2026:** o pedido posterior de integração Android autorizou o
+compartilhamento de `commonMain` com `core:art` e o host de reprodução principal.
+Estado, testes e limites: [integração Android](../../docs/SONORA_ANDROID_INTEGRATION.md).
+As descrições de isolamento abaixo registram o funcionamento próprio do laboratório;
+a aprovação artística continua pendente.
+
 Laboratório independente Kotlin/Compose Multiplatform. Norma única:
 `../../docs/player-v8/PLAYER_V8_ART_LAB_SPEC.md` (1.4, decisões §20–21).
 **Análise clássica/procedural, sem IA. Aprovação visual do usuário pendente.**

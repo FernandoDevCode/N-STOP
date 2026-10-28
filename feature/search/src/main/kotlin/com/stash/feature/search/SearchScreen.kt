@@ -94,6 +94,7 @@ import com.stash.data.ytmusic.model.ArtistSummary
 import com.stash.data.ytmusic.model.SearchResultSection
 import com.stash.data.ytmusic.model.TopResultItem
 import com.stash.data.ytmusic.model.TrackSummary
+import com.stash.core.ui.visual.*
 import com.stash.core.ui.components.bottomChromePadding
 
 /**
@@ -109,6 +110,7 @@ import com.stash.core.ui.components.bottomChromePadding
 fun SearchScreen(
     onNavigateToArtist: (artistId: String, name: String, avatarUrl: String?) -> Unit,
     onNavigateToAlbum: (album: AlbumSummary) -> Unit,
+    onSettings: () -> Unit = {},
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -133,42 +135,17 @@ fun SearchScreen(
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState, Modifier.padding(bottom = bottomChromePadding())) },
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = Color.Transparent,
     ) { inner ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(inner)
-                .background(MaterialTheme.colorScheme.background)
-                .statusBarsPadding(),
+                ,
         ) {
-            // Command hero: the page owns its name like Library/Sync do.
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                                Color.Transparent,
-                            ),
-                        ),
-                    ),
-            ) {
-                Text(
-                    text = stringResource(R.string.nostop_search_title),
-                    style = MaterialTheme.typography.headlineLarge,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(start = 20.dp, top = 18.dp, bottom = 12.dp),
-                )
-            }
-            SearchBar(
-                query = state.query,
-                onQueryChanged = viewModel::onQueryChanged,
-                onClear = { viewModel.onQueryChanged("") },
-                onSearch = viewModel::onSearchCommitted,
-            )
+            VisualHeader(VisualActions(onSettings = onSettings))
+            Text("Buscar", Modifier.padding(horizontal = VisualDesign.Gutter, vertical = 12.dp), style = VisualDesign.PageTitle)
+            SearchBar(state.query, viewModel::onQueryChanged, { viewModel.onQueryChanged("") }, viewModel::onSearchCommitted)
 
             when (val status = state.status) {
                 SearchStatus.Idle -> RecentSearches(
@@ -243,60 +220,8 @@ private fun SearchBar(
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
 
-    // Command-hero field: a soft plum tonal pill — the loud violet outline is
-    // retired; focus is signaled by the cursor + keyboard, not a border.
-    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val plum = MaterialTheme.colorScheme.primary
-    val tonal = plum.copy(alpha = if (dark) 0.16f else 0.09f)
-    OutlinedTextField(
-        value = query,
-        onValueChange = onQueryChanged,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 12.dp)
-            .focusRequester(focusRequester),
-        placeholder = {
-            Text(
-                text = stringResource(R.string.nostop_search_placeholder),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        },
-        leadingIcon = {
-            Icon(
-                imageVector = Icons.Default.Search,
-                contentDescription = stringResource(R.string.nostop_search_title),
-                tint = plum,
-            )
-        },
-        trailingIcon = {
-            AnimatedVisibility(
-                visible = query.isNotEmpty(),
-                enter = fadeIn(),
-                exit = fadeOut(),
-            ) {
-                IconButton(onClick = onClear) {
-                    Icon(
-                        imageVector = Icons.Default.Clear,
-                        contentDescription = stringResource(R.string.nostop_search_clear),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        },
-        singleLine = true,
-        shape = RoundedCornerShape(28.dp),
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = tonal,
-            unfocusedContainerColor = tonal,
-            focusedBorderColor = Color.Transparent,
-            unfocusedBorderColor = Color.Transparent,
-            cursorColor = MaterialTheme.colorScheme.primary,
-        ),
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        keyboardActions = KeyboardActions(
-            onSearch = { keyboardController?.hide(); onSearch() },
-        ),
-    )
+    VisualSearchField(query, onQueryChanged, { keyboardController?.hide(); onSearch() },
+        Modifier.padding(horizontal = VisualDesign.Gutter, vertical = 12.dp).focusRequester(focusRequester))
 
     // Auto-focus the search field the first time the screen opens, with nothing
     // typed yet. Saveable so it survives the back stack: focusing on every
@@ -529,7 +454,7 @@ private fun SectionedResultsList(
                     }
                 }
                 is SearchResultSection.Songs -> {
-                    item(key = "songs_header") { SectionHeader(stringResource(R.string.nostop_search_songs)) }
+                    item(key = "songs_header") { VisualSectionTitle(stringResource(R.string.nostop_search_songs)) }
                     items(section.tracks, key = { "song_" + it.videoId }) { t ->
                         val item = t.toSearchResultItem()
                         // Warm the lossless URL cache for each song row as it
@@ -560,7 +485,7 @@ private fun SectionedResultsList(
                     }
                 }
                 is SearchResultSection.Artists -> {
-                    item(key = "artists_header") { SectionHeader(stringResource(R.string.nostop_search_artists)) }
+                    item(key = "artists_header") { VisualSectionTitle(stringResource(R.string.nostop_search_artists)) }
                     item(key = "artists_row") {
                         LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -577,20 +502,14 @@ private fun SectionedResultsList(
                     }
                 }
                 is SearchResultSection.Albums -> {
-                    item(key = "albums_header") { SectionHeader(stringResource(R.string.nostop_search_albums)) }
+                    item(key = "albums_header") { VisualSectionTitle(stringResource(R.string.nostop_search_albums)) }
                     item(key = "albums_row") {
                         LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             contentPadding = PaddingValues(horizontal = 16.dp),
                         ) {
                             items(section.albums, key = { it.id }) { a ->
-                                AlbumSquareCard(
-                                    title = a.title,
-                                    artist = a.artist,
-                                    thumbnailUrl = a.thumbnailUrl,
-                                    year = a.year,
-                                    onClick = { onAlbumClick(a) },
-                                )
+                                VisualRailCard(VisualCard(a.id, a.title, a.artist, a.thumbnailUrl), { onAlbumClick(a) }, plain = true)
                             }
                         }
                     }
@@ -645,7 +564,7 @@ private fun TopResultCard(
             .padding(horizontal = 16.dp, vertical = 8.dp)
             .testTag("TopResultCard")
             .clip(RoundedCornerShape(16.dp))
-            .background(extendedColors.glassBackground)
+            .background(VisualDesign.cardSurface())
             .then(clickMod)
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),

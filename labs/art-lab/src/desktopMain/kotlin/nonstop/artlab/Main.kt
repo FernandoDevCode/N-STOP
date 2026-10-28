@@ -197,7 +197,7 @@ private fun launchLab() = application {
                         CompositionLocalProvider(LocalDensity provides Density(1f,if(largeFont) 1.5f else 1f)) {
                             Layout(content={
                                 Crossfade(album to asset,animationSpec=tween(if(reduceMotion || !transitions)0 else 350),label="cover recipe") { (frameAlbum,frameAsset) ->
-                                V8Renderer(frameAlbum,if(frameAlbum==album)displayCover else frameAsset.cover,frameAsset.texture,frameAsset.recipe,player,{player=it},{select(selected-1)},{select(selected+1)},
+                                LabV8Renderer(frameAlbum,if(frameAlbum==album)displayCover else frameAsset.cover,frameAsset.texture,frameAsset.recipe,player,{player=it},{select(selected-1)},{select(selected+1)},
                                     {playerOpen=false; galleryVisible=true},{diagnostics=!diagnostics},font,debug,if(largeFont)1.5f else 1f,
                                     Modifier.fillMaxSize().drawWithContent {
                                         if(captureRequested) {

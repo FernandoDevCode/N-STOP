@@ -20,7 +20,7 @@ fun compositeAtmosphere(p:AtmospherePixels):PixelImage {
 /** No source bitmap enters this boundary. Only bounded low-dimensional recipe primitives survive.
  * Four masks are prepared once; frames only sample cached textures. No semantic reconstruction. */
 object AtmospherePrecomputer {
-    fun render(recipe:ArtRecipe,width:Int=192,height:Int=342):AtmospherePixels {
+    fun render(recipe:ArtRecipe,width:Int=192,height:Int=342,checkCancelled:()->Unit={}):AtmospherePixels {
         require(width in 32..512 && height in 32..1024 && recipe.isValid())
         val deep=IntArray(width*height); val diffuse=IntArray(deep.size); val accents=IntArray(deep.size); val direction=IntArray(deep.size)
         fun field(x:Double,y:Double,lights:List<Light>,warp:Double):DoubleArray {
@@ -43,7 +43,9 @@ object AtmospherePrecomputer {
         val primitives=ProceduralPrimitives(p.seed)
         val ambient=rgb(recipe.colors.environmental)
         val accentColor=rgb(recipe.colors.accent)
-        for(y in 0 until height) for(x in 0 until width) {
+        for(y in 0 until height) {
+            checkCancelled()
+            for(x in 0 until width) {
             val px=(x+.5)/width; val py=(y+.5)/height; val i=y*width+x
             val mass=field(px,py,recipe.environment.regions,recipe.environment.warp.toDouble())
             val turbulence=primitives.fractal(px*p.noiseScale,py*p.noiseScale,p.octaves,p.roughness.toDouble())
@@ -71,6 +73,7 @@ object AtmospherePrecomputer {
                 beam[3]=out
             }
             direction[i]=pack(beam)
+        }
         }
         return AtmospherePixels(PixelImage(width,height,deep),PixelImage(width,height,diffuse),PixelImage(width,height,accents),PixelImage(width,height,direction))
     }

@@ -45,3 +45,5 @@ include(":feature:sync")
 include(":feature:settings")
 include(":feature:search")
 include(":feature:community")
+
+include(":core:art")

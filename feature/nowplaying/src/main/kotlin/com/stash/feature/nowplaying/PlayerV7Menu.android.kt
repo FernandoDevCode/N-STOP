@@ -61,11 +61,13 @@ internal fun PlayerV7Menu(
     onAction: (NowPlayingAction) -> Unit,
     onTimer: () -> Unit,
     onAudio: () -> Unit,
+    showTrigger: Boolean = true,
+    onClassicPlayer: (() -> Unit)? = null,
 ) {
     val maxHeight = (LocalConfiguration.current.screenHeightDp * .72f).dp
     var moreActions by remember(expanded) { mutableStateOf(false) }
     Box {
-        IconButton(onClick = { onExpanded(true) }, modifier = Modifier.size(40.dp).clip(CircleShape)
+        if (showTrigger) IconButton(onClick = { onExpanded(true) }, modifier = Modifier.size(40.dp).clip(CircleShape)
             .background(Color.White.copy(alpha = .025f)).border(.6.dp, Color.White.copy(alpha = .12f), CircleShape)) {
             Icon(Icons.Default.MoreVert, stringResource(R.string.v7_actions), tint = V7White, modifier = Modifier.size(25.dp))
         }
@@ -80,6 +82,7 @@ internal fun PlayerV7Menu(
                     leadingIcon = { Icon(icon, null, tint = if (active) accent else V7White, modifier = Modifier.size(22.dp)) },
                     onClick = { closeThen(click) }, contentPadding = PaddingValues(horizontal = 18.dp, vertical = 4.dp))
             }
+            onClassicPlayer?.let { item("Usar player compatível (V7)", Icons.Default.Settings, click = it) }
             if (NowPlayingAction.QUEUE in actions) item(stringResource(R.string.v7_queue), actionVisual(NowPlayingAction.QUEUE, visualState).icon) { onAction(NowPlayingAction.QUEUE) }
             item(stringResource(R.string.v7_timer), Icons.Default.Timer, click = onTimer)
             item(stringResource(R.string.v7_audio), Icons.Outlined.GraphicEq, click = onAudio)

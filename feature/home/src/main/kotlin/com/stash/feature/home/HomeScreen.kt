@@ -126,6 +126,7 @@ import com.stash.core.model.Playlist
 import com.stash.core.model.PlaylistType
 import com.stash.core.model.Track
 import com.stash.core.ui.components.AlbumSquareCard
+import com.stash.core.ui.visual.*
 import com.stash.core.ui.components.CardRail
 import com.stash.core.ui.components.CrispChipRow
 import com.stash.core.data.prefs.HomeSection
@@ -235,11 +236,374 @@ fun HomeScreen(
 
     LazyColumn(
         modifier = modifier
-            .fillMaxSize()
-            .statusBarsPadding(),
+            .fillMaxSize(),
         // Edge to edge under the glass mini player + tab bar: they blur the feed as it scrolls by.
-        contentPadding = PaddingValues(bottom = bottomChromePadding(120.dp)),
+        contentPadding = PaddingValues(top = 16.dp, bottom = bottomChromePadding(24.dp)),
     ) {
+        item(key = "nonstop_media_filters") {
+            val filters = listOf("Música", "Podcasts", "Audiobooks")
+            VisualFilters(filters, filters[selectedMediaTab], { selectedMediaTab = filters.indexOf(it) })
+
+        }
+        if (selectedMediaTab == 0) {
+            // A real listening surface must survive an empty personal-library
+            // sync: the current track exists even when no playlists do.
+            listeningState.currentTrack?.let { activeTrack ->
+                item(key = "nonstop_listening_now") {
+                    NonstopListeningCard(activeTrack, onOpenPlayer = onNavigateToNowPlaying)
+                    Spacer(Modifier.height(10.dp))
+                }
+            }
+
+        // ── Lossless connect nudge ───────────────────────────────────
+        // Shown when the user has lossless toggled OFF and hasn't
+        // dismissed. Tap routes to Settings; X dismisses forever.
+        // Stacks below the Last.fm banner if both apply.
+        uiState.losslessPrompt?.let {
+            item {
+                Spacer(Modifier.height(6.dp))
+                LosslessConnectBanner(
+                    onSetUp = {
+                        viewModel.requestSettingsLosslessFocus()
+                        onNavigateToSettings()
+                    },
+                    onDismiss = viewModel::dismissLosslessBanner,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
+        }
+
+        // ── Lossless offline ─────────────────────────────────────────
+        // Shown while lossless is ON, the shared path looks dead and
+        // the user owns no lossless source of their own — the one
+        // moment connecting an account is the difference between FLAC
+        // and a silent YouTube fallback. Tap opens Settings › Audio;
+        // X declines forever.
+        if (uiState.showLosslessOffline) {
+            item {
+                Spacer(Modifier.height(6.dp))
+                LosslessOfflineBanner(
+                    onConnect = {
+                        viewModel.requestSettingsLosslessFocus()
+                        onNavigateToSettings()
+                    },
+                    onDismiss = viewModel::dismissLosslessOffline,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
+        }
+
+        // ── Re-tagging library (metadata backfill progress) ──────────
+        // v0.9.35: surfaces MetadataBackfillWorker progress on upgrade
+        // so users know why disk IO / yt-dlp activity is happening. The
+        // banner renders Hidden in the steady state (post-backfill); the
+        // 2-second "Done" pulse self-acks via LaunchedEffect inside the
+        // composable.
+        if (uiState.metadataBackfillBanner !is com.stash.feature.home.banner.MetadataBackfillBannerState.Hidden) {
+            item {
+                Spacer(Modifier.height(6.dp))
+                com.stash.feature.home.banner.MetadataBackfillBanner(
+                    state = uiState.metadataBackfillBanner,
+                    onFinishedAcknowledged = viewModel::onMetadataBackfillFinishedAcknowledged,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
+        }
+
+        // The approved Home leads with the user's own playlists rather than a generic hero.
+        // Only lift this rail when it is the FIRST user-arranged section; custom
+        // arrangements that move it elsewhere continue to be respected.
+        val recentLeading = uiState.sections.firstOrNull() == HomeSection.YOUR_PLAYLISTS
+        if (recentLeading && (uiState.yourPlaylists.isNotEmpty() || uiState.likedCard != null)) {
+            item(key = "section_your_playlists_leading") {
+                SonoraCardRail(title = stringResource(R.string.nostop_home_playlists)) {
+                    uiState.likedCard?.let { liked ->
+                        item(key = "liked_leading") {
+                            SonoraLikedCard(
+                                trackCount = liked.trackCount,
+                                onClick = {
+                                    viewModel.requestLibraryLikedFocus()
+                                    onNavigateToLibrary()
+                                },
+                            )
+                        }
+                    }
+                    items(uiState.yourPlaylists.railCut(HOME_RAIL_LIMIT), key = { it.id }) { p ->
+                        SonoraMixCard(
+                            title = p.title,
+                            artUrl = p.artUrl,
+                            source = p.source,
+                            onClick = { onNavigateToPlaylist(p.id) },
+                            onLongPress = { pinnedSheetPlaylistId = p.id },
+                        )
+                    }
+                }
+            }
+        }
+
+        // ── User-arranged sections (Settings > Appearance > Home layout) ──
+        // Order + visibility come from uiState.sections. The genre chips
+        // steer only the Qobuz rows, so they ride glued above the FIRST
+        // visible Qobuz section wherever the user placed it — and the old
+        // chips→header seam (16dp spacer stacked on the header's 12dp
+        // padding, 28dp of blank) tightens to 2dp + 12dp for that row.
+        val firstQobuzSection = uiState.sections.firstOrNull {
+            it == HomeSection.NEW_RELEASES ||
+                it == HomeSection.QOBUZ_PLAYLISTS ||
+                it == HomeSection.TOP_ALBUMS
+        }
+        uiState.sections.forEach { section ->
+            val chipsLead = uiState.qobuzDiscoveryEnabled && section == firstQobuzSection
+            if (chipsLead) {
+                item(key = "section_genre_chips") {
+                    Spacer(Modifier.height(14.dp))
+                    VisualFilters(
+                        filters = uiState.genres.map { it.label },
+                        selected = uiState.selectedGenre,
+                        onSelect = viewModel::onSelectGenre,
+                    )
+                }
+            }
+            when (section) {
+                HomeSection.YOUR_PLAYLISTS ->
+                    if (!recentLeading && (uiState.yourPlaylists.isNotEmpty() || uiState.likedCard != null)) {
+                        item(key = "section_your_playlists") {
+                            SonoraCardRail(title = stringResource(R.string.nostop_home_playlists)) {
+                                uiState.likedCard?.let { liked ->
+                                    item(key = "liked_card") {
+                                        SonoraLikedCard(
+                                            trackCount = liked.trackCount,
+                                            onClick = {
+                                                viewModel.requestLibraryLikedFocus()
+                                                onNavigateToLibrary()
+                                            },
+                                        )
+                                    }
+                                }
+                                items(uiState.yourPlaylists.railCut(HOME_RAIL_LIMIT), key = { it.id }) { p ->
+                                    SonoraMixCard(
+                                        title = p.title, artUrl = p.artUrl, source = p.source,
+                                        onClick = { onNavigateToPlaylist(p.id) },
+                                        onLongPress = { pinnedSheetPlaylistId = p.id },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                HomeSection.NEW_RELEASES -> if (uiState.newReleases.isNotEmpty()) {
+                    item(key = "section_new_releases") {
+                        DiscoveryAlbumRow(
+                            title = stringResource(R.string.nostop_home_new_releases),
+                            albums = uiState.newReleases,
+                            onOpen = onNavigateToAlbum,
+                            topSpacing = if (chipsLead) 2.dp else 16.dp,
+                        )
+                    }
+                }
+                HomeSection.QOBUZ_PLAYLISTS -> if (uiState.playlists.isNotEmpty()) {
+                    item(key = "section_qobuz_playlists") {
+                        DiscoveryPlaylistRow(
+                            title = stringResource(R.string.nostop_home_qobuz),
+                            playlists = uiState.playlists,
+                            onOpen = onNavigateToAlbum,
+                            onSeeAll = { onSeeAllPlaylists(uiState.selectedGenre) },
+                            topSpacing = if (chipsLead) 2.dp else 16.dp,
+                        )
+                    }
+                }
+                HomeSection.TOP_ALBUMS -> if (uiState.topAlbums.isNotEmpty()) {
+                    item(key = "section_top_albums") {
+                        // Collapsed to the top 5 by default; "Show all N" expands the
+                        // full best-sellers chart in place. Saveable so the choice
+                        // survives the item scrolling out of composition.
+                        var topAlbumsExpanded by rememberSaveable { mutableStateOf(false) }
+                        val visibleTop =
+                            if (topAlbumsExpanded) uiState.topAlbums else uiState.topAlbums.take(5)
+                        Column {
+                            Spacer(Modifier.height(if (chipsLead) 2.dp else 16.dp))
+                            SectionHeader(
+                                title = stringResource(R.string.nostop_home_top_albums),
+                                actionText = when {
+                                    uiState.topAlbums.size <= 5 -> null
+                                    topAlbumsExpanded -> stringResource(R.string.nostop_home_show_less)
+                                    else -> stringResource(R.string.nostop_home_show_all_count, uiState.topAlbums.size)
+                                },
+                                onActionClick = { topAlbumsExpanded = !topAlbumsExpanded },
+                            )
+                            RankedAlbumList(
+                                items = visibleTop.mapIndexed { i, a ->
+                                    RankedAlbumUi(
+                                        rank = i + 1,
+                                        title = a.title,
+                                        artist = a.artist,
+                                        artUrl = a.thumbnailUrl,
+                                        movement = null,   // Qobuz best-sellers carries no chart delta
+                                    )
+                                },
+                                onClick = { ranked -> onNavigateToAlbum(uiState.topAlbums[ranked.rank - 1]) },
+                            )
+                        }
+                    }
+                }
+                HomeSection.MADE_FOR_YOU -> if (uiState.madeForYou.isNotEmpty()) {
+                    item(key = "section_made_for_you") {
+                        SonoraCardRail(
+                            title = stringResource(R.string.nostop_home_made_for_you),
+                            actionText = stringResource(R.string.nostop_home_see_all),
+                            onActionClick = { onSeeAllMixes(MixRail.MADE_FOR_YOU) },
+                        ) {
+                            items(uiState.madeForYou.railCut(HOME_RAIL_LIMIT), key = { it.id }) { m ->
+                                SonoraMixCard(
+                                    title = m.title, artUrl = m.artUrl, source = m.source,
+                                    buildState = m.buildState, onClick = { openMix(m.id) },
+                                    onLongPress = { actionSheetMixId = m.id },
+                                )
+                            }
+                        }
+                    }
+                }
+                HomeSection.RADIOS -> if (uiState.radios.isNotEmpty()) {
+                    item(key = "section_radios") {
+                        SonoraCardRail(
+                            title = stringResource(R.string.nostop_home_radios),
+                            actionText = stringResource(R.string.nostop_home_see_all),
+                            onActionClick = { onSeeAllMixes(MixRail.RADIOS) },
+                        ) {
+                            items(uiState.radios.railCut(HOME_RAIL_LIMIT), key = { it.id }) { m ->
+                                SonoraMixCard(
+                                    title = m.title, artUrl = m.artUrl, source = m.source,
+                                    buildState = m.buildState, onClick = { openMix(m.id) },
+                                    onLongPress = { actionSheetMixId = m.id },
+                                )
+                            }
+                        }
+                    }
+                }
+                HomeSection.MOOD_DECADES -> if (uiState.moodDecades.isNotEmpty()) {
+                    item(key = "section_mood_decades") {
+                        SonoraCardRail(
+                            title = stringResource(R.string.nostop_home_moods),
+                            actionText = stringResource(R.string.nostop_home_see_all),
+                            onActionClick = { onSeeAllMixes(MixRail.MOOD_DECADES) },
+                        ) {
+                            items(uiState.moodDecades.railCut(HOME_RAIL_LIMIT), key = { it.id }) { m ->
+                                SonoraMixCard(
+                                    title = m.title, artUrl = m.artUrl, source = m.source,
+                                    buildState = m.buildState, onClick = { openMix(m.id) },
+                                    onLongPress = { actionSheetMixId = m.id },
+                                )
+                            }
+                        }
+                    }
+                }
+                HomeSection.COMMUNITY -> item(key = "section_community") { communitySection() }
+            }
+        }
+
+        // Daily Discover remains available below the user's prioritized Home sections.
+        // ── Discover hero pager (Daily Discover + your Stash mixes) ──
+        // A mix created from the hero's ＋ ring lands right here as an
+        // identical sibling card — swipe between Daily Discover and your
+        // own mixes (dots below signal the pages). Long-press a Your-mix
+        // page for the action sheet (refresh / edit / delete / hide).
+        // Replaces the old "Your mixes" rail.
+        item {
+            Spacer(Modifier.height(6.dp))
+            // Minimized (long-press → "Minimize for now") drops the hero page
+            // for the session; the mix pages keep the pager alive. Distinct
+            // from hero == null (not connected), which shows PersonalizeCard.
+            val hero = if (heroMinimized) null else uiState.hero
+            // Daily Discover still being built: its slot holds a "Building…"
+            // card (first page of the pager) instead of sitting empty.
+            val heroBuilding = uiState.heroBuilding && !heroMinimized
+            val mixPages = uiState.yourMixes
+            when {
+                uiState.isLoading -> SonoraHeroCard(
+                    label = stringResource(R.string.nostop_home_updated_daily),
+                    title = stringResource(R.string.nostop_home_discover),
+                    subtitle = "",
+                    artUrl = null,
+                    onPlay = {},
+                    onOpen = {},
+                    loading = true,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                uiState.showColdStartCard -> PersonalizeCard(
+                    onConnect = onNavigateToSettings,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                hero == null && !heroBuilding && mixPages.isEmpty() -> Unit // minimized, nothing to page
+                else -> {
+                    val heroPages = if (hero != null || heroBuilding) 1 else 0
+                    val pageCount = heroPages + mixPages.size
+                    val pagerState = androidx.compose.foundation.pager.rememberPagerState(
+                        pageCount = { pageCount },
+                    )
+                    Column {
+                        androidx.compose.foundation.pager.HorizontalPager(
+                            state = pagerState,
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            pageSpacing = 10.dp,
+                        ) { page ->
+                            if (page < heroPages && hero == null) {
+                                DailyDiscoverBuildingCard()
+                            } else if (page < heroPages && hero != null) {
+                                SonoraHeroCard(
+                                    label = stringResource(R.string.nostop_home_updated_daily),
+                                    title = hero.title,
+                                    subtitle = hero.subtitle,
+                                    artUrl = hero.artUrl,
+                                    onPlay = viewModel::playHero,
+                                    onOpen = { onNavigateToPlaylist(hero.playlistId) },
+                                    onCreateMix = { onNavigateToMixBuilder(null) },
+                                    onLongPress = { heroActionSheet = true },
+                                )
+                            } else {
+                                val m = mixPages[page - heroPages]
+                                SonoraHeroCard(
+                                    label = stringResource(R.string.nostop_home_your_mix),
+                                    title = m.title,
+                                    subtitle = when (m.buildState) {
+                                        MixBuildState.BUILDING -> "building…"
+                                        MixBuildState.EMPTY -> "empty — edit to fill"
+                                        else -> pluralize(m.trackCount, "track")
+                                    },
+                                    artUrl = m.artUrl,
+                                    onPlay = { viewModel.playMix(m.id) },
+                                    onOpen = { openMix(m.id) },
+                                    onLongPress = { actionSheetMixId = m.id },
+                                )
+                            }
+                        }
+                        if (pageCount > 1) {
+                            Spacer(Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Center,
+                            ) {
+                                repeat(pageCount) { i ->
+                                    val active = pagerState.currentPage == i
+                                    Box(
+                                        modifier = Modifier
+                                            .padding(horizontal = 3.dp)
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                if (active) {
+                                                    MaterialTheme.colorScheme.primary
+                                                } else {
+                                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                                                },
+                                            ),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // ── App title row: wordmark + social icons ────────────────────
         // v0.9.13: empty space to the right of the wordmark holds quick
         // links to the project (GitHub, X). Supporter pill moves back
@@ -254,7 +618,7 @@ fun HomeScreen(
                 // One ink (owner, 2026-10-11): white on dark / aubergine on light, and while a song
                 // plays the contrast-checked tint of its mood colour, crossfading over 800 ms. Read
                 // at draw time, so the crossfade redraws the wordmark without recomposing the feed.
-                NonstopWordmark()
+                Text("Serviços", style = VisualDesign.Heading)
                 Spacer(modifier = Modifier.weight(1f))
 
                 // Streaming-mode quick-access chip. Tap → opens the
@@ -378,372 +742,6 @@ fun HomeScreen(
                                 runCatching { socialUriHandler.openUri(STASH_TRANSLATE_ACCESS_FORM_URL) }
                             },
                         )
-                    }
-                }
-            }
-        }
-
-        item(key = "nonstop_media_filters") {
-            NonstopMediaFilters(
-                selected = selectedMediaTab,
-                onSelect = { selectedMediaTab = it },
-                modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp),
-            )
-        }
-        if (selectedMediaTab == 0) {
-            // A real listening surface must survive an empty personal-library
-            // sync: the current track exists even when no playlists do.
-            listeningState.currentTrack?.let { activeTrack ->
-                item(key = "nonstop_listening_now") {
-                    NonstopListeningCard(activeTrack, onOpenPlayer = onNavigateToNowPlaying)
-                    Spacer(Modifier.height(10.dp))
-                }
-            }
-
-        // ── Lossless connect nudge ───────────────────────────────────
-        // Shown when the user has lossless toggled OFF and hasn't
-        // dismissed. Tap routes to Settings; X dismisses forever.
-        // Stacks below the Last.fm banner if both apply.
-        uiState.losslessPrompt?.let {
-            item {
-                Spacer(Modifier.height(6.dp))
-                LosslessConnectBanner(
-                    onSetUp = {
-                        viewModel.requestSettingsLosslessFocus()
-                        onNavigateToSettings()
-                    },
-                    onDismiss = viewModel::dismissLosslessBanner,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-            }
-        }
-
-        // ── Lossless offline ─────────────────────────────────────────
-        // Shown while lossless is ON, the shared path looks dead and
-        // the user owns no lossless source of their own — the one
-        // moment connecting an account is the difference between FLAC
-        // and a silent YouTube fallback. Tap opens Settings › Audio;
-        // X declines forever.
-        if (uiState.showLosslessOffline) {
-            item {
-                Spacer(Modifier.height(6.dp))
-                LosslessOfflineBanner(
-                    onConnect = {
-                        viewModel.requestSettingsLosslessFocus()
-                        onNavigateToSettings()
-                    },
-                    onDismiss = viewModel::dismissLosslessOffline,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-            }
-        }
-
-        // ── Re-tagging library (metadata backfill progress) ──────────
-        // v0.9.35: surfaces MetadataBackfillWorker progress on upgrade
-        // so users know why disk IO / yt-dlp activity is happening. The
-        // banner renders Hidden in the steady state (post-backfill); the
-        // 2-second "Done" pulse self-acks via LaunchedEffect inside the
-        // composable.
-        if (uiState.metadataBackfillBanner !is com.stash.feature.home.banner.MetadataBackfillBannerState.Hidden) {
-            item {
-                Spacer(Modifier.height(6.dp))
-                com.stash.feature.home.banner.MetadataBackfillBanner(
-                    state = uiState.metadataBackfillBanner,
-                    onFinishedAcknowledged = viewModel::onMetadataBackfillFinishedAcknowledged,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-            }
-        }
-
-        // The approved Home leads with the user's own playlists rather than a generic hero.
-        // Only lift this rail when it is the FIRST user-arranged section; custom
-        // arrangements that move it elsewhere continue to be respected.
-        val recentLeading = uiState.sections.firstOrNull() == HomeSection.YOUR_PLAYLISTS
-        if (recentLeading && (uiState.yourPlaylists.isNotEmpty() || uiState.likedCard != null)) {
-            item(key = "section_your_playlists_leading") {
-                CardRail(title = stringResource(R.string.nostop_home_playlists)) {
-                    uiState.likedCard?.let { liked ->
-                        item(key = "liked_leading") {
-                            LikedHomeCard(
-                                trackCount = liked.trackCount,
-                                onClick = {
-                                    viewModel.requestLibraryLikedFocus()
-                                    onNavigateToLibrary()
-                                },
-                            )
-                        }
-                    }
-                    items(uiState.yourPlaylists.railCut(HOME_RAIL_LIMIT), key = { it.id }) { p ->
-                        MixRailCard(
-                            title = p.title,
-                            artUrl = p.artUrl,
-                            source = p.source,
-                            onClick = { onNavigateToPlaylist(p.id) },
-                            onLongPress = { pinnedSheetPlaylistId = p.id },
-                        )
-                    }
-                }
-            }
-        }
-
-        // ── User-arranged sections (Settings > Appearance > Home layout) ──
-        // Order + visibility come from uiState.sections. The genre chips
-        // steer only the Qobuz rows, so they ride glued above the FIRST
-        // visible Qobuz section wherever the user placed it — and the old
-        // chips→header seam (16dp spacer stacked on the header's 12dp
-        // padding, 28dp of blank) tightens to 2dp + 12dp for that row.
-        val firstQobuzSection = uiState.sections.firstOrNull {
-            it == HomeSection.NEW_RELEASES ||
-                it == HomeSection.QOBUZ_PLAYLISTS ||
-                it == HomeSection.TOP_ALBUMS
-        }
-        uiState.sections.forEach { section ->
-            val chipsLead = uiState.qobuzDiscoveryEnabled && section == firstQobuzSection
-            if (chipsLead) {
-                item(key = "section_genre_chips") {
-                    Spacer(Modifier.height(14.dp))
-                    CrispChipRow(
-                        chips = uiState.genres.map { it.label },
-                        selected = uiState.selectedGenre,
-                        onSelect = viewModel::onSelectGenre,
-                    )
-                }
-            }
-            when (section) {
-                HomeSection.YOUR_PLAYLISTS ->
-                    if (!recentLeading && (uiState.yourPlaylists.isNotEmpty() || uiState.likedCard != null)) {
-                        item(key = "section_your_playlists") {
-                            CardRail(title = stringResource(R.string.nostop_home_playlists)) {
-                                uiState.likedCard?.let { liked ->
-                                    item(key = "liked_card") {
-                                        LikedHomeCard(
-                                            trackCount = liked.trackCount,
-                                            onClick = {
-                                                viewModel.requestLibraryLikedFocus()
-                                                onNavigateToLibrary()
-                                            },
-                                        )
-                                    }
-                                }
-                                items(uiState.yourPlaylists.railCut(HOME_RAIL_LIMIT), key = { it.id }) { p ->
-                                    MixRailCard(
-                                        title = p.title, artUrl = p.artUrl, source = p.source,
-                                        onClick = { onNavigateToPlaylist(p.id) },
-                                        onLongPress = { pinnedSheetPlaylistId = p.id },
-                                    )
-                                }
-                            }
-                        }
-                    }
-                HomeSection.NEW_RELEASES -> if (uiState.newReleases.isNotEmpty()) {
-                    item(key = "section_new_releases") {
-                        DiscoveryAlbumRow(
-                            title = stringResource(R.string.nostop_home_new_releases),
-                            albums = uiState.newReleases,
-                            onOpen = onNavigateToAlbum,
-                            topSpacing = if (chipsLead) 2.dp else 16.dp,
-                        )
-                    }
-                }
-                HomeSection.QOBUZ_PLAYLISTS -> if (uiState.playlists.isNotEmpty()) {
-                    item(key = "section_qobuz_playlists") {
-                        DiscoveryPlaylistRow(
-                            title = stringResource(R.string.nostop_home_qobuz),
-                            playlists = uiState.playlists,
-                            onOpen = onNavigateToAlbum,
-                            onSeeAll = { onSeeAllPlaylists(uiState.selectedGenre) },
-                            topSpacing = if (chipsLead) 2.dp else 16.dp,
-                        )
-                    }
-                }
-                HomeSection.TOP_ALBUMS -> if (uiState.topAlbums.isNotEmpty()) {
-                    item(key = "section_top_albums") {
-                        // Collapsed to the top 5 by default; "Show all N" expands the
-                        // full best-sellers chart in place. Saveable so the choice
-                        // survives the item scrolling out of composition.
-                        var topAlbumsExpanded by rememberSaveable { mutableStateOf(false) }
-                        val visibleTop =
-                            if (topAlbumsExpanded) uiState.topAlbums else uiState.topAlbums.take(5)
-                        Column {
-                            Spacer(Modifier.height(if (chipsLead) 2.dp else 16.dp))
-                            SectionHeader(
-                                title = stringResource(R.string.nostop_home_top_albums),
-                                actionText = when {
-                                    uiState.topAlbums.size <= 5 -> null
-                                    topAlbumsExpanded -> stringResource(R.string.nostop_home_show_less)
-                                    else -> stringResource(R.string.nostop_home_show_all_count, uiState.topAlbums.size)
-                                },
-                                onActionClick = { topAlbumsExpanded = !topAlbumsExpanded },
-                            )
-                            RankedAlbumList(
-                                items = visibleTop.mapIndexed { i, a ->
-                                    RankedAlbumUi(
-                                        rank = i + 1,
-                                        title = a.title,
-                                        artist = a.artist,
-                                        artUrl = a.thumbnailUrl,
-                                        movement = null,   // Qobuz best-sellers carries no chart delta
-                                    )
-                                },
-                                onClick = { ranked -> onNavigateToAlbum(uiState.topAlbums[ranked.rank - 1]) },
-                            )
-                        }
-                    }
-                }
-                HomeSection.MADE_FOR_YOU -> if (uiState.madeForYou.isNotEmpty()) {
-                    item(key = "section_made_for_you") {
-                        CardRail(
-                            title = stringResource(R.string.nostop_home_made_for_you),
-                            actionText = stringResource(R.string.nostop_home_see_all),
-                            onActionClick = { onSeeAllMixes(MixRail.MADE_FOR_YOU) },
-                        ) {
-                            items(uiState.madeForYou.railCut(HOME_RAIL_LIMIT), key = { it.id }) { m ->
-                                MixRailCard(
-                                    title = m.title, artUrl = m.artUrl, source = m.source,
-                                    buildState = m.buildState, onClick = { openMix(m.id) },
-                                    onLongPress = { actionSheetMixId = m.id },
-                                )
-                            }
-                        }
-                    }
-                }
-                HomeSection.RADIOS -> if (uiState.radios.isNotEmpty()) {
-                    item(key = "section_radios") {
-                        CardRail(
-                            title = stringResource(R.string.nostop_home_radios),
-                            actionText = stringResource(R.string.nostop_home_see_all),
-                            onActionClick = { onSeeAllMixes(MixRail.RADIOS) },
-                        ) {
-                            items(uiState.radios.railCut(HOME_RAIL_LIMIT), key = { it.id }) { m ->
-                                MixRailCard(
-                                    title = m.title, artUrl = m.artUrl, source = m.source,
-                                    buildState = m.buildState, onClick = { openMix(m.id) },
-                                    onLongPress = { actionSheetMixId = m.id },
-                                )
-                            }
-                        }
-                    }
-                }
-                HomeSection.MOOD_DECADES -> if (uiState.moodDecades.isNotEmpty()) {
-                    item(key = "section_mood_decades") {
-                        CardRail(
-                            title = stringResource(R.string.nostop_home_moods),
-                            actionText = stringResource(R.string.nostop_home_see_all),
-                            onActionClick = { onSeeAllMixes(MixRail.MOOD_DECADES) },
-                        ) {
-                            items(uiState.moodDecades.railCut(HOME_RAIL_LIMIT), key = { it.id }) { m ->
-                                MixRailCard(
-                                    title = m.title, artUrl = m.artUrl, source = m.source,
-                                    buildState = m.buildState, onClick = { openMix(m.id) },
-                                    onLongPress = { actionSheetMixId = m.id },
-                                )
-                            }
-                        }
-                    }
-                }
-                HomeSection.COMMUNITY -> item(key = "section_community") { communitySection() }
-            }
-        }
-
-        // Daily Discover remains available below the user's prioritized Home sections.
-        // ── Discover hero pager (Daily Discover + your Stash mixes) ──
-        // A mix created from the hero's ＋ ring lands right here as an
-        // identical sibling card — swipe between Daily Discover and your
-        // own mixes (dots below signal the pages). Long-press a Your-mix
-        // page for the action sheet (refresh / edit / delete / hide).
-        // Replaces the old "Your mixes" rail.
-        item {
-            Spacer(Modifier.height(6.dp))
-            // Minimized (long-press → "Minimize for now") drops the hero page
-            // for the session; the mix pages keep the pager alive. Distinct
-            // from hero == null (not connected), which shows PersonalizeCard.
-            val hero = if (heroMinimized) null else uiState.hero
-            // Daily Discover still being built: its slot holds a "Building…"
-            // card (first page of the pager) instead of sitting empty.
-            val heroBuilding = uiState.heroBuilding && !heroMinimized
-            val mixPages = uiState.yourMixes
-            when {
-                uiState.isLoading -> DiscoverHeroCard(
-                    label = stringResource(R.string.nostop_home_updated_daily),
-                    title = stringResource(R.string.nostop_home_discover),
-                    subtitle = "",
-                    artUrl = null,
-                    onPlay = {},
-                    onOpen = {},
-                    loading = true,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-                uiState.showColdStartCard -> PersonalizeCard(
-                    onConnect = onNavigateToSettings,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-                hero == null && !heroBuilding && mixPages.isEmpty() -> Unit // minimized, nothing to page
-                else -> {
-                    val heroPages = if (hero != null || heroBuilding) 1 else 0
-                    val pageCount = heroPages + mixPages.size
-                    val pagerState = androidx.compose.foundation.pager.rememberPagerState(
-                        pageCount = { pageCount },
-                    )
-                    Column {
-                        androidx.compose.foundation.pager.HorizontalPager(
-                            state = pagerState,
-                            contentPadding = PaddingValues(horizontal = 16.dp),
-                            pageSpacing = 10.dp,
-                        ) { page ->
-                            if (page < heroPages && hero == null) {
-                                DailyDiscoverBuildingCard()
-                            } else if (page < heroPages && hero != null) {
-                                DiscoverHeroCard(
-                                    label = stringResource(R.string.nostop_home_updated_daily),
-                                    title = hero.title,
-                                    subtitle = hero.subtitle,
-                                    artUrl = hero.artUrl,
-                                    onPlay = viewModel::playHero,
-                                    onOpen = { onNavigateToPlaylist(hero.playlistId) },
-                                    onCreateMix = { onNavigateToMixBuilder(null) },
-                                    onLongPress = { heroActionSheet = true },
-                                )
-                            } else {
-                                val m = mixPages[page - heroPages]
-                                DiscoverHeroCard(
-                                    label = stringResource(R.string.nostop_home_your_mix),
-                                    title = m.title,
-                                    subtitle = when (m.buildState) {
-                                        MixBuildState.BUILDING -> "building…"
-                                        MixBuildState.EMPTY -> "empty — edit to fill"
-                                        else -> pluralize(m.trackCount, "track")
-                                    },
-                                    artUrl = m.artUrl,
-                                    onPlay = { viewModel.playMix(m.id) },
-                                    onOpen = { openMix(m.id) },
-                                    onLongPress = { actionSheetMixId = m.id },
-                                )
-                            }
-                        }
-                        if (pageCount > 1) {
-                            Spacer(Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.Center,
-                            ) {
-                                repeat(pageCount) { i ->
-                                    val active = pagerState.currentPage == i
-                                    Box(
-                                        modifier = Modifier
-                                            .padding(horizontal = 3.dp)
-                                            .size(6.dp)
-                                            .clip(CircleShape)
-                                            .background(
-                                                if (active) {
-                                                    MaterialTheme.colorScheme.primary
-                                                } else {
-                                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
-                                                },
-                                            ),
-                                    )
-                                }
-                            }
-                        }
                     }
                 }
             }
@@ -1353,22 +1351,9 @@ private fun DiscoveryAlbumRow(
 ) {
     Column {
         Spacer(Modifier.height(topSpacing))
-        SectionHeader(title = title)
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 20.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            items(albums) { album ->
-                AlbumSquareCard(
-                    title = album.title,
-                    artist = album.artist,
-                    thumbnailUrl = album.thumbnailUrl,
-                    year = album.year,
-                    isLossless = true,
-                    onClick = { onOpen(album) },
-                )
-            }
-        }
+        VisualSectionTitle(title)
+        VisualRail(VisualSection("releases", title, albums.map { VisualCard(it.id, it.title, it.artist, it.thumbnailUrl) }, plain = true),
+            onCard = { id -> albums.firstOrNull { it.id == id }?.let(onOpen) })
     }
 }
 
@@ -1387,24 +1372,9 @@ private fun DiscoveryPlaylistRow(
 ) {
     Column {
         Spacer(Modifier.height(topSpacing))
-        SectionHeader(title = title, actionText = stringResource(R.string.nostop_home_see_all), onActionClick = onSeeAll)
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 20.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            items(playlists) { playlist ->
-                AlbumSquareCard(
-                    title = playlist.title,
-                    // Curator is always the regional Qobuz account ("Qobuz France")
-                    // — redundant on every card, so show the track count instead.
-                    artist = pluralize(playlist.trackCount, "track"),
-                    thumbnailUrl = playlist.thumbnailUrl,
-                    year = null,
-                    isLossless = true,
-                    onClick = { onOpen(playlist.toAlbumNav()) },
-                )
-            }
-        }
+        VisualSectionTitle(title, onSeeAll)
+        VisualRail(VisualSection("playlists", title, playlists.map { VisualCard(it.id, it.title, pluralize(it.trackCount, "track"), it.thumbnailUrl) }),
+            onCard = { id -> playlists.firstOrNull { it.id == id }?.let { onOpen(it.toAlbumNav()) } })
     }
 }
 

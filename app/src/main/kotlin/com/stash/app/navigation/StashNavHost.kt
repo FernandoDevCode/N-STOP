@@ -233,6 +233,7 @@ private fun StashNavGraph(
         }
         composable<ExploreRoute> {
             NonstopExploreScreen(
+                onSettings = { navController.navigate(SettingsRoute) },
                 onOpenAlbum = { album ->
                     navController.navigate(
                         SearchAlbumRoute(
@@ -253,6 +254,7 @@ private fun StashNavGraph(
         }
         composable<RadioRoute> {
             NonstopRadioScreen(
+                onSettings = { navController.navigate(SettingsRoute) },
                 onOpenMix = { playlistId ->
                     navController.navigate(PlaylistDetailRoute(playlistId))
                 },
@@ -301,6 +303,7 @@ private fun StashNavGraph(
         }
         composable<SearchRoute> {
             SearchScreen(
+                onSettings = { navController.navigate(SettingsRoute) },
                 onNavigateToArtist = { id, name, avatar ->
                     navController.navigate(SearchArtistRoute(id, name, avatar))
                 },

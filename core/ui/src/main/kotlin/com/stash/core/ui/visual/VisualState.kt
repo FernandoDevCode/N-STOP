@@ -24,7 +24,7 @@ enum class VisualStatus { Content, Loading, Empty, Error }
 data class VisualActions(
     val onPage: (VisualPage) -> Unit = {}, val onFilter: (String) -> Unit = {},
     val onCard: (String) -> Unit = {}, val onMore: (String) -> Unit = {},
-    val onSection: (String) -> Unit = {}, val onQuery: (String) -> Unit = {},
+    val onSection: ((String) -> Unit)? = null, val onQuery: (String) -> Unit = {},
     val onSearch: () -> Unit = {}, val onSettings: () -> Unit = {},
     val onCast: (() -> Unit)? = null, val onNotifications: (() -> Unit)? = null,
     val onCreate: (() -> Unit)? = null, val onImport: (() -> Unit)? = null,

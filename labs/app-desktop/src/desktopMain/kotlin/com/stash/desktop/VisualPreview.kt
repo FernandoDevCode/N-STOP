@@ -20,8 +20,8 @@ private val referenceBitmaps = mutableMapOf<String, ImageBitmap>()
 internal fun loadReference(name: String): ImageBitmap = referenceBitmaps.getOrPut(name) {
     Image.makeFromEncoded(checkNotNull(object {}.javaClass.getResourceAsStream("/$name.png")).use { it.readBytes() }).toComposeImageBitmap()
 }
-@Composable internal fun DesktopVisualPreview() {
-    VisualPreview(artwork = { key, modifier -> ReferenceArtwork(key, modifier, ::loadReference) })
+@Composable internal fun DesktopVisualPreview(scenario: com.stash.preview.VisualScenario = com.stash.preview.VisualScenario.Approved) {
+    VisualPreview(scenario = scenario, artwork = { key, modifier -> ReferenceArtwork(key, modifier, ::loadReference) })
 }
 
 internal fun captureVisualPreview() {
@@ -29,9 +29,9 @@ internal fun captureVisualPreview() {
     val sizes = mapOf(VisualPage.Home to (311 to 710), VisualPage.Explore to (309 to 714),
         VisualPage.Search to (301 to 722), VisualPage.Library to (310 to 724))
     fun capture(name: String, page: VisualPage, width: Int, height: Int, status: VisualStatus = VisualStatus.Content,
-        fontScale: Float = 1f, dark: Boolean = true, amoled: Boolean = false) {
+        fontScale: Float = 1f, dark: Boolean = true, amoled: Boolean = false, viewportWidthDp: Int = 390) {
         // Reference excludes the outer phone frame and OS status area; the report masks both.
-        val scene = ImageComposeScene(width = width, height = height, density = Density(width / 390f, fontScale)) {
+        val scene = ImageComposeScene(width = width, height = height, density = Density(width / viewportWidthDp.toFloat(), fontScale)) {
             VisualTheme(dark, amoled) { VisualBackground(Modifier.fillMaxSize()) {
                 val topInset = when (page) { VisualPage.Search -> 50.dp; VisualPage.Library -> 46.dp; else -> 32.dp }
                 Box(Modifier.fillMaxSize().padding(top = topInset, bottom = 6.dp)) {
@@ -52,7 +52,7 @@ internal fun captureVisualPreview() {
             File(output, "navigation-${page.name.lowercase()}.png").writeBytes(it.bytes)
         } } } finally { scene.close() }
     }
-    capture("small-home", VisualPage.Home, 280, 560)
+    capture("small-home", VisualPage.Home, 280, 560, viewportWidthDp = 280)
     capture("large-font-home", VisualPage.Home, 310, 724, fontScale = 1.5f)
     capture("light-library", VisualPage.Library, 310, 724, dark = false)
     capture("amoled-library", VisualPage.Library, 310, 724, amoled = true)

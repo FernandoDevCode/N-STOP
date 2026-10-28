@@ -15,6 +15,8 @@ android {
 }
 
 dependencies {
+    implementation(project(":core:art"))
+    implementation(libs.kotlinx.serialization.json)
     implementation(project(":core:media"))
     implementation(project(":core:data"))
     implementation(project(":core:auth"))

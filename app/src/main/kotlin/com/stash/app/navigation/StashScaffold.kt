@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -215,12 +216,17 @@ fun StashScaffold(
         }
     }
 
+    com.stash.core.ui.visual.VisualTheme(
+        dark = com.stash.core.ui.theme.LocalIsDarkTheme.current,
+        amoled = com.stash.core.ui.theme.LocalIsAmoledTheme.current,
+    ) {
     ProvideAlbumChrome(albumColors) {
     CompositionLocalProvider(
         LocalChromeHazeState provides hazeState,
         LocalPodcastViewModel provides podcastViewModel,
     ) {
     Scaffold(
+        modifier = Modifier.imePadding(),
         containerColor = MaterialTheme.colorScheme.background,
         // Use Scaffold's default safe-drawing insets so screens automatically
         // avoid the status bar (top) and gesture / 3-button nav (bottom).
@@ -242,7 +248,7 @@ fun StashScaffold(
                 // under it is frosted all the way to the screen's edge. The cards above it keep
                 // clear of a side system bar (3-button navigation in landscape).
                 val cardInsets = Modifier.windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal))
-                Column(Modifier.background(com.stash.core.ui.theme.NonstopDesign.Background)) {
+                Column(Modifier.background(MaterialTheme.colorScheme.background)) {
                     AnimatedVisibility(
                         visible = !onNowPlaying,
                         modifier = cardInsets,
@@ -328,6 +334,7 @@ fun StashScaffold(
             bottom = if (selectionActive) bottomChrome else 0.dp,
         )
         CompositionLocalProvider(LocalBottomChromeInset provides if (selectionActive) 0.dp else bottomChrome) {
+        com.stash.core.ui.visual.VisualBackground {
         StashNavHost(
             navController = navController,
             modifier = Modifier
@@ -346,11 +353,13 @@ fun StashScaffold(
             },
         )
         }
+        }
     }
 
     // Up next from the mini player: the same queue sheet Now Playing opens, over this screen.
     if (showQueue) {
         PlayerQueueSheet(onDismiss = { showQueue = false })
+    }
     }
     }
     }
@@ -362,17 +371,11 @@ private const val NAV_BAR_SLIDE_MS = 350 // = StashNavHost SLIDE_DURATION_MS, so
 @Composable
 private fun StashBottomBar(currentRoute: String?, onNavigate: (TopLevelDestination) -> Unit) {
     val destinations = TopLevelDestination.bottomTabs
-    val labels = destinations.map { dest ->
-        stringResource(when (dest) {
-            TopLevelDestination.HOME -> R.string.nostop_nav_home
-            TopLevelDestination.EXPLORE -> R.string.nonstop_nav_explore
-            TopLevelDestination.RADIO -> R.string.nonstop_nav_radio
-            TopLevelDestination.LIBRARY -> R.string.nostop_nav_library
-            else -> R.string.nostop_nav_search
-        })
-    }
-    com.stash.core.ui.components.NonstopBottomNavigation(
-        labels, destinations.indexOfFirst { currentRoute == it.route::class.qualifiedName },
-        onSelect = { onNavigate(destinations[it]) },
+    val pages = com.stash.core.ui.visual.VisualPage.entries
+    val index = destinations.indexOfFirst { currentRoute == it.route::class.qualifiedName }.coerceAtLeast(0)
+    com.stash.core.ui.visual.VisualBottomBar(
+        page = pages[index], player = null,
+        actions = com.stash.core.ui.visual.VisualActions(onPage = { onNavigate(destinations[pages.indexOf(it)]) }),
+        modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars),
     )
 }

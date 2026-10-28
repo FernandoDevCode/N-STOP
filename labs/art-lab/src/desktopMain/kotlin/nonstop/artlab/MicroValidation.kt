@@ -53,7 +53,7 @@ fun runMicroValidation() {
             SideEffect { compositions++ }
             val font=FontFamily(Font(Res.font.inter_regular,FontWeight.Normal),Font(Res.font.inter_semibold,FontWeight.SemiBold))
             MaterialTheme(colorScheme=darkColorScheme()) {
-                V8Renderer(album,asset.cover,asset.texture,asset.recipe,state,{state=it},{},{},{},{},font,
+                LabV8Renderer(album,asset.cover,asset.texture,asset.recipe,state,{state=it},{},{},{},{},font,
                     modifier=Modifier.fillMaxSize(),microOptions=options,microState=micro)
             }
         }

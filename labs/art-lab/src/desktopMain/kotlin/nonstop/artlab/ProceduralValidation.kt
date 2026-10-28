@@ -90,7 +90,7 @@ fun runProceduralValidation(args:Array<String>) {
             val displayed=remember(mode) { comparisonCover(album,a,mode) }
             MaterialTheme(colorScheme=darkColorScheme()) {
                 CompositionLocalProvider(LocalDensity provides Density(1f,fontScale)) {
-                    V8Renderer(album,displayed,a.texture,a.recipe,state,{state=it},{},{},{},{},font,debug,
+                    LabV8Renderer(album,displayed,a.texture,a.recipe,state,{state=it},{},{},{},{},font,debug,
                         fontScale=fontScale,modifier=Modifier.fillMaxSize())
                 }
             }
@@ -181,7 +181,7 @@ private fun verifyRapidSwitchAndTallViewport(output:File,assets:DesktopAssets) {
     var state by mutableStateOf(PlayerState())
     fun next() { index=(index+1)%12; asset=assets.load(validationCatalog[index]) }
     val scene=ImageComposeScene(1080,2340) {
-        V8Renderer(validationCatalog[index],asset.cover,asset.texture,asset.recipe,state,{state=it},{},::next,{},{},
+        LabV8Renderer(validationCatalog[index],asset.cover,asset.texture,asset.recipe,state,{state=it},{},::next,{},{},
             FontFamily.SansSerif,modifier=Modifier.fillMaxSize())
     }
     try {

@@ -1,5 +1,21 @@
 # NØNSTOP — remodelação visual
 
+**Atualização 28/10/2026:** a integração autorizada ao aplicativo Android principal
+está registrada em [SONORA_ANDROID_INTEGRATION.md](../../docs/SONORA_ANDROID_INTEGRATION.md).
+As notas abaixo descrevem a consolidação e o preview anteriores à integração.
+
+## Sistema visual Sonora
+
+O padrão consolidado, regras responsivas, cenários isolados e protocolo de validação
+estão em [SONORA_VISUAL_SYSTEM.md](SONORA_VISUAL_SYSTEM.md).
+Resultados e limites da consolidação: [SONORA_VALIDATION.md](SONORA_VALIDATION.md).
+Além das capturas históricas abaixo, `run "--args=--capture-system"` gera a matriz
+com larguras em dp, densidades e fontes independentes. O manifesto fica em
+`labs/app-desktop/build/validation/sonora-system/matrix/matrix.json`.
+
+As notas de verificação ao final deste README são históricas. Consultar o manifesto
+e os resultados da execução atual para saber o que foi efetivamente validado.
+
 Referências: capturas fornecidas pelo usuário em 27/10/2026 (Home, Explorar,
 Buscar e Biblioteca). Esta tarefa é a linguagem geral do aplicativo, não Player v8.
 Art Lab e player em tela cheia permanecem fora da remodelação.

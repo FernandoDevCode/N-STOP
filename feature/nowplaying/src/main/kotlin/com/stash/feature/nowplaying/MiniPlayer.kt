@@ -5,6 +5,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -71,8 +72,8 @@ import com.stash.feature.nowplaying.ui.hasPreviousInQueue
 import com.stash.feature.nowplaying.ui.rememberSwipeToSkip
 
 /** NØNSTOP compact transport. Playback, likes and room ownership stay in the existing models. */
-private val MiniHeight = 60.dp
-private val MiniCornerRadius = 10.dp
+private val MiniHeight = 52.dp
+private val MiniCornerRadius = 13.dp
 private val MiniShape = RoundedCornerShape(MiniCornerRadius)
 val MiniPlayerMargin = 14.dp
 
@@ -98,7 +99,6 @@ fun MiniPlayer(
         enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
         exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
     ) {
-        val flare = rememberMiniFlare(visible = backgroundVisible && uiState.hasTrack)
         val press = remember { MutableInteractionSource() }
         val track = uiState.currentTrack
         // Swipe the song sideways to skip, with Now Playing's art threshold (rememberSwipeToSkip).
@@ -139,7 +139,10 @@ fun MiniPlayer(
                     onSeek = viewModel::onSeekTo,
                 )
                 .clip(MiniShape)
-                .nonstopMiniSurface(flare, chrome)
+                .background(androidx.compose.ui.graphics.Brush.horizontalGradient(
+                    if (com.stash.core.ui.visual.LocalVisualDark.current) listOf(Color(0xFF2C2B37), Color(0xFF20202C))
+                    else listOf(MaterialTheme.colorScheme.surface, MaterialTheme.colorScheme.surface)))
+                .then(Modifier.border(1.dp, com.stash.core.ui.visual.VisualDesign.Border, MiniShape))
                 .clickable(interactionSource = press, indication = ripple(), onClick = onExpand)
                 // Preserve swipe navigation for assistive technology as well.
                 .semantics {
@@ -170,7 +173,7 @@ fun MiniPlayer(
                 modifier = Modifier
                     .fillMaxSize()
                     // end 4 + the next slot's 6dp of spare width = the web's 10dp to the icon.
-                    .padding(start = 9.dp, end = 0.dp, top = 4.dp, bottom = 8.dp),
+                    .padding(start = 6.dp, end = 0.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
@@ -206,13 +209,13 @@ fun MiniPlayer(
                                 contentDescription = "Album art",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
-                                    .size(44.dp)
+                                    .size(37.dp)
                                     .clip(coverShape),
                             )
                         } else {
                             Box(
                                 Modifier
-                                    .size(44.dp)
+                                    .size(37.dp)
                                     .clip(coverShape)
                                     .background(MaterialTheme.colorScheme.surfaceVariant),
                                 contentAlignment = Alignment.Center,
@@ -300,7 +303,7 @@ fun MiniPlayer(
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(40.dp),
+                                .size(38.dp).background(Color(0xFF67637C), androidx.compose.foundation.shape.CircleShape),
                             contentAlignment = Alignment.Center,
                         ) {
                             if (loading) {
