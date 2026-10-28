@@ -22,8 +22,10 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 /** Exercises the actual MiniPlayer, including swipe-to-skip and its child buttons. */
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "w412dp-h900dp-mdpi")
 class MiniPlayerInteractionTest {
@@ -57,9 +59,14 @@ class MiniPlayerInteractionTest {
         compose.onNodeWithText("Test artist", useUnmergedTree = true).performTouchInput { click() }
         compose.onNodeWithTag("mini").performTouchInput { click(Offset(180f, 2f)) }
         // Critical regression: one pixel above the seek row's upper boundary.
-        compose.onNodeWithTag("mini").performTouchInput { click(Offset(180f, 51f)) }
+        compose.onNodeWithTag("mini").performTouchInput { click(Offset(180f, 48f)) }
         compose.runOnIdle { assertEquals(5, opens) }
         verify(exactly = 0) { vm.onSeekTo(any()) }
+    }
+
+    @Test fun compactCardRetainsAccessibleButtons() {
+        compose.onNodeWithTag("mini").assertHeightIsEqualTo(66.dp)
+        compose.onNodeWithContentDescription("Play").assertHeightIsAtLeast(48.dp)
     }
 
     @Test fun controlsOwnTheirTouches() {
@@ -73,7 +80,7 @@ class MiniPlayerInteractionTest {
 
     @Test fun railDragKeepsOwnershipOutsideRowAndCommitsOnce() {
         compose.onNodeWithContentDescription("Playback progress").performTouchInput {
-            down(Offset(40f, 22f))
+            down(Offset(40f, 12f))
             moveTo(Offset(260f, -15f), 400)
             up()
         }
@@ -84,8 +91,8 @@ class MiniPlayerInteractionTest {
 
     @Test fun startingAboveRailCannotBecomeSeekAfterCrossingBoundary() {
         compose.onNodeWithTag("mini").performTouchInput {
-            down(Offset(100f, 49f))
-            moveTo(Offset(110f, 74f), 250)
+            down(Offset(100f, 48f))
+            moveTo(Offset(110f, 55f), 250)
             up()
         }
         verify(exactly = 0) { vm.onSeekTo(any()) }
@@ -93,9 +100,9 @@ class MiniPlayerInteractionTest {
 
     @Test fun curvedEndpointsAndAccessibleRangeReachExactTimes() {
         val rail = compose.onNodeWithContentDescription("Playback progress")
-        rail.performTouchInput { click(Offset(1f, 11f)) }
+        rail.performTouchInput { click(Offset(1f, 0f)) }
         verify { vm.onSeekTo(0L) }
-        rail.performTouchInput { click(Offset(width - 1f, 11f)) }
+        rail.performTouchInput { click(Offset(width - 1f, 0f)) }
         verify { vm.onSeekTo(100_000L) }
         rail.performSemanticsAction(SemanticsActions.SetProgress) { assertTrue(it(.5f)) }
         verify { vm.onSeekTo(50_000L) }
@@ -106,9 +113,9 @@ class MiniPlayerInteractionTest {
         val rail = compose.onNodeWithContentDescription("Playback progress")
         rail.performTouchInput { down(center); moveBy(Offset(20f, 0f)); cancel() }
         rail.performTouchInput {
-            down(0, Offset(30f, 20f))
-            down(1, Offset(90f, 20f))
-            moveTo(0, Offset(150f, 20f))
+            down(0, Offset(30f, 12f))
+            down(1, Offset(90f, 12f))
+            moveTo(0, Offset(150f, 12f))
             up(1); up(0)
         }
         verify(exactly = 0) { vm.onSeekTo(any()) }

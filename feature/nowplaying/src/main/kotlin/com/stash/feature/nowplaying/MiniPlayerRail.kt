@@ -1,20 +1,40 @@
 package com.stash.feature.nowplaying
 
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Path
 import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 
 /** One metric for painting and seeking: two quarter circles and their common tangent. */
-internal class MiniPlayerRail(width: Float, height: Float, radius: Float, inset: Float) {
-    val r = (radius - inset).coerceAtLeast(.1f)
-    val left = radius
-    val right = (width - radius).coerceAtLeast(left)
-    val cy = height - radius
+internal class MiniPlayerRail(width: Float, height: Float, radius: Float) {
+    val r = radius.coerceAtMost(width / 2f).coerceAtLeast(.1f)
+    val left = r
+    val right = (width - r).coerceAtLeast(left)
+    val cy = height - r
     val arc = (PI * r / 2).toFloat()
     val straight = right - left
     val length = 2 * arc + straight
+
+    /** Same circular corners as the card's RoundedCornerShape; no horizontal inset. */
+    fun writePath(path: Path) {
+        path.reset()
+        path.arcTo(Rect(left - r, cy - r, left + r, cy + r), 180f, -90f, true)
+        path.lineTo(right, cy + r)
+        path.arcTo(Rect(right - r, cy - r, right + r, cy + r), 90f, -90f, false)
+    }
+
+    fun tangent(fraction: Float): Offset {
+        val distance = fraction.coerceIn(0f, 1f) * length
+        val angle = when {
+            distance < arc -> PI.toFloat() - distance / r
+            distance <= arc + straight -> (PI / 2).toFloat()
+            else -> (PI / 2).toFloat() - (distance - arc - straight) / r
+        }
+        return Offset(sin(angle), -cos(angle))
+    }
 
     fun point(fraction: Float): Offset {
         if (fraction <= 0f) return Offset(left - r, cy)

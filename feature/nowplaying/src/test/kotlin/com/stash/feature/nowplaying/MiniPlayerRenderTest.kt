@@ -1,6 +1,10 @@
 package com.stash.feature.nowplaying
 
 import android.graphics.Bitmap
+import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import org.junit.Assert.assertTrue
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
@@ -35,6 +39,19 @@ import java.io.File
 class MiniPlayerRenderTest {
     @get:Rule val compose = createComposeRule()
 
+    @Test fun actualPathMatchesSeekMetricAtRequiredSamples() {
+        val rail = MiniPlayerRail(1056f, 72f, 39f)
+        val path = androidx.compose.ui.graphics.Path().also(rail::writePath)
+        val measure = androidx.compose.ui.graphics.PathMeasure().apply { setPath(path, false) }
+        for (f in listOf(0f, .01f, .25f, .5f, .75f, .99f, 1f)) {
+            val actual = measure.getPosition(measure.length * f)
+            org.junit.Assert.assertTrue((actual - rail.point(f)).getDistance() < .08f)
+            org.junit.Assert.assertEquals(f, rail.fraction(actual), .0001f)
+        }
+        org.junit.Assert.assertEquals(0f, measure.getPosition(0f).x, .00001f)
+        org.junit.Assert.assertEquals(1056f, measure.getPosition(measure.length).x, .00001f)
+    }
+
     @Test fun renderProductionMiniPlayerWithStationaryPlaybackPosition() {
         val vm = mockk<NowPlayingViewModel>(relaxed = true)
         val listen = mockk<ListenTogetherViewModel>(relaxed = true)
@@ -42,19 +59,26 @@ class MiniPlayerRenderTest {
         val ui = MutableStateFlow(NowPlayingUiState(currentTrack = track, durationMs = 100_000,
             isSeekable = true, isPlaying = true, playWhenReady = true, queue = listOf(track)))
         every { vm.uiState } returns ui
-        every { vm.positionMs } returns MutableStateFlow(48_000L)
+        val position = MutableStateFlow(48_000L)
+        every { vm.positionMs } returns position
         every { listen.state } returns MutableStateFlow(ListenTogetherState.Idle)
         lateinit var androidView: View
+        var viewport by mutableStateOf(380.dp)
+        var renderDensity by mutableFloatStateOf(3f)
+        var fontScale by mutableFloatStateOf(1f)
         compose.mainClock.autoAdvance = false
         compose.setContent {
             androidView = LocalView.current
+            CompositionLocalProvider(LocalDensity provides Density(renderDensity, fontScale)) {
             MaterialTheme {
-                Box(Modifier.width(380.dp).background(Color(0xFF101116)).testTag("render")) {
+                Box(Modifier.width(viewport).background(Color(0xFF101116)).testTag("render")) {
                     MiniPlayer(onExpand = {}, onOpenQueue = {}, viewModel = vm, listen = listen)
                 }
             }
         }
+        }
         val output = File("build/outputs/mini-player-render").apply { mkdirs() }
+        var visibleBelow = false
         fun capture(name: String) {
             val bounds = compose.onNodeWithTag("render").fetchSemanticsNode().boundsInRoot
             compose.runOnIdle {
@@ -62,6 +86,11 @@ class MiniPlayerRenderTest {
                 val canvas = Canvas(bitmap)
                 canvas.translate(-bounds.left, -bounds.top)
                 androidView.draw(canvas)
+                if (name.startsWith("playing-")) {
+                    for (y in 174 until minOf(190, bitmap.height)) for (x in 45 until bitmap.width - 45) {
+                        if (android.graphics.Color.red(bitmap.getPixel(x, y)) > 85) visibleBelow = true
+                    }
+                }
                 File(output, name).outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
                 bitmap.recycle()
             }
@@ -72,6 +101,7 @@ class MiniPlayerRenderTest {
             compose.waitForIdle()
             capture("playing-%02d.png".format(index))
         }
+        assertTrue("Normal playback must paint visible fragments below the card", visibleBelow)
         val rail = compose.onNodeWithContentDescription("Playback progress")
         for ((name, travel) in listOf("slow" to .06f, "fast" to .65f)) {
             rail.performTouchInput { down(Offset(width * .15f, height - 3f)) }
@@ -91,5 +121,24 @@ class MiniPlayerRenderTest {
         compose.runOnIdle { ui.value = ui.value.copy(isPlaying = false, playWhenReady = false, isBuffering = true) }
         repeat(16) { compose.mainClock.advanceTimeBy(32); compose.waitForIdle() }
         capture("paused.png")
+        compose.runOnIdle { ui.value = ui.value.copy(isSeekable = false) }
+        for (percent in listOf(0, 1, 25, 50, 75, 99, 100)) {
+            compose.runOnIdle { position.value = percent * 1000L }
+            compose.mainClock.advanceTimeBy(64)
+            compose.waitForIdle()
+            capture("contour-%03d.png".format(percent))
+        }
+        for ((width, density, font) in listOf(Triple(280, 1f, 1f), Triple(320, 2.75f, 1.5f), Triple(412, 3f, 1f))) {
+            compose.runOnIdle { viewport = width.dp; renderDensity = density; fontScale = font }
+            // Native offscreen View drawing flushes the pending Android layout pass.
+            repeat(3) {
+                compose.mainClock.advanceTimeBy(64)
+                compose.waitForIdle()
+                capture("layout-warmup.png")
+            }
+            compose.onNodeWithTag("render").assertWidthIsEqualTo(width.dp)
+            compose.onNodeWithContentDescription("Play").assertHeightIsAtLeast(48.dp)
+            capture("layout-$width-$density-$font.png")
+        }
     }
 }

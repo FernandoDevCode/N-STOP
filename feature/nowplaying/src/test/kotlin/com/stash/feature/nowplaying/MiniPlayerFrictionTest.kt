@@ -12,6 +12,30 @@ class MiniPlayerFrictionTest {
             repeat(60) { p.step(1 / 60f, contact, 1f, playing, buffering, touching, velocity) }
         }
 
+    @Test fun cornerEmissionRotatesWithPathTangent() {
+        // Same random sequence: horizontal velocity at the straight becomes vertical
+        // on the left curve, while the lift turns inward from the side.
+        val flat = MiniFrictionParticles(42)
+        val curve = MiniFrictionParticles(42)
+        flat.step(.04f, contact, 1f, true, false, false, 0f)
+        curve.step(.04f, contact, 1f, true, false, false, 0f, Offset(0f, 1f))
+        for (i in flat.life.indices.filter { flat.life[it] > 0 }) {
+            assertEquals(flat.vx[i], curve.vy[i], .00001f)
+            assertEquals(-flat.vy[i], curve.vx[i], .00001f)
+            assertEquals(contact.x, curve.x[i], 0f)
+            assertEquals(contact.y, curve.y[i], 0f)
+        }
+    }
+
+    @Test fun fragmentsOccupyBothSidesAndMostlyTrailTheContact() {
+        val p = simulate()
+        val live = p.life.indices.filter { p.life[it] > 0 }
+        assertTrue(live.any { p.y[it] < contact.y - 1f })
+        assertTrue(live.any { p.y[it] > contact.y + 1f })
+        assertTrue(live.count { p.x[it] < contact.x } > live.count { p.x[it] > contact.x })
+        assertTrue(live.map { p.trail[it] }.distinct().size > 3)
+    }
+
     @Test fun continuousEmissionDoesNotDependOnProgressMoving() {
         val p = simulate()
         assertTrue(p.alive >= 8)

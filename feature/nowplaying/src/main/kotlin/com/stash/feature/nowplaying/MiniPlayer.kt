@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -33,6 +34,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,7 +72,7 @@ import com.stash.feature.nowplaying.ui.hasPreviousInQueue
 import com.stash.feature.nowplaying.ui.rememberSwipeToSkip
 
 /** NØNSTOP compact transport. Playback, likes and room ownership stay in the existing models. */
-private val MiniHeight = 52.dp
+private val MiniHeight = 56.dp
 private val MiniCornerRadius = MiniProgressCorner
 private val MiniShape = RoundedCornerShape(MiniCornerRadius)
 val MiniPlayerMargin = 14.dp
@@ -117,10 +122,22 @@ fun MiniPlayer(
             seek, uiState.isPlaying, uiState.isBuffering && uiState.playWhenReady,
             backgroundVisible && uiState.hasTrack,
         )
-        Column(
+        val cardCoordinates = remember { mutableStateOf<LayoutCoordinates?>(null) }
+        val controlsCoordinates = remember { mutableStateOf<LayoutCoordinates?>(null) }
+        val controlsBounds: () -> Rect = {
+            val card = cardCoordinates.value
+            val controls = controlsCoordinates.value
+            if (card?.isAttached == true && controls?.isAttached == true)
+                card.localBoundingBoxOf(controls, clipBounds = false) else Rect.Zero
+        }
+        Box(
             modifier = modifier
                 .fillMaxWidth()
                 .padding(start = MiniPlayerMargin, end = MiniPlayerMargin, bottom = 10.dp)
+                .onGloballyPositioned { cardCoordinates.value = it }
+                .miniPlayerSeekInput(seek, uiState.durationMs, MiniCornerRadius, seekEnabled,
+                    viewModel::onSeekTo, controlsBounds)
+                .miniPlayerFriction(position, uiState.durationMs, seek, friction, controlsBounds)
                 .clip(MiniShape)
                 .background(androidx.compose.ui.graphics.Brush.horizontalGradient(
                     if (com.stash.core.ui.visual.LocalVisualDark.current) listOf(Color(0xFF2C2B37), Color(0xFF20202C))
@@ -130,7 +147,7 @@ fun MiniPlayer(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(MiniHeight)
+                    .heightIn(min = MiniHeight)
                     .clickable(interactionSource = press, indication = ripple(), onClick = onExpand)
                     // Preserve swipe navigation for assistive technology as well.
                     .semantics {
@@ -145,7 +162,7 @@ fun MiniPlayer(
                             }
                         }
                     }
-                    .padding(start = 6.dp, end = 0.dp),
+                    .padding(start = 6.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
@@ -156,13 +173,13 @@ fun MiniPlayer(
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxHeight()
+                        .heightIn(min = 48.dp)
                         .then(swipe.gesture)
                         .clipToBounds(),
                 ) {
                     Row(
                         modifier = Modifier
-                            .fillMaxSize()
+                            .fillMaxWidth()
                             .then(swipe.content),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -205,7 +222,7 @@ fun MiniPlayer(
                         Column(
                             modifier = Modifier
                                 .weight(1f)
-                                .fillMaxHeight(),
+                                .heightIn(min = 48.dp),
                             verticalArrangement = Arrangement.Center,
                         ) {
                             // primaryArtist() collapses collaboration credits
@@ -236,6 +253,7 @@ fun MiniPlayer(
 
                 // Real local-library like toggle; queue/skip stay in the expanded player.
                 Row(
+                    modifier = Modifier.onGloballyPositioned { controlsCoordinates.value = it },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     MiniIconButton(onClick = viewModel::onLikeTap) {
@@ -303,7 +321,7 @@ fun MiniPlayer(
                 seek = seek,
                 enabled = seekEnabled,
                 onSeek = viewModel::onSeekTo,
-                modifier = Modifier.miniPlayerFriction(position, uiState.durationMs, seek, friction),
+                modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
     }

@@ -15,6 +15,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
@@ -100,30 +102,30 @@ internal fun rememberMiniPlayerSeekState(
     return seek
 }
 
-/**
- * Installed ONLY on the progress row, a sibling of the clickable transport row.
- * The initial down must lie inside its measured bounds: Compose's minimum-target
- * expansion cannot promote a down above the rail into a seek. Ownership then stays
- * with that pointer even when it leaves the row. No ancestor Initial-pass interception.
- */
+/** Owns only downs in the contour corridor, excluding measured controls. Initial-pass
+ * arbitration is explicit so child click/swipe handlers never claim a seek. A down
+ * anywhere else is untouched and cannot acquire seek ownership later in its gesture. */
 internal fun Modifier.miniPlayerSeekInput(
     seek: MiniPlayerSeekState,
     durationMs: Long,
     cornerRadius: Dp,
     enabled: Boolean,
     onSeek: (Long) -> Unit,
+    controlsBounds: () -> Rect = { Rect.Zero },
 ) = pointerInput(seek, durationMs, cornerRadius, enabled) {
-    val rail = MiniPlayerRail(size.width.toFloat(), size.height.toFloat(), cornerRadius.toPx(), 1.dp.toPx())
+    val rail = MiniPlayerRail(size.width.toFloat(), size.height.toFloat(), cornerRadius.toPx())
     awaitEachGesture {
-        val down = awaitFirstDown(requireUnconsumed = true)
+        val down = awaitFirstDown(requireUnconsumed = true, pass = PointerEventPass.Initial)
         if (!enabled || down.position.x < 0f || down.position.x > size.width ||
-            down.position.y < 0f || down.position.y > size.height) return@awaitEachGesture
+            down.position.y < rail.cy || down.position.y > size.height ||
+            controlsBounds().contains(down.position) ||
+            (rail.point(rail.fraction(down.position)) - down.position).getDistance() > 7.dp.toPx()) return@awaitEachGesture
         down.consume()
         seek.begin(rail.fraction(down.position))
         seek.move(rail.fraction(down.position), down.uptimeMillis)
         try {
             while (true) {
-                val event = awaitPointerEvent()
+                val event = awaitPointerEvent(PointerEventPass.Initial)
                 val change = event.changes.firstOrNull { it.id == down.id } ?: break
                 if (change.isConsumed || event.changes.any { it.id != down.id && it.pressed }) break
                 change.consume()
@@ -140,7 +142,7 @@ internal fun Modifier.miniPlayerSeekInput(
     }
 }
 
-/** A real layout row, with range semantics on the very same node as touch input. */
+/** Accessibility range only; allocates no extra height and has no pointer handler. */
 @Composable
 internal fun MiniPlayerSeekTarget(
     position: State<Long>,
@@ -151,7 +153,6 @@ internal fun MiniPlayerSeekTarget(
     modifier: Modifier = Modifier,
 ) {
     Box(modifier.fillMaxWidth().height(MiniProgressHeight)
-        .miniPlayerSeekInput(seek, durationMs, MiniProgressCorner, enabled, onSeek)
         .semantics(mergeDescendants = true) {
             contentDescription = "Playback progress"
             progressBarRangeInfo = ProgressBarRangeInfo(seek.displayFraction(position.value, durationMs), 0f..1f)
@@ -166,7 +167,6 @@ internal fun MiniPlayerSeekTarget(
         })
 }
 
-// Deliberate layout allocation below the 52dp transport, not a transparent hitbox
-// laid over it. Allows a 24dp spark plume while preserving all 48dp button targets.
-internal val MiniProgressHeight = 24.dp
+// Semantics bounds cover the corner height; this node is overlaid, never a layout row.
+internal val MiniProgressHeight = 13.dp
 internal val MiniProgressCorner = 13.dp
