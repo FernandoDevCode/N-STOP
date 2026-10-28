@@ -34,16 +34,12 @@ import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.LayoutCoordinates
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
@@ -62,7 +58,6 @@ import coil3.request.ImageRequest
 import com.stash.core.common.primaryArtist
 import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.model.RepeatMode
-import com.stash.core.ui.ambient.LocalAlbumChrome
 import com.stash.core.ui.components.ListenTogetherRole
 import com.stash.core.ui.components.LocalListenTogetherRole
 import com.stash.feature.nowplaying.listen.ListenTogetherViewModel
@@ -73,7 +68,7 @@ import com.stash.feature.nowplaying.ui.rememberSwipeToSkip
 
 /** NØNSTOP compact transport. Playback, likes and room ownership stay in the existing models. */
 private val MiniHeight = 52.dp
-private val MiniCornerRadius = 13.dp
+private val MiniCornerRadius = MiniProgressCorner
 private val MiniShape = RoundedCornerShape(MiniCornerRadius)
 val MiniPlayerMargin = 14.dp
 
@@ -87,12 +82,11 @@ fun MiniPlayer(
     listen: ListenTogetherViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    // Kept as a State and read only inside drawBehind below: the progress line redraws per
+    // Kept as a State and read only inside the progress drawing below: the progress line redraws per
     // 250ms tick without recomposing the card (which shows on every screen).
     val position = viewModel.positionMs.collectAsStateWithLifecycle()
     val together by listen.state.collectAsStateWithLifecycle()
     val room = together as? ListenTogetherState.InRoom
-    val chrome = LocalAlbumChrome.current
 
     AnimatedVisibility(
         visible = uiState.hasTrack,
@@ -108,8 +102,6 @@ fun MiniPlayer(
         val seek = rememberMiniPlayerSeekState(
             track?.let { Triple(it.id, it.youtubeId, uiState.currentIndex) }, position, seekEnabled,
         )
-        val cardCoordinates = remember { mutableStateOf<LayoutCoordinates?>(null) }
-        val controlsCoordinates = remember { mutableStateOf<LayoutCoordinates?>(null) }
         val repeatAll = uiState.repeatMode == RepeatMode.ALL
         val canNext = room != null || hasNextInQueue(uiState.queue.size, uiState.currentIndex, repeatAll)
         val canPrevious = room != null || hasPreviousInQueue(uiState.queue.size, uiState.currentIndex, repeatAll)
@@ -121,58 +113,38 @@ fun MiniPlayer(
             onNext = viewModel::onSkipNext,
             onPrevious = viewModel::onSwipePrevious,
         )
-        Box(
+        val friction = rememberMiniPlayerFriction(
+            seek, uiState.isPlaying, uiState.isBuffering && uiState.playWhenReady,
+            backgroundVisible && uiState.hasTrack,
+        )
+        Column(
             modifier = modifier
                 .fillMaxWidth()
-                .padding(start = MiniPlayerMargin, end = MiniPlayerMargin, bottom = 6.dp)
-                // Draw the rail and its full dot outside the surface clip, into the 6dp gap.
-                .miniPlayerProgress(position, uiState.durationMs, seek, chrome, MiniCornerRadius)
-                .onGloballyPositioned { cardCoordinates.value = it }
-                .miniPlayerSeekInput(seek, uiState.durationMs, MiniCornerRadius, seekEnabled,
-                    controlsBounds = {
-                        val card = cardCoordinates.value
-                        val controls = controlsCoordinates.value
-                        if (card?.isAttached == true && controls?.isAttached == true)
-                            card.localBoundingBoxOf(controls, clipBounds = false)
-                        else Rect.Zero
-                    },
-                    onSeek = viewModel::onSeekTo,
-                )
+                .padding(start = MiniPlayerMargin, end = MiniPlayerMargin, bottom = 10.dp)
                 .clip(MiniShape)
                 .background(androidx.compose.ui.graphics.Brush.horizontalGradient(
                     if (com.stash.core.ui.visual.LocalVisualDark.current) listOf(Color(0xFF2C2B37), Color(0xFF20202C))
                     else listOf(MaterialTheme.colorScheme.surface, MaterialTheme.colorScheme.surface)))
                 .then(Modifier.border(1.dp, com.stash.core.ui.visual.VisualDesign.Border, MiniShape))
-                .clickable(interactionSource = press, indication = ripple(), onClick = onExpand)
-                // Preserve swipe navigation for assistive technology as well.
-                .semantics {
-                    if (!isListener) {
-                        customActions = buildList {
-                            if (canPrevious) add(CustomAccessibilityAction("Previous song") {
-                                viewModel.onSwipePrevious(); true
-                            })
-                            if (canNext) add(CustomAccessibilityAction("Next song") {
-                                viewModel.onSkipNext(); true
-                            })
-                        }
-                    }
-                }
-                .height(MiniHeight),
         ) {
-            // Accessibility only; the card arbitrates touch before the cover can steal it.
-            MiniPlayerSeekTarget(
-                position = position,
-                durationMs = uiState.durationMs,
-                seek = seek,
-                enabled = seekEnabled,
-                onSeek = viewModel::onSeekTo,
-                modifier = Modifier.align(Alignment.BottomCenter),
-            )
-
             Row(
                 modifier = Modifier
-                    .fillMaxSize()
-                    // end 4 + the next slot's 6dp of spare width = the web's 10dp to the icon.
+                    .fillMaxWidth()
+                    .height(MiniHeight)
+                    .clickable(interactionSource = press, indication = ripple(), onClick = onExpand)
+                    // Preserve swipe navigation for assistive technology as well.
+                    .semantics {
+                        if (!isListener) {
+                            customActions = buildList {
+                                if (canPrevious) add(CustomAccessibilityAction("Previous song") {
+                                    viewModel.onSwipePrevious(); true
+                                })
+                                if (canNext) add(CustomAccessibilityAction("Next song") {
+                                    viewModel.onSkipNext(); true
+                                })
+                            }
+                        }
+                    }
                     .padding(start = 6.dp, end = 0.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -264,7 +236,6 @@ fun MiniPlayer(
 
                 // Real local-library like toggle; queue/skip stay in the expanded player.
                 Row(
-                    modifier = Modifier.onGloballyPositioned { controlsCoordinates.value = it },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     MiniIconButton(onClick = viewModel::onLikeTap) {
@@ -326,6 +297,14 @@ fun MiniPlayer(
 
                 }
             }
+            MiniPlayerSeekTarget(
+                position = position,
+                durationMs = uiState.durationMs,
+                seek = seek,
+                enabled = seekEnabled,
+                onSeek = viewModel::onSeekTo,
+                modifier = Modifier.miniPlayerFriction(position, uiState.durationMs, seek, friction),
+            )
         }
     }
 }

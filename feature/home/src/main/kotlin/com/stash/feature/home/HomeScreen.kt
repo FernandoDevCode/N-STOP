@@ -35,14 +35,12 @@ import com.stash.core.ui.theme.SpaceGrotesk
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -113,8 +111,6 @@ import com.stash.core.ui.ambient.LocalAlbumChrome
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -161,7 +157,7 @@ private const val HOME_RAIL_LIMIT = 12
  * Home screen composable displaying a premium dark dashboard with sync
  * status, daily mixes, recently added tracks, liked songs, and playlists.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,
@@ -193,7 +189,6 @@ fun HomeScreen(
         onNavigateToPlaylist(id)
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val listeningState by viewModel.listeningState.collectAsStateWithLifecycle()
     var selectedMediaTab by rememberSaveable { mutableIntStateOf(0) }
     val podcastController = com.stash.feature.home.podcasts.LocalPodcastViewModel.current
     val podcastOpenRequest = podcastController?.openRequests?.collectAsStateWithLifecycle()?.value ?: 0
@@ -234,26 +229,103 @@ fun HomeScreen(
         }
     }
 
+    SonoraHomeTheme {
     LazyColumn(
         modifier = modifier
-            .fillMaxSize(),
+            .fillMaxSize().sonoraHomeBackground(),
         // Edge to edge under the glass mini player + tab bar: they blur the feed as it scrolls by.
         contentPadding = PaddingValues(top = 16.dp, bottom = bottomChromePadding(24.dp)),
     ) {
         item(key = "nonstop_media_filters") {
-            val filters = listOf("Música", "Podcasts", "Audiobooks")
-            VisualFilters(filters, filters[selectedMediaTab], { selectedMediaTab = filters.indexOf(it) })
-
+            NonstopMediaFilters(selectedMediaTab, { selectedMediaTab = it })
         }
         if (selectedMediaTab == 0) {
-            // A real listening surface must survive an empty personal-library
-            // sync: the current track exists even when no playlists do.
-            listeningState.currentTrack?.let { activeTrack ->
-                item(key = "nonstop_listening_now") {
-                    NonstopListeningCard(activeTrack, onOpenPlayer = onNavigateToNowPlaying)
-                    Spacer(Modifier.height(10.dp))
+        // ── Discover hero pager (Daily Discover + your Stash mixes) ──
+        // Only existing discovery data creates pages. Open/play/create and
+        // long-press context actions stay wired to their Android callbacks.
+        if (uiState.hasDiscoverySpotlight(heroMinimized)) item(key = "discovery_spotlight") {
+            Spacer(Modifier.height(20.dp))
+            // Minimized (long-press → "Minimize for now") drops the hero page
+            // for the session; the mix pages keep the pager alive. Distinct
+            // from hero == null (not connected), which shows PersonalizeCard.
+            val hero = if (heroMinimized) null else uiState.hero
+            // Daily Discover still being built: its slot holds a "Building…"
+            // card (first page of the pager) instead of sitting empty.
+            val heroBuilding = uiState.heroBuilding && !heroMinimized
+            val mixPages = uiState.yourMixes
+            when {
+                hero == null && !heroBuilding && mixPages.isEmpty() -> Unit // minimized, nothing to page
+                else -> {
+                    val heroPages = if (hero != null || heroBuilding) 1 else 0
+                    val pageCount = heroPages + mixPages.size
+                    val pagerState = androidx.compose.foundation.pager.rememberPagerState(
+                        pageCount = { pageCount },
+                    )
+                    Column {
+                        androidx.compose.foundation.pager.HorizontalPager(
+                            state = pagerState,
+                            contentPadding = PaddingValues(horizontal = VisualDesign.Gutter),
+                            pageSpacing = 10.dp,
+                        ) { page ->
+                            if (page < heroPages && hero == null) {
+                                DailyDiscoverBuildingCard()
+                            } else if (page < heroPages && hero != null) {
+                                SonoraHeroCard(
+                                    label = stringResource(R.string.nostop_home_updated_daily),
+                                    title = hero.title,
+                                    subtitle = hero.subtitle,
+                                    artUrl = hero.artUrl,
+                                    onPlay = viewModel::playHero,
+                                    onOpen = { onNavigateToPlaylist(hero.playlistId) },
+                                    onCreateMix = { onNavigateToMixBuilder(null) },
+                                    onLongPress = { heroActionSheet = true },
+                                )
+                            } else {
+                                val m = mixPages[page - heroPages]
+                                SonoraHeroCard(
+                                    label = stringResource(R.string.nostop_home_your_mix),
+                                    title = m.title,
+                                    subtitle = when (m.buildState) {
+                                        MixBuildState.BUILDING -> "building…"
+                                        MixBuildState.EMPTY -> "empty — edit to fill"
+                                        else -> pluralize(m.trackCount, "track")
+                                    },
+                                    artUrl = m.artUrl,
+                                    onPlay = { viewModel.playMix(m.id) },
+                                    onOpen = { openMix(m.id) },
+                                    onLongPress = { actionSheetMixId = m.id },
+                                )
+                            }
+                        }
+                        if (pageCount > 1) {
+                            Spacer(Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Center,
+                            ) {
+                                repeat(pageCount) { i ->
+                                    val active = pagerState.currentPage == i
+                                    Box(
+                                        modifier = Modifier
+                                            .padding(horizontal = 3.dp)
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                if (active) {
+                                                    MaterialTheme.colorScheme.primary
+                                                } else {
+                                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+                                                },
+                                            ),
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
+        }
+
 
         // ── Lossless connect nudge ───────────────────────────────────
         // Shown when the user has lossless toggled OFF and hasn't
@@ -310,37 +382,6 @@ fun HomeScreen(
             }
         }
 
-        // The approved Home leads with the user's own playlists rather than a generic hero.
-        // Only lift this rail when it is the FIRST user-arranged section; custom
-        // arrangements that move it elsewhere continue to be respected.
-        val recentLeading = uiState.sections.firstOrNull() == HomeSection.YOUR_PLAYLISTS
-        if (recentLeading && (uiState.yourPlaylists.isNotEmpty() || uiState.likedCard != null)) {
-            item(key = "section_your_playlists_leading") {
-                SonoraCardRail(title = stringResource(R.string.nostop_home_playlists)) {
-                    uiState.likedCard?.let { liked ->
-                        item(key = "liked_leading") {
-                            SonoraLikedCard(
-                                trackCount = liked.trackCount,
-                                onClick = {
-                                    viewModel.requestLibraryLikedFocus()
-                                    onNavigateToLibrary()
-                                },
-                            )
-                        }
-                    }
-                    items(uiState.yourPlaylists.railCut(HOME_RAIL_LIMIT), key = { it.id }) { p ->
-                        SonoraMixCard(
-                            title = p.title,
-                            artUrl = p.artUrl,
-                            source = p.source,
-                            onClick = { onNavigateToPlaylist(p.id) },
-                            onLongPress = { pinnedSheetPlaylistId = p.id },
-                        )
-                    }
-                }
-            }
-        }
-
         // ── User-arranged sections (Settings > Appearance > Home layout) ──
         // Order + visibility come from uiState.sections. The genre chips
         // steer only the Qobuz rows, so they ride glued above the FIRST
@@ -357,7 +398,7 @@ fun HomeScreen(
             if (chipsLead) {
                 item(key = "section_genre_chips") {
                     Spacer(Modifier.height(14.dp))
-                    VisualFilters(
+                    SonoraGenreFilters(
                         filters = uiState.genres.map { it.label },
                         selected = uiState.selectedGenre,
                         onSelect = viewModel::onSelectGenre,
@@ -366,7 +407,7 @@ fun HomeScreen(
             }
             when (section) {
                 HomeSection.YOUR_PLAYLISTS ->
-                    if (!recentLeading && (uiState.yourPlaylists.isNotEmpty() || uiState.likedCard != null)) {
+                    if (uiState.yourPlaylists.isNotEmpty() || uiState.likedCard != null) {
                         item(key = "section_your_playlists") {
                             SonoraCardRail(title = stringResource(R.string.nostop_home_playlists)) {
                                 uiState.likedCard?.let { liked ->
@@ -421,7 +462,7 @@ fun HomeScreen(
                             if (topAlbumsExpanded) uiState.topAlbums else uiState.topAlbums.take(5)
                         Column {
                             Spacer(Modifier.height(if (chipsLead) 2.dp else 16.dp))
-                            SectionHeader(
+                            SonoraSectionTitle(
                                 title = stringResource(R.string.nostop_home_top_albums),
                                 actionText = when {
                                     uiState.topAlbums.size <= 5 -> null
@@ -500,126 +541,30 @@ fun HomeScreen(
             }
         }
 
-        // Daily Discover remains available below the user's prioritized Home sections.
-        // ── Discover hero pager (Daily Discover + your Stash mixes) ──
-        // A mix created from the hero's ＋ ring lands right here as an
-        // identical sibling card — swipe between Daily Discover and your
-        // own mixes (dots below signal the pages). Long-press a Your-mix
-        // page for the action sheet (refresh / edit / delete / hide).
-        // Replaces the old "Your mixes" rail.
-        item {
-            Spacer(Modifier.height(6.dp))
-            // Minimized (long-press → "Minimize for now") drops the hero page
-            // for the session; the mix pages keep the pager alive. Distinct
-            // from hero == null (not connected), which shows PersonalizeCard.
-            val hero = if (heroMinimized) null else uiState.hero
-            // Daily Discover still being built: its slot holds a "Building…"
-            // card (first page of the pager) instead of sitting empty.
-            val heroBuilding = uiState.heroBuilding && !heroMinimized
-            val mixPages = uiState.yourMixes
-            when {
-                uiState.isLoading -> SonoraHeroCard(
-                    label = stringResource(R.string.nostop_home_updated_daily),
-                    title = stringResource(R.string.nostop_home_discover),
-                    subtitle = "",
-                    artUrl = null,
-                    onPlay = {},
-                    onOpen = {},
-                    loading = true,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-                uiState.showColdStartCard -> PersonalizeCard(
-                    onConnect = onNavigateToSettings,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-                hero == null && !heroBuilding && mixPages.isEmpty() -> Unit // minimized, nothing to page
-                else -> {
-                    val heroPages = if (hero != null || heroBuilding) 1 else 0
-                    val pageCount = heroPages + mixPages.size
-                    val pagerState = androidx.compose.foundation.pager.rememberPagerState(
-                        pageCount = { pageCount },
-                    )
-                    Column {
-                        androidx.compose.foundation.pager.HorizontalPager(
-                            state = pagerState,
-                            contentPadding = PaddingValues(horizontal = 16.dp),
-                            pageSpacing = 10.dp,
-                        ) { page ->
-                            if (page < heroPages && hero == null) {
-                                DailyDiscoverBuildingCard()
-                            } else if (page < heroPages && hero != null) {
-                                SonoraHeroCard(
-                                    label = stringResource(R.string.nostop_home_updated_daily),
-                                    title = hero.title,
-                                    subtitle = hero.subtitle,
-                                    artUrl = hero.artUrl,
-                                    onPlay = viewModel::playHero,
-                                    onOpen = { onNavigateToPlaylist(hero.playlistId) },
-                                    onCreateMix = { onNavigateToMixBuilder(null) },
-                                    onLongPress = { heroActionSheet = true },
-                                )
-                            } else {
-                                val m = mixPages[page - heroPages]
-                                SonoraHeroCard(
-                                    label = stringResource(R.string.nostop_home_your_mix),
-                                    title = m.title,
-                                    subtitle = when (m.buildState) {
-                                        MixBuildState.BUILDING -> "building…"
-                                        MixBuildState.EMPTY -> "empty — edit to fill"
-                                        else -> pluralize(m.trackCount, "track")
-                                    },
-                                    artUrl = m.artUrl,
-                                    onPlay = { viewModel.playMix(m.id) },
-                                    onOpen = { openMix(m.id) },
-                                    onLongPress = { actionSheetMixId = m.id },
-                                )
-                            }
-                        }
-                        if (pageCount > 1) {
-                            Spacer(Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.Center,
-                            ) {
-                                repeat(pageCount) { i ->
-                                    val active = pagerState.currentPage == i
-                                    Box(
-                                        modifier = Modifier
-                                            .padding(horizontal = 3.dp)
-                                            .size(6.dp)
-                                            .clip(CircleShape)
-                                            .background(
-                                                if (active) {
-                                                    MaterialTheme.colorScheme.primary
-                                                } else {
-                                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
-                                                },
-                                            ),
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
+        if (uiState.isLoading) item(key = "home_loading") {
+            Row(Modifier.padding(VisualDesign.Gutter), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                Text(stringResource(R.string.sonora_home_loading), style = VisualDesign.Body)
             }
+        } else if (uiState.showColdStartCard) item(key = "home_personalize") {
+            PersonalizeCard(
+                onConnect = onNavigateToSettings,
+                title = stringResource(R.string.sonora_home_personalize),
+                description = stringResource(R.string.sonora_home_personalize_description),
+                actionLabel = stringResource(R.string.nostop_home_setup),
+                modifier = Modifier.padding(horizontal = VisualDesign.Gutter, vertical = 24.dp),
+            )
         }
 
-        // ── App title row: wordmark + social icons ────────────────────
-        // v0.9.13: empty space to the right of the wordmark holds quick
-        // links to the project (GitHub, X). Supporter pill moves back
-        // to its own full-width row below.
+        // Existing service and support actions remain below the music content.
         item {
-            Row(
+            androidx.compose.foundation.layout.FlowRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp, vertical = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
             ) {
-                // One ink (owner, 2026-10-11): white on dark / aubergine on light, and while a song
-                // plays the contrast-checked tint of its mood colour, crossfading over 800 ms. Read
-                // at draw time, so the crossfade redraws the wordmark without recomposing the feed.
-                Text("Serviços", style = VisualDesign.Heading)
-                Spacer(modifier = Modifier.weight(1f))
+                Text("Serviços", Modifier.fillMaxWidth().padding(bottom = 8.dp), style = VisualDesign.Heading)
 
                 // Streaming-mode quick-access chip. Tap → opens the
                 // StreamingModeSheet for the picker. Gated on
@@ -1004,6 +949,8 @@ fun HomeScreen(
             }
         }
     }
+    } // SonoraHomeTheme
+
 }
 
 // ── Mix action-sheet row ──────────────────────────────────────────────────
@@ -1351,9 +1298,14 @@ private fun DiscoveryAlbumRow(
 ) {
     Column {
         Spacer(Modifier.height(topSpacing))
-        VisualSectionTitle(title)
-        VisualRail(VisualSection("releases", title, albums.map { VisualCard(it.id, it.title, it.artist, it.thumbnailUrl) }, plain = true),
-            onCard = { id -> albums.firstOrNull { it.id == id }?.let(onOpen) })
+        SonoraSectionTitle(title)
+        LazyRow(contentPadding = PaddingValues(horizontal = VisualDesign.Gutter),
+            horizontalArrangement = Arrangement.spacedBy(VisualDesign.Space.Rail)) {
+            items(albums, key = { it.id }) { album ->
+                SonoraContentCard(VisualCard(album.id, album.title, album.artist, album.thumbnailUrl),
+                    onClick = { onOpen(album) })
+            }
+        }
     }
 }
 
@@ -1372,9 +1324,15 @@ private fun DiscoveryPlaylistRow(
 ) {
     Column {
         Spacer(Modifier.height(topSpacing))
-        VisualSectionTitle(title, onSeeAll)
-        VisualRail(VisualSection("playlists", title, playlists.map { VisualCard(it.id, it.title, pluralize(it.trackCount, "track"), it.thumbnailUrl) }),
-            onCard = { id -> playlists.firstOrNull { it.id == id }?.let { onOpen(it.toAlbumNav()) } })
+        SonoraSectionTitle(title, actionText = stringResource(R.string.nostop_home_see_all), onActionClick = onSeeAll)
+        LazyRow(contentPadding = PaddingValues(horizontal = VisualDesign.Gutter),
+            horizontalArrangement = Arrangement.spacedBy(VisualDesign.Space.Rail)) {
+            items(playlists, key = { it.id }) { playlist ->
+                SonoraContentCard(VisualCard(playlist.id, playlist.title,
+                    pluralize(playlist.trackCount, "track"), playlist.thumbnailUrl),
+                    onClick = { onOpen(playlist.toAlbumNav()) })
+            }
+        }
     }
 }
 

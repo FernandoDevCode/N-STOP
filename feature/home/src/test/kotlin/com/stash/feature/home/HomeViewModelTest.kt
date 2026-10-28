@@ -343,6 +343,15 @@ class HomeViewModelTest {
     // Helpers
     // ------------------------------------------------------------------
 
+    @Test
+    fun `a daily playlist hidden from Home cannot become the spotlight`() = runTest {
+        val daily = dailyDiscover(id = 7L, trackCount = 30).copy(hideFromHome = true)
+        val state = buildVm(playlists = listOf(daily), builtinIds = listOf(7L)).uiState.first { !it.isLoading }
+        assertThat(state.hero).isNull()
+        assertThat(state.heroBuilding).isFalse()
+        assertThat(state.hasDiscoverySpotlight(false)).isFalse()
+    }
+
     private fun dailyDiscover(id: Long, trackCount: Int, artUrl: String? = null) = Playlist(
         id = id,
         name = "Daily Discover",

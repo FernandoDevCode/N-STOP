@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="sonora_home_building">Preparando seu Daily Discover…</string>
+    <string name="sonora_home_building_description">A descoberta musical está em andamento. Sua playlist aparece aqui quando estiver pronta.</string>
+    <string name="sonora_home_loading">Carregando seu início…</string>
+    <string name="sonora_home_personalize">Personalize seu início</string>
+    <string name="sonora_home_personalize_description">Conecte serviços e sincronize sua biblioteca para alimentar a descoberta musical conforme você ouve.</string>
     <string name="nostop_home_report_issue">Relatar um problema</string>
     <string name="nostop_home_report_hint">Coletar diagnóstico e abrir o GitHub</string>
     <string name="nostop_home_translate">Ajude a traduzir</string>
@@ -8,7 +13,7 @@
     <string name="nostop_home_updated_daily">Atualizado diariamente</string>
     <string name="nostop_home_your_mix">Seu mix</string>
     <string name="nostop_home_discover">Descobrir</string>
-    <string name="nostop_home_playlists">Volte para isso</string>
+    <string name="nostop_home_playlists">Suas playlists</string>
     <string name="nostop_home_new_releases">Novos lançamentos</string>
     <string name="nostop_home_qobuz">Playlists do Qobuz</string>
     <string name="nostop_home_top_albums">Álbuns em destaque</string>

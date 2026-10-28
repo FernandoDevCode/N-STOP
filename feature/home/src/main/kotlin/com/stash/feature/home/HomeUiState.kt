@@ -107,9 +107,13 @@ data class HomeUiState(
      * empty hero slot simply collapses.
      */
     val showColdStartCard: Boolean
-        get() = hero == null && yourMixes.isEmpty() && madeForYou.isEmpty() &&
+        get() = hero == null && !heroBuilding && yourMixes.isEmpty() && madeForYou.isEmpty() &&
             radios.isEmpty() && moodDecades.isEmpty() && yourPlaylists.isEmpty() &&
-            likedCard == null
+            likedCard == null && newReleases.isEmpty() && topAlbums.isEmpty() && playlists.isEmpty()
+
+    /** No placeholder page: only an existing discovery state can reserve the hero slot. */
+    fun hasDiscoverySpotlight(minimized: Boolean): Boolean =
+        (!minimized && (hero != null || heroBuilding)) || yourMixes.isNotEmpty()
 }
 
 /** A mix as a Home rail card. buildState only meaningful for STASH_MIX. */

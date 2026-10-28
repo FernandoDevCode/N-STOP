@@ -46,6 +46,32 @@ class HomeUiStateTest {
         assertThat(s.showColdStartCard).isFalse()
     }
 
+    @Test fun `catalog content hides personalization without a personal library`() {
+        val album = com.stash.data.ytmusic.model.AlbumSummary(
+            id = "catalog", title = "Album", artist = "Artist", thumbnailUrl = null,
+            year = null, source = com.stash.data.ytmusic.model.AlbumSource.QOBUZ,
+        )
+        assertThat(HomeUiState(newReleases = listOf(album)).showColdStartCard).isFalse()
+        assertThat(HomeUiState(topAlbums = listOf(album)).showColdStartCard).isFalse()
+    }
+
+    @Test fun `real preparation replaces personalization`() {
+        assertThat(HomeUiState(heroBuilding = true).showColdStartCard).isFalse()
+        assertThat(HomeUiState(heroBuilding = true).hasDiscoverySpotlight(false)).isTrue()
+    }
+
+    @Test fun `empty and loading homes reserve no spotlight`() {
+        assertThat(HomeUiState().hasDiscoverySpotlight(false)).isFalse()
+        assertThat(HomeUiState(isLoading = false).hasDiscoverySpotlight(false)).isFalse()
+    }
+
+    @Test fun `minimize removes only daily discovery and preserves mix pages`() {
+        val state = HomeUiState(hero = DiscoverHeroState("Discover", "30 tracks", null, 7L))
+        assertThat(state.hasDiscoverySpotlight(false)).isTrue()
+        assertThat(state.hasDiscoverySpotlight(true)).isFalse()
+        assertThat(state.copy(yourMixes = listOf(mix(2L, "Mix"))).hasDiscoverySpotlight(true)).isTrue()
+    }
+
     private fun mix(id: Long, title: String) = HomeMix(
         id = id, title = title, artUrl = null, source = com.stash.core.model.MusicSource.SPOTIFY,
     )

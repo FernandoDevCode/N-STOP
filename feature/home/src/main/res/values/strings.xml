@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="sonora_home_building">Preparing your Daily Discover…</string>
+    <string name="sonora_home_building_description">Music discovery is in progress. Your playlist appears here when ready.</string>
+    <string name="sonora_home_loading">Loading your Home…</string>
+    <string name="sonora_home_personalize">Personalize your Home</string>
+    <string name="sonora_home_personalize_description">Connect services and sync your library to feed music discovery as you listen.</string>
     <string name="nostop_home_report_issue">Report an issue</string>
     <string name="nostop_home_report_hint">Grab diagnostics, then open GitHub</string>
     <string name="nostop_home_translate">Help us translate</string>
@@ -8,7 +13,7 @@
     <string name="nostop_home_updated_daily">Updated daily</string>
     <string name="nostop_home_your_mix">Your mix</string>
     <string name="nostop_home_discover">Discover</string>
-    <string name="nostop_home_playlists">Back to listening</string>
+    <string name="nostop_home_playlists">Your playlists</string>
     <string name="nostop_home_new_releases">New Releases</string>
     <string name="nostop_home_qobuz">Qobuz Playlists</string>
     <string name="nostop_home_top_albums">Top Albums</string>
@@ -69,7 +74,7 @@
     <string name="podcast_cover_art">Episode cover art</string>
     <string name="podcast_no_active_episode">Choose an episode to start listening.</string>
     <string name="podcast_speed">Speed</string>
-    <string name="nostop_home_continue_current">Back to listening</string>
+    <string name="nostop_home_continue_current">Your playlists</string>
     <string name="nostop_home_resume_label">Your soundtrack</string>
     <string name="podcast_preparing">Preparing download…</string>
 </resources>

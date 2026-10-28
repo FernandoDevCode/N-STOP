@@ -6,6 +6,7 @@ android {
 
     testOptions {
         unitTests {
+            isIncludeAndroidResources = true
             // Return Kotlin defaults from stubbed Android SDK methods so
             // android.util.Log calls in production code don't throw in JVM tests.
             isReturnDefaultValues = true
@@ -51,4 +52,8 @@ dependencies {
     // Matches the test harness in :feature:library — see MixOfflineTapGuardTest.
     testImplementation("org.mockito:mockito-core:5.14.2")
     testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
+    testImplementation(platform(libs.compose.bom))
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation(libs.robolectric)
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
