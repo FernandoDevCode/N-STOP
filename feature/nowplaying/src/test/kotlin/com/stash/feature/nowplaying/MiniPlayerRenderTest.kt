@@ -79,8 +79,11 @@ class MiniPlayerRenderTest {
         }
         val output = File("build/outputs/mini-player-render").apply { mkdirs() }
         var visibleBelow = false
-        fun capture(name: String) {
+        fun capture(name: String, markerFraction: Float? = null) {
             val bounds = compose.onNodeWithTag("render").fetchSemanticsNode().boundsInRoot
+            val progressBounds = markerFraction?.let {
+                compose.onNodeWithContentDescription("Playback progress").fetchSemanticsNode().boundsInRoot
+            }
             compose.runOnIdle {
                 val bitmap = Bitmap.createBitmap(bounds.width.toInt(), bounds.height.toInt(), Bitmap.Config.ARGB_8888)
                 val canvas = Canvas(bitmap)
@@ -90,6 +93,28 @@ class MiniPlayerRenderTest {
                     for (y in 174 until minOf(190, bitmap.height)) for (x in 45 until bitmap.width - 45) {
                         if (android.graphics.Color.red(bitmap.getPixel(x, y)) > 85) visibleBelow = true
                     }
+                }
+                if (markerFraction != null && progressBounds != null) {
+                    val radius = 13f * renderDensity
+                    val cardHeight = 56f * renderDensity
+                    val metric = MiniPlayerRail(progressBounds.width, cardHeight, radius)
+                    val localContact = metric.point(markerFraction)
+                    val tangent = metric.tangent(markerFraction)
+                    val outward = Offset(-tangent.y, tangent.x)
+                    // Sample near the outside of the requested 7dp solid core. A
+                    // vertical blade or a low-alpha glow cannot satisfy this check.
+                    val sample = Offset(
+                        progressBounds.left - bounds.left + localContact.x,
+                        progressBounds.bottom - bounds.top - cardHeight + localContact.y,
+                    ) + outward * (2.75f * renderDensity)
+                    val pixel = bitmap.getPixel(
+                        sample.x.toInt().coerceIn(0, bitmap.width - 1),
+                        sample.y.toInt().coerceIn(0, bitmap.height - 1),
+                    )
+                    assertTrue("Circular needle core must remain bright at $markerFraction",
+                        android.graphics.Color.red(pixel) > 180 &&
+                            android.graphics.Color.green(pixel) > 180 &&
+                            android.graphics.Color.blue(pixel) > 180)
                 }
                 File(output, name).outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
                 bitmap.recycle()
@@ -126,7 +151,7 @@ class MiniPlayerRenderTest {
             compose.runOnIdle { position.value = percent * 1000L }
             compose.mainClock.advanceTimeBy(64)
             compose.waitForIdle()
-            capture("contour-%03d.png".format(percent))
+            capture("contour-%03d.png".format(percent), percent / 100f)
         }
         for ((width, density, font) in listOf(Triple(280, 1f, 1f), Triple(320, 2.75f, 1.5f), Triple(412, 3f, 1f))) {
             compose.runOnIdle { viewport = width.dp; renderDensity = density; fontScale = font }

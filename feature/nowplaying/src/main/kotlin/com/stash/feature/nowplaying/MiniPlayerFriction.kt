@@ -79,20 +79,29 @@ internal class MiniFrictionParticles(seed: Int = Random.nextInt()) {
             x[i] = contact.x
             y[i] = contact.y
             val scatter = random.nextFloat()
-            val travel = (65f + random.nextFloat() * 125f + energy * 120f) * density
+            val rareFragment = random.nextFloat() < .07f
+            // Normal playback stays close to the contact: common fragments travel
+            // roughly 12-18dp before expiring. Gesture speed opens the fan without
+            // lengthening every lifetime, so a quick scrub remains tied to the thumb.
+            val expansion = if (touching) 1f + speed * 1.45f else 1f
+            val rareExpansion = if (rareFragment) 1.55f + speed * .35f else 1f
+            val travel = (52f + random.nextFloat() * 28f) * expansion * rareExpansion * density
             // Scraped fragments mostly trail the contact. Some skim the rail;
             // others lift inward or fall outward into the existing navigation gap.
             val along = direction * travel * if (scatter < .82f) -1f else .45f
-            val outward = scatter in .32f.. .68f
-            val lift = when {
-                outward -> -(12f + random.nextFloat() * 22f) * density
-                scatter < .32f -> (18f + random.nextFloat() * 48f) * density
-                else -> (random.nextFloat() - .5f) * 10f * density
+            val rawLift = when {
+                scatter < .34f -> (16f + random.nextFloat() * 16f)
+                scatter < .66f -> -(12f + random.nextFloat() * 12f)
+                else -> (random.nextFloat() - .5f) * 8f
             }
-            trail[i] = (.012f + random.nextFloat() * .025f) * (1f + energy * .65f)
+            // Positive normal points into both side curves. Compress only the
+            // outward component there, avoiding chips detached beyond the card.
+            val edgeFactor = abs(tangent.y).coerceIn(0f, 1f)
+            val lift = rawLift * (if (rawLift < 0f) 1f - edgeFactor * .72f else 1f) * density
+            trail[i] = (.009f + random.nextFloat() * .012f) * (1f + speed * .7f)
             vx[i] = tangent.x * along + tangent.y * lift
             vy[i] = tangent.y * along - tangent.x * lift
-            life[i] = .16f + random.nextFloat() * .27f
+            life[i] = .15f + random.nextFloat() * .09f + if (rareFragment) .06f else 0f
             initialLife[i] = life[i]
             weight[i] = (.65f + random.nextFloat() * .85f) * density
         }
@@ -210,7 +219,7 @@ internal fun Modifier.miniPlayerFriction(
             drawPath(segment, Color(0xFF98A8B9), style = railStroke)
         }
         // Layered segments form a directional, tapered skid on the actual curved rail.
-        val tail = (28f + particles.energy * 34f) * density
+        val tail = (12f + particles.energy * 16f) * density
         for (j in 6 downTo 1) {
             val end = (distance - particles.direction * tail * j / 6f).coerceIn(0f, measure.length)
             segment.reset()
@@ -248,12 +257,12 @@ internal fun Modifier.miniPlayerFriction(
           }
         }
         }
-        // A compact white-silver blade, not an album-coloured circular thumb.
-        val tip = contact + Offset(tangent.y, -tangent.x) * 7.dp.toPx()
-        drawLine(cool.copy(alpha = .15f + particles.energy * .05f), contact, tip, (8f + particles.energy).dp.toPx(), StrokeCap.Round)
-        drawLine(silver.copy(alpha = .45f), contact, tip, 3.5.dp.toPx(), StrokeCap.Round)
-        drawLine(Color.White, contact, tip, 1.5.dp.toPx(), StrokeCap.Round)
-        drawLine(Color.White, contact - tangent * 3.dp.toPx(),
-            contact + tangent * 3.dp.toPx(), 1.5.dp.toPx(), StrokeCap.Round)
+        // The physical contact is always a circular white-silver needle. It is
+        // intentionally last in the draw order so sparks can never swallow it.
+        drawCircle(cool.copy(alpha = .12f), 7.dp.toPx(), contact)
+        drawCircle(silver.copy(alpha = .24f), 5.dp.toPx(), contact)
+        drawCircle(silver, 3.5.dp.toPx(), contact)
+        drawCircle(Color.White.copy(alpha = .92f), 2.35.dp.toPx(), contact)
+        drawCircle(Color.White, .9.dp.toPx(), contact - Offset(tangent.y, -tangent.x) * .65.dp.toPx())
     }
 }
