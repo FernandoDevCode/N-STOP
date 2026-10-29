@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -73,7 +74,14 @@ fun ArtistHero(
     val support = remember(socials) { supportUrl(socials) }
     val uriHandler = LocalUriHandler.current
     Column(modifier.fillMaxWidth()) {
-        Box(Modifier.fillMaxWidth().height(350.dp)) {
+        Box(
+            Modifier.fillMaxWidth().height(370.dp)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color(0xFF343944), Color(0xFF191D23), backdrop),
+                    ),
+                ),
+        ) {
             if (hero.avatarUrl != null) {
                 AsyncImage(
                     model = ArtUrlUpgrader.upgrade(hero.avatarUrl),
@@ -81,121 +89,124 @@ fun ArtistHero(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.matchParentSize(),
                 )
-            } else {
-                Box(
-                    Modifier.matchParentSize().background(
-                        Brush.linearGradient(
-                            listOf(Color(0xFF48296D), Color(0xFF142A3E), backdrop),
-                        ),
-                    ),
-                )
             }
-            // Soft dark wash keeps title legible for light and dark artist photos.
+            // Keep the photograph full-bleed. The lower scrim blends into the
+            // Sonora canvas without a solid rectangle or a brand-coloured wash.
             Box(
                 Modifier.matchParentSize().background(
                     Brush.verticalGradient(
-                        0.0f to Color.Black.copy(alpha = 0.29f),
-                        0.32f to Color.Transparent,
-                        0.67f to Color(0xFF090B18).copy(alpha = 0.65f),
-                        1.0f to Color(0xFF090B18).copy(alpha = 0.94f),
+                        0f to Color.Black.copy(alpha = .35f),
+                        .35f to Color.Transparent,
+                        .63f to backdrop.copy(alpha = .35f),
+                        .84f to backdrop.copy(alpha = .82f),
+                        1f to backdrop,
                     ),
                 ),
             )
-            Column(
-                Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxWidth()
-                    .padding(horizontal = 22.dp, vertical = 19.dp),
-            ) {
-                Text(
-                    text = hero.name,
-                    fontSize = 39.sp,
-                    lineHeight = 43.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = Color.White,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (hero.subscribersText != null) {
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        hero.subscribersText,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.85f),
-                    )
-                }
-            }
             IconButton(
                 onClick = onBack,
-                modifier = Modifier.align(Alignment.TopStart).padding(10.dp)
-                    .background(Color.Black.copy(alpha = 0.28f), CircleShape),
+                modifier = Modifier.align(Alignment.TopStart)
+                    .statusBarsPadding().padding(12.dp)
+                    .background(Color.Black.copy(alpha = .42f), CircleShape),
             ) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    tint = Color.White,
+                )
             }
             if (com.stash.core.common.constants.StashConstants.STREAMING_ENGINE_ENABLED) {
                 com.stash.core.ui.components.streaming.StreamingModeChip(
                     streamingEnabled = streamingEnabled,
                     onClick = onStreamingClick,
-                    modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
+                    modifier = Modifier.align(Alignment.TopEnd)
+                        .statusBarsPadding().padding(12.dp),
                 )
             }
+            Column(
+                Modifier.align(Alignment.BottomStart)
+                    .fillMaxWidth().padding(start = 24.dp, end = 22.dp, bottom = 22.dp),
+            ) {
+                Text(
+                    text = hero.name,
+                    fontSize = 48.sp,
+                    lineHeight = 50.sp,
+                    letterSpacing = (-1.5).sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Color(0xFFF4F5F7),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                hero.subscribersText?.let { count ->
+                    Spacer(Modifier.height(5.dp))
+                    Text(
+                        count,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFFD4D8E0),
+                    )
+                }
+            }
         }
+        // The existing play, radio and support callbacks remain unchanged.
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 15.dp),
+            modifier = Modifier.fillMaxWidth()
+                .padding(start = 22.dp, end = 22.dp, top = 9.dp, bottom = 13.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Surface(
                 onClick = onPlayArtist,
                 shape = CircleShape,
-                color = Color(0xFFAF70F1),
-                modifier = Modifier.size(52.dp),
+                color = Color(0xFFF4F5F7),
+                modifier = Modifier.size(60.dp),
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         Icons.Default.PlayArrow,
                         contentDescription = "Play ${hero.name}",
-                        tint = Color(0xFF100C18),
-                        modifier = Modifier.size(29.dp),
+                        tint = Color(0xFF0E1115),
+                        modifier = Modifier.size(32.dp),
                     )
                 }
             }
             Surface(
                 onClick = onStartRadio,
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                modifier = Modifier.size(44.dp),
+                shape = RoundedCornerShape(30.dp),
+                color = Color(0xFF191D23),
+                border = BorderStroke(1.dp, Color(0xFF343944)),
+                modifier = Modifier.height(44.dp),
             ) {
-                Box(contentAlignment = Alignment.Center) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     Icon(
                         Icons.Default.Radio,
-                        contentDescription = "Start ${hero.name} radio",
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(20.dp),
+                        contentDescription = null,
+                        tint = Color(0xFFD4D8E0),
+                        modifier = Modifier.size(18.dp),
                     )
+                    Text("Rádio", color = Color(0xFFF4F5F7),
+                        style = MaterialTheme.typography.labelLarge)
                 }
             }
             Spacer(Modifier.weight(1f))
             if (support != null) {
                 Surface(
                     onClick = { runCatching { uriHandler.openUri(support) } },
-                    shape = RoundedCornerShape(99.dp),
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)),
+                    shape = CircleShape,
+                    color = Color(0xFF191D23),
+                    border = BorderStroke(1.dp, Color(0xFF343944)),
+                    modifier = Modifier.size(44.dp),
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
+                    Box(contentAlignment = Alignment.Center) {
                         Icon(
                             Icons.Default.Favorite,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(16.dp),
+                            contentDescription = "Support artist",
+                            tint = Color(0xFFD4D8E0),
+                            modifier = Modifier.size(20.dp),
                         )
-                        Text("Support", style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }
@@ -203,15 +214,16 @@ fun ArtistHero(
         if (socials.isNotEmpty()) {
             Row(
                 modifier = Modifier.horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp, vertical = 4.dp),
+                    .padding(horizontal = 22.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 socials.forEach { social ->
                     Surface(
                         onClick = { runCatching { uriHandler.openUri(social.url) } },
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                        color = Color(0xFF191D23),
+                        border = BorderStroke(1.dp, Color(0xFF343944)),
                         shape = CircleShape,
-                        modifier = Modifier.size(36.dp),
+                        modifier = Modifier.size(40.dp),
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             val brand = socialIconFor(social.kind)
@@ -219,13 +231,15 @@ fun ArtistHero(
                                 Icon(
                                     painter = painterResource(brand),
                                     contentDescription = social.kind,
-                                    modifier = Modifier.size(17.dp),
+                                    modifier = Modifier.size(19.dp),
+                                    tint = Color(0xFFD4D8E0),
                                 )
                             } else {
                                 Icon(
                                     imageVector = Icons.Default.Public,
                                     contentDescription = social.kind,
-                                    modifier = Modifier.size(17.dp),
+                                    modifier = Modifier.size(19.dp),
+                                    tint = Color(0xFFD4D8E0),
                                 )
                             }
                         }
@@ -233,5 +247,6 @@ fun ArtistHero(
                 }
             }
         }
+        Spacer(Modifier.height(4.dp))
     }
 }
