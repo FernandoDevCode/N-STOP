@@ -11,6 +11,8 @@ import kotlinx.serialization.json.jsonPrimitive
 interface MusicBrainzClient {
     /** MBID lookup; null on 404/failure (caller then tries [searchByName]). */
     suspend fun lookupUrlRels(mbid: String): JsonObject?
+    /** Group member relationships, with join and exit dates where known. */
+    suspend fun lookupMemberRelations(mbid: String): JsonObject?
     /** Name search that resolves an MBID (score+type gated) then fetches its
      *  url-rels; null if no confident match. */
     suspend fun searchByName(name: String): JsonObject?
