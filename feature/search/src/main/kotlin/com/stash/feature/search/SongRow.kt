@@ -110,6 +110,10 @@ fun SongRow(
     downloadSupported: Boolean = true,
     /** Compact row styling is local to artist/album; Search keeps its existing cards. */
     editorial: Boolean = false,
+    /** Numbering is an artist/album detail property, never added to Search. */
+    editorialIndex: Int? = null,
+    /** Album rows show track number rather than repeating their cover. */
+    editorialAlbum: Boolean = false,
 ) {
     val extendedColors = StashTheme.extendedColors
     // Dim the art behind the loading spinner / stop glyph so it reads clearly.
@@ -134,10 +138,18 @@ fun SongRow(
             .padding(horizontal = 12.dp, vertical = if (editorial) 4.dp else 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Album art or fallback music note, with a spinner (resolving/loading) or a
-        // stop hint (preview playing) overlaid so the row-tap state is visible now
-        // that the standalone ▶ button is gone.
-        Box(
+        if (editorial && editorialIndex != null) {
+            Text(
+                text = editorialIndex.toString(),
+                modifier = Modifier.width(22.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.width(5.dp))
+        }
+        // Album detail uses numbering with no repeated cover; Popular retains
+        // small artist thumbnails exactly as in the approved three-panel mock.
+        if (!editorialAlbum) Box(
             modifier = Modifier
                 .size(if (editorial) 44.dp else 48.dp)
                 .clip(RoundedCornerShape(if (editorial) 6.dp else 8.dp))
@@ -231,8 +243,9 @@ fun SongRow(
             Spacer(modifier = Modifier.width(8.dp))
         }
 
-        // Download action button (hidden where download-by-id isn't supported).
-        if (downloadSupported) {
+        // In the editorial layout downloads move to ⋮, matching the reference;
+        // Search retains its existing one-tap download affordance.
+        if (downloadSupported && !editorial) {
         Box(
             modifier = Modifier.size(40.dp),
             contentAlignment = Alignment.Center,
@@ -285,6 +298,15 @@ fun SongRow(
             onAddToQueue = onAddToQueue,
             onAddToPlaylist = onAddToPlaylist,
             onStartRadio = onStartRadio,
+            onDownload = if (editorial && downloadSupported && !isDownloaded &&
+                !isDownloading && !isWaitingForLossless) onDownload else null,
+            downloadStatus = if (!editorial || !downloadSupported) null
+                else when {
+                    isDownloaded -> "Baixado"
+                    isDownloading -> "Baixando"
+                    isWaitingForLossless -> "Aguardando fonte sem perdas"
+                    else -> null
+                },
         )
     }
 }
@@ -301,6 +323,8 @@ fun SearchTrackMenu(
     onAddToPlaylist: () -> Unit,
     onStartRadio: () -> Unit,
     modifier: Modifier = Modifier,
+    onDownload: (() -> Unit)? = null,
+    downloadStatus: String? = null,
 ) {
     Box(modifier) {
         val role = com.stash.core.ui.components.LocalListenTogetherRole.current
@@ -313,6 +337,19 @@ fun SearchTrackMenu(
             )
         }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            if (onDownload != null) {
+                DropdownMenuItem(
+                    text = { Text("Baixar") },
+                    leadingIcon = { Icon(Icons.Default.Download, contentDescription = null) },
+                    onClick = { menuOpen = false; onDownload() },
+                )
+            } else if (downloadStatus != null) {
+                DropdownMenuItem(
+                    text = { Text(downloadStatus) },
+                    enabled = false,
+                    onClick = { menuOpen = false },
+                )
+            }
             DropdownMenuItem(
                 text = { Text(com.stash.core.ui.components.playNextLabel(role, "Play next")) },
                 leadingIcon = { Icon(Icons.Default.PlaylistPlay, contentDescription = null) },
