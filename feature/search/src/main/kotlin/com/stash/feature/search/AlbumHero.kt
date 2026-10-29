@@ -1,6 +1,8 @@
 package com.stash.feature.search
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.layout.Arrangement
@@ -117,30 +119,49 @@ fun AlbumHero(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(330.dp)
+                .height(345.dp)
                 .background(
                     Brush.verticalGradient(
-                        0f to Color(0xFF34244D),
-                        0.48f to Color(0xFF20213A),
-                        1f to MaterialTheme.colorScheme.background,
+                        listOf(Color(0xFF303740), Color(0xFF191D23),
+                            MaterialTheme.colorScheme.background),
                     ),
                 ),
         ) {
+            // Derived atmospheric wash from the actual cover, never a fixed
+            // purple tint. On pre-Android 12 the neutral gradient remains.
+            if (hero.thumbnailUrl != null) {
+                AsyncImage(
+                    model = hero.thumbnailUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize().blur(30.dp).alpha(.32f),
+                )
+            }
+            Box(
+                Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(
+                        0f to Color(0xCC0E1115),
+                        .34f to Color(0x66191D23),
+                        .73f to Color(0xDD0E1115),
+                        1f to MaterialTheme.colorScheme.background,
+                    ),
+                ),
+            )
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .padding(top = 35.dp)
-                    .size(235.dp)
+                    .padding(top = 32.dp)
+                    .size(232.dp)
                     .shadow(
                         elevation = 24.dp,
                         shape = RoundedCornerShape(14.dp),
-                        ambientColor = Color(0xFF9F6BFF).copy(alpha = 0.34f),
-                        spotColor = Color(0xFF4DD8DE).copy(alpha = 0.20f),
+                        ambientColor = Color.Black.copy(alpha = 0.55f),
+                        spotColor = Color.Black.copy(alpha = 0.36f),
                     )
                     .clip(RoundedCornerShape(14.dp))
                     .background(
                         Brush.linearGradient(
-                            listOf(Color(0xFF48346D), Color(0xFF173F4D)),
+                            listOf(Color(0xFF343944), Color(0xFF191D23)),
                         ),
                     ),
                 contentAlignment = Alignment.Center,
@@ -167,7 +188,7 @@ fun AlbumHero(
                     .statusBarsPadding()
                     .padding(start = 12.dp, top = 8.dp)
                     .align(Alignment.TopStart)
-                    .background(Color(0xA80A0C18), CircleShape),
+                    .background(Color(0xAA0E1115), CircleShape),
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -191,8 +212,8 @@ fun AlbumHero(
         Column(modifier = Modifier.padding(horizontal = 22.dp)) {
             Text(
                 text = hero.title,
-                fontSize = 30.sp,
-                lineHeight = 34.sp,
+                fontSize = 34.sp,
+                lineHeight = 38.sp,
                 letterSpacing = (-0.8).sp,
                 fontWeight = FontWeight.ExtraBold,
                 color = MaterialTheme.colorScheme.onBackground,
@@ -242,19 +263,33 @@ fun AlbumHero(
                 Button(
                     onClick = onPlayAlbum,
                     enabled = actionsEnabled,
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-                    shape = RoundedCornerShape(24.dp),
+                    modifier = Modifier.size(60.dp),
+                    contentPadding = PaddingValues(0.dp),
+                    shape = CircleShape,
                 ) {
                     Icon(
                         imageVector = Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
+                        contentDescription = stringResource(R.string.nonstop_album_play),
+                        modifier = Modifier.size(30.dp),
                     )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = stringResource(R.string.nonstop_album_play),
-                        style = MaterialTheme.typography.labelLarge,
-                    )
+                }
+                if (hasDownloaded) {
+                    OutlinedButton(
+                        onClick = onShuffle,
+                        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
+                        shape = RoundedCornerShape(24.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Shuffle,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(R.string.nonstop_album_shuffle),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
                 }
                 OutlinedButton(
                     onClick = onAddToQueue,
@@ -289,24 +324,6 @@ fun AlbumHero(
                         text = if (isSaved) stringResource(R.string.nonstop_album_saved) else stringResource(R.string.nonstop_album_save),
                         style = MaterialTheme.typography.labelLarge,
                     )
-                }
-                if (hasDownloaded) {
-                    OutlinedButton(
-                        onClick = onShuffle,
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-                        shape = RoundedCornerShape(24.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Shuffle,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = stringResource(R.string.nonstop_album_shuffle),
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                    }
                 }
                 if (downloadSupported) {
                     OutlinedButton(
