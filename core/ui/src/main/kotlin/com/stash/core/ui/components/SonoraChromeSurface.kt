@@ -35,7 +35,7 @@ fun Modifier.sonoraMiniGlass(shape: Shape): Modifier {
         state = source,
         style = HazeStyle(
             backgroundColor = ground,
-            tint = HazeTint(tint.copy(alpha = .84f)),
+            tint = HazeTint(tint.copy(alpha = .60f)),
             blurRadius = 20.dp,
             noiseFactor = 0f,
             fallbackTint = HazeTint(fallback),
@@ -49,7 +49,9 @@ fun Modifier.sonoraMiniGlass(shape: Shape): Modifier {
             start = Offset.Zero, end = Offset(size.width * .8f, size.height),
         )
         onDrawBehind { drawRect(sheen) }
-    }.border(.5.dp, edge, shape)
+    }.border(.5.dp, Brush.linearGradient(
+        listOf(reflection.copy(alpha = .34f), Color(0x24B8AED5), edge.copy(alpha = .16f)),
+    ), shape)
 }
 
 /** Draw-only fade: no layout, hit target or clipping. Its base includes system insets.

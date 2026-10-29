@@ -18,8 +18,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
@@ -119,17 +117,16 @@ internal fun Modifier.miniPlayerGestureInput(
     artworkBounds: () -> Rect = { Rect.Zero },
 ) = pointerInput(seek, durationMs, cornerRadius, enabled, onSeek, onExpand, bodyInteractions) {
     val radius = cornerRadius.toPx()
-    val geometry = MiniPlayerRail(size.width.toFloat(), size.height.toFloat(), radius)
-    val path = Path().also(geometry::writePath)
-    val measuredLength = PathMeasure().apply { setPath(path, false) }.length
-    val rail = MiniPlayerRail(size.width.toFloat(), size.height.toFloat(), radius, measuredLength)
+    val rail = MiniPlayerRail(size.width.toFloat(), size.height.toFloat(), radius)
     val corridor = MiniProgressTouchWidth.toPx()
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = true, pass = PointerEventPass.Initial)
         val insideCard = down.position.x in 0f..size.width.toFloat() &&
             down.position.y in 0f..size.height.toFloat()
         if (!insideCard || controlsBounds().contains(down.position)) return@awaitEachGesture
-        val ownsSeek = enabled && !artworkBounds().contains(down.position) &&
+        // Keep the approved body's upper boundary when the visible line moves inward.
+        val belowBody = down.position.x < rail.left || down.position.y >= size.height - corridor
+        val ownsSeek = enabled && belowBody && !artworkBounds().contains(down.position) &&
             rail.distanceTo(down.position) <= corridor
 
         if (ownsSeek) {

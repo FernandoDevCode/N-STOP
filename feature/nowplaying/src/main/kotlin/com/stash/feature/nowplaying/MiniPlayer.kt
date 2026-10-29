@@ -308,7 +308,7 @@ fun MiniPlayer(
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(38.dp).background(Color(0xFF67637C), androidx.compose.foundation.shape.CircleShape),
+                                .size(38.dp),
                             contentAlignment = Alignment.Center,
                         ) {
                             if (loading) {

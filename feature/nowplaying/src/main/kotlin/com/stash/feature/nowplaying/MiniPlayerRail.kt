@@ -7,78 +7,62 @@ import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.sqrt
 
-/** One metric for painting, hit-testing and seeking: two quarter circles and their tangent. */
-internal class MiniPlayerRail(
-    width: Float,
-    height: Float,
-    radius: Float,
-    measuredLength: Float? = null,
-) {
-    val r = radius.coerceAtMost(width / 2f).coerceAtLeast(.1f)
-    val left = r
-    val right = (width - r).coerceAtLeast(left)
-    val cy = height - r
+/** One arc-length metric for painting, the needle, particles and touch projection. */
+internal class MiniPlayerRail(width: Float, height: Float, radius: Float) {
+    private val corner = radius.coerceAtMost(width / 2f).coerceAtLeast(.1f)
+    val inset = corner * (2.5f / 13f)
+    val strokeWidth = inset
+    val r = corner - inset
+    val left = corner
+    val cy = height - corner
+    val bottom = cy + r
+    private val innerRadius = corner - strokeWidth / 2f
+    val right = (width - corner + sqrt((innerRadius * innerRadius - r * r).coerceAtLeast(0f)))
+        .coerceAtLeast(left)
     val arc = (PI * r / 2).toFloat()
     val straight = right - left
-    /** May be supplied by Compose PathMeasure so rendering and seek share its effective length. */
-    val length = measuredLength?.takeIf { it.isFinite() && it > 0f } ?: (2 * arc + straight)
+    val length = arc + straight
 
-    /** Same circular corners as the card's RoundedCornerShape; no horizontal inset. */
-    fun writePath(path: Path) {
+    /** Partial paths use the same distance as point/fraction, without a second length metric. */
+    fun writePath(path: Path, from: Float = 0f, until: Float = 1f) {
         path.reset()
-        path.arcTo(Rect(left - r, cy - r, left + r, cy + r), 180f, -90f, true)
-        path.lineTo(right, cy + r)
-        path.arcTo(Rect(right - r, cy - r, right + r, cy + r), 90f, -90f, false)
+        val start = from.coerceIn(0f, 1f) * length
+        val end = until.coerceIn(from.coerceIn(0f, 1f), 1f) * length
+        val first = point(from)
+        path.moveTo(first.x, first.y)
+        if (start < arc && end > start) {
+            val sweep = (minOf(end, arc) - start) / r * 180f / PI.toFloat()
+            path.arcTo(Rect(left - r, cy - r, left + r, cy + r),
+                180f - start / r * 180f / PI.toFloat(), -sweep, false)
+        }
+        if (end > arc) path.lineTo(left + end - arc, bottom)
     }
 
     fun tangent(fraction: Float): Offset {
         val distance = fraction.coerceIn(0f, 1f) * length
-        val angle = when {
-            distance < arc -> PI.toFloat() - distance / r
-            distance <= arc + straight -> (PI / 2).toFloat()
-            else -> (PI / 2).toFloat() - (distance - arc - straight) / r
-        }
+        if (distance >= arc) return Offset(1f, 0f)
+        val angle = PI.toFloat() - distance / r
         return Offset(sin(angle), -cos(angle))
     }
 
     fun point(fraction: Float): Offset {
-        if (fraction <= 0f) return Offset(left - r, cy)
-        if (fraction >= 1f) return Offset(right + r, cy)
         val distance = fraction.coerceIn(0f, 1f) * length
-        return when {
-            distance < arc -> {
-                val angle = PI.toFloat() - distance / r
-                Offset(left + r * cos(angle), cy + r * sin(angle))
-            }
-            distance <= arc + straight -> Offset(left + distance - arc, cy + r)
-            else -> {
-                val angle = (PI / 2).toFloat() - (distance - arc - straight) / r
-                Offset(right + r * cos(angle), cy + r * sin(angle))
-            }
-        }
+        if (distance >= arc) return Offset(left + distance - arc, bottom)
+        val angle = PI.toFloat() - distance / r
+        return Offset(left + r * cos(angle), cy + r * sin(angle))
     }
 
-    /** Nearest point on the contour, including the actual y coordinate in each curve. */
+    /** Nearest bounded candidate on the arc or horizontal line. */
     fun fraction(point: Offset): Float {
-        if (point.y <= cy && point.x <= left) return 0f
-        if (point.y <= cy && point.x >= right) return 1f
-        val distance = when {
-            point.x < left -> {
-                val angle = atan2((point.y - cy).coerceAtLeast(0f), point.x - left)
-                    .coerceIn((PI / 2).toFloat(), PI.toFloat())
-                (PI.toFloat() - angle) * r
-            }
-            point.x > right -> {
-                val angle = atan2((point.y - cy).coerceAtLeast(0f), point.x - right)
-                    .coerceIn(0f, (PI / 2).toFloat())
-                arc + straight + ((PI / 2).toFloat() - angle) * r
-            }
-            else -> arc + point.x - left
-        }
-        return (distance / length).coerceIn(0f, 1f)
+        val angle = atan2((point.y - cy).coerceAtLeast(0f), point.x - left)
+            .coerceIn((PI / 2).toFloat(), PI.toFloat())
+        val arcFraction = ((PI.toFloat() - angle) * r / length).coerceIn(0f, arc / length)
+        val lineFraction = (arc + point.x.coerceIn(left, right) - left) / length
+        return if ((this.point(arcFraction) - point).getDistanceSquared() <=
+            (this.point(lineFraction) - point).getDistanceSquared()) arcFraction else lineFraction
     }
 
-    /** Distance to the actual curved rail, not to a rectangular strip around the card. */
     fun distanceTo(point: Offset): Float = (this.point(fraction(point)) - point).getDistance()
 }

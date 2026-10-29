@@ -21,6 +21,9 @@ import com.stash.core.media.listen.ListenTogetherState
 import com.stash.core.model.Track
 import com.stash.core.ui.components.LocalBottomChromeInset
 import com.stash.core.ui.components.sonoraBottomFade
+import com.stash.feature.library.AlbumDetailScreen
+import com.stash.feature.library.AlbumDetailUiState
+import com.stash.feature.library.AlbumDetailViewModel
 import com.stash.core.ui.visual.*
 import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.data.ytmusic.model.PlaylistSummary
@@ -72,6 +75,17 @@ class SonoraStage3SurfaceTest(private val width: Int, private val height: Int, p
             on { this.state } doReturn MutableStateFlow(ListenTogetherState.Idle)
         }
         var backdrop by mutableStateOf<Color?>(null)
+        var showAlbum by mutableStateOf(false)
+        val album = mock<AlbumDetailViewModel> {
+            on { uiState } doReturn MutableStateFlow(AlbumDetailUiState(
+                albumName = "Álbum de teste", artistName = "Sonora", isLoading = false,
+                tracks = (1L..60L).map { Track(id = it, title = "Faixa de teste $it", artist = "Sonora", durationMs = 180000) },
+            ))
+            on { tappedTrackId } doReturn MutableStateFlow(null)
+            on { bulkPlayInFlight } doReturn MutableStateFlow<com.stash.core.media.BulkPlayAction?>(null)
+            on { userPlaylists } doReturn MutableStateFlow(emptyList())
+            on { userMessages } doReturn MutableSharedFlow<String>()
+        }
         lateinit var view: View
         var destination: VisualPage? = null
         compose.mainClock.autoAdvance = false
@@ -81,7 +95,11 @@ class SonoraStage3SurfaceTest(private val width: Int, private val height: Int, p
                 LocalBottomChromeInset provides 152.dp) {
                 VisualTheme {
                     Box(Modifier.requiredSize(width.dp, height.dp).testTag("capture")) {
-                        HomeScreen(Modifier.fillMaxSize().testTag("home"), viewModel = home)
+                        if (showAlbum) {
+                            com.stash.core.ui.theme.StashTheme(darkTheme = true) {
+                                AlbumDetailScreen(onBack = {}, viewModel = album)
+                            }
+                        } else HomeScreen(Modifier.fillMaxSize().testTag("home"), viewModel = home)
                         // A controlled high-contrast stress plate behind (never over) the chrome.
                         backdrop?.let { Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                             .height(200.dp).background(it)) }
@@ -142,6 +160,12 @@ class SonoraStage3SurfaceTest(private val width: Int, private val height: Int, p
         verify(player).onPlayPauseClick()
         compose.onNodeWithTag("visual-tab-Library").performClick()
         compose.runOnIdle { check(destination == VisualPage.Library) }
+        compose.runOnIdle { backdrop = null; showAlbum = true }
+        compose.mainClock.advanceTimeBy(64)
+        compose.onNode(hasScrollAction()).performTouchInput {
+            swipeUp(startY = height * .65f, endY = height * .2f)
+        }
+        capture("album-mini-player")
     }
 
     companion object {

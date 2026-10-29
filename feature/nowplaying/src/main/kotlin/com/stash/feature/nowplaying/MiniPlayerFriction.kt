@@ -94,7 +94,7 @@ internal class MiniFrictionParticles(seed: Int = Random.nextInt()) {
                 scatter < .66f -> -(12f + random.nextFloat() * 12f)
                 else -> (random.nextFloat() - .5f) * 8f
             }
-            // Positive normal points into both side curves. Compress only the
+            // Positive normal points into the left curve. Compress only the
             // outward component there, avoiding chips detached beyond the card.
             val edgeFactor = abs(tangent.y).coerceIn(0f, 1f)
             val lift = rawLift * (if (rawLift < 0f) 1f - edgeFactor * .72f else 1f) * density
@@ -186,12 +186,10 @@ internal fun Modifier.miniPlayerFriction(
     val radius = MiniProgressCorner.toPx().coerceAtMost(size.width / 2f)
     val rail = MiniPlayerRail(size.width, size.height, radius)
     val path = Path().also(rail::writePath)
-    val measure = androidx.compose.ui.graphics.PathMeasure().apply { setPath(path, false) }
     val segment = Path()
     val cardClip = Path().apply { addRoundRect(RoundRect(Rect(Offset.Zero, size), CornerRadius(radius))) }
-    // The centreline is the card outline. The card clip leaves 2.5dp of stroke
-    // inside the edge, without moving either endpoint away from its side.
-    val railStroke = Stroke(5.dp.toPx(), cap = StrokeCap.Round)
+    // The inset centreline and straight cap keep the right ending inside the rounded card.
+    val railStroke = Stroke(rail.strokeWidth, cap = StrokeCap.Butt)
     val trailStroke = Stroke(2.5.dp.toPx(), cap = StrokeCap.Round)
     val haloStroke = Stroke(7.dp.toPx(), cap = StrokeCap.Round)
     val silver = Color(0xFFEAF4FF)
@@ -199,11 +197,9 @@ internal fun Modifier.miniPlayerFriction(
     onDrawWithContent {
         drawContent()
         val fraction = seek.displayFraction(position.value, durationMs)
-        val distance = measure.length * fraction
-        val contact = measure.getPosition(distance)
-        val tangent = measure.getTangent(distance).let {
-            if (it == Offset.Zero || !it.x.isFinite() || !it.y.isFinite()) rail.tangent(fraction) else it
-        }
+        val distance = rail.length * fraction
+        val contact = rail.point(fraction)
+        val tangent = rail.tangent(fraction)
         val frame = state.frame
         if (state.motion && frame != state.lastFrame) {
             val dt = if (state.lastFrame == 0L) 0f else ((frame - state.lastFrame) / 1_000_000_000f).coerceIn(0f, .04f)
@@ -215,15 +211,17 @@ internal fun Modifier.miniPlayerFriction(
         clipPath(cardClip) {
         drawPath(path, Color(0xFF4C5260), style = railStroke)
         segment.reset()
-        if (measure.getSegment(0f, distance, segment, true)) {
+        if (distance > 0f) {
+            rail.writePath(segment, until = fraction)
             drawPath(segment, Color(0xFF98A8B9), style = railStroke)
         }
         // Layered segments form a directional, tapered skid on the actual curved rail.
         val tail = (12f + particles.energy * 16f) * density
         for (j in 6 downTo 1) {
-            val end = (distance - particles.direction * tail * j / 6f).coerceIn(0f, measure.length)
+            val end = (distance - particles.direction * tail * j / 6f).coerceIn(0f, rail.length)
             segment.reset()
-            if (measure.getSegment(minOf(distance, end), maxOf(distance, end), segment, true)) {
+            if (end != distance) {
+                rail.writePath(segment, minOf(distance, end) / rail.length, maxOf(distance, end) / rail.length)
                 drawPath(segment, cool.copy(alpha = .035f), style = haloStroke)
                 drawPath(segment, silver.copy(alpha = .065f), style = trailStroke)
             }

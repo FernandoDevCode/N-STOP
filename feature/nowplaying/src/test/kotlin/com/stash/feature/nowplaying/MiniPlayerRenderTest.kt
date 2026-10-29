@@ -48,8 +48,8 @@ class MiniPlayerRenderTest {
             org.junit.Assert.assertTrue((actual - rail.point(f)).getDistance() < .08f)
             org.junit.Assert.assertEquals(f, rail.fraction(actual), .0001f)
         }
-        org.junit.Assert.assertEquals(0f, measure.getPosition(0f).x, .00001f)
-        org.junit.Assert.assertEquals(1056f, measure.getPosition(measure.length).x, .00001f)
+        org.junit.Assert.assertEquals(rail.inset, measure.getPosition(0f).x, .00001f)
+        org.junit.Assert.assertEquals(rail.right, measure.getPosition(measure.length).x, .0001f)
     }
 
     @Test fun renderProductionMiniPlayerWithStationaryPlaybackPosition() {

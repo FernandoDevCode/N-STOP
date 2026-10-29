@@ -70,7 +70,11 @@ class MiniPlayerInteractionTest {
         compose.onNodeWithContentDescription("Playback progress").performTouchInput {
             click(Offset(width / 2f, height - 1f))
         }
-        verify(exactly = 1) { vm.onSeekTo(match { it in 49_000L..51_000L }) }
+        // Half the width is slightly past half the length on an asymmetric path.
+        val bounds = compose.onNodeWithContentDescription("Playback progress").fetchSemanticsNode().boundsInRoot
+        val metric = MiniPlayerRail(bounds.width, 56f, 13f)
+        val expected = (metric.fraction(Offset(bounds.width / 2f, 55f)) * 100_000).toLong()
+        verify(exactly = 1) { vm.onSeekTo(match { kotlin.math.abs(it - expected) < 10L }) }
         compose.runOnIdle { assertEquals(0, opens) }
     }
 
