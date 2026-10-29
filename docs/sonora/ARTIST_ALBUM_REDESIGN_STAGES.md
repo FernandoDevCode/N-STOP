@@ -1,6 +1,6 @@
 # Sonora — Etapas de refinamento do perfil de artista e da página de álbum
 
-**Estado:** implementação das etapas 1–6 aplicada no PR #2, **aguardando CI e validação visual**. Não publicar APK nem fazer merge antes do fechamento das pendências.  
+**Estado:** implementação das etapas 1–6 aplicada no PR #2; **CI do commit `2f8dcd71` aprovada**. Ainda pendem aceite visual em aparelho, licenciamento de logos para distribuição e preparação de APK de teste identificado. Não publicar APK nem fazer merge antes do fechamento das pendências.  
 **Data de criação:** 2026-10-29.  
 **Branch de trabalho:** `feat/sonora-artist-album-neutral` (PR [#2](https://github.com/FernandoDevCode/N-STOP/pull/2), em draft).  
 **Base preservada:** `checkpoint/sonora-local-20261029` (`d3cf66b83`).
@@ -131,10 +131,12 @@ Em 2026-10-29, foram enviados ao PR #2 os patches de código abaixo. **Aplicado 
 | 4 — Álbum | Header reduzido, capa maior em relação à área útil, atmosfera da arte reforçada e fallback neutro em Android antigo | Conferir contraste, custo de blur e tipos de capa |
 | 5 — Abas | Seção ativa detectada próximo ao sticky; sublinhado reforçado; rolagem posiciona título abaixo da navegação | Validar rolagem manual, clique e seções ausentes no dispositivo |
 | 6 — Controles | Reprodução circular, fila e salvar na faixa; shuffle e baixar tudo no menu secundário | Validar estados e tamanhos de fonte em telas estreitas |
-| 7 — QA | Auditoria preliminar do diff sem adição de roxo nos trechos novos; testes adicionais de identidade | **CI final, regressões, screenshots e revisão funcional ainda pendentes** |
+| 7 — QA | Auditoria preliminar do diff sem adição de roxo nos trechos novos; testes adicionais de identidade | **CI final aprovada em `2f8dcd71` (4 jobs); screenshots e revisão funcional em aparelho ainda pendentes** |
 | 8 — APK | Não iniciado | Depende de fechamento do código e validação técnica; screenshot em Android ocorre após instalar o APK de teste e antes do merge |
 
 **Fonte de wordmark — uso experimental:** [TheAudioDB API](https://www.theaudiodb.com/free_music_api) disponibiliza `strArtistLogo` e uma chave pública de desenvolvimento; [seus termos](https://www.theaudiodb.com/docs_terms_of_use.php) restringem publicação em loja sem plano pago. As imagens são em grande parte contribuições da comunidade; a correspondência exata do nome **não comprova** autorização oficial da marca. Antes de publicar comercialmente, confirmar licença, autenticidade e eventual necessidade de fornecedor pago ou curadoria autorizada. Não converter essa pendência em um logo fabricado.
+
+**Evidência técnica de 2026-10-29:** [GitHub Actions #40930387941](https://github.com/FernandoDevCode/N-STOP/actions/runs/40930387941) concluiu com sucesso os quatro jobs: compilação dos testes, suíte unitária de todos os módulos, workers e `:app:assembleDebug`. Confirma compilação, não fidelidade visual ou conformidade da fonte de logos. O projeto ainda registra `versionCode = 151`, `versionName = 0.9.115` e `applicationIdSuffix = .debug`; incrementar a versão para o próximo APK.
 
 **Sequência de liberação:** CI e regressões do código → preparação do APK de teste identificado por nova versão → instalação e capturas reais → aprovação visual → merge. A captura da implementação nova em um dispositivo requer um APK de teste; portanto, a validação *no aparelho* é posterior ao build, sem dispensar o gate técnico anterior.
 
@@ -143,7 +145,7 @@ Em 2026-10-29, foram enviados ao PR #2 os patches de código abaixo. **Aplicado 
 - [x] Checkpoint local sincronizado no GitHub: `d3cf66b83`.
 - [x] Primeira rodada de paleta neutra e headers aplicada no PR #2.
 - [x] Capturas reais de álbum e perfil (Megadeth) recebidas e avaliadas.
-- [ ] Etapas 1–7 refinadas, verificadas e aprovadas. **Código das etapas 1–6 enviado; CI e evidência visual pendentes.**
+- [ ] Etapas 1–7 refinadas, verificadas e aprovadas. **Código das etapas 1–6 enviado; CI aprovada; evidência visual e regressões no aparelho pendentes.**
 - [ ] APK final da rodada publicado e validado (Etapa 8).
 
 **Situação de CI no momento da criação:** `:app:assembleDebug` e compilação de testes passaram no PR #2. A suíte completa ficou vermelha em execuções distintas por falhas isoladas (`MirrorEngineTest` / `MiniPlayerRenderTest`), sem evidência suficiente para atribuí-las ao redesign; investigar e fechar a pendência antes de autorizar merge. **Nenhuma dessas etapas novas foi implementada ao criar este plano.**
