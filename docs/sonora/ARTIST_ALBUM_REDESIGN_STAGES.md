@@ -142,6 +142,19 @@ Em 2026-10-29, foram enviados ao PR #2 os patches de código abaixo. **Aplicado 
 
 **V2 publicada (29/10/2026):** [GitHub Release Sonora Preview V2](https://github.com/FernandoDevCode/N-STOP/releases/tag/sonora-artist-album-v2-20261029). APK: `Sonora-Preview-v0.9.116-Artista-Album.apk`, SHA-256 `515c8117d37fb9d61e9351576937637919c36f54646a9c8cb6bb7cf2d6efa018`, versão `0.9.116-sonora-preview`, código `152`, pacote `com.stash.app.debug`. [Workflow de validação e publicação #40935536059](https://github.com/FernandoDevCode/N-STOP/actions/runs/40935536059): testes Android, testes Workers, build, conferência de pacote/versão/assinatura e upload concluídos com sucesso. **Ainda não há aprovação visual no aparelho.** A publicação comercial dos logos depende de decisão sobre direitos/licenciamento; o APK atual é experimental. O workflow temporário de publicação foi retirado do branch após o release, sem alterar os bytes do APK publicado.
 
+## Revisão visual — Redmi Note 14 / Sonora Preview V2 (29/10/2026)
+
+**Capturas recebidas nesta revisão:** perfil Slipknot (topo, com início de Popular) e álbum `Adderall` de Slipknot. Não há captura do bloco Sobre, rolagem até Álbuns ou testes funcionais nesta rodada. **Status: aprovação pendente; não fazer merge.**
+
+- **Aprovado provisoriamente:** paleta neutra sem roxo de UI visível; fotografia full-bleed com degradê coerente; redes ausentes do hero; lista musical editorial sem os cartões grandes; imagem de álbum nítida e espaçamento melhor que a rodada anterior.
+- **Pendente — wordmark:** o perfil do Slipknot mostrou o texto `Slipknot`, não uma imagem de logo. O fallback funciona, mas a causa não foi identificada. Verificar resposta do TheAudioDB, `strArtistLogo`, correspondência de identidade, carregamento com Coil, contraste e cache negativo em memória. A ausência na captura **não comprova erro de código** nem garante que o serviço disponibilize o logo. Nunca fabricar ou presumir logo oficial.
+- **Pendente — densidade vertical:** Popular começa por volta de 59% da altura total da captura (estimativa visual). A referência buscava ~52%, sem impor proporção rígida. Revisar espaço entre ações, abas e o primeiro bloco antes de cortar mais altura do hero.
+- **Pendente — controles de álbum:** o botão Salvar aparece como ícone isolado depois de uma fila muito larga. Harmonizar alinhamento/tamanho das ações, sem reintroduzir segunda linha e sem alterar callbacks. O menu de overflow só existe no código quando `downloadSupported || hasDownloaded`; sua ausência pode ser estado esperado, não falha demonstrada.
+- **Pendente — verificação funcional:** testar Play, Rádio, Adicionar à fila, Salvar, Sobre (links), aba ativa ao navegar/rolar, scroll manual, downloads quando disponíveis e mini-player. Solicitar captura após rolagem e de Sobre para comprovar as seções.
+- **Observação:** captura instalada é a `0.9.116-sonora-preview`, release V2. A CI estava verde na publicação, mas **testes automatizados não atestam qualidade visual**.
+
+**Decisão:** não aprovar merge ainda; primeiro corrigir inconsistências fundamentadas nas capturas, validar a origem dos logos e obter as evidências faltantes no aparelho.
+
 ## 5. Registro de execução
 
 - [x] Checkpoint local sincronizado no GitHub: `d3cf66b83`.
