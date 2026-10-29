@@ -1,5 +1,7 @@
 package com.stash.feature.search
 
+import android.os.Build
+
 import androidx.compose.foundation.background
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
@@ -134,7 +136,7 @@ fun AlbumHero(
         ) {
             // Derived atmospheric wash from the actual cover, never a fixed
             // purple tint. On pre-Android 12 the neutral gradient remains.
-            if (hero.thumbnailUrl != null) {
+            if (hero.thumbnailUrl != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 AsyncImage(
                     model = hero.thumbnailUrl,
                     contentDescription = null,
