@@ -16,8 +16,6 @@ data class HeroState(
     val name: String,
     val avatarUrl: String?,
     val subscribersText: String?,
-    /** Optional community-provided wordmark. Always falls back to name. */
-    val wordmarkUrl: String? = null,
 )
 
 /**
