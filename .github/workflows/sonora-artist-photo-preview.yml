@@ -1,0 +1,91 @@
+name: Sonora Artist Photos Preview APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/sonora-rated-artist-photos
+    paths:
+      - .github/workflows/sonora-artist-photo-preview.yml
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Verify Fanart project key is available
+        env:
+          FANART_API_KEY: ${{ secrets.FANART_API_KEY }}
+        run: |
+          if [ -z "$FANART_API_KEY" ]; then
+            echo "::error::FANART_API_KEY is missing. Add a Fanart.tv Project API key in repository Actions secrets before publishing this preview."
+            exit 1
+          fi
+
+      - name: Run Android unit tests and build preview
+        env:
+          FANART_API_KEY: ${{ secrets.FANART_API_KEY }}
+          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
+        run: |
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest :app:assembleDebug --no-daemon
+
+      - name: Verify APK and package identity
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          AAPT=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name aapt | sort -V | tail -n1)
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -n1)
+          test -x "$AAPT"
+          test -x "$APKSIGNER"
+          "$AAPT" dump badging "$APK" | grep "^package: " | tee "$RUNNER_TEMP/sonora-package.txt"
+          grep -Fq "name='com.stash.app.debug' versionCode='153' versionName='0.9.117-sonora-editorial'" "$RUNNER_TEMP/sonora-package.txt"
+          "$APKSIGNER" verify "$APK"
+          sha256sum "$APK"
+
+      - name: Publish isolated prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="sonora-rated-artist-photos-20261029"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release already exists; refusing to overwrite."
+            exit 1
+          fi
+          APK="$RUNNER_TEMP/Sonora-Artist-Photos-Preview-0.9.117.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$APK"
+          cat > "$RUNNER_TEMP/NOTES.md" <<'EOF'
+          ## Sonora — fotos de artistas por rating (prévia técnica)
+          - Consulta sob demanda ao Fanart.tv v3.2 e escolhe o maior número de likes entre fotos de categoria e resolução válidas.
+          - Solistas podem ser selecionados diretamente após confirmar a identidade no MusicBrainz.
+          - Para bandas, exige data-piso da formação e data de captura verificável na fonte Wikimedia Commons vinculada à imagem. Não substitui a imagem se faltarem provas.
+          - Não usa IA, não confunde data de upload com data de captura, não altera capas de álbuns.
+          - Cache e carregamento em segundo plano mantêm o primeiro desenho da tela ágil.
+          - A chave de projeto do Fanart.tv foi incluída na build via GitHub Secret; como toda chave embutida num APK, é tecnicamente extraível. Não use uma credencial de conta pessoal sensível.
+          - Fotografia e formação ainda dependem da qualidade dos metadados; direitos e permissões das imagens devem ser conferidos antes da distribuição comercial.
+
+          **Pacote:** com.stash.app.debug • **Versão:** 0.9.117-sonora-editorial (153)
+          É uma instalação de prévia, separada da versão release. Não desinstale o aplicativo anterior para trocar assinatura, pois pode perder dados locais.
+          EOF
+          sha256sum "$APK" >> "$RUNNER_TEMP/NOTES.md"
+          gh release create "$TAG" "$APK" --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Sonora — Curadoria de fotos de artistas (preview)" \
+            --notes-file "$RUNNER_TEMP/NOTES.md" \
+            --prerelease --latest=false
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,assets --jq '{url:.url,assets:[.assets[].name]}'
