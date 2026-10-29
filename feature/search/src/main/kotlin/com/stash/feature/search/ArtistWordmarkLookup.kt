@@ -21,7 +21,6 @@ import org.json.JSONObject
  */
 internal object ArtistWordmarkLookup {
     private val checked = ConcurrentHashMap<String, String>()
-    private const val MISSING = "no-wordmark"
 
     internal fun matchingArtist(requested: String, returned: String): Boolean =
         requested.trim().equals(returned.trim(), ignoreCase = true)
@@ -29,7 +28,7 @@ internal object ArtistWordmarkLookup {
     suspend fun resolve(artistName: String): String? = withContext(Dispatchers.IO) {
         val name = artistName.trim()
         if (name.isBlank()) return@withContext null
-        checked[name]?.let { return@withContext it.takeUnless { url -> url == MISSING } }
+        checked[name]?.let { return@withContext it }
 
         val result = runCatching {
             val encoded = URLEncoder.encode(name, "UTF-8")
@@ -48,7 +47,9 @@ internal object ArtistWordmarkLookup {
                     val logo = entry.optString("strArtistLogo")
                     val url = URL(logo)
                     if (url.protocol != "https" ||
-                        !(url.host == "www.theaudiodb.com" || url.host == "theaudiodb.com") ||
+                        url.host.lowercase() !in setOf(
+                            "www.theaudiodb.com", "theaudiodb.com", "r2.theaudiodb.com",
+                        ) ||
                         !url.path.startsWith("/images/media/artist/logo/") ||
                         !url.path.endsWith(".png", ignoreCase = true)
                     ) continue
@@ -59,9 +60,9 @@ internal object ArtistWordmarkLookup {
                 conn.disconnect()
             }
         }.getOrNull()
-        // Network failures must not remove the artist title. Keep a short-lived
-        // in-memory negative result for this process only to avoid hot-looping.
-        checked[name] = result ?: MISSING
+        // Do not permanently cache failures: network errors and rate limiting
+        // must be retried when the user reopens the artist.
+        if (result != null) checked[name] = result
         result
     }
 }
