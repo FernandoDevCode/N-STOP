@@ -1,6 +1,6 @@
 # Sonora — Etapas de refinamento do perfil de artista e da página de álbum
 
-**Estado:** implementação das etapas 1–6 aplicada no PR #2; **CI do commit `2f8dcd71` aprovada**. Ainda pendem aceite visual em aparelho, licenciamento de logos para distribuição e preparação de APK de teste identificado. Não publicar APK nem fazer merge antes do fechamento das pendências.  
+**Estado:** V2 compilada, testada e publicada em **GitHub Releases** como prévia experimental. Ainda pendem validação visual e funcional no Redmi, decisão de licenciamento para publicação comercial e aprovação do merge. Não publicar APK nem fazer merge antes do fechamento das pendências.  
 **Data de criação:** 2026-10-29.  
 **Branch de trabalho:** `feat/sonora-artist-album-neutral` (PR [#2](https://github.com/FernandoDevCode/N-STOP/pull/2), em draft).  
 **Base preservada:** `checkpoint/sonora-local-20261029` (`d3cf66b83`).
@@ -132,7 +132,7 @@ Em 2026-10-29, foram enviados ao PR #2 os patches de código abaixo. **Aplicado 
 | 5 — Abas | Seção ativa detectada próximo ao sticky; sublinhado reforçado; rolagem posiciona título abaixo da navegação | Validar rolagem manual, clique e seções ausentes no dispositivo |
 | 6 — Controles | Reprodução circular, fila e salvar na faixa; shuffle e baixar tudo no menu secundário | Validar estados e tamanhos de fonte em telas estreitas |
 | 7 — QA | Auditoria preliminar do diff sem adição de roxo nos trechos novos; testes adicionais de identidade | **CI final aprovada em `2f8dcd71` (4 jobs); screenshots e revisão funcional em aparelho ainda pendentes** |
-| 8 — APK | Não iniciado | Depende de fechamento do código e validação técnica; screenshot em Android ocorre após instalar o APK de teste e antes do merge |
+| 8 — APK | **Publicado como pré-release V2**, com `versionCode 152`, pacote e assinatura conferidos | Instalar no Redmi, comparar capturas e aprovar; sem merge antes disso |
 
 **Fonte de wordmark — uso experimental:** [TheAudioDB API](https://www.theaudiodb.com/free_music_api) disponibiliza `strArtistLogo` e uma chave pública de desenvolvimento; [seus termos](https://www.theaudiodb.com/docs_terms_of_use.php) restringem publicação em loja sem plano pago. As imagens são em grande parte contribuições da comunidade; a correspondência exata do nome **não comprova** autorização oficial da marca. Antes de publicar comercialmente, confirmar licença, autenticidade e eventual necessidade de fornecedor pago ou curadoria autorizada. Não converter essa pendência em um logo fabricado.
 
@@ -140,12 +140,15 @@ Em 2026-10-29, foram enviados ao PR #2 os patches de código abaixo. **Aplicado 
 
 **Sequência de liberação:** CI e regressões do código → preparação do APK de teste identificado por nova versão → instalação e capturas reais → aprovação visual → merge. A captura da implementação nova em um dispositivo requer um APK de teste; portanto, a validação *no aparelho* é posterior ao build, sem dispensar o gate técnico anterior.
 
+**V2 publicada (29/10/2026):** [GitHub Release Sonora Preview V2](https://github.com/FernandoDevCode/N-STOP/releases/tag/sonora-artist-album-v2-20261029). APK: `Sonora-Preview-v0.9.116-Artista-Album.apk`, SHA-256 `515c8117d37fb9d61e9351576937637919c36f54646a9c8cb6bb7cf2d6efa018`, versão `0.9.116-sonora-preview`, código `152`, pacote `com.stash.app.debug`. [Workflow de validação e publicação #40935536059](https://github.com/FernandoDevCode/N-STOP/actions/runs/40935536059): testes Android, testes Workers, build, conferência de pacote/versão/assinatura e upload concluídos com sucesso. **Ainda não há aprovação visual no aparelho.** A publicação comercial dos logos depende de decisão sobre direitos/licenciamento; o APK atual é experimental. O workflow temporário de publicação foi retirado do branch após o release, sem alterar os bytes do APK publicado.
+
 ## 5. Registro de execução
 
 - [x] Checkpoint local sincronizado no GitHub: `d3cf66b83`.
 - [x] Primeira rodada de paleta neutra e headers aplicada no PR #2.
 - [x] Capturas reais de álbum e perfil (Megadeth) recebidas e avaliadas.
 - [ ] Etapas 1–7 refinadas, verificadas e aprovadas. **Código das etapas 1–6 enviado; CI aprovada; evidência visual e regressões no aparelho pendentes.**
-- [ ] APK final da rodada publicado e validado (Etapa 8).
+- [x] Pré-release V2 publicado após aprovação dos testes e verificação de assinatura.
+- [ ] Instalação e aceite visual/funcional no Redmi Note 14; aprovação final do merge.
 
 **Situação de CI no momento da criação:** `:app:assembleDebug` e compilação de testes passaram no PR #2. A suíte completa ficou vermelha em execuções distintas por falhas isoladas (`MirrorEngineTest` / `MiniPlayerRenderTest`), sem evidência suficiente para atribuí-las ao redesign; investigar e fechar a pendência antes de autorizar merge. **Nenhuma dessas etapas novas foi implementada ao criar este plano.**
