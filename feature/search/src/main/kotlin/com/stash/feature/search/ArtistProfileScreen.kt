@@ -187,7 +187,10 @@ fun ArtistProfileScreen(
                     tabs = tabs,
                     selectedIndex = selectedSection,
                     onSelect = { index ->
-                        scrollScope.launch { listState.animateScrollToItem(index) }
+                        // Keep the target chapter heading below the sticky tabs.
+                        scrollScope.launch {
+                            listState.animateScrollToItem(index, scrollOffset = -threshold)
+                        }
                     },
                 )
             }
