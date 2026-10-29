@@ -1,5 +1,6 @@
 package com.stash.feature.search
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -25,6 +26,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,6 +40,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import coil3.compose.AsyncImagePainter
+import coil3.compose.rememberAsyncImagePainter
 import com.stash.core.common.ArtUrlUpgrader
 import com.stash.data.ytmusic.model.SocialLink
 
@@ -122,16 +127,27 @@ fun ArtistHero(
                 Modifier.align(Alignment.BottomStart)
                     .fillMaxWidth().padding(start = 24.dp, end = 22.dp, bottom = 22.dp),
             ) {
-                Text(
-                    text = hero.name,
-                    fontSize = 44.sp,
-                    lineHeight = 48.sp,
-                    letterSpacing = (-1.5).sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = Color(0xFFF4F5F7),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                val wordmarkPainter = rememberAsyncImagePainter(model = hero.wordmarkUrl)
+                val wordmarkState by wordmarkPainter.state.collectAsState()
+                if (hero.wordmarkUrl != null && wordmarkState is AsyncImagePainter.State.Success) {
+                    Image(
+                        painter = wordmarkPainter,
+                        contentDescription = hero.name,
+                        modifier = Modifier.fillMaxWidth(.88f).height(84.dp),
+                        contentScale = ContentScale.Fit,
+                    )
+                } else {
+                    Text(
+                        text = hero.name,
+                        fontSize = 44.sp,
+                        lineHeight = 48.sp,
+                        letterSpacing = (-1.5).sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color(0xFFF4F5F7),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 hero.subscribersText?.let { count ->
                     Spacer(Modifier.height(5.dp))
                     Text(
