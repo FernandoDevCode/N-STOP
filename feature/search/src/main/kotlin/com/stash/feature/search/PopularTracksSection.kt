@@ -3,6 +3,8 @@ package com.stash.feature.search
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
@@ -54,9 +56,9 @@ fun PopularTracksSection(
 ) {
     Column(
         modifier = modifier.padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
-        tracks.forEach { track ->
+        tracks.forEachIndexed { index, track ->
             val item = track.toSearchResultItem()
             val trackItem = track.toTrackItem()
             // Warm the lossless URL cache as each Popular row enters composition.
@@ -79,7 +81,15 @@ fun PopularTracksSection(
                 onAddToQueue = { onAddToQueue(trackItem) },
                 onStartRadio = { onStartRadio(trackItem) },
                 onAddToPlaylist = { onRequestAddToPlaylist(trackItem) },
+                editorial = true,
             )
+            if (index < tracks.lastIndex) {
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = .35f),
+                    thickness = .5.dp,
+                    modifier = Modifier.padding(start = 68.dp, end = 8.dp),
+                )
+            }
         }
     }
 }
