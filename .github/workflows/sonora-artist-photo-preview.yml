@@ -1,4 +1,6 @@
 name: Sonora Artist Photos Preview APK
+# After adding FANART_API_KEY, re-run the failed workflow run from Actions.
+# Re-running preserves this exact branch commit and will publish only after tests.
 
 on:
   workflow_dispatch:
