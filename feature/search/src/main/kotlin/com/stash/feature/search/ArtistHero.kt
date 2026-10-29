@@ -63,6 +63,7 @@ fun ArtistHero(
     hero: HeroState,
     @Suppress("UNUSED_PARAMETER") status: ArtistProfileStatus,
     socials: List<SocialLink>,
+    wordmarkUrl: String? = null,
     onBack: () -> Unit,
     onPlayArtist: () -> Unit,
     onStartRadio: () -> Unit,
@@ -127,9 +128,9 @@ fun ArtistHero(
                 Modifier.align(Alignment.BottomStart)
                     .fillMaxWidth().padding(start = 24.dp, end = 22.dp, bottom = 22.dp),
             ) {
-                val wordmarkPainter = rememberAsyncImagePainter(model = hero.wordmarkUrl)
+                val wordmarkPainter = rememberAsyncImagePainter(model = wordmarkUrl)
                 val wordmarkState by wordmarkPainter.state.collectAsState()
-                if (hero.wordmarkUrl != null && wordmarkState is AsyncImagePainter.State.Success) {
+                if (wordmarkUrl != null && wordmarkState is AsyncImagePainter.State.Success) {
                     Image(
                         painter = wordmarkPainter,
                         contentDescription = hero.name,
