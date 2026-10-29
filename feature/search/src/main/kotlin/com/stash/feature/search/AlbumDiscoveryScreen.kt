@@ -15,6 +15,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -209,8 +210,16 @@ fun AlbumDiscoveryScreen(
                                 onAddToQueue = { vm.onAddToQueue(trackItem) },
                                 onStartRadio = { vm.onStartRadio(trackItem) },
                                 onAddToPlaylist = { vm.onRequestAddToPlaylist(trackItem) },
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                editorial = true,
                             )
+                            if (index < state.tracks.lastIndex) {
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(start = 84.dp, end = 26.dp),
+                                    thickness = .5.dp,
+                                    color = MaterialTheme.colorScheme.outline.copy(alpha = .35f),
+                                )
+                            }
                         }
                         if (state.moreByArtist.isNotEmpty()) {
                             item { SectionHeader(title = "More by this artist") }
