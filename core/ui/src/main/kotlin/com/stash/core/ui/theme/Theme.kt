@@ -13,11 +13,11 @@ import androidx.compose.ui.graphics.Color
 
 val StashDarkColorScheme = darkColorScheme(
     primary = StashPurple,
-    onPrimary = Color(0xFF1C112C),
+    onPrimary = Color(0xFF0E1115),
     primaryContainer = StashPurpleDark,
     onPrimaryContainer = StashPurpleLight,
     secondary = StashCyan,
-    onSecondary = Color(0xFF0B2827),
+    onSecondary = Color(0xFF0E1115),
     secondaryContainer = StashCyanDark,
     onSecondaryContainer = StashCyanLight,
     tertiary = StashCyan,
@@ -35,14 +35,14 @@ val StashDarkColorScheme = darkColorScheme(
 )
 
 val StashLightColorScheme = lightColorScheme(
-    primary = Color(0xFF6638A8),                 // accessible deep violet on light background
+    primary = Color(0xFF242A34),                 // accessible graphite on light background
     onPrimary = Color.White,
     primaryContainer = StashPurple,
-    onPrimaryContainer = Color(0xFF28193B),
-    secondary = Color(0xFF116E68),
+    onPrimaryContainer = Color(0xFF181C22),
+    secondary = Color(0xFF424A57),
     onSecondary = Color.White,
     secondaryContainer = StashCyanLight,
-    onSecondaryContainer = Color(0xFF114D4A),
+    onSecondaryContainer = Color(0xFF181C22),
     tertiary = StashCyanDark,
     onTertiary = Color.White,
     background = StashBackgroundLight,
