@@ -1,6 +1,7 @@
 package com.stash.feature.search
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -107,6 +108,8 @@ fun SongRow(
     /** Whether the one-tap download control shows. False for Qobuz-native album
      *  tracks (no videoId → no download-by-id in Phase 1). */
     downloadSupported: Boolean = true,
+    /** Compact row styling is local to artist/album; Search keeps its existing cards. */
+    editorial: Boolean = false,
 ) {
     val extendedColors = StashTheme.extendedColors
     // Dim the art behind the loading spinner / stop glyph so it reads clearly.
@@ -122,13 +125,13 @@ fun SongRow(
         modifier = modifier
             .fillMaxWidth()
             .testTag("SongRow")
-            .clip(RoundedCornerShape(12.dp))
-            .background(rowBackground)
+            .clip(RoundedCornerShape(if (editorial) 0.dp else 12.dp))
+            .background(if (editorial && !isPlaying) Color.Transparent else rowBackground)
             // Whole row = play affordance. Tapping while a 30s preview plays stops it
             // (inherits the old ▶/⏹ button toggle) so a running preview is never
             // orphaned. The download button + ⋮ below consume their own taps.
             .clickable { if (isPreviewPlaying) onStopPreview() else onPlay() }
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 12.dp, vertical = if (editorial) 4.dp else 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // Album art or fallback music note, with a spinner (resolving/loading) or a
@@ -136,8 +139,8 @@ fun SongRow(
         // that the standalone ▶ button is gone.
         Box(
             modifier = Modifier
-                .size(48.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .size(if (editorial) 44.dp else 48.dp)
+                .clip(RoundedCornerShape(if (editorial) 6.dp else 8.dp))
                 .background(extendedColors.elevatedSurface),
             contentAlignment = Alignment.Center,
         ) {
