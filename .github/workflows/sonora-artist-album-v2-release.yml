@@ -1,0 +1,128 @@
+name: Sonora Artist and Album V2 Preview Release
+
+on:
+  push:
+    branches:
+      - feat/sonora-artist-album-neutral
+    paths:
+      - .github/workflows/sonora-artist-album-v2-release.yml
+
+permissions:
+  contents: write
+
+jobs:
+  verify-build:
+    name: Verify and build exact preview APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out branch commit
+        uses: actions/checkout@v6
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Gradle cache
+        uses: gradle/actions/setup-gradle@v6
+      - name: Run all Android unit tests
+        run: |
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest --continue --no-daemon
+      - name: Build signed debug APK
+        env:
+          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
+        run: ./gradlew :app:assembleDebug --no-daemon
+      - name: Verify APK identity, version and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='app/build/outputs/apk/debug/app-debug.apk'
+          test -s "$APK"
+          AAPT=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name aapt | sort -V | tail -n1)
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -n1)
+          test -x "$AAPT"
+          test -x "$APKSIGNER"
+          "$AAPT" dump badging "$APK" | grep "^package: " | tee "$RUNNER_TEMP/sonora-package.txt"
+          grep -Fq "name='com.stash.app.debug' versionCode='152' versionName='0.9.116-sonora-preview'" "$RUNNER_TEMP/sonora-package.txt"
+          "$APKSIGNER" verify "$APK"
+          sha256sum "$APK"
+      - name: Upload exact tested APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: sonora-artist-album-v2-tested-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  verify-workers:
+    name: Verify existing Worker suites
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Run service tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          for dir in infra/share-worker infra/sync-worker infra/tipjar-worker infra/lossless-relay infra/lastfm-proxy; do
+            (cd "$dir" && node --no-warnings --test test/*.test.js)
+          done
+
+  publish:
+    name: Publish prerelease only after all checks pass
+    needs: [verify-build, verify-workers]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          name: sonora-artist-album-v2-tested-apk
+          path: ${{ runner.temp }}/sonora-apk
+      - name: Publish immutable preview release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG='sonora-artist-album-v2-20261029'
+          APK="$RUNNER_TEMP/sonora-apk/app-debug.apk"
+          test -s "$APK"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'Release tag already exists; refusing to overwrite an existing APK.'
+            exit 1
+          fi
+          DEST="$RUNNER_TEMP/Sonora-Preview-v0.9.116-Artista-Album.apk"
+          cp "$APK" "$DEST"
+          SHA=$(sha256sum "$DEST" | cut -d' ' -f1)
+          cat > "$RUNNER_TEMP/sonora-release-notes.md" <<'EOF'
+          # Sonora — prévia de artista e álbum V2
+
+          **Versão de teste:** `0.9.116-sonora-preview` / `versionCode 152`.
+          **Pacote Android:** `com.stash.app.debug`, assinado com a chave Debug do repositório.
+          **Nome visível:** Sonora Preview (pt-BR e padrão).
+
+          ## Alterações
+          - Perfil de artista mais compacto; redes e links na seção Sobre.
+          - Wordmarks experimentais disponibilizados pelo TheAudioDB, com correspondência exata do nome e fallback tipográfico.
+          - Linhas de músicas mais compactas nas páginas de artista e álbum.
+          - Fundo atmosférico e espaçamentos dos álbuns refinados.
+          - Abas com seleção por seção visível e ações do álbum compactadas.
+          - Paleta monocromática do Sonora; navegação e mini-player preservados.
+
+          ## Segurança de instalação e limitações
+          - É **pré-release experimental**, não uma atualização estável nem publicação em loja.
+          - A versão Debug pode coexistir com a versão normal; atualiza apenas Debug assinada com a mesma chave.
+          - **Não desinstale a versão anterior** se surgir erro de assinatura: isso pode apagar dados locais.
+          - Arte do TheAudioDB é comunitária, não necessariamente logo oficial autorizado; uso gratuito é somente para desenvolvimento, com restrição de publicação em lojas.
+          - Compilação e testes automatizados foram executados antes de publicar. Falta validar visualmente no Redmi Note 14.
+          - PR #2 permanece em draft; este release não faz merge nem altera a branch estável.
+          EOF
+          printf '\nAPK SHA-256: `%s`\n\nCódigo compilado: `%s`\n' "$SHA" "$GITHUB_SHA" >> "$RUNNER_TEMP/sonora-release-notes.md"
+          gh release create "$TAG" "$DEST" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'Sonora Preview — Artista e Álbum V2 (0.9.116)' --notes-file "$RUNNER_TEMP/sonora-release-notes.md" --prerelease --latest=false
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,assets --jq '{url:.url,assets:[.assets[].name]}'
