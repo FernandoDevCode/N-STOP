@@ -60,10 +60,9 @@ class ArtistPhotoLookup @Inject constructor(
                     ?.let(ArtistPhotoRules::currentLineupFloor)
             } else null
 
-            // All Fanart candidates currently have unknown capture dates.
-            // Enforce lineup/date gate BEFORE calling an API whose entries
-            // cannot pass it, rather than spending bandwidth unnecessarily.
-            if (isGroup) null
+            // A band requires a verified floor and a photograph with a
+            // separately verified capture date; Fanart's "added" is not one.
+            if (isGroup && floor == null) null
             else chooseFanartPhoto(mbid, key, floor, isGroup)
         } catch (e: CancellationException) {
             throw e
@@ -101,10 +100,31 @@ class ArtistPhotoLookup @Inject constructor(
                     likes = obj["likes"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0,
                     // Fanart "added" is an upload timestamp, never a photo date.
                     capturedAt = null,
-                )
+                ) to obj["copyright_link"]?.jsonPrimitive?.content
             }.orEmpty()
         }
-        return ArtistPhotoRules.select(candidates, isGroup, floor)?.url
+        if (!isGroup) return ArtistPhotoRules.select(candidates.map { it.first }, false, null)?.url
+
+        // Verify only candidates with a Wikimedia Commons File source link.
+        // Such links are uncommon, so this stays bounded by the available
+        // evidence rather than making requests for every Fanart image.
+        val checked = candidates.map { (photo, source) ->
+            if (photo.category !in setOf("artistthumb", "artistbackground") ||
+                photo.width < 800 || photo.height < 450 ||
+                !photo.url.startsWith("https://assets.fanart.tv/")) {
+                photo
+            } else {
+                val date = try {
+                    CommonsCaptureDate.fetchDate(http, source)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    null
+                }
+                photo.copy(capturedAt = date)
+            }
+        }
+        return ArtistPhotoRules.select(checked, isGroup, floor)?.url
     }
 
     private companion object {
