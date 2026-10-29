@@ -1,0 +1,119 @@
+name: Sonora Editorial V3 Reference Preview
+
+on:
+  push:
+    branches:
+      - feat/sonora-artist-album-neutral
+    paths:
+      - .github/workflows/sonora-editorial-reference-v3-release.yml
+
+permissions:
+  contents: write
+
+jobs:
+  verify-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Run every Android unit test
+        run: |
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest --continue --no-daemon
+      - name: Assemble verified preview APK
+        env:
+          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
+        run: ./gradlew :app:assembleDebug --no-daemon
+      - name: Verify expected package, version and signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          AAPT=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name aapt | sort -V | tail -n1)
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -n1)
+          test -x "$AAPT"
+          test -x "$APKSIGNER"
+          "$AAPT" dump badging "$APK" | grep "^package: " | tee "$RUNNER_TEMP/sonora-package.txt"
+          grep -Fq "name='com.stash.app.debug' versionCode='153' versionName='0.9.117-sonora-editorial'" "$RUNNER_TEMP/sonora-package.txt"
+          "$APKSIGNER" verify "$APK"
+          sha256sum "$APK"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: sonora-editorial-v3-verified-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  verify-workers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Run five backend Worker test suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          for dir in infra/share-worker infra/sync-worker infra/tipjar-worker infra/lossless-relay infra/lastfm-proxy; do
+            (cd "$dir" && node --no-warnings --test test/*.test.js)
+          done
+
+  publish:
+    needs: [verify-android, verify-workers]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          name: sonora-editorial-v3-verified-apk
+          path: ${{ runner.temp }}/sonora-editorial
+      - name: Publish versioned, isolated prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=sonora-editorial-reference-v3-20261029
+          SRC="$RUNNER_TEMP/sonora-editorial/app-debug.apk"
+          test -s "$SRC"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release tag already exists; refusing overwrite"
+            exit 1
+          fi
+          APK="$RUNNER_TEMP/Sonora-Editorial-v0.9.117-Artist-Album.apk"
+          cp "$SRC" "$APK"
+          DIGEST=$(sha256sum "$APK" | cut -d' ' -f1)
+          cat > "$RUNNER_TEMP/NOTES.md" <<'EOF'
+          ## Sonora Editorial — prévia V3
+
+          Redesign das páginas de artista e álbum seguindo a **composição visual aprovada**:
+          - Header do artista com nome e ações integrados à fotografia.
+          - Álbum cover-first, nome mais próximo da capa e controles circulares.
+          - Faixas numeradas, com imagem apenas no artista; downloads opcionais no menu.
+          - Abas editoriais sticky, cores grafite e branco-frio.
+          - Wordmarks comunitárias do TheAudioDB com fallback para texto e CDN corrigida.
+
+          Versão de teste **0.9.117-sonora-editorial** (versionCode **153**).
+          Pacote **com.stash.app.debug**, app **Sonora Editorial**.
+          Instalação separada da versão release; atualiza a Debug com a mesma assinatura.
+
+          **Atenção:** é uma prévia de teste visual; fidelidade 1:1 ainda não foi validada no Redmi Note 14.
+          As logos do TheAudioDB são comunitárias e o acesso gratuito é para desenvolvimento,
+          não para publicar comercialmente sem conferir licença e direitos.
+
+          Não desinstale versões anteriores em caso de erro de assinatura: dados locais podem ser perdidos.
+          O PR #2 permanece draft, sem merge na branch estável.
+          EOF
+          printf '\nSHA-256 APK: `%s`\nCódigo compilado: `%s`\n' "$DIGEST" "$GITHUB_SHA" >> "$RUNNER_TEMP/NOTES.md"
+          gh release create "$TAG" "$APK" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'Sonora Editorial — Artista e Álbum V3 (0.9.117)' --notes-file "$RUNNER_TEMP/NOTES.md" --prerelease --latest=false
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,assets --jq '{url:.url,assets:[.assets[].name]}'
