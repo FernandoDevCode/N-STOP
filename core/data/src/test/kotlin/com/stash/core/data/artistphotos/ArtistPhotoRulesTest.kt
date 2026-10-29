@@ -76,10 +76,19 @@ class ArtistPhotoRulesTest {
             .isEqualTo(LocalDate.parse("2021-09-02"))
     }
 
-    @Test fun partialMembershipDateIsNotSilentlyGuessed() {
+    @Test fun partialMembershipDateUsesConservativeEndOfYear() {
         val data = Json.parseToJsonElement("""
           {"relations":[{"type":"member of band","artist":{"name":"A"},
             "ended":false,"begin":{"year":2020}}]}
+        """).jsonObject
+        assertThat(ArtistPhotoRules.currentLineupFloor(data))
+            .isEqualTo(LocalDate.parse("2020-12-31"))
+    }
+
+    @Test fun missingMembershipYearRemainsUnknown() {
+        val data = Json.parseToJsonElement("""
+          {"relations":[{"type":"member of band","artist":{"name":"A"},
+            "ended":false,"begin":{}}]}
         """).jsonObject
         assertThat(ArtistPhotoRules.currentLineupFloor(data)).isNull()
     }
