@@ -63,38 +63,38 @@ object VisualDesign {
         val Card = 8.dp; val Hero = 11.dp; val Filter = 12.dp; val MiniPlayer = 13.dp
     }
     object Light {
-        val Core = Color(0xFFFCFAFF)
-        val Wide = Color(0xFFAA91F1); val Near = Color(0xFFE6D9FF)
+        val Core = Color(0xFFF4F5F7)
+        val Wide = Color(0xFFD4D8E0); val Near = Color(0xFFF4F5F7)
         val WideRadius = 7.dp; val NearRadius = 2.dp
         const val WideAlpha = .95f; const val NearAlpha = .9f
         const val TransitionMs = 220
         const val RadioEnergy = .65f; const val LibraryEnergy = .8f
-        val Fallback = Color(0xFFC2B4FF)
+        val Fallback = Color(0xFFD4D8E0)
         val FallbackStrokes = listOf(15f to .02f, 12f to .04f, 9f to .07f, 7f to .12f, 5f to .2f, 3f to .3f)
-        val AmbientBase = listOf(Color(0xFF242431), Color(0xFF171820), Color(0xFF0E0F14))
-        val AmbientUpper = listOf(Color(0x556A6382), Color(0x154F495F), Color.Transparent)
-        val AmbientSide = listOf(Color(0x354B475F), Color(0x103B394A), Color.Transparent)
+        val AmbientBase = listOf(Color(0xFF232831), Color(0xFF191D23), Color(0xFF0E1115))
+        val AmbientUpper = listOf(Color(0x55566072), Color(0x15454F5D), Color.Transparent)
+        val AmbientSide = listOf(Color(0x35454E59), Color(0x103B454E), Color.Transparent)
     }
-    private val cardDark = listOf(Color(0xFF353243), Color(0xFF1D1C28))
-    private val filterSelected = listOf(Color(0xFF585472), Color(0xFF53506E), Color(0xFF4B4966))
-    private val filterIdle = listOf(Color(0xFF272737), Color(0xFF292A3B))
-    val FilterSelectedBorder = Color(0xFF706C91)
-    val FilterIdleBorder = Color(0xFF353547)
+    private val cardDark = listOf(Color(0xFF303640), Color(0xFF191D23))
+    private val filterSelected = listOf(Color(0xFF343944), Color(0xFF303640), Color(0xFF2A303A))
+    private val filterIdle = listOf(Color(0xFF232831), Color(0xFF191D23))
+    val FilterSelectedBorder = Color(0xFF626C7B)
+    val FilterIdleBorder = Color(0xFF343944)
     @Composable fun cardSurface() = Brush.verticalGradient(if (LocalVisualDark.current) cardDark else listOf(Surface, Surface))
     @Composable fun filterSurface(selected: Boolean) = Brush.verticalGradient(
         if (!LocalVisualDark.current) listOf(Surface, Surface) else if (selected) filterSelected else filterIdle)
     @Composable fun navigationSurface() = Brush.verticalGradient(when {
         !LocalVisualDark.current -> listOf(Surface, Background)
         LocalVisualAmoled.current -> listOf(Color.Black, Color.Black)
-        else -> listOf(Color(0xFF15161D), Color(0xFF0E0F14))
+        else -> listOf(Color(0xFF191D23), Color(0xFF0E1115))
     })
-    val scheme = darkColorScheme(primary = Color(0xFFE4DFFF), onPrimary = Color(0xFF101116),
-        background = Color(0xFF101116), onBackground = Color(0xFFF2F1F7), surface = Color(0xFF22222F), onSurface = Color(0xFFF2F1F7),
-        surfaceVariant = Color(0xFF22222F), onSurfaceVariant = Color(0xFFB3B1C8), outline = Color(0xFF414052),
-        secondary = Color(0xFFAAA2D4), onSecondary = Color(0xFF101116))
-    val lightScheme = lightColorScheme(primary = Color(0xFF62517F), onPrimary = Color.White,
-        background = Color(0xFFF3F1F7), onBackground = Color(0xFF24212D), surface = Color(0xFFE8E4F0),
-        onSurface = Color(0xFF24212D), surfaceVariant = Color(0xFFE4DFEB), onSurfaceVariant = Color(0xFF625B72), outline = Color(0xFFC0B6CE))
+    val scheme = darkColorScheme(primary = Color(0xFFF4F5F7), onPrimary = Color(0xFF0E1115),
+        background = Color(0xFF0E1115), onBackground = Color(0xFFF4F5F7), surface = Color(0xFF232831), onSurface = Color(0xFFF4F5F7),
+        surfaceVariant = Color(0xFF232831), onSurfaceVariant = Color(0xFFB4B8C4), outline = Color(0xFF343944),
+        secondary = Color(0xFFD4D8E0), onSecondary = Color(0xFF0E1115))
+    val lightScheme = lightColorScheme(primary = Color(0xFF242A34), onPrimary = Color.White,
+        background = Color(0xFFF6F7F9), onBackground = Color(0xFF181C22), surface = Color(0xFFE8EAEE),
+        onSurface = Color(0xFF181C22), surfaceVariant = Color(0xFFE8EAEE), onSurfaceVariant = Color(0xFF505866), outline = Color(0xFFB5BCC6))
 }
 
 @Composable fun VisualTheme(dark: Boolean = true, amoled: Boolean = false, content: @Composable () -> Unit) {
