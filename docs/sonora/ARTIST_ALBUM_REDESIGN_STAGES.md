@@ -142,6 +142,24 @@ Em 2026-10-29, foram enviados ao PR #2 os patches de código abaixo. **Aplicado 
 
 **V2 publicada (29/10/2026):** [GitHub Release Sonora Preview V2](https://github.com/FernandoDevCode/N-STOP/releases/tag/sonora-artist-album-v2-20261029). APK: `Sonora-Preview-v0.9.116-Artista-Album.apk`, SHA-256 `515c8117d37fb9d61e9351576937637919c36f54646a9c8cb6bb7cf2d6efa018`, versão `0.9.116-sonora-preview`, código `152`, pacote `com.stash.app.debug`. [Workflow de validação e publicação #40935536059](https://github.com/FernandoDevCode/N-STOP/actions/runs/40935536059): testes Android, testes Workers, build, conferência de pacote/versão/assinatura e upload concluídos com sucesso. **Ainda não há aprovação visual no aparelho.** A publicação comercial dos logos depende de decisão sobre direitos/licenciamento; o APK atual é experimental. O workflow temporário de publicação foi retirado do branch após o release, sem alterar os bytes do APK publicado.
 
+## Nova implementação editorial V3 — 29/10/2026
+
+**Alvo:** [composição Apple Music aprovada para Sonora](IOS_EDITORIAL_LAYOUT_TARGET.md).
+
+**Implementação e publicação:** [Sonora Editorial — Artista e Álbum V3](https://github.com/FernandoDevCode/N-STOP/releases/tag/sonora-editorial-reference-v3-20261029). APK `Sonora-Editorial-v0.9.117-Artist-Album.apk`, pacote `com.stash.app.debug`, versão `0.9.117-sonora-editorial` (`versionCode 153`), SHA-256 `7a80ea1df90a984da6068e7b6fc7ca94d1b20be865ae169cb4e778f53861ca72`.
+
+- [x] Hero do artista com botões integrados à fotografia, menu no canto superior e sem faixa extra de redes.
+- [x] Álbum cover-first, controles circulares e menu para fila/downloads.
+- [x] Linhas editoriais numeradas, capa apenas nas músicas do artista.
+- [x] Abas e cabeçalhos ajustados à referência; nomes de artistas/álbuns extraídos dos dados reais.
+- [x] Busca de wordmarks corrigida para aceitar CDN `r2.theaudiodb.com`, além dos domínios originais.
+- [x] Testes Android, testes dos cinco Workers, build `:app:assembleDebug`, `aapt` (pacote/versão) e `apksigner`: **aprovados** em [GitHub Actions #40942190976](https://github.com/FernandoDevCode/N-STOP/actions/runs/40942190976).
+- [ ] **Ainda falta comparação de screenshots reais** desta V3 com a referência e aprovação do usuário.
+- [ ] Testar no Redmi: ações do álbum em menu, salvar, rádio, reprodução, abas e linhas, download quando suportado, hero com e sem wordmark.
+- [ ] Não fazer merge até aceite visual e funcional. É prévia experimental, sem compromisso de fidelidade 1:1 sem captura e comparação.
+
+A versão V2 permanece como evidência histórica, mas **V3 é a nova candidata visual atual**. O workflow temporário de publicação foi removido após o release; a assinatura e o APK já publicados não foram alterados.
+
 ## Revisão visual — Redmi Note 14 / Sonora Preview V2 (29/10/2026)
 
 **Capturas recebidas nesta revisão:** perfil Slipknot (topo, com início de Popular) e álbum `Adderall` de Slipknot. Não há captura do bloco Sobre, rolagem até Álbuns ou testes funcionais nesta rodada. **Status: aprovação pendente; não fazer merge.**
