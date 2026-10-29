@@ -34,6 +34,8 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -388,20 +390,33 @@ private fun ArtistSectionTabs(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background.copy(alpha = .98f))
+            .background(MaterialTheme.colorScheme.background)
             .horizontalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 5.dp),
         horizontalArrangement = Arrangement.spacedBy(21.dp),
     ) {
         tabs.forEach { (title, targetIndex) ->
             val selected = targetIndex == selectedIndex
+            val indicator = MaterialTheme.colorScheme.primary
             Surface(
                 onClick = { onSelect(targetIndex) },
                 shape = RoundedCornerShape(0.dp),
                 color = Color.Transparent,
             ) {
                 Column(
-                    modifier = Modifier.padding(horizontal = 1.dp),
+                    modifier = Modifier
+                        .padding(horizontal = 1.dp)
+                        .drawBehind {
+                            if (selected) {
+                                val y = size.height - 1.5.dp.toPx()
+                                drawLine(
+                                    color = indicator,
+                                    start = Offset(0f, y),
+                                    end = Offset(size.width, y),
+                                    strokeWidth = 3.dp.toPx(),
+                                )
+                            }
+                        },
                 ) {
                     Text(
                         text = title,
@@ -410,11 +425,6 @@ private fun ArtistSectionTabs(
                         style = MaterialTheme.typography.bodyMedium,
                         color = if (selected) MaterialTheme.colorScheme.onSurface
                             else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Box(
-                        Modifier.fillMaxWidth().height(3.dp).background(
-                            if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                        ),
                     )
                 }
             }
