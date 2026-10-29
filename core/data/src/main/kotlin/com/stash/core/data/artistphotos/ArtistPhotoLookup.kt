@@ -41,7 +41,9 @@ class ArtistPhotoLookup @Inject constructor(
         if (key.isEmpty() || artistName.isBlank()) return@withContext null
         val cacheId = artistName.trim().lowercase()
         val checkedAt = prefs.getLong("$cacheId.checked", 0L)
-        if (System.currentTimeMillis() - checkedAt in 0 until CACHE_TTL_MS) {
+        val cachedUrl = prefs.getString("$cacheId.url", null)
+        val ttl = if (cachedUrl == null) NEGATIVE_CACHE_TTL_MS else CACHE_TTL_MS
+        if (System.currentTimeMillis() - checkedAt in 0 until ttl) {
             return@withContext prefs.getString("$cacheId.url", null)
         }
 
@@ -82,7 +84,8 @@ class ArtistPhotoLookup @Inject constructor(
             .header("api-key", apiKey)
             .build()
         val root = http.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return null
+            if (response.code == 404) return null
+            if (!response.isSuccessful) throw java.io.IOException("Fanart returned HTTP ${response.code}")
             val body = response.body?.string() ?: return null
             json.parseToJsonElement(body).jsonObject
         }
@@ -107,5 +110,6 @@ class ArtistPhotoLookup @Inject constructor(
     private companion object {
         val UUID_PATTERN = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
         const val CACHE_TTL_MS = 30L * 24 * 60 * 60 * 1000
+        const val NEGATIVE_CACHE_TTL_MS = 24L * 60 * 60 * 1000
     }
 }
