@@ -212,10 +212,12 @@ fun AlbumDiscoveryScreen(
                                 onAddToPlaylist = { vm.onRequestAddToPlaylist(trackItem) },
                                 modifier = Modifier.padding(horizontal = 16.dp),
                                 editorial = true,
+                                editorialIndex = index + 1,
+                                editorialAlbum = true,
                             )
                             if (index < state.tracks.lastIndex) {
                                 HorizontalDivider(
-                                    modifier = Modifier.padding(start = 84.dp, end = 26.dp),
+                                    modifier = Modifier.padding(start = 62.dp, end = 26.dp),
                                     thickness = .5.dp,
                                     color = MaterialTheme.colorScheme.outline.copy(alpha = .35f),
                                 )
