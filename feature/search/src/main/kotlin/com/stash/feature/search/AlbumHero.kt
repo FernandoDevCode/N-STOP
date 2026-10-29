@@ -8,8 +8,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -27,17 +26,24 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.LibraryAdd
 import androidx.compose.material.icons.filled.LibraryAddCheck
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -89,7 +95,6 @@ import com.stash.core.ui.util.formatTotalDuration
  *                      queue without interrupting playback, routed through
  *                      `PlayerRepository.addToQueue(List)`.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AlbumHero(
     hero: AlbumHeroState,
@@ -112,14 +117,14 @@ fun AlbumHero(
     // loaded): Play, Queue, Save and Download all would do nothing, so they say so.
     actionsEnabled: Boolean = true,
 ) {
-    val extendedColors = StashTheme.extendedColors
+    var actionsOpen by remember { mutableStateOf(false) }
 
     Column(modifier = modifier.fillMaxWidth()) {
         // Cover-first presentation, matching offline albums and playlists.
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(345.dp)
+                .height(298.dp)
                 .background(
                     Brush.verticalGradient(
                         listOf(Color(0xFF303740), Color(0xFF191D23),
@@ -134,15 +139,15 @@ fun AlbumHero(
                     model = hero.thumbnailUrl,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize().blur(30.dp).alpha(.32f),
+                    modifier = Modifier.fillMaxSize().blur(28.dp).alpha(.50f),
                 )
             }
             Box(
                 Modifier.fillMaxSize().background(
                     Brush.verticalGradient(
-                        0f to Color(0xCC0E1115),
-                        .34f to Color(0x66191D23),
-                        .73f to Color(0xDD0E1115),
+                        0f to Color(0xAA0E1115),
+                        .34f to Color(0x44191D23),
+                        .73f to Color(0xCC0E1115),
                         1f to MaterialTheme.colorScheme.background,
                     ),
                 ),
@@ -150,8 +155,8 @@ fun AlbumHero(
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .padding(top = 32.dp)
-                    .size(232.dp)
+                    .padding(top = 20.dp)
+                    .size(226.dp)
                     .shadow(
                         elevation = 24.dp,
                         shape = RoundedCornerShape(14.dp),
@@ -254,94 +259,93 @@ fun AlbumHero(
                 )
             }
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(13.dp))
 
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(9.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Button(
                     onClick = onPlayAlbum,
                     enabled = actionsEnabled,
-                    modifier = Modifier.size(60.dp),
+                    modifier = Modifier.size(56.dp),
                     contentPadding = PaddingValues(0.dp),
                     shape = CircleShape,
                 ) {
                     Icon(
-                        imageVector = Icons.Default.PlayArrow,
+                        Icons.Default.PlayArrow,
                         contentDescription = stringResource(R.string.nonstop_album_play),
-                        modifier = Modifier.size(30.dp),
+                        modifier = Modifier.size(29.dp),
                     )
-                }
-                if (hasDownloaded) {
-                    OutlinedButton(
-                        onClick = onShuffle,
-                        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
-                        shape = RoundedCornerShape(24.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Shuffle,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = stringResource(R.string.nonstop_album_shuffle),
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                    }
                 }
                 OutlinedButton(
                     onClick = onAddToQueue,
                     enabled = actionsEnabled,
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp),
                     shape = RoundedCornerShape(24.dp),
                 ) {
                     Icon(
-                        imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
+                        Icons.AutoMirrored.Filled.PlaylistAdd,
                         contentDescription = null,
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(20.dp),
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = stringResource(R.string.nonstop_album_queue),
+                        stringResource(R.string.nonstop_album_queue),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.labelLarge,
                     )
                 }
-                OutlinedButton(
+                // Save is immediately reachable; optional operations live in the
+                // menu instead of forcing Download all into a second row.
+                IconButton(
                     onClick = onSave,
                     enabled = actionsEnabled,
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-                    shape = RoundedCornerShape(24.dp),
+                    modifier = Modifier.size(48.dp),
                 ) {
                     Icon(
-                        imageVector = if (isSaved) Icons.Default.LibraryAddCheck else Icons.Default.LibraryAdd,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = if (isSaved) stringResource(R.string.nonstop_album_saved) else stringResource(R.string.nonstop_album_save),
-                        style = MaterialTheme.typography.labelLarge,
+                        if (isSaved) Icons.Default.LibraryAddCheck else Icons.Default.LibraryAdd,
+                        contentDescription = if (isSaved) stringResource(R.string.nonstop_album_saved)
+                            else stringResource(R.string.nonstop_album_save),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(24.dp),
                     )
                 }
-                if (downloadSupported) {
-                    OutlinedButton(
-                        onClick = onDownloadAll,
-                        enabled = actionsEnabled,
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-                        shape = RoundedCornerShape(24.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Download,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = stringResource(R.string.nonstop_album_download_all),
-                            style = MaterialTheme.typography.labelLarge,
-                        )
+                if (downloadSupported || hasDownloaded) {
+                    Box {
+                        IconButton(
+                            onClick = { actionsOpen = true },
+                            enabled = actionsEnabled,
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.MoreVert,
+                                contentDescription = "More album actions",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = actionsOpen,
+                            onDismissRequest = { actionsOpen = false },
+                        ) {
+                            if (hasDownloaded) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.nonstop_album_shuffle)) },
+                                    leadingIcon = { Icon(Icons.Default.Shuffle, contentDescription = null) },
+                                    onClick = { actionsOpen = false; onShuffle() },
+                                )
+                            }
+                            if (downloadSupported) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.nonstop_album_download_all)) },
+                                    leadingIcon = { Icon(Icons.Default.Download, contentDescription = null) },
+                                    onClick = { actionsOpen = false; onDownloadAll() },
+                                )
+                            }
+                        }
                     }
                 }
             }
