@@ -30,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -80,6 +81,10 @@ fun ArtistProfileScreen(
     vm: ArtistProfileViewModel = hiltViewModel(),
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
+    // Optional image lookup is UI-owned, never part of catalog or playback VM.
+    val wordmarkUrl by produceState<String?>(initialValue = null, key1 = state.hero.name) {
+        value = ArtistWordmarkLookup.resolve(state.hero.name)
+    }
     val previewState by vm.delegate.previewState.collectAsStateWithLifecycle()
     val downloadingIds by vm.delegate.downloadingIds.collectAsStateWithLifecycle()
     val downloadedIds by vm.delegate.downloadedIds.collectAsStateWithLifecycle()
@@ -156,6 +161,7 @@ fun ArtistProfileScreen(
                     hero = state.hero,
                     status = state.status,
                     socials = state.about?.socials.orEmpty(),
+                    wordmarkUrl = wordmarkUrl,
                     onBack = onBack,
                     onPlayArtist = vm::playArtist,
                     onStartRadio = vm::startRadio,
@@ -225,6 +231,7 @@ fun ArtistProfileScreen(
                         onRequestAddToPlaylist = vm::onRequestAddToPlaylist,
                         onNavigateToAlbum = onNavigateToAlbum,
                         onNavigateToArtist = onNavigateToArtist,
+                        wordmarkFromAudioDb = wordmarkUrl != null,
                         focus = focus,
                     )
                 }
@@ -246,6 +253,7 @@ fun ArtistProfileScreen(
                     onRequestAddToPlaylist = vm::onRequestAddToPlaylist,
                     onNavigateToAlbum = onNavigateToAlbum,
                     onNavigateToArtist = onNavigateToArtist,
+                    wordmarkFromAudioDb = wordmarkUrl != null,
                     focus = focus,
                 )
             }
@@ -299,6 +307,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
     onRequestAddToPlaylist: (TrackItem) -> Unit,
     onNavigateToAlbum: (album: AlbumSummary) -> Unit,
     onNavigateToArtist: (artistId: String, name: String, avatarUrl: String?) -> Unit,
+    wordmarkFromAudioDb: Boolean,
     focus: AlbumFocusTarget?,
 ) {
     if (state.popular.isNotEmpty()) {
@@ -358,7 +367,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
             AboutSection(
                 about = about,
                 avatarUrl = state.hero.avatarUrl,
-                wordmarkFromAudioDb = state.hero.wordmarkUrl != null,
+                wordmarkFromAudioDb = wordmarkFromAudioDb,
             )
         }
     }
