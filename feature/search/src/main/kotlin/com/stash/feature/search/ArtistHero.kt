@@ -122,6 +122,21 @@ fun ArtistHero(
                 tint = Color(0xFFF4F5F7),
             )
         }
+        // Upper-right overflow mirrors the reference. The same actions are
+        // available from the lower row; both share the menu state.
+        IconButton(
+            onClick = { moreOpen = true },
+            modifier = Modifier.align(Alignment.TopEnd)
+                .statusBarsPadding()
+                .padding(end = 12.dp, top = 9.dp)
+                .background(Color(0xAA0E1115), CircleShape),
+        ) {
+            Icon(
+                Icons.Default.MoreHoriz,
+                contentDescription = "Mais ações do artista",
+                tint = Color(0xFFF4F5F7),
+            )
+        }
         // The controls sit inside the image, as in the approved reference.
         Column(
             modifier = Modifier.align(Alignment.BottomStart)
