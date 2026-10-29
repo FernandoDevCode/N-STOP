@@ -12,11 +12,11 @@ import com.stash.core.ui.R
 
 /** Fixed shell colors; album extraction is reserved for transport progress. */
 object NonstopDesign {
-    val Background = Color(0xFF08090B)
-    val Graphite = Color(0xFF0C111A)
-    val Violet = Color(0xFFA25CFF)
-    val ActiveInk = Color(0xFFF6EAFF)
-    val Secondary = Color(0xFFADB7CE)
+    val Background = Color(0xFF0E1115)
+    val Graphite = Color(0xFF191D23)
+    val Violet = Color(0xFFD4D8E0)
+    val ActiveInk = Color(0xFFF4F5F7)
+    val Secondary = Color(0xFFB4B8C4)
 }
 
 @Composable
