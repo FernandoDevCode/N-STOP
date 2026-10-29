@@ -82,12 +82,13 @@ fun PopularTracksSection(
                 onStartRadio = { onStartRadio(trackItem) },
                 onAddToPlaylist = { onRequestAddToPlaylist(trackItem) },
                 editorial = true,
+                editorialIndex = index + 1,
             )
             if (index < tracks.lastIndex) {
                 HorizontalDivider(
                     color = MaterialTheme.colorScheme.outline.copy(alpha = .35f),
                     thickness = .5.dp,
-                    modifier = Modifier.padding(start = 68.dp, end = 8.dp),
+                    modifier = Modifier.padding(start = 85.dp, end = 22.dp),
                 )
             }
         }
