@@ -33,6 +33,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.res.stringResource
@@ -171,10 +172,20 @@ fun ArtistProfileScreen(
                     positions.singles?.let { stringResource(R.string.nonstop_artist_singles_tab) to it },
                     positions.about?.let { stringResource(R.string.nonstop_artist_about_tab) to it },
                 )
+                // A section becomes active as its heading approaches the sticky
+                // navigator, not only after its entire row has scrolled away.
+                val threshold = with(LocalDensity.current) { 96.dp.roundToPx() }
+                val approaching = tabs.lastOrNull { (_, target) ->
+                    listState.layoutInfo.visibleItemsInfo.any { item ->
+                        item.index == target && item.offset <= threshold
+                    }
+                }?.second
+                val selectedSection = approaching
+                    ?: tabs.lastOrNull { it.second <= listState.firstVisibleItemIndex }?.second
+                    ?: tabs.firstOrNull()?.second
                 ArtistSectionTabs(
                     tabs = tabs,
-                    selectedIndex = tabs.lastOrNull { it.second <= listState.firstVisibleItemIndex }?.second
-                        ?: tabs.firstOrNull()?.second,
+                    selectedIndex = selectedSection,
                     onSelect = { index ->
                         scrollScope.launch { listState.animateScrollToItem(index) }
                     },
@@ -383,7 +394,7 @@ private fun ArtistSectionTabs(
                             else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Box(
-                        Modifier.fillMaxWidth().height(2.dp).background(
+                        Modifier.fillMaxWidth().height(3.dp).background(
                             if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
                         ),
                     )
