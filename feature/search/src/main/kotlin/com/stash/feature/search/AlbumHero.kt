@@ -181,7 +181,7 @@ fun AlbumHero(
                     append(hero.artist)
                     if (hero.year != null) {
                         append("  •  ")
-                        append(hero.year)
+                        append(hero.year.toString().take(4))
                     }
                 },
                 color = Color(0xFFB4B8C4),
