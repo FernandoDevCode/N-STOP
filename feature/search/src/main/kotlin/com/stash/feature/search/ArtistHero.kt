@@ -2,7 +2,6 @@ package com.stash.feature.search
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,14 +12,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -31,12 +28,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -75,7 +70,7 @@ fun ArtistHero(
     val uriHandler = LocalUriHandler.current
     Column(modifier.fillMaxWidth()) {
         Box(
-            Modifier.fillMaxWidth().height(370.dp)
+            Modifier.fillMaxWidth().height(315.dp)
                 .background(
                     Brush.verticalGradient(
                         listOf(Color(0xFF343944), Color(0xFF191D23), backdrop),
@@ -129,8 +124,8 @@ fun ArtistHero(
             ) {
                 Text(
                     text = hero.name,
-                    fontSize = 48.sp,
-                    lineHeight = 50.sp,
+                    fontSize = 44.sp,
+                    lineHeight = 48.sp,
                     letterSpacing = (-1.5).sp,
                     fontWeight = FontWeight.ExtraBold,
                     color = Color(0xFFF4F5F7),
@@ -150,7 +145,7 @@ fun ArtistHero(
         // The existing play, radio and support callbacks remain unchanged.
         Row(
             modifier = Modifier.fillMaxWidth()
-                .padding(start = 22.dp, end = 22.dp, top = 9.dp, bottom = 13.dp),
+                .padding(start = 22.dp, end = 22.dp, top = 8.dp, bottom = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
@@ -158,14 +153,14 @@ fun ArtistHero(
                 onClick = onPlayArtist,
                 shape = CircleShape,
                 color = Color(0xFFF4F5F7),
-                modifier = Modifier.size(60.dp),
+                modifier = Modifier.size(54.dp),
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         Icons.Default.PlayArrow,
                         contentDescription = "Play ${hero.name}",
                         tint = Color(0xFF0E1115),
-                        modifier = Modifier.size(32.dp),
+                        modifier = Modifier.size(30.dp),
                     )
                 }
             }
@@ -211,42 +206,8 @@ fun ArtistHero(
                 }
             }
         }
-        if (socials.isNotEmpty()) {
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 22.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                socials.forEach { social ->
-                    Surface(
-                        onClick = { runCatching { uriHandler.openUri(social.url) } },
-                        color = Color(0xFF191D23),
-                        border = BorderStroke(1.dp, Color(0xFF343944)),
-                        shape = CircleShape,
-                        modifier = Modifier.size(40.dp),
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            val brand = socialIconFor(social.kind)
-                            if (brand != null) {
-                                Icon(
-                                    painter = painterResource(brand),
-                                    contentDescription = social.kind,
-                                    modifier = Modifier.size(19.dp),
-                                    tint = Color(0xFFD4D8E0),
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Default.Public,
-                                    contentDescription = social.kind,
-                                    modifier = Modifier.size(19.dp),
-                                    tint = Color(0xFFD4D8E0),
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        // All external artist links live in AboutSection; no redundant social
+        // strip below the hero. Support action above stays functional.
         Spacer(Modifier.height(4.dp))
     }
 }
