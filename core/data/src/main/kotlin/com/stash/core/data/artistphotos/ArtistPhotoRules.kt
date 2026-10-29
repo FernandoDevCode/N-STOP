@@ -60,9 +60,18 @@ object ArtistPhotoRules {
             val dateField = if (ended) "end" else "begin"
             val dateObject = rel[dateField]?.jsonObject ?: return null
             val year = dateObject["year"]?.jsonPrimitive?.content?.toIntOrNull() ?: return null
-            val month = dateObject["month"]?.jsonPrimitive?.content?.toIntOrNull() ?: return null
-            val day = dateObject["day"]?.jsonPrimitive?.content?.toIntOrNull() ?: return null
-            val date = runCatching { LocalDate.of(year, month, day) }.getOrNull() ?: return null
+            val month = dateObject["month"]?.jsonPrimitive?.content?.toIntOrNull()
+            val day = dateObject["day"]?.jsonPrimitive?.content?.toIntOrNull()
+            // MusicBrainz often knows only a year/month. Choose the latest
+            // POSSIBLE day (conservative upper bound): no later photograph
+            // is mistakenly accepted as predating a membership change.
+            val date = runCatching {
+                when {
+                    month == null -> LocalDate.of(year, 12, 31)
+                    day == null -> java.time.YearMonth.of(year, month).atEndOfMonth()
+                    else -> LocalDate.of(year, month, day)
+                }
+            }.getOrNull() ?: return null
             changes += date
             if (!ended) hasCurrentMember = true
         }
