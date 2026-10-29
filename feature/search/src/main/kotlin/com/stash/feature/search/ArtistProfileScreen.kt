@@ -41,13 +41,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.media.preview.LosslessUrlPrefetcher
 import com.stash.core.ui.components.AlbumsRowSkeleton
 import com.stash.core.ui.components.DiscoveryErrorCard
 import com.stash.core.ui.components.PopularListSkeleton
-import com.stash.core.ui.components.SectionHeader
 import com.stash.core.model.TrackItem
 import com.stash.data.ytmusic.model.AlbumSummary
 import kotlinx.coroutines.flow.merge
@@ -169,6 +169,9 @@ fun ArtistProfileScreen(
                     onStartRadio = vm::startRadio,
                     streamingEnabled = streamingEnabled,
                     onStreamingClick = { showStreamingSheet = true },
+                    onOpenAbout = positions.about?.let { target ->
+                        { scrollScope.launch { listState.animateScrollToItem(target, scrollOffset = -120) } }
+                    },
                 )
             }
             // Tabs are real jumps into the populated shelves, not decorative
@@ -313,7 +316,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
     focus: AlbumFocusTarget?,
 ) {
     if (state.popular.isNotEmpty()) {
-        item { SectionHeader(title = "Popular") }
+        item { ArtistEditorialHeading("Popular") }
         item {
             PopularTracksSection(
                 tracks = state.popular,
@@ -334,7 +337,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
         }
     }
     if (state.albums.isNotEmpty()) {
-        item { SectionHeader(title = "Albums") }
+        item { ArtistEditorialHeading("Álbuns") }
         item {
             AlbumsRow(
                 albums = state.albums,
@@ -344,7 +347,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
         }
     }
     if (state.singles.isNotEmpty()) {
-        item { SectionHeader(title = "Singles & EPs") }
+        item { ArtistEditorialHeading("Singles e EPs") }
         item {
             SinglesRow(
                 singles = state.singles,
@@ -354,7 +357,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
         }
     }
     if (state.related.isNotEmpty()) {
-        item { SectionHeader(title = "Fans also like") }
+        item { ArtistEditorialHeading("Artistas relacionados") }
         item {
             RelatedArtistsRow(
                 artists = state.related,
@@ -364,7 +367,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
     }
     val about = state.about
     if (about != null) {
-        item { SectionHeader(title = "About") }
+        item { ArtistEditorialHeading("Sobre") }
         item {
             AboutSection(
                 about = about,
@@ -373,6 +376,19 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
             )
         }
     }
+}
+
+@Composable
+private fun ArtistEditorialHeading(label: String) {
+    Text(
+        text = label,
+        color = MaterialTheme.colorScheme.onSurface,
+        fontSize = 20.sp,
+        lineHeight = 25.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.fillMaxWidth()
+            .padding(start = 24.dp, end = 24.dp, top = 15.dp, bottom = 7.dp),
+    )
 }
 
 /**
@@ -392,8 +408,8 @@ private fun ArtistSectionTabs(
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.background)
             .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 5.dp),
-        horizontalArrangement = Arrangement.spacedBy(21.dp),
+            .padding(horizontal = 19.dp, vertical = 0.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         tabs.forEach { (title, targetIndex) ->
             val selected = targetIndex == selectedIndex
@@ -420,7 +436,7 @@ private fun ArtistSectionTabs(
                 ) {
                     Text(
                         text = title,
-                        modifier = Modifier.padding(top = 11.dp, bottom = 12.dp),
+                        modifier = Modifier.padding(top = 12.dp, bottom = 13.dp),
                         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                         style = MaterialTheme.typography.bodyMedium,
                         color = if (selected) MaterialTheme.colorScheme.onSurface
