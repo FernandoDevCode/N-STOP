@@ -6,6 +6,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -357,36 +359,35 @@ private fun ArtistSectionTabs(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background.copy(alpha = 0.97f))
+            .background(MaterialTheme.colorScheme.background.copy(alpha = .98f))
             .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 11.dp),
-        horizontalArrangement = Arrangement.spacedBy(9.dp),
+            .padding(horizontal = 20.dp, vertical = 5.dp),
+        horizontalArrangement = Arrangement.spacedBy(21.dp),
     ) {
         tabs.forEach { (title, targetIndex) ->
             val selected = targetIndex == selectedIndex
-            val fill = if (selected) {
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-            } else {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.46f)
-            }
             Surface(
                 onClick = { onSelect(targetIndex) },
-                shape = RoundedCornerShape(100.dp),
-                color = fill,
-                border = BorderStroke(
-                    1.dp,
-                    if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.36f)
-                    else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                ),
+                shape = RoundedCornerShape(0.dp),
+                color = Color.Transparent,
             ) {
-                Text(
-                    text = title,
-                    modifier = Modifier.padding(horizontal = 15.dp, vertical = 10.dp),
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (selected) MaterialTheme.colorScheme.onSurface
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Column(
+                    modifier = Modifier.padding(horizontal = 1.dp),
+                ) {
+                    Text(
+                        text = title,
+                        modifier = Modifier.padding(top = 11.dp, bottom = 12.dp),
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (selected) MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Box(
+                        Modifier.fillMaxWidth().height(2.dp).background(
+                            if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                        ),
+                    )
+                }
             }
         }
     }
