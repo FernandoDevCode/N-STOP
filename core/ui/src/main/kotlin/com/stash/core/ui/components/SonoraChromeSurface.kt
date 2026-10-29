@@ -53,7 +53,7 @@ fun Modifier.sonoraMiniGlass(shape: Shape): Modifier {
 }
 
 /** Draw-only fade: no layout, hit target or clipping. Its base includes system insets.
- * Applied to the chrome host so the 36dp shoulder is not clipped by bar animations.
+ * Applied to the chrome host so the shoulder is not clipped by bar animations.
  */
 @Composable
 fun Modifier.sonoraBottomFade(navigationHeight: Dp): Modifier {
@@ -68,11 +68,20 @@ fun Modifier.sonoraBottomFade(navigationHeight: Dp): Modifier {
         else -> Color(0xFF0E0F14)
     }
     return drawWithCache {
-        val start = size.height - navigationHeight.toPx() - 36.dp.toPx()
-        val end = size.height - navigationHeight.toPx() + 22.dp.toPx()
+        val navigationTop = size.height - navigationHeight.toPx()
+        // The previous ramp only became opaque 22dp inside the navigation bar,
+        // allowing bright artwork and track titles to reach the tab icons. Give
+        // the transition more room and complete it at the bar's upper edge: the
+        // controls remain crisp while the content disappears before them.
+        val start = navigationTop - 64.dp.toPx()
+        val end = navigationTop + 2.dp.toPx()
         val shoulder = Brush.verticalGradient(
-            0f to top.copy(alpha = 0f), .25f to top.copy(alpha = .12f),
-            .5f to top.copy(alpha = .45f), .75f to top.copy(alpha = .82f), 1f to top,
+            0f to top.copy(alpha = 0f),
+            .24f to top.copy(alpha = .08f),
+            .5f to top.copy(alpha = .34f),
+            .72f to top.copy(alpha = .68f),
+            .9f to top.copy(alpha = .93f),
+            1f to top,
             startY = start, endY = end,
         )
         val floor = Brush.verticalGradient(listOf(top, base), startY = end, endY = size.height)

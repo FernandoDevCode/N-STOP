@@ -402,6 +402,21 @@ fun HomeScreen(
                 it == HomeSection.TOP_ALBUMS
         }
         val genreFallbackSection = firstPopulatedQobuzSection ?: firstConfiguredQobuzSection
+        val releasesIndex = uiState.sections.indexOf(HomeSection.NEW_RELEASES)
+        val qobuzPlaylistsFollowGenres = chipsAfterReleases && releasesIndex >= 0 &&
+            uiState.sections.drop(releasesIndex + 1).firstOrNull { candidate ->
+                when (candidate) {
+                    HomeSection.YOUR_PLAYLISTS ->
+                        uiState.yourPlaylists.isNotEmpty() || uiState.likedCard != null
+                    HomeSection.MOOD_DECADES -> uiState.moodDecades.isNotEmpty()
+                    HomeSection.MADE_FOR_YOU -> uiState.madeForYou.isNotEmpty()
+                    HomeSection.NEW_RELEASES -> uiState.newReleases.isNotEmpty()
+                    HomeSection.QOBUZ_PLAYLISTS -> uiState.playlists.isNotEmpty()
+                    HomeSection.TOP_ALBUMS -> uiState.topAlbums.isNotEmpty()
+                    HomeSection.RADIOS -> uiState.radios.isNotEmpty()
+                    HomeSection.COMMUNITY -> true
+                }
+            } == HomeSection.QOBUZ_PLAYLISTS
         uiState.sections.forEach { section ->
             val chipsLead = showGenreFilters && !chipsAfterReleases && section == genreFallbackSection
             if (chipsLead) {
@@ -467,7 +482,11 @@ fun HomeScreen(
                             playlists = uiState.playlists,
                             onOpen = onNavigateToAlbum,
                             onSeeAll = { onSeeAllPlaylists(uiState.selectedGenre) },
-                            topSpacing = if (chipsLead) 2.dp else 16.dp,
+                            topSpacing = when {
+                                chipsLead -> 2.dp
+                                qobuzPlaylistsFollowGenres -> 8.dp
+                                else -> 16.dp
+                            },
                         )
                     }
                 }

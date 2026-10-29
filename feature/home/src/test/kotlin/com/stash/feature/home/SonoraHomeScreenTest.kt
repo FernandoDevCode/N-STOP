@@ -129,6 +129,9 @@ class SonoraHomeScreenTest {
         val genres = compose.onNodeWithText("Todos").fetchSemanticsNode().boundsInRoot
         val playlists = compose.onNodeWithText("Playlists do Qobuz").fetchSemanticsNode().boundsInRoot
         check(releases.top < genres.top && genres.top < playlists.top)
+        // The filters remain comfortably separated from New Releases, while the
+        // following Qobuz heading no longer inherits a full section gap.
+        check(playlists.top - genres.bottom in 12f..40f)
         compose.onNodeWithText("Eletrônica").performClick()
         compose.runOnIdle { verify(vm).onSelectGenre("Electronic") }
     }
@@ -145,5 +148,26 @@ class SonoraHomeScreenTest {
         val genres = compose.onNodeWithText("Todos").fetchSemanticsNode().boundsInRoot
         val playlists = compose.onNodeWithText("Playlists do Qobuz").fetchSemanticsNode().boundsInRoot
         check(genres.top < playlists.top)
+        check(playlists.top - genres.bottom in 6f..36f)
+    }
+
+    @Test fun emptyCustomSectionsDoNotBreakGenreToQobuzContinuity() {
+        state.value = HomeUiState(
+            isLoading = false,
+            sections = listOf(
+                HomeSection.NEW_RELEASES,
+                HomeSection.MADE_FOR_YOU,
+                HomeSection.RADIOS,
+                HomeSection.QOBUZ_PLAYLISTS,
+            ),
+            newReleases = listOf(AlbumSummary("release", "Álbum fixture", "Artista", null, "2026")),
+            madeForYou = emptyList(),
+            radios = emptyList(),
+            playlists = listOf(PlaylistSummary("playlist", "Playlist fixture", "Qobuz", null, 12)),
+        )
+        render()
+        val genres = compose.onNodeWithText("Todos").fetchSemanticsNode().boundsInRoot
+        val playlists = compose.onNodeWithText("Playlists do Qobuz").fetchSemanticsNode().boundsInRoot
+        check(playlists.top - genres.bottom in 12f..40f)
     }
 }

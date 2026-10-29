@@ -23,6 +23,7 @@ import com.stash.core.ui.components.LocalBottomChromeInset
 import com.stash.core.ui.components.sonoraBottomFade
 import com.stash.core.ui.visual.*
 import com.stash.data.ytmusic.model.AlbumSummary
+import com.stash.data.ytmusic.model.PlaylistSummary
 import com.stash.feature.nowplaying.MiniPlayer
 import com.stash.feature.nowplaying.NowPlayingUiState
 import com.stash.feature.nowplaying.NowPlayingViewModel
@@ -50,8 +51,9 @@ class SonoraStage3SurfaceTest(private val width: Int, private val height: Int, p
 
     @Test fun homeScrollAndSurfaceEvidence() {
         val state = MutableStateFlow(HomeUiState(isLoading = false,
-            sections = listOf(HomeSection.NEW_RELEASES, HomeSection.TOP_ALBUMS),
+            sections = listOf(HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS, HomeSection.TOP_ALBUMS),
             newReleases = listOf(AlbumSummary("fixture", "Álbum de teste", "Sonora", null, "2026")),
+            playlists = listOf(PlaylistSummary("playlist", "Seleção editorial", "Qobuz", null, 18)),
             topAlbums = (1..15).map { AlbumSummary("album-$it", "Álbum de teste $it", "Sonora", null, "2026") }))
         val home = mock<HomeViewModel> {
             on { uiState } doReturn state
@@ -107,11 +109,29 @@ class SonoraStage3SurfaceTest(private val width: Int, private val height: Int, p
                 }
                 // Full opacity at the bottom, even over the white stress background.
                 check(android.graphics.Color.red(bitmap.getPixel(width / 2, height - 2)) < 25)
+                if (name == "claro" || name == "colorido") {
+                    // The clear/color stress plate must be gone before the tab icon band.
+                    val iconBand = bitmap.getPixel(3, height - 54)
+                    check(android.graphics.Color.red(iconBand) < 40)
+                    check(android.graphics.Color.green(iconBand) < 40)
+                    check(android.graphics.Color.blue(iconBand) < 45)
+
+                    // Sample the unobstructed edge of the 64dp shoulder: no single
+                    // scanline may introduce a new hard horizontal divider.
+                    val luma = (height - 150..height - 88).map { y ->
+                        val pixel = bitmap.getPixel(3, y)
+                        (android.graphics.Color.red(pixel) * 3 +
+                            android.graphics.Color.green(pixel) * 6 +
+                            android.graphics.Color.blue(pixel)) / 10
+                    }
+                    check(luma.zipWithNext { first, second -> kotlin.math.abs(second - first) }.max() < 28)
+                }
                 bitmap.recycle()
             }
         }
-        capture("home")
-        compose.onNodeWithTag("home").performTouchInput { swipeUp() }
+        compose.onNodeWithTag("home").performScrollToNode(hasText("Playlists do Qobuz"))
+        capture("home-generos-qobuz")
+        compose.onNodeWithTag("home").performTouchInput { swipeUp(startY = height * .72f, endY = height * .18f) }
         capture("home-rolada")
         for ((name, color) in listOf("claro" to Color.White, "escuro" to Color(0xFF08090C),
             "colorido" to Color(0xFFCC4477))) {
