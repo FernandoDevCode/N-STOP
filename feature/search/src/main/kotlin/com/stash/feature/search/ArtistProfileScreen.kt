@@ -170,7 +170,12 @@ fun ArtistProfileScreen(
                     streamingEnabled = streamingEnabled,
                     onStreamingClick = { showStreamingSheet = true },
                     onOpenAbout = positions.about?.let { target ->
-                        { scrollScope.launch { listState.animateScrollToItem(target, scrollOffset = -120) } }
+                        {
+                            scrollScope.launch {
+                                listState.animateScrollToItem(target, scrollOffset = -120)
+                            }
+                            Unit
+                        }
                     },
                 )
             }
