@@ -1,6 +1,6 @@
 # Sonora — Etapas de refinamento do perfil de artista e da página de álbum
 
-**Estado:** plano aprovado para a próxima rodada; implementação das etapas abaixo **pendente**.  
+**Estado:** implementação das etapas 1–6 aplicada no PR #2, **aguardando CI e validação visual**. Não publicar APK nem fazer merge antes do fechamento das pendências.  
 **Data de criação:** 2026-10-29.  
 **Branch de trabalho:** `feat/sonora-artist-album-neutral` (PR [#2](https://github.com/FernandoDevCode/N-STOP/pull/2), em draft).  
 **Base preservada:** `checkpoint/sonora-local-20261029` (`d3cf66b83`).
@@ -119,12 +119,31 @@ Concluir e validar cada etapa antes de marcar `[x]`. A ordem pode mudar apenas s
 - Manter o PR **#2 em draft**, sem merge antes de validação funcional e visual.
 - O `AGENTS.md` continua sendo autoridade operacional geral; este documento é o **plano de produto/visual específico das páginas de artista e álbum**, não substitui regras de outros módulos (incluindo Player V8/Art Lab).
 
-## 4. Registro de execução
+## 4. Implementação da segunda rodada — ainda não aprovada
+
+Em 2026-10-29, foram enviados ao PR #2 os patches de código abaixo. **Aplicado ao repositório não significa validado em aparelho.**
+
+| Etapa | Implementação no código | Pendência de aceite |
+| --- | --- | --- |
+| 1 — Perfil compacto | Hero de 370 dp para 315 dp; faixa de redes removida; links preservados em Sobre | Captura real, legibilidade e dimensões variadas |
+| 2 — Wordmarks | Consulta experimental TheAudioDB por nome exato, render com fallback tipográfico, atribuição em Sobre e teste de identidade | Confirmar autenticidade visual, contraste e termos para publicação fora de ambiente de desenvolvimento |
+| 3 — Linhas editoriais | `SongRow(editorial = true)` somente em Popular e faixas de álbum; separadores sutis | Capturas reais, clique/download/menu e regressão da Busca |
+| 4 — Álbum | Header reduzido, capa maior em relação à área útil, atmosfera da arte reforçada e fallback neutro em Android antigo | Conferir contraste, custo de blur e tipos de capa |
+| 5 — Abas | Seção ativa detectada próximo ao sticky; sublinhado reforçado; rolagem posiciona título abaixo da navegação | Validar rolagem manual, clique e seções ausentes no dispositivo |
+| 6 — Controles | Reprodução circular, fila e salvar na faixa; shuffle e baixar tudo no menu secundário | Validar estados e tamanhos de fonte em telas estreitas |
+| 7 — QA | Auditoria preliminar do diff sem adição de roxo nos trechos novos; testes adicionais de identidade | **CI final, regressões, screenshots e revisão funcional ainda pendentes** |
+| 8 — APK | Não iniciado | Depende de fechamento do código e validação técnica; screenshot em Android ocorre após instalar o APK de teste e antes do merge |
+
+**Fonte de wordmark — uso experimental:** [TheAudioDB API](https://www.theaudiodb.com/free_music_api) disponibiliza `strArtistLogo` e uma chave pública de desenvolvimento; [seus termos](https://www.theaudiodb.com/docs_terms_of_use.php) restringem publicação em loja sem plano pago. As imagens são em grande parte contribuições da comunidade; a correspondência exata do nome **não comprova** autorização oficial da marca. Antes de publicar comercialmente, confirmar licença, autenticidade e eventual necessidade de fornecedor pago ou curadoria autorizada. Não converter essa pendência em um logo fabricado.
+
+**Sequência de liberação:** CI e regressões do código → preparação do APK de teste identificado por nova versão → instalação e capturas reais → aprovação visual → merge. A captura da implementação nova em um dispositivo requer um APK de teste; portanto, a validação *no aparelho* é posterior ao build, sem dispensar o gate técnico anterior.
+
+## 5. Registro de execução
 
 - [x] Checkpoint local sincronizado no GitHub: `d3cf66b83`.
 - [x] Primeira rodada de paleta neutra e headers aplicada no PR #2.
 - [x] Capturas reais de álbum e perfil (Megadeth) recebidas e avaliadas.
-- [ ] Etapas 1–7 refinadas, verificadas e aprovadas.
+- [ ] Etapas 1–7 refinadas, verificadas e aprovadas. **Código das etapas 1–6 enviado; CI e evidência visual pendentes.**
 - [ ] APK final da rodada publicado e validado (Etapa 8).
 
 **Situação de CI no momento da criação:** `:app:assembleDebug` e compilação de testes passaram no PR #2. A suíte completa ficou vermelha em execuções distintas por falhas isoladas (`MirrorEngineTest` / `MiniPlayerRenderTest`), sem evidência suficiente para atribuí-las ao redesign; investigar e fechar a pendência antes de autorizar merge. **Nenhuma dessas etapas novas foi implementada ao criar este plano.**
