@@ -165,19 +165,6 @@ class ArtistProfileViewModel @Inject constructor(
         // can diff skeleton → paint against spec §4.1 <50ms hero target.
         PerfLog.d { "ArtistProfile hero first-frame nav-args (name=$initialName)" }
         cacheJob = viewModelScope.launch { observeCache() }
-        // Optional lookup never blocks the first frame or catalog fetch.
-        if (initialName.isNotBlank()) {
-            viewModelScope.launch {
-                val logo = ArtistWordmarkLookup.resolve(initialName)
-                if (logo != null) {
-                    _uiState.update { current ->
-                        if (ArtistWordmarkLookup.matchingArtist(initialName, current.hero.name))
-                            current.copy(hero = current.hero.copy(wordmarkUrl = logo))
-                        else current
-                    }
-                }
-            }
-        }
     }
 
     /**
@@ -398,8 +385,6 @@ class ArtistProfileViewModel @Inject constructor(
                 name = profile.name,
                 avatarUrl = profile.avatarUrl,
                 subscribersText = profile.subscribersText,
-                wordmarkUrl = _uiState.value.hero.wordmarkUrl
-                    ?.takeIf { ArtistWordmarkLookup.matchingArtist(initialName, profile.name) },
             ),
             popular = profile.popular,
             albums = profile.albums,
