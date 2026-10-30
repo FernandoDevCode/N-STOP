@@ -21,10 +21,19 @@
 - `feature/search/src/main/kotlin/com/stash/feature/search/PopularTracksSection.kt`
 - `feature/search/src/main/kotlin/com/stash/feature/search/SongRow.kt` (novo parâmetro opt-in, default `false`).
 
+## APK de teste publicado
+
+- **Release:** [Sonora Artista V7 — 0.9.121](https://github.com/FernandoDevCode/N-STOP/releases/tag/sonora-artist-v7-20261030)
+- **Arquivo:** `Sonora-Artista-V7-v0.9.121.apk` (182.520.573 bytes).
+- **SHA-256:** `38d7f85ef7a2ed6f3962b9a42a896ec84a7d1741a57618575da0d1f812a88d67`.
+- **Commit compilado:** `64c83160bc8dc59945c90e3a081d673779d55a49`.
+- **CI:** testes do módulo Search, compilação Android, identidade do pacote, assinatura e publicação do arquivo: **aprovados**. A suíte geral do repositório executa separadamente.
+- **Aprovação visual:** **pendente** de captura no Redmi Note 14. Não considerar 1:1 antes dessa comparação.
+
 ## Aceite e limitações
 
-- [ ] `:feature:search:testDebugUnitTest` e `:app:assembleDebug` concluídos sem falhas para a versão 157.
-- [ ] Confirmar identificador `com.stash.app.debug`, versionCode `157`, versionName `0.9.121-sonora-artist-v7` e assinatura do APK.
+- [x] `:feature:search:testDebugUnitTest` e `:app:assembleDebug` concluídos sem falhas no [workflow do APK V7](https://github.com/FernandoDevCode/N-STOP/actions/runs/41088644717).
+- [x] Identidade `com.stash.app.debug`, versionCode `157`, versionName `0.9.121-sonora-artist-v7` e assinatura APK verificadas no GitHub Actions.
 - [ ] Instalar no Redmi Note 14 e comparar o topo, a foto, o card e a dobra com a referência.
 - [ ] Testar artistas com foto escura, colorida, monocromática, nome longo, sem logo e sem álbum.
 - [ ] Testar Play, Compartilhar, menu Sobre, abrir álbum e rolagem; mini-player deve continuar inalterado.
