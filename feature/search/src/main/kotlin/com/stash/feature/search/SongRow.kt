@@ -116,6 +116,8 @@ fun SongRow(
     editorialAlbum: Boolean = false,
     /** Real album subtitle for the artist Top Songs list only. */
     editorialSubtitle: String? = null,
+    /** Apple-like list proportions only for artist Top Songs. */
+    artistEditorial: Boolean = false,
 ) {
     val extendedColors = StashTheme.extendedColors
     // Dim the art behind the loading spinner / stop glyph so it reads clearly.
@@ -137,13 +139,13 @@ fun SongRow(
             // (inherits the old ▶/⏹ button toggle) so a running preview is never
             // orphaned. The download button + ⋮ below consume their own taps.
             .clickable { if (isPreviewPlaying) onStopPreview() else onPlay() }
-            .padding(horizontal = 12.dp, vertical = if (editorial) 4.dp else 10.dp),
+            .padding(horizontal = 12.dp, vertical = if (artistEditorial) 6.dp else if (editorial) 4.dp else 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (editorial && editorialIndex != null) {
             Text(
                 text = editorialIndex.toString(),
-                modifier = Modifier.width(22.dp),
+                modifier = Modifier.width(if (artistEditorial) 20.dp else 22.dp),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -153,7 +155,7 @@ fun SongRow(
         // small artist thumbnails exactly as in the approved three-panel mock.
         if (!editorialAlbum) Box(
             modifier = Modifier
-                .size(if (editorial) 44.dp else 48.dp)
+                .size(if (artistEditorial) 42.dp else if (editorial) 44.dp else 48.dp)
                 .clip(RoundedCornerShape(if (editorial) 6.dp else 8.dp))
                 .background(extendedColors.elevatedSurface),
             contentAlignment = Alignment.Center,
@@ -215,7 +217,7 @@ fun SongRow(
                 }
                 Text(
                     text = item.title,
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = if (artistEditorial) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
                     color = if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -224,7 +226,7 @@ fun SongRow(
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = editorialSubtitle ?: item.artist,
-                style = MaterialTheme.typography.bodySmall,
+                style = if (artistEditorial) MaterialTheme.typography.labelSmall else MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
