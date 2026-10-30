@@ -1,11 +1,9 @@
 package com.stash.feature.search
 
 import android.content.Intent
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,13 +16,13 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -41,6 +39,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.blur
+import android.os.Build
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -48,7 +48,6 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
@@ -69,7 +68,7 @@ internal fun supportUrl(socials: List<SocialLink>): String? =
 /**
  * Artist landing composition:
  * 1. one uninterrupted band photograph;
- * 2. centred wordmark/name and three equally spaced circular controls;
+ * 2. centred wordmark/name and one primary Play button;
  * 3. the featured release and Top Songs follow immediately in the same tinted
  *    canvas (in ArtistProfileScreen), without a tab strip at the top.
  */
@@ -107,10 +106,24 @@ fun ArtistHero(
             .background(atmosphere),
     ) {
         if (hero.avatarUrl != null) {
+            val photo = ArtUrlUpgrader.upgrade(hero.avatarUrl)
+            // A muted backdrop fills spare vertical space of wide band photos.
+            // The foreground preserves *all horizontal members* without distortion.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                AsyncImage(
+                    model = photo,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.matchParentSize()
+                        .blur(22.dp)
+                        .background(Color.Black.copy(alpha = .25f)),
+                    alpha = .55f,
+                )
+            }
             AsyncImage(
-                model = ArtUrlUpgrader.upgrade(hero.avatarUrl),
+                model = photo,
                 contentDescription = "Fotografia de ${hero.name}",
-                contentScale = ContentScale.Crop,
+                contentScale = ContentScale.FillWidth,
                 alignment = Alignment.TopCenter,
                 modifier = Modifier.matchParentSize(),
             )
@@ -184,6 +197,23 @@ fun ArtistHero(
                     onDismissRequest = { moreOpen = false },
                 ) {
                     DropdownMenuItem(
+                        text = {
+                            Text(if (bookmarked) "Desmarcar artista neste aparelho"
+                                else "Marcar artista neste aparelho")
+                        },
+                        leadingIcon = {
+                            Icon(
+                                if (bookmarked) Icons.Default.Star else Icons.Outlined.StarBorder,
+                                contentDescription = null,
+                            )
+                        },
+                        onClick = {
+                            moreOpen = false
+                            bookmarked = !bookmarked
+                            favorites.edit().putBoolean(bookmarkKey, bookmarked).apply()
+                        },
+                    )
+                    DropdownMenuItem(
                         text = { Text("Rádio do artista") },
                         leadingIcon = { Icon(Icons.Default.Radio, contentDescription = null) },
                         onClick = { moreOpen = false; onStartRadio() },
@@ -218,14 +248,14 @@ fun ArtistHero(
         Column(
             modifier = Modifier.align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(horizontal = 22.dp, vertical = 9.dp),
+                .padding(horizontal = 9.dp, vertical = 18.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             if (wordmarkUrl != null && wordmarkState is AsyncImagePainter.State.Success) {
                 Image(
                     painter = painter,
                     contentDescription = hero.name,
-                    modifier = Modifier.fillMaxWidth(.82f).height(68.dp),
+                    modifier = Modifier.fillMaxWidth(.94f).height(68.dp),
                     contentScale = ContentScale.Fit,
                 )
             } else {
@@ -247,54 +277,20 @@ fun ArtistHero(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Spacer(Modifier.height(9.dp))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(28.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            Spacer(Modifier.height(11.dp))
+            Surface(
+                onClick = onPlayArtist,
+                color = Color(0xFFF4F5F7),
+                shape = CircleShape,
+                modifier = Modifier.size(52.dp),
             ) {
-                Surface(
-                    onClick = { onOpenAbout?.invoke() },
-                    enabled = onOpenAbout != null,
-                    color = Color(0x44353D48),
-                    shape = CircleShape,
-                    modifier = Modifier.size(42.dp),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.Info, contentDescription = "Sobre o artista",
-                            tint = Color.White, modifier = Modifier.size(19.dp))
-                    }
-                }
-                Surface(
-                    onClick = onPlayArtist,
-                    color = Color(0xFFF4F5F7),
-                    shape = CircleShape,
-                    modifier = Modifier.size(50.dp),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.PlayArrow,
-                            contentDescription = "Reproduzir ${hero.name}",
-                            tint = Color(0xFF0E1115), modifier = Modifier.size(29.dp))
-                    }
-                }
-                Surface(
-                    onClick = {
-                        bookmarked = !bookmarked
-                        favorites.edit().putBoolean(bookmarkKey, bookmarked).apply()
-                    },
-                    color = Color(0x55374048),
-                    shape = CircleShape,
-                    modifier = Modifier.size(42.dp),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            if (bookmarked) Icons.Default.Star else Icons.Outlined.StarBorder,
-                            contentDescription = if (bookmarked)
-                                "Retirar marcação local do artista"
-                            else "Marcar artista neste aparelho",
-                            tint = Color.White,
-                            modifier = Modifier.size(21.dp),
-                        )
-                    }
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Default.PlayArrow,
+                        contentDescription = "Reproduzir ${hero.name}",
+                        tint = Color(0xFF0E1115),
+                        modifier = Modifier.size(30.dp),
+                    )
                 }
             }
         }
