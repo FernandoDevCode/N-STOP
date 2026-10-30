@@ -1,0 +1,97 @@
+name: Publish verified Sonora Artist V8
+
+on:
+  push:
+    branches:
+      - codex/sonora-artista-layout
+    paths:
+      - .github/workflows/sonora-artist-v8-publish.yml
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    name: Verify V8 CI artifact and publish prerelease
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_RUN_ID: "41105812437"
+      SOURCE_COMMIT: "7f8cf8d098d81df7707bfb7240ef5d8b028f40df"
+      RELEASE_TAG: "sonora-artist-v8-20261030"
+    steps:
+      - name: Wait for all V8 CI checks to succeed
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 120); do
+            STATUS=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID" --jq '.status')
+            RESULT=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID" --jq '.conclusion // "pending"')
+            SHA=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID" --jq '.head_sha')
+            if [ "$SHA" != "$SOURCE_COMMIT" ]; then
+              echo "::error::Unexpected source commit $SHA"
+              exit 1
+            fi
+            echo "V8 CI: $STATUS ($RESULT), check $attempt/120"
+            if [ "$STATUS" = completed ]; then
+              if [ "$RESULT" != success ]; then
+                echo "::error::V8 CI was not successful: $RESULT"
+                exit 1
+              fi
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "::error::V8 CI did not finish within the bounded wait window"
+          exit 1
+      - name: Download exact CI-generated APK artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/v8"
+          gh run download "$SOURCE_RUN_ID" --repo "$GITHUB_REPOSITORY" --name stash-debug-apk --dir "$RUNNER_TEMP/v8"
+          find "$RUNNER_TEMP/v8" -type f -name '*.apk'
+      - name: Verify APK identity and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC=$(find "$RUNNER_TEMP/v8" -type f -name '*.apk' | head -n1)
+          test -s "$SRC"
+          AAPT=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name aapt | sort -V | tail -n1)
+          SIGNER=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -n1)
+          test -x "$AAPT"
+          test -x "$SIGNER"
+          "$AAPT" dump badging "$SRC" | grep '^package: ' | tee "$RUNNER_TEMP/package.txt"
+          grep -Fq "name='com.stash.app.debug' versionCode='158' versionName='0.9.122-sonora-artist-v8'" "$RUNNER_TEMP/package.txt"
+          "$SIGNER" verify "$SRC"
+          cp "$SRC" "$RUNNER_TEMP/Sonora-Artista-V8-v0.9.122.apk"
+          sha256sum "$RUNNER_TEMP/Sonora-Artista-V8-v0.9.122.apk"
+      - name: Publish immutable V8 prerelease
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::V8 release already exists, refusing to overwrite"
+            exit 1
+          fi
+          APK="$RUNNER_TEMP/Sonora-Artista-V8-v0.9.122.apk"
+          test -s "$APK"
+          DIGEST=$(sha256sum "$APK" | cut -d' ' -f1)
+          cat > "$RUNNER_TEMP/notes.md" <<'EOF'
+          ## Sonora — perfil de artista V8 (prévia de teste)
+
+          Construção do perfil de artista com fotografia, wordmark/nome, Play e álbum destacado dentro da mesma composição visual. Região fotográfica responsiva, card mais discreto e destaque de faixa ativa reduzido para 4% apenas no perfil.
+
+          **APK debug**, pacote `com.stash.app.debug`, versionCode **158**, versão **0.9.122-sonora-artist-v8**.
+
+          **Validação:** arquivo reaproveitado da execução original do GitHub Actions de V8, somente após aprovação da suíte completa. Pacote e assinatura verificados antes da publicação.
+
+          **Ainda não é aceite visual 1:1:** conferir no Redmi Note 14 hero, enquadramento, card, Play, menus, rolagem, mini-player, álbum e Search. Não há merge na versão estável.
+
+          Se houver incompatibilidade de assinatura com outra Debug, não desinstale o aplicativo sem considerar os dados locais.
+          EOF
+          printf '\n**APK SHA-256:** `%s`\n**Código-fonte compilado:** `%s`\n**Testes:** https://github.com/%s/actions/runs/%s\n' "$DIGEST" "$SOURCE_COMMIT" "$GITHUB_REPOSITORY" "$SOURCE_RUN_ID" >> "$RUNNER_TEMP/notes.md"
+          gh release create "$RELEASE_TAG" "$APK" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_COMMIT" --title 'Sonora Artista V8 — 0.9.122' --notes-file "$RUNNER_TEMP/notes.md" --prerelease --latest=false
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json url,assets --jq '{url:.url,assets:[.assets[].name]}'
