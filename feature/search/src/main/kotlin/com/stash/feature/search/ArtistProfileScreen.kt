@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
@@ -97,6 +98,10 @@ fun ArtistProfileScreen(
     ) {
         value = artistAtmosphereFromPhoto(context, state.hero.avatarUrl)
     }
+    val smoothAtmosphere by animateColorAsState(
+        targetValue = atmosphere,
+        label = "artistPhotoAtmosphere",
+    )
     val featuredAlbum = remember(state.albums, state.singles) {
         selectArtistFeaturedAlbum(state.albums, state.singles)
     }
@@ -167,15 +172,15 @@ fun ArtistProfileScreen(
     ) { inner ->
         // The colour belongs to the artist photograph, not the current song.
         // It remains behind all sections on scroll and never recolours controls.
-        val lowerWash = atmosphere.copy(alpha = .72f).compositeOver(ArtistBaseInk)
+        val lowerWash = smoothAtmosphere.copy(alpha = .72f).compositeOver(ArtistBaseInk)
         Box(
             modifier = Modifier.fillMaxSize().padding(inner).background(
                 Brush.verticalGradient(
                     // The first card begins on precisely the hero's final
                     // colour. Slowly deepen the canvas *after* the release
                     // card, not at the photograph's lower edge.
-                    0f to atmosphere,
-                    .51f to atmosphere,
+                    0f to smoothAtmosphere,
+                    .51f to smoothAtmosphere,
                     .80f to lowerWash,
                     1f to lowerWash,
                 ),
@@ -192,7 +197,7 @@ fun ArtistProfileScreen(
                     status = state.status,
                     socials = state.about?.socials.orEmpty(),
                     wordmarkUrl = wordmarkUrl,
-                    atmosphere = atmosphere,
+                    atmosphere = smoothAtmosphere,
                     onBack = onBack,
                     onPlayArtist = vm::playArtist,
                     onStartRadio = vm::startRadio,
