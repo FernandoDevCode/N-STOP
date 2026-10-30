@@ -101,7 +101,7 @@ fun ArtistHero(
     val wordmarkState by painter.state.collectAsState()
 
     Box(
-        modifier = modifier.fillMaxWidth().height(345.dp)
+        modifier = modifier.fillMaxWidth().height(382.dp)
             .background(atmosphere),
     ) {
         if (hero.avatarUrl != null) {
@@ -134,11 +134,11 @@ fun ArtistHero(
             Modifier.matchParentSize().background(
                 Brush.verticalGradient(
                     0f to Color(0x29000000),
-                    .32f to Color.Transparent,
-                    .52f to atmosphere.copy(alpha = .10f),
-                    .66f to atmosphere.copy(alpha = .40f),
-                    .82f to atmosphere.copy(alpha = .82f),
-                    .94f to atmosphere.copy(alpha = .98f),
+                    .35f to Color.Transparent,
+                    .49f to atmosphere.copy(alpha = .08f),
+                    .62f to atmosphere.copy(alpha = .30f),
+                    .76f to atmosphere.copy(alpha = .69f),
+                    .90f to atmosphere.copy(alpha = .96f),
                     1f to atmosphere,
                 ),
             ),
@@ -246,7 +246,7 @@ fun ArtistHero(
         Column(
             modifier = Modifier.align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(horizontal = 9.dp, vertical = 18.dp),
+                .padding(start = 12.dp, end = 12.dp, bottom = 29.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             if (wordmarkUrl != null && wordmarkState is AsyncImagePainter.State.Success) {
@@ -275,7 +275,7 @@ fun ArtistHero(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Spacer(Modifier.height(11.dp))
+            Spacer(Modifier.height(12.dp))
             Surface(
                 onClick = onPlayArtist,
                 color = Color(0xFFF4F5F7),
