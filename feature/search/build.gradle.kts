@@ -3,10 +3,10 @@ plugins {
 }
 
 // Public project API key, optional. Never embed personal Fanart.tv keys.
-// Configure via FANART_TV_API_KEY in CI or fanart.apiKey in gradle.properties.
+// Configure via FANART_API_KEY in CI or fanart.apiKey in gradle.properties.
 val fanartProjectKey = (
     providers.gradleProperty("fanart.apiKey").orNull
-        ?: System.getenv("FANART_TV_API_KEY").orEmpty()
+        ?: System.getenv("FANART_API_KEY").orEmpty()
 ).takeIf { it.matches(Regex("[A-Za-z0-9]{12,128}")) }.orEmpty()
 
 android {
