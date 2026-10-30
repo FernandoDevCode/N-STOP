@@ -51,3 +51,31 @@ jobs:
             except Exception as e:
               print('ERROR:',type(e).__name__,str(e)[:180])
           PY
+
+      - name: Validate publicly embedded Apple artistLogo image
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import urllib.request, json, re
+          from urllib.parse import urlparse
+          for slug, artist_id in [('our-divide','1605542240'),('billie-eilish','1065981054'),('sabrina-carpenter','390647681')]:
+            url=f'https://music.apple.com/us/artist/{slug}/{artist_id}'
+            try:
+              with urllib.request.urlopen(urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0'}),timeout=12) as r:
+                html=r.read(400000).decode('utf-8','replace')
+              m=re.search(r'"artistLogo":\s*\{',html)
+              print('ARTIST',slug,'HTTP ok','logoField',bool(m))
+              if not m:continue
+              fragment=html[m.start():m.start()+950]
+              print('FRAGMENT',fragment[:750].replace('\\u002F','/'))
+              fields=re.search(r'"url":"([^"]+)"',fragment)
+              if fields:
+                logo_url=fields.group(1).replace('\\u002F','/')
+                print('LOGO_URL_HOST',urlparse(logo_url).hostname,'image suffix',logo_url[-65:])
+                try:
+                  with urllib.request.urlopen(urllib.request.Request(logo_url,headers={'User-Agent':'Mozilla/5.0'}),timeout=10) as img:
+                    data=img.read(250000)
+                    print('IMAGE HTTP',img.status,'content-type',img.headers.get('Content-Type'),'bytes_sample',len(data),'PNG',data.startswith(b'\\x89PNG'))
+                except Exception as e:print('IMAGE ERROR',type(e).__name__,str(e)[:100])
+            except Exception as e:print('PAGE ERROR',slug,type(e).__name__,str(e)[:150])
+          PY
