@@ -29,6 +29,19 @@ internal object ArtistWordmarkLookup {
     internal fun matchingArtist(requested: String, returned: String): Boolean =
         requested.trim().equals(returned.trim(), ignoreCase = true)
 
+    /** Attribution must match the actual winning source, not a stale UI label. */
+    internal fun attribution(url: String?): String? {
+        if (url.isNullOrBlank()) return null
+        val host = runCatching { URL(url).host.lowercase() }.getOrNull() ?: return null
+        return when {
+            Regex("^is[0-9]+-ssl\\.mzstatic\\.com$").matches(host) -> "Apple Music"
+            host == "assets.fanart.tv" -> "Fanart.tv (arte da comunidade)"
+            host in setOf("www.theaudiodb.com", "theaudiodb.com", "r2.theaudiodb.com") ->
+                "TheAudioDB (arte da comunidade)"
+            else -> null
+        }
+    }
+
     private fun validLogoUrl(raw: String, source: String): String? = runCatching {
         val uri = URL(raw)
         if (uri.protocol != "https" || uri.userInfo != null ||
