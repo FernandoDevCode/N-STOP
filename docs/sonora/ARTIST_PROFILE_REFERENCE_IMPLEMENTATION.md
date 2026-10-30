@@ -26,10 +26,18 @@ A referência é uma composição 1:1 de **ritmo e proporções**, não uma exig
 - Preview Android: `0.9.119-sonora-artist-refine` (código **155**). Revisar screenshots reais antes do merge.
 
 
+## V5 publicada para validação no aparelho
+
+- **Build validado:** [GitHub Actions #41000126123](https://github.com/FernandoDevCode/N-STOP/actions/runs/41000126123) — testes Android, Workers, APK e assinatura aprovados.
+- **Pré-release:** [Sonora Artista V5 — 0.9.119](https://github.com/FernandoDevCode/N-STOP/releases/tag/sonora-artist-reference-v5-20261030).
+- **SHA-256:** `869a02a2ff11ed3d29ff4d96498101dc45e4270b9102f3bbb305467a73dae367`.
+- **Falta:** conferir visualmente foto→card, tamanho e posições dos botões de topo e ações centrais em pelo menos duas fotos de artistas de cores diferentes; testar menu, share e rolagem. Compilação aprovada **não** equivale a fidelidade 1:1 aprovada.
+- **PR #2:** draft, sem merge. Workflow temporário de release removido após publicação; APK imutável.
+
 ## Critérios de aceite
 - [x] Estrutura e componentes implementados na branch do redesign.
 - [x] Álbum em destaque escolhido deterministicamente a partir do catálogo com teste unitário.
-- [ ] CI da implementação final: Kotlin, testes e build Android.
+- [x] CI da V5: Kotlin, testes, build Android e assinatura aprovados (workflow #41000126123).
 - [ ] Comparação em Redmi Note 14: abertura U2, Pink Floyd, Radiohead, artista com nome longo, artista sem foto/wordmark e rolagem até Sobre.
 - [ ] Testar menu, compartilhar, rádio, marcação local, reproduzir, abrir álbum, faixa e downloads em ⋮.
 - [ ] Aprovação visual da referência **antes de merge**.
