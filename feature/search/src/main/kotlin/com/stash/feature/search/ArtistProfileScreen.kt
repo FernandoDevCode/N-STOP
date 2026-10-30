@@ -34,6 +34,9 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
@@ -87,6 +90,16 @@ fun ArtistProfileScreen(
     val wordmarkUrl by produceState<String?>(initialValue = null, key1 = state.hero.name) {
         value = ArtistWordmarkLookup.resolve(state.hero.name)
     }
+    val context = LocalContext.current
+    val atmosphere by produceState(
+        initialValue = ArtistNeutralAtmosphere,
+        key1 = state.hero.avatarUrl,
+    ) {
+        value = artistAtmosphereFromPhoto(context, state.hero.avatarUrl)
+    }
+    val featuredAlbum = remember(state.albums, state.singles) {
+        selectArtistFeaturedAlbum(state.albums, state.singles)
+    }
     val previewState by vm.delegate.previewState.collectAsStateWithLifecycle()
     val downloadingIds by vm.delegate.downloadingIds.collectAsStateWithLifecycle()
     val downloadedIds by vm.delegate.downloadedIds.collectAsStateWithLifecycle()
@@ -115,7 +128,7 @@ fun ArtistProfileScreen(
     val focus = remember(state.focusAlbum, state.albums, state.singles) {
         findAlbumFocus(state.focusAlbum, state.albums, state.singles)
     }
-    // The hero (0) and the artist's sticky navigation (1) are fixed.
+    // The hero (0) and featured-release slot (1) are fixed.
     // Each shelf contributes two LazyColumn items; count the optional ones
     // centrally so "open this album" lands at the right section.
     val positions = remember(
@@ -149,14 +162,25 @@ fun ArtistProfileScreen(
     }
 
     Scaffold(
+        containerColor = androidx.compose.ui.graphics.Color.Transparent,
         snackbarHost = { SnackbarHost(snackbar, Modifier.padding(bottom = bottomChromePadding())) },
     ) { inner ->
+        // The colour belongs to the artist photograph, not the current song.
+        // It remains behind all sections on scroll and never recolours controls.
+        val lowerWash = atmosphere.copy(alpha = .72f).compositeOver(ArtistBaseInk)
+        Box(
+            modifier = Modifier.fillMaxSize().padding(inner).background(
+                Brush.verticalGradient(
+                    0f to atmosphere,
+                    .54f to lowerWash,
+                    1f to lowerWash,
+                ),
+            ),
+        ) {
         LazyColumn(
             state = listState,
             contentPadding = PaddingValues(bottom = bottomChromePadding(96.dp)),
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(inner),
+            modifier = Modifier.fillMaxSize(),
         ) {
             item {
                 ArtistHero(
@@ -164,6 +188,7 @@ fun ArtistProfileScreen(
                     status = state.status,
                     socials = state.about?.socials.orEmpty(),
                     wordmarkUrl = wordmarkUrl,
+                    atmosphere = atmosphere,
                     onBack = onBack,
                     onPlayArtist = vm::playArtist,
                     onStartRadio = vm::startRadio,
@@ -179,38 +204,17 @@ fun ArtistProfileScreen(
                     },
                 )
             }
-            // Tabs are real jumps into the populated shelves, not decorative
-            // filters. The bar stays accessible after the large hero scrolls off.
-            stickyHeader(key = "artist-section-navigation") {
-                val tabs = listOfNotNull(
-                    positions.songs?.let { stringResource(R.string.nonstop_artist_music_tab) to it },
-                    positions.albums?.let { stringResource(R.string.nonstop_artist_albums_tab) to it },
-                    positions.singles?.let { stringResource(R.string.nonstop_artist_singles_tab) to it },
-                    positions.about?.let { stringResource(R.string.nonstop_artist_about_tab) to it },
-                )
-                // A section becomes active as its heading approaches the sticky
-                // navigator, not only after its entire row has scrolled away.
-                val threshold = with(LocalDensity.current) { 96.dp.roundToPx() }
-                val approaching = tabs.lastOrNull { (_, target) ->
-                    listState.layoutInfo.visibleItemsInfo.any { item ->
-                        item.index == target && item.offset <= threshold
-                    }
-                }?.second
-                val selectedSection = approaching
-                    ?: tabs.lastOrNull { it.second <= listState.firstVisibleItemIndex }?.second
-                    ?: tabs.firstOrNull()?.second
-                ArtistSectionTabs(
-                    tabs = tabs,
-                    selectedIndex = selectedSection,
-                    onSelect = { index ->
-                        // Keep the target chapter heading below the sticky tabs.
-                        scrollScope.launch {
-                            listState.animateScrollToItem(index, scrollOffset = -threshold)
-                        }
-                    },
-                )
+            // A real catalog album occupies the card slot under the portrait.
+            // Keeping the slot even when empty preserves deep-link indices.
+            item(key = "artist-featured-release") {
+                if (featuredAlbum != null) {
+                    ArtistFeaturedAlbum(
+                        album = featuredAlbum,
+                        onOpen = onNavigateToAlbum,
+                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 9.dp),
+                    )
+                }
             }
-
 
             when (val status = state.status) {
                 is ArtistProfileStatus.Error -> item {
@@ -268,6 +272,7 @@ fun ArtistProfileScreen(
                 )
             }
         }
+        } // artist atmosphere canvas
 
         if (showStreamingSheet) {
             com.stash.core.ui.components.streaming.StreamingModeSheet(
@@ -321,7 +326,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
     focus: AlbumFocusTarget?,
 ) {
     if (state.popular.isNotEmpty()) {
-        item { ArtistEditorialHeading("Popular") }
+        item { ArtistEditorialHeading("Mais ouvidas", compact = true) }
         item {
             PopularTracksSection(
                 tracks = state.popular,
@@ -384,15 +389,17 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
 }
 
 @Composable
-private fun ArtistEditorialHeading(label: String) {
+private fun ArtistEditorialHeading(label: String, compact: Boolean = false) {
     Text(
         text = label,
         color = MaterialTheme.colorScheme.onSurface,
-        fontSize = 20.sp,
-        lineHeight = 25.sp,
+        fontSize = if (compact) 17.sp else 20.sp,
+        lineHeight = if (compact) 21.sp else 25.sp,
         fontWeight = FontWeight.SemiBold,
         modifier = Modifier.fillMaxWidth()
-            .padding(start = 24.dp, end = 24.dp, top = 15.dp, bottom = 7.dp),
+            .padding(start = 18.dp, end = 18.dp,
+                top = if (compact) 6.dp else 15.dp,
+                bottom = if (compact) 3.dp else 7.dp),
     )
 }
 
