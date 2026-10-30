@@ -86,6 +86,8 @@ fun ArtistHero(
     socials: List<SocialLink>,
     wordmarkUrl: String? = null,
     atmosphere: Color = ArtistNeutralAtmosphere,
+    heroAtmosphere: Color = ArtistNeutralPalette.hero,
+    bridgeAtmosphere: Color = ArtistNeutralPalette.bridge,
     onBack: () -> Unit,
     onPlayArtist: () -> Unit,
     onStartRadio: () -> Unit,
@@ -148,8 +150,9 @@ fun ArtistHero(
                     val fade = Brush.verticalGradient(
                         0f to Color.Transparent,
                         .60f to Color.Transparent,
-                        .82f to atmosphere.copy(alpha = .55f),
-                        1f to atmosphere,
+                        .82f to heroAtmosphere.copy(alpha = .52f),
+                        .94f to bridgeAtmosphere.copy(alpha = .94f),
+                        1f to bridgeAtmosphere,
                         endY = photoHeight,
                     )
                     onDrawWithContent {
@@ -167,9 +170,9 @@ fun ArtistHero(
                 Brush.verticalGradient(
                     0f to Color(0x29000000),
                     .30f to Color.Transparent,
-                    .46f to atmosphere.copy(alpha = .12f),
-                    .62f to atmosphere.copy(alpha = .62f),
-                    .80f to atmosphere.copy(alpha = .90f),
+                    .46f to heroAtmosphere.copy(alpha = .12f),
+                    .62f to heroAtmosphere.copy(alpha = .58f),
+                    .80f to bridgeAtmosphere.copy(alpha = .92f),
                     1f to atmosphere,
                 ),
             ),
