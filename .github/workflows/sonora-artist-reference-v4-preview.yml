@@ -1,0 +1,119 @@
+name: Sonora Artist Reference V4 Preview
+
+on:
+  push:
+    branches:
+      - feat/sonora-artist-album-neutral
+    paths:
+      - .github/workflows/sonora-artist-reference-v4-preview.yml
+
+permissions:
+  contents: write
+
+jobs:
+  verify-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Unit tests
+        run: |
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest --continue --no-daemon
+      - name: Assemble debug APK
+        env:
+          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
+        run: ./gradlew :app:assembleDebug --no-daemon
+      - name: Check version and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          AAPT=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name aapt | sort -V | tail -n1)
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -n1)
+          test -x "$AAPT"
+          test -x "$APKSIGNER"
+          "$AAPT" dump badging "$APK" | tee "$RUNNER_TEMP/sonora-badging.txt"
+          grep -Fq "name='com.stash.app.debug' versionCode='154' versionName='0.9.118-sonora-artist'" "$RUNNER_TEMP/sonora-badging.txt"
+          "$APKSIGNER" verify "$APK"
+          sha256sum "$APK"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: sonora-artist-v4-debug-verified
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  verify-workers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Worker tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          for dir in infra/share-worker infra/sync-worker infra/tipjar-worker infra/lossless-relay infra/lastfm-proxy; do
+            (cd "$dir" && node --no-warnings --test test/*.test.js)
+          done
+
+  publish-preview:
+    runs-on: ubuntu-latest
+    needs: [verify-android, verify-workers]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          name: sonora-artist-v4-debug-verified
+          path: ${{ runner.temp }}/artist-apk
+      - name: Create prerelease only after all checks are green
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG='sonora-artist-reference-v4-20261029'
+          APK="$RUNNER_TEMP/Sonora-Artista-v0.9.118-Referencia.apk"
+          cp "$RUNNER_TEMP/artist-apk/app-debug.apk" "$APK"
+          test -s "$APK"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Existing tag; refusing to overwrite an APK"
+            exit 1
+          fi
+          DIGEST=$(sha256sum "$APK" | cut -d' ' -f1)
+          cat > "$RUNNER_TEMP/RELEASE.md" <<'EOF'
+          # Sonora Artista — referência V4 (prévia para validar no Redmi)
+
+          Versão 0.9.118-sonora-artist, code 154, app Sonora Artista.
+          Pacote: com.stash.app.debug; atualiza apenas Debug assinada com a mesma chave.
+
+          ## Escopo exclusivo: perfil do artista
+          - Fotografia full-bleed, fundo adaptativo derivado da fotografia real.
+          - Nome/logo e três controles centralizados; voltar, compartilhar e menu no topo.
+          - Álbum de destaque real, depois cinco músicas Mais ouvidas numeradas.
+          - Sem a antiga faixa de abas; Sobre e funções seguem acessíveis.
+          - Mini-player, navegação inferior, reprodução, downloads e página de álbum preservados.
+
+          ## Limitações
+          - A fidelidade visual deve ser comparada em capturas reais do Redmi Note 14.
+          - O ícone estrela marca um artista apenas neste aparelho, sem sincronizar na biblioteca.
+          - O card de álbum abre o lançamento: não simula um comando de salvar inexistente.
+          - Logos do TheAudioDB são arte comunitária, não autenticidade/licença comercial comprovada.
+          - Não desinstale outras variantes se o Android acusar conflito de assinatura.
+
+          PR #2 permanece em draft, sem merge com a versão estável.
+          EOF
+          printf '\nSHA-256: `%s`\nCommit compilado: `%s`\n' "$DIGEST" "$GITHUB_SHA" >> "$RUNNER_TEMP/RELEASE.md"
+          gh release create "$TAG" "$APK" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Sonora Artista — Referência V4 (0.9.118)" --notes-file "$RUNNER_TEMP/RELEASE.md" --prerelease --latest=false
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,assets --jq '{url:.url,assets:[.assets[].name]}'
