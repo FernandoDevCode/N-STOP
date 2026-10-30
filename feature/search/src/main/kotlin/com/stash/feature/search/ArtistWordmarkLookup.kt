@@ -15,9 +15,9 @@ import org.json.JSONObject
  * Fanart.tv HD music logos (when a project key is configured) are ranked by
  * source likes; TheAudioDB's exact-name artist logo is the fallback.
  *
- * Apple Music permits official transparent artist logos, but its documented
- * public catalog Artists.Attributes does not expose those logos (only artwork).
- * Do not scrape private Apple Music endpoints or mistake artwork for a logo.
+ * Apple Music's public artist pages may expose an artistLogo metadata image.
+ * AppleMusicWordmarkLookup reads this image only if the official iTunes search
+ * resolves one exact artist; no Google scraping or private API calls.
  */
 internal object ArtistWordmarkLookup {
     private val checked = ConcurrentHashMap<String, String>()
@@ -141,7 +141,13 @@ internal object ArtistWordmarkLookup {
             }.getOrNull() else null
         } else null
 
-        val chosen = fanartUrl ?: audioDb?.logoUrl
+        // Do not replace an already-selected community HD wordmark. When HD
+        // art is unavailable, prefer Apple's artist-submitted public logo to
+        // TheAudioDB, provided the page exposes an explicit artistLogo.
+        val appleLogo = if (fanartUrl == null) {
+            AppleMusicWordmarkLookup.resolve(name)
+        } else null
+        val chosen = fanartUrl ?: appleLogo ?: audioDb?.logoUrl
         if (chosen != null) checked[name] = chosen
         chosen
     }
