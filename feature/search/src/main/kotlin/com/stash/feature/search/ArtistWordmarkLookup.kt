@@ -12,12 +12,13 @@ import org.json.JSONObject
  * Artist wordmarks only: never substitute album artwork, artist photography,
  * cutouts or a visually similar artist's logo.
  *
- * Fanart.tv HD music logos (when a project key is configured) are ranked by
- * source likes; TheAudioDB's exact-name artist logo is the fallback.
+ * Apple artistLogo is the preferred wordmark. Fanart.tv HD music logos
+ * (when a project key is configured) are ranked by source likes. TheAudioDB's
+ * exact-name artist logo is the final image fallback.
  *
- * Apple Music permits official transparent artist logos, but its documented
- * public catalog Artists.Attributes does not expose those logos (only artwork).
- * Do not scrape private Apple Music endpoints or mistake artwork for a logo.
+ * Apple Music's public artist pages may expose an artistLogo metadata image.
+ * AppleMusicWordmarkLookup reads this image only if the official iTunes search
+ * resolves one exact artist; no Google scraping or private API calls.
  */
 internal object ArtistWordmarkLookup {
     private val checked = ConcurrentHashMap<String, String>()
@@ -27,6 +28,19 @@ internal object ArtistWordmarkLookup {
 
     internal fun matchingArtist(requested: String, returned: String): Boolean =
         requested.trim().equals(returned.trim(), ignoreCase = true)
+
+    /** Attribution must match the actual winning source, not a stale UI label. */
+    internal fun attribution(url: String?): String? {
+        if (url.isNullOrBlank()) return null
+        val host = runCatching { URL(url).host.lowercase() }.getOrNull() ?: return null
+        return when {
+            Regex("^is[0-9]+-ssl\\.mzstatic\\.com$").matches(host) -> "Apple Music"
+            host == "assets.fanart.tv" -> "Fanart.tv (arte da comunidade)"
+            host in setOf("www.theaudiodb.com", "theaudiodb.com", "r2.theaudiodb.com") ->
+                "TheAudioDB (arte da comunidade)"
+            else -> null
+        }
+    }
 
     private fun validLogoUrl(raw: String, source: String): String? = runCatching {
         val uri = URL(raw)
@@ -125,6 +139,15 @@ internal object ArtistWordmarkLookup {
         val name = artistName.trim()
         if (name.isBlank()) return@withContext null
         checked[name]?.let { return@withContext it }
+
+        // Source priority is a product decision: official artist-submitted
+        // Apple wordmark first, then source-rated Fanart, then TheAudioDB.
+        // Only an explicit artistLogo may win; a page's og:image is not a logo.
+        val appleLogo = AppleMusicWordmarkLookup.resolve(name)
+        if (appleLogo != null) {
+            checked[name] = appleLogo
+            return@withContext appleLogo
+        }
 
         val raw = runCatching {
             getJson("https://www.theaudiodb.com/api/v1/json/123/search.php?s=" +

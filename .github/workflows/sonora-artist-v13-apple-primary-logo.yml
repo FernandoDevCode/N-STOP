@@ -1,0 +1,149 @@
+name: Sonora V13 — Apple Music Primary Artist Logos
+# Revalidate exact snapshot after artistLogo fixture correction.
+
+on:
+  push:
+    branches:
+      - feat/sonora-apple-music-wordmarks
+    paths:
+      - .github/workflows/sonora-artist-v13-apple-primary-logo.yml
+
+permissions:
+  contents: write
+
+jobs:
+  build-validate-release:
+    name: Validate Apple artist logo, test and publish Android Debug
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@v6
+
+      - name: Live Apple Music artistLogo verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import urllib.request, json, re
+          from urllib.parse import urlparse
+          name='Our Divide'
+          base='https://itunes.apple.com/search?term=Our%20Divide&entity=musicArtist&limit=12'
+          def fetch(url,accept='text/html'):
+            req=urllib.request.Request(url,headers={
+              'User-Agent':'Mozilla/5.0 (compatible; SonoraArtistArtwork/1.0)',
+              'Accept':accept
+            })
+            return urllib.request.urlopen(req,timeout=20)
+          with fetch(base,'application/json') as r:
+            hits=json.load(r).get('results',[])
+          artist=[x for x in hits if x.get('wrapperType')=='artist' and x.get('artistName','').casefold()==name.casefold()]
+          ids={x.get('artistId') for x in artist}
+          assert len(ids)==1,'Apple search identity ambiguous'
+          entry=artist[0];artist_id=entry['artistId']
+          page=entry['artistLinkUrl'].split('?')[0]
+          parsed=urlparse(page)
+          assert parsed.scheme=='https' and parsed.hostname=='music.apple.com'
+          assert parsed.path.endswith('/'+str(artist_id))
+          with fetch(page) as r: html=r.read(650000).decode('utf-8','replace')
+          assert '"storeAdamID":"'+str(artist_id)+'"' in html, 'Page artist ID mismatch'
+          m=re.search(r'"artistLogo":(\{.*?\}),"circleArtwork":',html)
+          assert m,'Explicit artistLogo missing (do not use og:image)'
+          logo=json.loads(m.group(1))
+          assert logo.get('cropStyle')=='bb'
+          d=logo['dictionary'];assert d['width']>500 and d['height']>40
+          url=(d['url'].replace('{w}','1600')
+             .replace('{h}',str(round(1600*d['height']/d['width'])))
+             .replace('{c}','bb').replace('{f}','png'))
+          parsed=urlparse(url)
+          assert re.fullmatch(r'is[0-9]+-ssl\.mzstatic\.com',parsed.hostname or '')
+          assert parsed.path.startswith('/image/thumb/') and parsed.path.endswith('.png')
+          with fetch(url,'image/png') as r:
+            mime=r.headers.get('Content-Type','')
+            start=r.read(12)
+            assert r.status==200 and mime.startswith('image/png'), 'Apple logo CDN did not return PNG'
+            assert len(start)==12, 'Empty Apple logo asset'
+          print('Verified: official artist ID, explicit logo metadata, and live Apple PNG asset.')
+          PY
+
+      - name: Install Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Test artist feature and compile Android Debug
+        env:
+          FANART_API_KEY: ${{ secrets.FANART_API_KEY }}
+          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew :feature:search:testDebugUnitTest :app:assembleDebug --no-daemon
+
+      - name: Verify version and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          AAPT=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name aapt | sort -V | tail -n1)
+          SIGNER=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -n1)
+          test -x "$AAPT" && test -x "$SIGNER"
+          "$AAPT" dump badging "$APK" | grep '^package:' | tee "$RUNNER_TEMP/package.txt"
+          grep -Fq "name='com.stash.app.debug' versionCode='163' versionName='0.9.127-sonora-artist-v13-apple-logos'" "$RUNNER_TEMP/package.txt"
+          "$SIGNER" verify "$APK"
+          sha256sum "$APK"
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: sonora-v13-apple-primary-artist-logos
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Publish V12 prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=sonora-artist-v13-apple-primary-logos-20261030
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release already exists, refusing to replace it"
+            exit 1
+          fi
+          APK="$RUNNER_TEMP/Sonora-V13-Apple-Logos-v0.9.127-debug.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$APK"
+          SHA=$(sha256sum "$APK" | cut -d' ' -f1)
+          cat > "$RUNNER_TEMP/notes.md" <<'EOF'
+          # Sonora V13 — Apple Music como primeira fonte de logotipos de artistas
+
+          **APK Debug**: `com.stash.app.debug`, `0.9.127-sonora-artist-v13-apple-logos`, code 163.
+
+          Créditos no app mostram a fonte real (Apple Music, Fanart.tv ou TheAudioDB).\n          Ordem de logos: Apple Music (campo explícito `artistLogo` da página do artista)
+          → Fanart.tv (HD por likes) → TheAudioDB → texto.
+
+          - Busca por nome exato no serviço de busca oficial do iTunes, validando o ID e a página do artista.
+          - Não utiliza busca Google nem confunde `og:image`, capas e fotos com logos.
+          - O CDN oficial Apple é restrito a HTTPS e PNG, com tamanho respeitando a proporção da marca.
+          - Ao falhar a busca Apple, o app recorre às fontes já existentes.
+          - Sem alterar imagens hero, paletas de cores, reprodução, downloads, biblioteca ou mini-player.
+          - O fluxo só publica após verificar a imagem real no site da Apple, testes da feature, assinatura e build do APK.
+
+          **Limitações:** O campo `artistLogo` é metadado público da página web, não uma API Apple Music documentada. Pode mudar sem aviso; a autorização de redistribuição comercial dessa arte não foi estabelecida. **Apple Music ainda não é o provedor de áudio deste APK**; reprodução pelo MusicKit exige autenticação e integração separadas.
+
+          Validar no Android antes de fazer merge ou distribuir comercialmente.
+          EOF
+          printf '\nCommit: `%s`\nSHA-256 APK: `%s`\n' "$GITHUB_SHA" "$SHA" >> "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" "$APK" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Sonora V13 — Logos Apple Music prioritários" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            --prerelease --latest=false
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,assets --jq '{url:.url,assets:[.assets[].name]}'

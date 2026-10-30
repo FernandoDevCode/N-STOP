@@ -276,7 +276,7 @@ fun ArtistProfileScreen(
                         onRequestAddToPlaylist = vm::onRequestAddToPlaylist,
                         onNavigateToAlbum = onNavigateToAlbum,
                         onNavigateToArtist = onNavigateToArtist,
-                        wordmarkFromAudioDb = wordmarkUrl != null,
+                        wordmarkSource = ArtistWordmarkLookup.attribution(wordmarkUrl),
                         focus = focus,
                     )
                 }
@@ -298,7 +298,7 @@ fun ArtistProfileScreen(
                     onRequestAddToPlaylist = vm::onRequestAddToPlaylist,
                     onNavigateToAlbum = onNavigateToAlbum,
                     onNavigateToArtist = onNavigateToArtist,
-                    wordmarkFromAudioDb = wordmarkUrl != null,
+                    wordmarkSource = ArtistWordmarkLookup.attribution(wordmarkUrl),
                     focus = focus,
                 )
             }
@@ -353,7 +353,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
     onRequestAddToPlaylist: (TrackItem) -> Unit,
     onNavigateToAlbum: (album: AlbumSummary) -> Unit,
     onNavigateToArtist: (artistId: String, name: String, avatarUrl: String?) -> Unit,
-    wordmarkFromAudioDb: Boolean,
+    wordmarkSource: String?,
     focus: AlbumFocusTarget?,
 ) {
     if (state.popular.isNotEmpty()) {
@@ -413,7 +413,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
             AboutSection(
                 about = about,
                 avatarUrl = state.hero.avatarUrl,
-                wordmarkFromAudioDb = wordmarkFromAudioDb,
+                wordmarkSource = wordmarkSource,
             )
         }
     }

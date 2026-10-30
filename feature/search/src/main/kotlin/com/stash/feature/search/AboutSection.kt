@@ -61,7 +61,7 @@ fun socialIconFor(kind: String): Int? = when (kind.lowercase()) {
 fun AboutSection(
     about: ArtistAbout,
     avatarUrl: String?,
-    wordmarkFromAudioDb: Boolean = false,
+    wordmarkSource: String? = null,
     modifier: Modifier = Modifier,
 ) {
     val uriHandler = LocalUriHandler.current
@@ -142,9 +142,9 @@ fun AboutSection(
             }
         }
 
-        if (wordmarkFromAudioDb) {
+        if (wordmarkSource != null) {
             Spacer(Modifier.height(10.dp))
-            Text("Logo via TheAudioDB (arte da comunidade)",
+            Text("Logo via $wordmarkSource",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

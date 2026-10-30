@@ -112,4 +112,18 @@ class ArtistWordmarkLookupTest {
         """.trimIndent()
         assertEquals(mbid, ArtistWordmarkLookup.parseMusicBrainzId(unique, "Our Divide"))
     }
+    @Test fun `logo credits reflect the winning provider not TheAudioDB alone`() {
+        assertEquals("Apple Music", ArtistWordmarkLookup.attribution(
+            "https://is1-ssl.mzstatic.com/image/thumb/logo.png",
+        ))
+        assertEquals("Fanart.tv (arte da comunidade)", ArtistWordmarkLookup.attribution(
+            "https://assets.fanart.tv/fanart/music/artist/musiclogo/logo.png",
+        ))
+        assertEquals("TheAudioDB (arte da comunidade)", ArtistWordmarkLookup.attribution(
+            "https://www.theaudiodb.com/images/media/artist/logo/artist.png",
+        ))
+        assertNull(ArtistWordmarkLookup.attribution(null))
+        assertNull(ArtistWordmarkLookup.attribution("https://is1-ssl.mzstatic.com.evil.example/a.png"))
+    }
+
 }
