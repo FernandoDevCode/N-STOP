@@ -31,7 +31,7 @@ internal data class ArtistAtmospherePalette(
     val surface: Color,
 )
 
-internal val ArtistNeutralAtmosphere = Color(0xFF212224)
+internal val ArtistNeutralAtmosphere = Color(0xFF202124)
 internal val ArtistBaseInk = Color(0xFF0E1115)
 internal val ArtistNeutralPalette = ArtistAtmospherePalette(
     hero = Color(0xFF2C2D2F),
@@ -130,7 +130,25 @@ internal fun artistPaletteFromPixels(pixels: IntArray): ArtistAtmospherePalette 
     return ArtistAtmospherePalette(
         hero = artistHsv(hue, 0.49 + depth * 0.17, 0.30),
         bridge = artistHsv(hue, 0.36 + depth * 0.16, 0.23),
-        surface = artistHsv(hue, 0.23 + depth * 0.12, 0.15),
+        // Keep the artist's temperature but return to the app's quiet charcoal.
+        // A pure HSV surface uniformly dyes long track lists (brown/red/blue).
+        surface = artistSurface(hue, depth),
+    )
+}
+
+/**
+ * Global reading-surface policy: always start from neutral charcoal and add
+ * only a restrained hue bias. The photo still owns hero and bridge; this colour
+ * is for long song lists, albums and the scrolling page background.
+ */
+private fun artistSurface(hue: Double, depth: Double): Color {
+    val tint = artistHsv(hue, 0.40, 0.18)
+    val influence = (0.28 + depth * 0.10).toFloat()
+    return Color(
+        red = ArtistNeutralAtmosphere.red * (1f - influence) + tint.red * influence,
+        green = ArtistNeutralAtmosphere.green * (1f - influence) + tint.green * influence,
+        blue = ArtistNeutralAtmosphere.blue * (1f - influence) + tint.blue * influence,
+        alpha = 1f,
     )
 }
 
