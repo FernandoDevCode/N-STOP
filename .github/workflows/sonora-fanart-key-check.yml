@@ -1,4 +1,5 @@
 name: Sonora Fanart key presence check
+# Re-validate project key after user configured GitHub Actions secret.
 
 on:
   push:
