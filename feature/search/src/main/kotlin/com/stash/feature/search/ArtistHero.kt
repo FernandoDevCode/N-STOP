@@ -85,7 +85,6 @@ fun ArtistHero(
     @Suppress("UNUSED_PARAMETER") status: ArtistProfileStatus,
     socials: List<SocialLink>,
     wordmarkUrl: String? = null,
-    atmosphere: Color = ArtistNeutralAtmosphere,
     heroAtmosphere: Color = ArtistNeutralPalette.hero,
     bridgeAtmosphere: Color = ArtistNeutralPalette.bridge,
     onBack: () -> Unit,
