@@ -1,4 +1,5 @@
 name: Sonora V12 — Apple Music Primary Artist Logos
+# Revalidate exact snapshot after artistLogo fixture correction.
 
 on:
   push:
