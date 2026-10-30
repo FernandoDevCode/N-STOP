@@ -82,6 +82,7 @@ fun PopularTracksSection(
                 onStartRadio = { onStartRadio(trackItem) },
                 onAddToPlaylist = { onRequestAddToPlaylist(trackItem) },
                 editorial = true,
+                artistEditorial = true,
                 editorialIndex = index + 1,
                 editorialSubtitle = track.album?.takeIf { it.isNotBlank() } ?: track.artist,
             )
