@@ -221,7 +221,6 @@ fun ArtistProfileScreen(
                     status = state.status,
                     socials = state.about?.socials.orEmpty(),
                     wordmarkUrl = wordmarkUrl,
-                    atmosphere = smoothAtmosphere,
                     bridgeAtmosphere = smoothBridge,
                     heroAtmosphere = smoothHeroTone,
                     onBack = onBack,
