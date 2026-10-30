@@ -60,4 +60,58 @@ class ArtistAtmosphereTest {
         )
         assertEquals(ArtistNeutralAtmosphere, artistAtmosphereFromPixels(pixels))
     }
+    @Test fun `red portrait remains wine coloured even with most pixels dark`() {
+        // Old implementation vetoed this scene because dark coverage > 56%.
+        val palette = artistPaletteFromPixels(photo(
+            0xFF101115.toInt() to 61,
+            0xFFE00A27.toInt() to 39,
+        ))
+        assertNotEquals(ArtistNeutralPalette, palette)
+        assertTrue("red surface should be warmer than blue", palette.surface.red > palette.surface.blue)
+        assertTrue("hero bridge must express more colour", palette.hero.red > palette.bridge.red)
+        assertTrue("bridge should fade towards reading surface", palette.bridge.red > palette.surface.red)
+        assertTrue("reading surface stays dark", palette.surface.red < .20f)
+    }
+
+    @Test fun `red hue wrapping at zero degrees is stable`() {
+        val palette = artistPaletteFromPixels(photo(
+            0xFFE51A3F.toInt() to 34, // near 350 degrees
+            0xFFE53F1A.toInt() to 34, // near 10 degrees
+            0xFF3C3D3E.toInt() to 32,
+        ))
+        assertTrue(palette.hero.red > palette.hero.blue)
+        assertTrue(palette.hero.red > palette.hero.green)
+        assertNotEquals(ArtistNeutralPalette, palette)
+    }
+
+    @Test fun `minor vivid detail cannot recolour a mostly grayscale portrait`() {
+        val palette = artistPaletteFromPixels(photo(
+            0xFF090B0F.toInt() to 60,
+            0xFFB2B2B2.toInt() to 23,
+            0xFFFF1600.toInt() to 17,
+        ))
+        assertEquals(ArtistNeutralPalette, palette)
+        assertEquals(ArtistNeutralAtmosphere, palette.surface)
+    }
+
+    @Test fun `multicolour scenes choose the largest coherent hue family`() {
+        val palette = artistPaletteFromPixels(photo(
+            0xFF31A953.toInt() to 45,
+            0xFF2876C0.toInt() to 32,
+            0xFFB82323.toInt() to 23,
+        ))
+        assertTrue(palette.surface.green > palette.surface.red)
+        assertTrue(palette.surface.green > palette.surface.blue)
+    }
+
+    @Test fun `monochrome picture uses neutral charcoal rather than blue tint`() {
+        val palette = artistPaletteFromPixels(photo(
+            0xFF030303.toInt() to 30,
+            0xFF818181.toInt() to 40,
+            0xFFF3F3F3.toInt() to 30,
+        ))
+        assertEquals(ArtistNeutralPalette, palette)
+        assertTrue(kotlin.math.abs(palette.surface.red - palette.surface.blue) < .03f)
+    }
+
 }
