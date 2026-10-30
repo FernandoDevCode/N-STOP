@@ -27,7 +27,7 @@
 - **Arquivo:** `Sonora-Artista-V7-v0.9.121.apk` (182.520.573 bytes).
 - **SHA-256:** `38d7f85ef7a2ed6f3962b9a42a896ec84a7d1741a57618575da0d1f812a88d67`.
 - **Commit compilado:** `64c83160bc8dc59945c90e3a081d673779d55a49`.
-- **CI:** testes do módulo Search, compilação Android, identidade do pacote, assinatura e publicação do arquivo: **aprovados**. A suíte geral do repositório executa separadamente.
+- **CI:** testes do módulo Search, compilação Android, identidade do pacote, assinatura e publicação do arquivo: **aprovados** no [workflow V7](https://github.com/FernandoDevCode/N-STOP/actions/runs/41088644717). A [suíte geral do mesmo commit](https://github.com/FernandoDevCode/N-STOP/actions/runs/41088654142) também passou integralmente: build Debug, compilação e execução de todos os testes unitários e Share Worker.
 - **Aprovação visual:** **pendente** de captura no Redmi Note 14. Não considerar 1:1 antes dessa comparação.
 
 ## Aceite e limitações
