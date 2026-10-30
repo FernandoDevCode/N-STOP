@@ -114,6 +114,8 @@ fun SongRow(
     editorialIndex: Int? = null,
     /** Album rows show track number rather than repeating their cover. */
     editorialAlbum: Boolean = false,
+    /** Real album subtitle for the artist Top Songs list only. */
+    editorialSubtitle: String? = null,
 ) {
     val extendedColors = StashTheme.extendedColors
     // Dim the art behind the loading spinner / stop glyph so it reads clearly.
@@ -221,7 +223,7 @@ fun SongRow(
             }
             Spacer(modifier = Modifier.height(2.dp))
             Text(
-                text = item.artist,
+                text = editorialSubtitle ?: item.artist,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
