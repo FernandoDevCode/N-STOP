@@ -113,7 +113,7 @@ fun ArtistHero(
     val viewportHeightDp = LocalConfiguration.current.screenHeightDp.toFloat()
 
     BoxWithConstraints(
-        modifier = modifier.fillMaxWidth().clipToBounds().background(atmosphere),
+        modifier = modifier.fillMaxWidth().clipToBounds().background(bridgeAtmosphere),
     ) {
         val photoLeadIn = artistPhotoLeadInDp(maxWidth.value, viewportHeightDp).dp
         if (hero.avatarUrl != null) {
@@ -173,7 +173,7 @@ fun ArtistHero(
                     .46f to heroAtmosphere.copy(alpha = .12f),
                     .62f to heroAtmosphere.copy(alpha = .58f),
                     .80f to bridgeAtmosphere.copy(alpha = .92f),
-                    1f to atmosphere,
+                    1f to bridgeAtmosphere,
                 ),
             ),
         )
