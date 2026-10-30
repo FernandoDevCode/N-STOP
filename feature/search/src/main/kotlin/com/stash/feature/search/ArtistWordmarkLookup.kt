@@ -77,10 +77,10 @@ internal object ArtistWordmarkLookup {
 
     internal fun parseFanartLogo(raw: String, artistName: String, mbid: String): String? {
         val root = JSONObject(raw)
-        // MusicBrainz ID is the verified identity. Fanart's display name
-        // may be an alias/qualifier even when the ID matches exactly; do not
-        // reject valid logos for that reason. Caller only supplies an MBID
-        // obtained after an exact-name artist lookup, never fuzzy matching.
+        // Require BOTH identity fields: the live Fanart endpoint has returned
+        // a different artist's name for a valid MBID query, so MBID alone is
+        // insufficient to prevent wrong-band logos.
+        if (!matchingArtist(artistName, root.optString("name"))) return null
         val returnedId = root.optString("mbid_id").ifBlank { root.optString("mbid") }
         if (!returnedId.equals(mbid, ignoreCase = true)) return null
 
