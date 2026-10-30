@@ -35,26 +35,25 @@ jobs:
             --connect-timeout 8 --max-time 30 \
             -H "api-key: $FANART_API_KEY" \
             -H "Accept: application/json" \
-            "https://webservice.fanart.tv/v3.2/music/f4a31f0a-51dd-4fa7-986d-3095c40c5ed9" \
+            "https://webservice.fanart.tv/v3.2/music/65f4f0c5-ef9e-490c-aee3-909e7ae6b2ab" \
             --output "$RUNNER_TEMP/fanart-check.json"
           python3 - "$RUNNER_TEMP/fanart-check.json" <<'PY'
           import json,sys
           with open(sys.argv[1],encoding="utf-8") as f:
               data=json.load(f)
-          expected="f4a31f0a-51dd-4fa7-986d-3095c40c5ed9"
+          expected="65f4f0c5-ef9e-490c-aee3-909e7ae6b2ab"
           assert data.get("mbid_id","").lower()==expected, "Artist identity mismatch"
-          assert data.get("name","").strip(), "Missing artist display name"
-          # Fanart may use an alternate display name. The verified MBID is
-          # authoritative and avoids false negatives caused by aliases.
-          print("Fanart returned artist label:", data["name"])
-          logos=data.get("hdmusiclogo",[])
+          # Never accept MBID alone: a previous Nirvana MBID request
+          # unexpectedly returned 'Evanescence' as its display name.
+          assert data.get("name","").casefold()=="metallica", "Artist name mismatch"
+          logos=data.get("hdmusiclogo",[]) or data.get("musiclogo",[])
           assert isinstance(logos,list) and any(
               x.get("url","").startswith("https://assets.fanart.tv/fanart/music/")
-              and "/hdmusiclogo/" in x.get("url","")
               and x.get("url","").endswith(".png")
+              and ("/hdmusiclogo/" in x.get("url","") or "/musiclogo/" in x.get("url",""))
               for x in logos
-          ), "No qualifying transparent HD music logo"
-          print(f"Live Fanart authentication and artist HD wordmark: OK ({len(logos)} candidates)")
+          ), "No qualifying music logo"
+          print(f"Live Fanart authentication and validated Metallica logo: OK ({len(logos)} candidates)")
           PY
 
       - name: Configure JDK 17
