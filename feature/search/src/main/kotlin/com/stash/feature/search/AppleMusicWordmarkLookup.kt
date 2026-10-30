@@ -6,6 +6,7 @@ import java.net.URLEncoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import kotlin.math.roundToInt
 
 /**
  * Optional, best-effort lookup of Apple's public *artistLogo* web metadata.
@@ -69,7 +70,7 @@ internal object AppleMusicWordmarkLookup {
         if (sourceWidth < 300 || sourceHeight < 40) return null
         val targetWidth = minOf(1600, sourceWidth)
         val targetHeight = (targetWidth.toDouble() * sourceHeight / sourceWidth)
-            .toInt().coerceAtLeast(1)
+            .roundToInt().coerceAtLeast(1)
         val cropStyle = logo.optString("cropStyle")
         return validateLogoAsset(assetUrl, targetWidth, targetHeight, cropStyle)
     }
