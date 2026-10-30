@@ -3,7 +3,7 @@ name: Sonora Artist V6 Preview
 on:
   push:
     branches: [feat/sonora-artist-album-neutral]
-    paths: [.github/workflows/sonora-artist-v6-preview.yml]
+    paths: [.github/workflows/sonora-artist-v6-preview.yml, feature/search/src/main/kotlin/com/stash/feature/search/ArtistHero.kt]
 
 permissions:
   contents: write
