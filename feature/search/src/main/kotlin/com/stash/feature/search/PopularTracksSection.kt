@@ -58,7 +58,7 @@ fun PopularTracksSection(
         modifier = modifier.padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
-        tracks.forEachIndexed { index, track ->
+        tracks.take(5).forEachIndexed { index, track ->
             val item = track.toSearchResultItem()
             val trackItem = track.toTrackItem()
             // Warm the lossless URL cache as each Popular row enters composition.
@@ -83,14 +83,9 @@ fun PopularTracksSection(
                 onAddToPlaylist = { onRequestAddToPlaylist(trackItem) },
                 editorial = true,
                 editorialIndex = index + 1,
+                editorialSubtitle = track.album?.takeIf { it.isNotBlank() } ?: track.artist,
             )
-            if (index < tracks.lastIndex) {
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = .35f),
-                    thickness = .5.dp,
-                    modifier = Modifier.padding(start = 85.dp, end = 22.dp),
-                )
-            }
+
         }
     }
 }
