@@ -58,7 +58,7 @@ class AppleMusicWordmarkLookupTest {
             <script>{"storeAdamID":"1605542240","artistLogo":{"dictionary":{
               "width":1200,"height":225,
               "url":"https://is1-ssl.mzstatic.com/image/thumb/MusicArtist/v4/abc/artist-logo.png/1200x480bb.png"
-            }}}
+            },"cropStyle":"bb"}}
             </script>
         """.trimIndent()
         assertEquals(
