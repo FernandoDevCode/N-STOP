@@ -12,8 +12,9 @@ import org.json.JSONObject
  * Artist wordmarks only: never substitute album artwork, artist photography,
  * cutouts or a visually similar artist's logo.
  *
- * Fanart.tv HD music logos (when a project key is configured) are ranked by
- * source likes; TheAudioDB's exact-name artist logo is the fallback.
+ * Apple artistLogo is the preferred wordmark. Fanart.tv HD music logos
+ * (when a project key is configured) are ranked by source likes. TheAudioDB's
+ * exact-name artist logo is the final image fallback.
  *
  * Apple Music's public artist pages may expose an artistLogo metadata image.
  * AppleMusicWordmarkLookup reads this image only if the official iTunes search
@@ -126,6 +127,15 @@ internal object ArtistWordmarkLookup {
         if (name.isBlank()) return@withContext null
         checked[name]?.let { return@withContext it }
 
+        // Source priority is a product decision: official artist-submitted
+        // Apple wordmark first, then source-rated Fanart, then TheAudioDB.
+        // Only an explicit artistLogo may win; a page's og:image is not a logo.
+        val appleLogo = AppleMusicWordmarkLookup.resolve(name)
+        if (appleLogo != null) {
+            checked[name] = appleLogo
+            return@withContext appleLogo
+        }
+
         val raw = runCatching {
             getJson("https://www.theaudiodb.com/api/v1/json/123/search.php?s=" +
                 URLEncoder.encode(name, "UTF-8"))
@@ -141,13 +151,7 @@ internal object ArtistWordmarkLookup {
             }.getOrNull() else null
         } else null
 
-        // Do not replace an already-selected community HD wordmark. When HD
-        // art is unavailable, prefer Apple's artist-submitted public logo to
-        // TheAudioDB, provided the page exposes an explicit artistLogo.
-        val appleLogo = if (fanartUrl == null) {
-            AppleMusicWordmarkLookup.resolve(name)
-        } else null
-        val chosen = fanartUrl ?: appleLogo ?: audioDb?.logoUrl
+        val chosen = fanartUrl ?: audioDb?.logoUrl
         if (chosen != null) checked[name] = chosen
         chosen
     }
