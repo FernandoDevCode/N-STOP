@@ -1,5 +1,6 @@
 package com.stash.feature.search
 
+import android.content.Intent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -14,13 +15,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Radio
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -39,8 +42,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -51,7 +56,6 @@ import com.stash.core.common.ArtUrlUpgrader
 import com.stash.core.common.constants.StashConstants
 import com.stash.data.ytmusic.model.SocialLink
 
-/** Support is a real artist site, never an invented follow/like action. */
 internal fun supportUrl(socials: List<SocialLink>): String? =
     socials.firstOrNull {
         it.kind.equals("bandcamp", ignoreCase = true) ||
@@ -61,9 +65,11 @@ internal fun supportUrl(socials: List<SocialLink>): String? =
     }?.url
 
 /**
- * Sonora editorial hero. The image, name, audience and controls share a single
- * cinematic canvas. The preceding layout spent an entire extra row on buttons,
- * pushing Popular significantly below the approved reference.
+ * Artist landing composition:
+ * 1. one uninterrupted band photograph;
+ * 2. centred wordmark/name and three equally spaced circular controls;
+ * 3. the featured release and Top Songs follow immediately in the same tinted
+ *    canvas (in ArtistProfileScreen), without a tab strip at the top.
  */
 @Composable
 fun ArtistHero(
@@ -71,6 +77,7 @@ fun ArtistHero(
     @Suppress("UNUSED_PARAMETER") status: ArtistProfileStatus,
     socials: List<SocialLink>,
     wordmarkUrl: String? = null,
+    atmosphere: Color = ArtistNeutralAtmosphere,
     onBack: () -> Unit,
     onPlayArtist: () -> Unit,
     onStartRadio: () -> Unit,
@@ -79,207 +86,197 @@ fun ArtistHero(
     onOpenAbout: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    val backdrop = MaterialTheme.colorScheme.background
-    val support = remember(socials) { supportUrl(socials) }
+    val ctx = LocalContext.current
     val uriHandler = LocalUriHandler.current
+    val support = remember(socials) { supportUrl(socials) }
+    val favorites = remember(ctx) {
+        ctx.getSharedPreferences("sonora_artist_bookmarks_v1", 0)
+    }
+    val bookmarkKey = remember(hero.name) { "artist:" + hero.name.trim().lowercase() }
+    var bookmarked by remember(bookmarkKey) {
+        mutableStateOf(favorites.getBoolean(bookmarkKey, false))
+    }
     var moreOpen by remember { mutableStateOf(false) }
-    val wordmarkPainter = rememberAsyncImagePainter(model = wordmarkUrl)
-    val wordmarkState by wordmarkPainter.state.collectAsState()
+    val painter = rememberAsyncImagePainter(wordmarkUrl)
+    val wordmarkState by painter.state.collectAsState()
 
     Box(
-        modifier = modifier.fillMaxWidth().height(348.dp)
-            .background(Brush.verticalGradient(listOf(Color(0xFF232831), backdrop))),
+        modifier = modifier.fillMaxWidth().height(345.dp)
+            .background(atmosphere),
     ) {
         if (hero.avatarUrl != null) {
             AsyncImage(
                 model = ArtUrlUpgrader.upgrade(hero.avatarUrl),
-                contentDescription = null,
+                contentDescription = "Fotografia de ${hero.name}",
                 contentScale = ContentScale.Crop,
+                alignment = Alignment.TopCenter,
                 modifier = Modifier.matchParentSize(),
             )
         }
         Box(
-            modifier = Modifier.matchParentSize().background(
+            Modifier.matchParentSize().background(
                 Brush.verticalGradient(
-                    0f to Color.Black.copy(alpha = .28f),
-                    .36f to Color.Transparent,
-                    .57f to backdrop.copy(alpha = .22f),
-                    .79f to backdrop.copy(alpha = .77f),
-                    1f to backdrop,
+                    0f to Color(0x33000000),
+                    .44f to Color.Transparent,
+                    .68f to atmosphere.copy(alpha = .33f),
+                    .84f to atmosphere.copy(alpha = .82f),
+                    1f to atmosphere,
                 ),
             ),
         )
+
         IconButton(
             onClick = onBack,
             modifier = Modifier.align(Alignment.TopStart)
-                .statusBarsPadding()
-                .padding(start = 12.dp, top = 9.dp)
-                .background(Color(0xAA0E1115), CircleShape),
+                .statusBarsPadding().padding(start = 14.dp, top = 8.dp)
+                .background(Color(0x880E1115), CircleShape),
         ) {
-            Icon(
-                Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Voltar",
-                tint = Color(0xFFF4F5F7),
-            )
+            Icon(Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Voltar", tint = Color.White)
         }
-        // Upper-right overflow mirrors the reference. The same actions are
-        // available from the lower row; both share the menu state.
-        IconButton(
-            onClick = { moreOpen = true },
+        Row(
             modifier = Modifier.align(Alignment.TopEnd)
-                .statusBarsPadding()
-                .padding(end = 12.dp, top = 9.dp)
-                .background(Color(0xAA0E1115), CircleShape),
+                .statusBarsPadding().padding(end = 14.dp, top = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
         ) {
-            Icon(
-                Icons.Default.MoreHoriz,
-                contentDescription = "Mais ações do artista",
-                tint = Color(0xFFF4F5F7),
-            )
+            IconButton(
+                onClick = {
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, hero.name)
+                    }
+                    runCatching {
+                        ctx.startActivity(Intent.createChooser(intent, "Compartilhar artista"))
+                    }
+                },
+                modifier = Modifier.background(Color(0x880E1115), CircleShape),
+            ) {
+                Icon(Icons.Default.Share, contentDescription = "Compartilhar artista",
+                    tint = Color.White)
+            }
+            Box {
+                IconButton(
+                    onClick = { moreOpen = true },
+                    modifier = Modifier.background(Color(0x880E1115), CircleShape),
+                ) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "Mais opções",
+                        tint = Color.White)
+                }
+                DropdownMenu(
+                    expanded = moreOpen,
+                    onDismissRequest = { moreOpen = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Rádio do artista") },
+                        leadingIcon = { Icon(Icons.Default.Radio, contentDescription = null) },
+                        onClick = { moreOpen = false; onStartRadio() },
+                    )
+                    if (onOpenAbout != null) {
+                        DropdownMenuItem(
+                            text = { Text("Sobre o artista") },
+                            onClick = { moreOpen = false; onOpenAbout() },
+                        )
+                    }
+                    if (StashConstants.STREAMING_ENGINE_ENABLED) {
+                        DropdownMenuItem(
+                            text = {
+                                Text(if (streamingEnabled) "Streaming: ativado" else "Modo download")
+                            },
+                            onClick = { moreOpen = false; onStreamingClick() },
+                        )
+                    }
+                    if (support != null) {
+                        DropdownMenuItem(
+                            text = { Text("Site do artista") },
+                            onClick = {
+                                moreOpen = false
+                                runCatching { uriHandler.openUri(support) }
+                            },
+                        )
+                    }
+                }
+            }
         }
-        // The controls sit inside the image, as in the approved reference.
+
         Column(
-            modifier = Modifier.align(Alignment.BottomStart)
+            modifier = Modifier.align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(start = 24.dp, end = 24.dp, bottom = 10.dp),
+                .padding(horizontal = 22.dp, vertical = 9.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             if (wordmarkUrl != null && wordmarkState is AsyncImagePainter.State.Success) {
                 Image(
-                    painter = wordmarkPainter,
+                    painter = painter,
                     contentDescription = hero.name,
-                    modifier = Modifier.fillMaxWidth(.74f).height(62.dp),
+                    modifier = Modifier.fillMaxWidth(.82f).height(68.dp),
                     contentScale = ContentScale.Fit,
                 )
             } else {
+                val size = when {
+                    hero.name.length <= 3 -> 63.sp
+                    hero.name.length <= 12 -> 38.sp
+                    hero.name.length <= 19 -> 31.sp
+                    else -> 25.sp
+                }
                 Text(
-                    text = hero.name,
-                    fontSize = 43.sp,
-                    lineHeight = 46.sp,
-                    letterSpacing = (-1.4).sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFFF4F5F7),
+                    hero.name,
+                    color = Color.White,
+                    fontSize = size,
+                    lineHeight = size * 1.06f,
+                    fontWeight = if (hero.name.length <= 3) FontWeight.Bold else FontWeight.Light,
+                    letterSpacing = (-.7).sp,
+                    textAlign = TextAlign.Center,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            hero.subscribersText?.let { count ->
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    text = count,
-                    color = Color(0xFFD4D8E0),
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            Spacer(Modifier.height(15.dp))
+            Spacer(Modifier.height(11.dp))
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(22.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Surface(
-                    onClick = onPlayArtist,
+                    onClick = { onOpenAbout?.invoke() },
+                    enabled = onOpenAbout != null,
+                    color = Color(0x44353D48),
                     shape = CircleShape,
+                    modifier = Modifier.size(44.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.Info, contentDescription = "Sobre o artista",
+                            tint = Color.White, modifier = Modifier.size(21.dp))
+                    }
+                }
+                Surface(
+                    onClick = onPlayArtist,
                     color = Color(0xFFF4F5F7),
-                    modifier = Modifier.size(54.dp),
+                    shape = CircleShape,
+                    modifier = Modifier.size(57.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.PlayArrow,
+                            contentDescription = "Reproduzir ${hero.name}",
+                            tint = Color(0xFF0E1115), modifier = Modifier.size(33.dp))
+                    }
+                }
+                Surface(
+                    onClick = {
+                        bookmarked = !bookmarked
+                        favorites.edit().putBoolean(bookmarkKey, bookmarked).apply()
+                    },
+                    color = Color(0x44353D48),
+                    shape = CircleShape,
+                    modifier = Modifier.size(44.dp),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
-                            Icons.Default.PlayArrow,
-                            contentDescription = "Reproduzir ${hero.name}",
-                            tint = Color(0xFF0E1115),
-                            modifier = Modifier.size(29.dp),
+                            if (bookmarked) Icons.Default.Star else Icons.Outlined.StarBorder,
+                            contentDescription = if (bookmarked)
+                                "Retirar marcação local do artista"
+                            else "Marcar artista neste aparelho",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp),
                         )
-                    }
-                }
-                Surface(
-                    onClick = onStartRadio,
-                    shape = RoundedCornerShape(28.dp),
-                    color = Color(0x99232831),
-                    border = BorderStroke(1.dp, Color(0x553D4654)),
-                    modifier = Modifier.height(45.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 17.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Icon(Icons.Default.Radio, contentDescription = null,
-                            tint = Color(0xFFF4F5F7), modifier = Modifier.size(18.dp))
-                        Text(
-                            text = "Rádio",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = Color(0xFFF4F5F7),
-                        )
-                    }
-                }
-                Spacer(Modifier.weight(1f))
-                if (support != null) {
-                    Surface(
-                        onClick = { runCatching { uriHandler.openUri(support) } },
-                        shape = CircleShape,
-                        color = Color(0x99232831),
-                        border = BorderStroke(1.dp, Color(0x553D4654)),
-                        modifier = Modifier.size(44.dp),
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                Icons.Default.FavoriteBorder,
-                                contentDescription = "Apoiar artista",
-                                tint = Color(0xFFF4F5F7),
-                                modifier = Modifier.size(21.dp),
-                            )
-                        }
-                    }
-                }
-                Box {
-                    Surface(
-                        onClick = { moreOpen = true },
-                        shape = CircleShape,
-                        color = Color(0x99232831),
-                        border = BorderStroke(1.dp, Color(0x553D4654)),
-                        modifier = Modifier.size(44.dp),
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                Icons.Default.MoreHoriz,
-                                contentDescription = "Mais ações do artista",
-                                tint = Color(0xFFF4F5F7),
-                            )
-                        }
-                    }
-                    DropdownMenu(
-                        expanded = moreOpen,
-                        onDismissRequest = { moreOpen = false },
-                    ) {
-                        if (onOpenAbout != null) {
-                            DropdownMenuItem(
-                                text = { Text("Sobre o artista") },
-                                onClick = {
-                                    moreOpen = false
-                                    onOpenAbout()
-                                },
-                            )
-                        }
-                        if (StashConstants.STREAMING_ENGINE_ENABLED) {
-                            DropdownMenuItem(
-                                text = {
-                                    Text(if (streamingEnabled) "Streaming: ativado" else "Modo download")
-                                },
-                                onClick = {
-                                    moreOpen = false
-                                    onStreamingClick()
-                                },
-                            )
-                        }
-                        if (support != null) {
-                            DropdownMenuItem(
-                                text = { Text("Site do artista") },
-                                onClick = {
-                                    moreOpen = false
-                                    runCatching { uriHandler.openUri(support) }
-                                },
-                            )
-                        }
                     }
                 }
             }
