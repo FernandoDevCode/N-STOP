@@ -74,6 +74,23 @@ class AppleMusicWordmarkLookupTest {
         )
     }
 
+    @Test fun `Apple public artistLogo metadata expands real image dimensions and crop`() {
+        val artist = AppleMusicWordmarkLookup.Artist(
+            1605542240, "https://music.apple.com/us/artist/our-divide/1605542240",
+        )
+        val html = """
+            <script>{"storeAdamID":"1605542240","artistLogo":{"dictionary":{
+               "width":2886,"height":225,"url":
+               "https://is1-ssl.mzstatic.com/image/thumb/l3KUzpoCcbLIyEKv9e8zjg/{w}x{h}{c}.{f}"
+            },"cropStyle":"bb"},"circleArtwork":{"dictionary":{"url":
+            "https://is1-ssl.mzstatic.com/image/thumb/artist-photo.png"}}}</script>
+        """.trimIndent()
+        assertEquals(
+            "https://is1-ssl.mzstatic.com/image/thumb/l3KUzpoCcbLIyEKv9e8zjg/1600x124bb.png",
+            apple.parseLogo(html, artist),
+        )
+    }
+
     @Test fun `Apple profile must confirm matching artist ID`() {
         val artist = AppleMusicWordmarkLookup.Artist(89, "https://music.apple.com/us/artist/x/89")
         val page = """<script>{"storeAdamID":"99","artistLogo":{"dictionary":
@@ -91,7 +108,10 @@ class AppleMusicWordmarkLookupTest {
         )) assertNull(apple.validateLogoAsset(url))
         assertEquals(
             "https://is5-ssl.mzstatic.com/image/thumb/a/b/1200x480bb.png",
-            apple.validateLogoAsset("https://is5-ssl.mzstatic.com/image/thumb/a/b/{w}x{h}bb.{f}"),
+            apple.validateLogoAsset(
+                "https://is5-ssl.mzstatic.com/image/thumb/a/b/{w}x{h}{c}.{f}",
+                targetWidth = 1200, targetHeight = 480,
+            ),
         )
     }
 }
