@@ -80,8 +80,8 @@
 - [ ] Capturas reais do Redmi Note 14: **Slipknot**, **Megadeth**, **Queens of the Stone Age** e **U2**, observando especialmente fundo/crop/wordmark e botões.
 - [ ] Comparação lado a lado com a referência do usuário; anotar divergências por item, sem declarar “1:1” antes de verificar.
 - [ ] Regressão manual: Play, Compartilhar, Sobre, marcação local, Rádio, menu e rolagem; mini-player não modificado.
-- [ ] Somente após aceite da implementação, incrementar versão e publicar um **único APK de prévia identificável** para a revisão visual; manter PR #2 em draft até aprovação.
+- [ ] Após CI verde, incrementar a versão e publicar **um único APK de prévia identificável** para obter screenshots do Redmi. **Aprovação visual/funcional vem depois da instalação**, e o PR #2 permanece em draft até essa aprovação.
 
 ## Sequência de trabalho
 
-**Patch A:** ações e equilíbrio do hero → **Patch B:** wordmark → **Patch C:** seleção cromática → **Patch D:** enquadramento por proporção → **QA e screenshots** → **APK de prévia**. Cada patch deve respeitar os arquivos permitidos e deixar a aplicação compilável. Não iniciar mudanças em álbuns nesta rodada.
+**Patch A:** ações e equilíbrio do hero → **Patch B:** wordmark → **Patch C:** seleção cromática → **Patch D:** enquadramento por proporção → **CI e testes automatizados** → **APK de prévia** → **screenshots reais e aceite visual/funcional**. Cada patch deve respeitar os arquivos permitidos e deixar a aplicação compilável. Não iniciar mudanças em álbuns nesta rodada.
