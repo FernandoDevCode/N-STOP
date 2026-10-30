@@ -123,4 +123,44 @@ class ArtistAtmosphereTest {
         assertTrue(palette.surface.blue > palette.surface.red)
     }
 
+    @Test fun `all colour families converge to quiet charcoal while preserving temperature`() {
+        val families = listOf(
+            0xFFCD152F.toInt(), // red
+            0xFF1970B5.toInt(), // blue
+            0xFF1DA076.toInt(), // green
+            0xFFC8773E.toInt(), // orange
+            0xFFAA53BF.toInt(), // violet
+        )
+        families.forEach { hue ->
+            val palette = artistPaletteFromPixels(photo(
+                hue to 77,
+                0xFF191919.toInt() to 23,
+            ))
+            assertNotEquals(ArtistNeutralPalette, palette)
+            val channels = listOf(palette.surface.red, palette.surface.green, palette.surface.blue)
+            val spread = channels.maxOrNull()!! - channels.minOrNull()!!
+            assertTrue("Reading surface must not turn into a solid colour", spread < .07f)
+            assertTrue("Reading surface stays dark", channels.maxOrNull()!! < .19f)
+            assertTrue("Hero must have more colour than long-form content",
+                palette.hero.red != palette.surface.red)
+        }
+    }
+
+    @Test fun `red blue and warm surfaces retain subtle temperature differences`() {
+        val red = artistPaletteFromPixels(photo(0xFFD81932.toInt() to 100)).surface
+        val blue = artistPaletteFromPixels(photo(0xFF216EBE.toInt() to 100)).surface
+        val warm = artistPaletteFromPixels(photo(0xFFB76E3C.toInt() to 100)).surface
+        assertTrue(red.red > red.green)
+        assertTrue(blue.blue > blue.red)
+        assertTrue(warm.red > warm.blue)
+        assertTrue("red no longer paints the full page burgundy", red.red - red.blue < .06f)
+    }
+
+    @Test fun `monochromatic artists keep the neutral surface unchanged`() {
+        assertEquals(ArtistNeutralPalette, artistPaletteFromPixels(photo(
+            0xFF181818.toInt() to 60,
+            0xFFB4B4B4.toInt() to 40,
+        )))
+    }
+
 }
