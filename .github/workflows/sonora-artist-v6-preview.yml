@@ -1,0 +1,104 @@
+name: Sonora Artist V6 Preview
+
+on:
+  push:
+    branches: [feat/sonora-artist-album-neutral]
+    paths: [.github/workflows/sonora-artist-v6-preview.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Test artist palette and all Android units
+        run: |
+          chmod +x gradlew
+          ./gradlew :feature:search:testDebugUnitTest testDebugUnitTest --continue --no-daemon
+      - name: Assemble debug
+        env:
+          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
+        run: ./gradlew :app:assembleDebug --no-daemon
+      - name: Verify package, version and signed APK
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          AAPT=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name aapt | sort -V | tail -n1)
+          SIGNER=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -n1)
+          "$AAPT" dump badging "$APK" | grep "^package:" | tee "$RUNNER_TEMP/pkg.txt"
+          grep -Fq "name='com.stash.app.debug' versionCode='156' versionName='0.9.120-sonora-artist-v6'" "$RUNNER_TEMP/pkg.txt"
+          "$SIGNER" verify "$APK"
+          sha256sum "$APK"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: sonora-artist-v6-tested-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+  worker-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Run Worker tests
+        run: |
+          set -euo pipefail
+          for dir in infra/share-worker infra/sync-worker infra/tipjar-worker infra/lossless-relay infra/lastfm-proxy; do
+            (cd "$dir" && node --no-warnings --test test/*.test.js)
+          done
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: [android, worker-tests]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          name: sonora-artist-v6-tested-apk
+          path: ${{ runner.temp }}/v6
+      - name: Publish V6 prerelease only after checks pass
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=sonora-artist-v6-20261030
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Tag already published; will not overwrite"
+            exit 1
+          fi
+          APK="$RUNNER_TEMP/Sonora-Artista-V6-v0.9.120.apk"
+          cp "$RUNNER_TEMP/v6/app-debug.apk" "$APK"
+          test -s "$APK"
+          SHA=$(sha256sum "$APK" | cut -d' ' -f1)
+          cat > "$RUNNER_TEMP/notes.md" <<'EOF'
+          # Sonora Artista — V6: hero mais fiel à referência
+
+          APK experimental com versionCode **156**, versionName **0.9.120-sonora-artist-v6** e pacote `com.stash.app.debug`.
+
+          - Um único Play no centro; Sobre e Marcar artista neste aparelho ficam no menu.
+          - Wordmarks mais largos (até 94% do hero), sem distorção.
+          - Cores atmosféricas medidas por representatividade da fotografia, com fallback grafite.
+          - Foto sem cortes horizontais agressivos, fundo secundário suavizado para preencher o hero quando necessário.
+          - Transição animada de cores; nenhuma mudança na página de álbum, reprodução, mini-player ou navegação.
+
+          **Teste no aparelho obrigatório:** Slipknot, Megadeth, Queens of the Stone Age, U2, casos sem foto/logo, Share, menu e Play. Não declarar fidelidade 1:1 sem comparação das capturas.
+          Logos comunitários TheAudioDB não provam direitos de uso comercial. Marcações locais não sincronizam na conta.
+          **Não desinstale** variantes em caso de conflito de assinatura. O PR #2 permanece draft e sem merge.
+          EOF
+          printf '\nSHA-256 APK: `%s`\nCommit compilado: `%s`\n' "$SHA" "$GITHUB_SHA" >> "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" "$APK" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Sonora Artista V6 — preview 0.9.120" --notes-file "$RUNNER_TEMP/notes.md" --prerelease --latest=false
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,assets --jq '{url:.url,assets:[.assets[].name]}'
