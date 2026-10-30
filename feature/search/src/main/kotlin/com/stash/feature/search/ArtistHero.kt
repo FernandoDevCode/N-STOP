@@ -4,6 +4,7 @@ import android.content.Intent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,6 +48,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
@@ -113,33 +115,44 @@ fun ArtistHero(
                 modifier = Modifier.matchParentSize(),
             )
         }
+        // The photograph is already almost gone before the boundary.
+        // Last pixel and the next LazyColumn item use the *same* atmosphere:
+        // no horizontal seam when the featured card begins.
         Box(
             Modifier.matchParentSize().background(
                 Brush.verticalGradient(
-                    0f to Color(0x33000000),
-                    .44f to Color.Transparent,
-                    .68f to atmosphere.copy(alpha = .33f),
-                    .84f to atmosphere.copy(alpha = .82f),
+                    0f to Color(0x29000000),
+                    .32f to Color.Transparent,
+                    .52f to atmosphere.copy(alpha = .10f),
+                    .66f to atmosphere.copy(alpha = .40f),
+                    .82f to atmosphere.copy(alpha = .82f),
+                    .94f to atmosphere.copy(alpha = .98f),
                     1f to atmosphere,
                 ),
             ),
         )
 
-        IconButton(
+        // Match the reference's quieter 38dp translucent circles while
+        // retaining a full 48dp touch target for Android accessibility.
+        ArtistTopAction(
             onClick = onBack,
             modifier = Modifier.align(Alignment.TopStart)
-                .statusBarsPadding().padding(start = 14.dp, top = 8.dp)
-                .background(Color(0x880E1115), CircleShape),
+                .statusBarsPadding().padding(top = 4.dp),
         ) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Voltar", tint = Color.White)
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Voltar",
+                tint = Color.White,
+                modifier = Modifier.size(20.dp),
+            )
         }
         Row(
             modifier = Modifier.align(Alignment.TopEnd)
-                .statusBarsPadding().padding(end = 14.dp, top = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(9.dp),
+                .statusBarsPadding().padding(top = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(0.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(
+            ArtistTopAction(
                 onClick = {
                     val intent = Intent(Intent.ACTION_SEND).apply {
                         type = "text/plain"
@@ -149,18 +162,22 @@ fun ArtistHero(
                         ctx.startActivity(Intent.createChooser(intent, "Compartilhar artista"))
                     }
                 },
-                modifier = Modifier.background(Color(0x880E1115), CircleShape),
             ) {
-                Icon(Icons.Default.Share, contentDescription = "Compartilhar artista",
-                    tint = Color.White)
+                Icon(
+                    Icons.Default.Share,
+                    contentDescription = "Compartilhar artista",
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp),
+                )
             }
             Box {
-                IconButton(
-                    onClick = { moreOpen = true },
-                    modifier = Modifier.background(Color(0x880E1115), CircleShape),
-                ) {
-                    Icon(Icons.Default.MoreVert, contentDescription = "Mais opções",
-                        tint = Color.White)
+                ArtistTopAction(onClick = { moreOpen = true }) {
+                    Icon(
+                        Icons.Default.MoreVert,
+                        contentDescription = "Mais opções",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp),
+                    )
                 }
                 DropdownMenu(
                     expanded = moreOpen,
@@ -230,9 +247,9 @@ fun ArtistHero(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Spacer(Modifier.height(11.dp))
+            Spacer(Modifier.height(9.dp))
             Row(
-                horizontalArrangement = Arrangement.spacedBy(22.dp),
+                horizontalArrangement = Arrangement.spacedBy(28.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Surface(
@@ -240,23 +257,23 @@ fun ArtistHero(
                     enabled = onOpenAbout != null,
                     color = Color(0x44353D48),
                     shape = CircleShape,
-                    modifier = Modifier.size(44.dp),
+                    modifier = Modifier.size(42.dp),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(Icons.Default.Info, contentDescription = "Sobre o artista",
-                            tint = Color.White, modifier = Modifier.size(21.dp))
+                            tint = Color.White, modifier = Modifier.size(19.dp))
                     }
                 }
                 Surface(
                     onClick = onPlayArtist,
                     color = Color(0xFFF4F5F7),
                     shape = CircleShape,
-                    modifier = Modifier.size(57.dp),
+                    modifier = Modifier.size(50.dp),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(Icons.Default.PlayArrow,
                             contentDescription = "Reproduzir ${hero.name}",
-                            tint = Color(0xFF0E1115), modifier = Modifier.size(33.dp))
+                            tint = Color(0xFF0E1115), modifier = Modifier.size(29.dp))
                     }
                 }
                 Surface(
@@ -264,9 +281,9 @@ fun ArtistHero(
                         bookmarked = !bookmarked
                         favorites.edit().putBoolean(bookmarkKey, bookmarked).apply()
                     },
-                    color = Color(0x44353D48),
+                    color = Color(0x55374048),
                     shape = CircleShape,
-                    modifier = Modifier.size(44.dp),
+                    modifier = Modifier.size(42.dp),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
@@ -275,11 +292,36 @@ fun ArtistHero(
                                 "Retirar marcação local do artista"
                             else "Marcar artista neste aparelho",
                             tint = Color.White,
-                            modifier = Modifier.size(24.dp),
+                            modifier = Modifier.size(21.dp),
                         )
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Reference-sized top action: 38dp visual surface in an accessible 48dp slot.
+ * The old 48dp solid circles were much heavier and more widely spaced.
+ */
+@Composable
+private fun ArtistTopAction(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = modifier.size(48.dp),
+    ) {
+        Box(
+            modifier = Modifier.size(38.dp)
+                .background(Color(0x700E1115), CircleShape)
+                .border(0.5.dp, Color.White.copy(alpha = .10f), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            content()
         }
     }
 }
