@@ -74,7 +74,12 @@ class ArtistWordmarkLookupTest {
             "https://assets.fanart.tv/fanart/music/$mbid/musiclogo/logo.png",
             ArtistWordmarkLookup.parseFanartLogo(json, "Coldplay", mbid),
         )
-        assertNull(ArtistWordmarkLookup.parseFanartLogo(json, "Coldplay Tribute", mbid))
+        // Once the caller has resolved an unambiguous MusicBrainz ID, the
+        // Fanart display name can differ without changing artist identity.
+        assertEquals(
+            "https://assets.fanart.tv/fanart/music/$mbid/musiclogo/logo.png",
+            ArtistWordmarkLookup.parseFanartLogo(json, "Coldplay (UK)", mbid),
+        )
         assertNull(ArtistWordmarkLookup.parseFanartLogo(json, "Coldplay", "00000000-0000-0000-0000-000000000000"))
     }
 
