@@ -408,7 +408,7 @@ private fun ArtistDetailHeader(
                 .height(320.dp)
                 .background(
                     Brush.linearGradient(
-                        listOf(Color(0xFF543B7A), Color(0xFF102738), MaterialTheme.colorScheme.background),
+                        listOf(Color(0xFF343944), Color(0xFF191D23), MaterialTheme.colorScheme.background),
                     ),
                 ),
         ) {
@@ -432,8 +432,8 @@ private fun ArtistDetailHeader(
                         Brush.verticalGradient(
                             0f to Color.Black.copy(alpha = 0.22f),
                             0.45f to Color.Transparent,
-                            0.72f to Color(0xFF090B18).copy(alpha = 0.64f),
-                            1f to Color(0xFF090B18).copy(alpha = 0.93f),
+                            0.72f to Color(0xFF0E1115).copy(alpha = 0.64f),
+                            1f to Color(0xFF0E1115).copy(alpha = 0.93f),
                         ),
                     ),
             )

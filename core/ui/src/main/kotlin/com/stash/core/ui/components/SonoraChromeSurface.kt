@@ -29,7 +29,7 @@ fun Modifier.sonoraMiniGlass(shape: Shape): Modifier {
     val source = LocalChromeHazeState.current
     val dark = LocalVisualDark.current
     val ground = VisualDesign.Background
-    val tint = if (dark) Color(0xFF20202C) else VisualDesign.Surface
+    val tint = if (dark) Color(0xFF232831) else VisualDesign.Surface
     val fallback = tint.copy(alpha = .97f)
     val glass = if (source == null) Modifier.background(fallback) else Modifier.hazeEffect(
         state = source,
@@ -41,16 +41,16 @@ fun Modifier.sonoraMiniGlass(shape: Shape): Modifier {
             fallbackTint = HazeTint(fallback),
         ),
     )
-    val reflection = if (dark) Color(0xFFF6F5FA) else VisualDesign.Ink
+    val reflection = if (dark) Color(0xFFF4F5F7) else VisualDesign.Ink
     val edge = VisualDesign.Border.copy(alpha = .65f)
     return clip(shape).then(glass).drawWithCache {
         val sheen = Brush.linearGradient(
-            listOf(reflection.copy(alpha = .055f), Color(0x03B8AED5), Color.Transparent),
+            listOf(reflection.copy(alpha = .055f), Color(0x03D4D8E0), Color.Transparent),
             start = Offset.Zero, end = Offset(size.width * .8f, size.height),
         )
         onDrawBehind { drawRect(sheen) }
     }.border(.5.dp, Brush.linearGradient(
-        listOf(reflection.copy(alpha = .34f), Color(0x24B8AED5), edge.copy(alpha = .16f)),
+        listOf(reflection.copy(alpha = .34f), Color(0x24D4D8E0), edge.copy(alpha = .16f)),
     ), shape)
 }
 
@@ -62,12 +62,12 @@ fun Modifier.sonoraBottomFade(navigationHeight: Dp): Modifier {
     val top = when {
         !LocalVisualDark.current -> VisualDesign.Surface
         LocalVisualAmoled.current -> Color.Black
-        else -> Color(0xFF15161D)
+        else -> Color(0xFF191D23)
     }
     val base = when {
         !LocalVisualDark.current -> VisualDesign.Background
         LocalVisualAmoled.current -> Color.Black
-        else -> Color(0xFF0E0F14)
+        else -> Color(0xFF0E1115)
     }
     return drawWithCache {
         val navigationTop = size.height - navigationHeight.toPx()
