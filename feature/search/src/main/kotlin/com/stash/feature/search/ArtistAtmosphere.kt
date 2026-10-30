@@ -94,7 +94,7 @@ internal fun artistPaletteFromPixels(pixels: IntArray): ArtistAtmospherePalette 
         chromatic++
     }
 
-    if (opaque == 0 || chromatic.toDouble() / opaque < 0.28) {
+    if (opaque == 0 || chromatic.toDouble() / opaque < 0.22) {
         return ArtistNeutralPalette
     }
 
@@ -115,15 +115,17 @@ internal fun artistPaletteFromPixels(pixels: IntArray): ArtistAtmospherePalette 
     val covered = counts[previous] + counts[winner] + counts[next]
     // Require meaningful photographic area and a coherent hue family.
     // Balanced multicolour photographs still get a stable deterministic vote.
-    if (covered.toDouble() / opaque < 0.24 ||
-        covered.toDouble() / chromatic < 0.38
+    val chromaticShare = chromatic.toDouble() / opaque
+    val coherenceNeeded = if (chromaticShare < 0.45) 0.56 else 0.38
+    if (covered.toDouble() / opaque < 0.20 ||
+        covered.toDouble() / chromatic < coherenceNeeded
     ) return ArtistNeutralPalette
 
     val x = hueCos[previous] + hueCos[winner] + hueCos[next]
     val y = hueSin[previous] + hueSin[winner] + hueSin[next]
     val hue = (Math.toDegrees(atan2(y, x)) + 360.0) % 360.0
     val coverage = (covered.toDouble() / opaque).coerceIn(0.0, 1.0)
-    val depth = ((coverage - 0.24) / 0.52).coerceIn(0.0, 1.0)
+    val depth = ((coverage - 0.20) / 0.55).coerceIn(0.0, 1.0)
 
     return ArtistAtmospherePalette(
         hero = artistHsv(hue, 0.49 + depth * 0.17, 0.30),
