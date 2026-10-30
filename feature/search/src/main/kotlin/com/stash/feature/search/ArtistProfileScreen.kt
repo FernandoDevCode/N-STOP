@@ -35,8 +35,6 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -172,19 +170,10 @@ fun ArtistProfileScreen(
     ) { inner ->
         // The colour belongs to the artist photograph, not the current song.
         // It remains behind all sections on scroll and never recolours controls.
-        val lowerWash = smoothAtmosphere.copy(alpha = .72f).compositeOver(ArtistBaseInk)
         Box(
-            modifier = Modifier.fillMaxSize().padding(inner).background(
-                Brush.verticalGradient(
-                    // The first card begins on precisely the hero's final
-                    // colour. Slowly deepen the canvas *after* the release
-                    // card, not at the photograph's lower edge.
-                    0f to smoothAtmosphere,
-                    .58f to smoothAtmosphere,
-                    .87f to lowerWash,
-                    1f to lowerWash,
-                ),
-            ),
+            // A viewport-relative second gradient could meet the responsive
+            // hero at a different colour. Continue its exact final atmosphere.
+            modifier = Modifier.fillMaxSize().padding(inner).background(smoothAtmosphere),
         ) {
         LazyColumn(
             state = listState,
@@ -211,19 +200,16 @@ fun ArtistProfileScreen(
                             Unit
                         }
                     },
+                    featuredContent = featuredAlbum?.let { album ->
+                        @Composable {
+                            ArtistFeaturedAlbum(album = album, onOpen = onNavigateToAlbum)
+                        }
+                    },
                 )
             }
-            // A real catalog album occupies the card slot under the portrait.
-            // Keeping the slot even when empty preserves deep-link indices.
-            item(key = "artist-featured-release") {
-                if (featuredAlbum != null) {
-                    ArtistFeaturedAlbum(
-                        album = featuredAlbum,
-                        onOpen = onNavigateToAlbum,
-                        modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 13.dp, bottom = 8.dp),
-                    )
-                }
-            }
+            // The release now belongs to the hero composition. Keep its old
+            // index reserved, including when absent, for album/About navigation.
+            item(key = "artist-featured-release") { }
 
             when (val status = state.status) {
                 is ArtistProfileStatus.Error -> item {
@@ -407,8 +393,8 @@ private fun ArtistEditorialHeading(label: String, compact: Boolean = false) {
         fontWeight = FontWeight.SemiBold,
         modifier = Modifier.fillMaxWidth()
             .padding(start = 18.dp, end = 18.dp,
-                top = 15.dp,
-                bottom = 7.dp),
+                top = if (compact) 20.dp else 15.dp,
+                bottom = if (compact) 10.dp else 7.dp),
     )
 }
 

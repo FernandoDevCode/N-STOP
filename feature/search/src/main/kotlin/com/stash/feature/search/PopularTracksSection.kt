@@ -55,7 +55,7 @@ fun PopularTracksSection(
     modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = modifier.padding(horizontal = 16.dp),
+        modifier = modifier.padding(horizontal = 18.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
         tracks.take(5).forEachIndexed { index, track ->

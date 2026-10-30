@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
@@ -56,17 +57,17 @@ internal fun ArtistFeaturedAlbum(
     Surface(
         onClick = { onOpen(album) },
         modifier = modifier.fillMaxWidth(),
-        color = Color.White.copy(alpha = .065f),
+        color = Color.White.copy(alpha = .045f),
         shape = RoundedCornerShape(17.dp),
-        border = BorderStroke(0.7.dp, Color.White.copy(alpha = .085f)),
+        border = BorderStroke(0.5.dp, Color.White.copy(alpha = .055f)),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 11.dp, vertical = 10.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Box(
-                modifier = Modifier.size(64.dp)
+                modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp))
                     .background(Color(0xFF232831), RoundedCornerShape(8.dp)),
                 contentAlignment = Alignment.Center,
             ) {
@@ -74,7 +75,7 @@ internal fun ArtistFeaturedAlbum(
                     AsyncImage(
                         model = album.thumbnailUrl,
                         contentDescription = "Capa de ${album.title}",
-                        modifier = Modifier.size(64.dp),
+                        modifier = Modifier.size(56.dp),
                         contentScale = ContentScale.Crop,
                     )
                 } else {
@@ -108,7 +109,7 @@ internal fun ArtistFeaturedAlbum(
                 }
             }
             Surface(
-                color = Color.White.copy(alpha = .09f),
+                color = Color.White.copy(alpha = .05f),
                 shape = CircleShape,
                 modifier = Modifier.size(34.dp),
             ) {

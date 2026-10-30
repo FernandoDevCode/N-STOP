@@ -124,7 +124,7 @@ fun SongRow(
     val scrim = MaterialTheme.colorScheme.scrim.copy(alpha = 0.55f)
     // Now-playing rows get a subtle primary wash so the active track stands out.
     val rowBackground = if (isPlaying) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+        MaterialTheme.colorScheme.primary.copy(alpha = if (artistEditorial) 0.04f else 0.14f)
     } else {
         extendedColors.glassBackground
     }
@@ -139,7 +139,8 @@ fun SongRow(
             // (inherits the old ▶/⏹ button toggle) so a running preview is never
             // orphaned. The download button + ⋮ below consume their own taps.
             .clickable { if (isPreviewPlaying) onStopPreview() else onPlay() }
-            .padding(horizontal = 12.dp, vertical = if (artistEditorial) 6.dp else if (editorial) 4.dp else 10.dp),
+            .padding(horizontal = if (artistEditorial) 0.dp else 12.dp,
+                vertical = if (artistEditorial) 7.dp else if (editorial) 4.dp else 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (editorial && editorialIndex != null) {

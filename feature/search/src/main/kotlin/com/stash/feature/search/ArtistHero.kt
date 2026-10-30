@@ -5,6 +5,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -26,23 +27,26 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithCache
 import android.os.Build
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -64,12 +68,16 @@ internal fun supportUrl(socials: List<SocialLink>): String? =
         it.kind.equals("website", ignoreCase = true)
     }?.url
 
+/** Bound the photo lead-in, not the text/card: large fonts can grow naturally. */
+internal fun artistPhotoLeadInDp(widthDp: Float, viewportHeightDp: Float): Float =
+    (widthDp * .55f).coerceIn(144f, (viewportHeightDp * .40f).coerceIn(144f, 300f))
+
 /**
  * Artist landing composition:
  * 1. one uninterrupted band photograph;
  * 2. centred wordmark/name and one primary Play button;
- * 3. the featured release and Top Songs follow immediately in the same tinted
- *    canvas (in ArtistProfileScreen), without a tab strip at the top.
+ * 3. the featured release shares the photograph and scrim; Top Songs follows
+ *    on precisely the same atmosphere, without a separate hero/card boundary.
  */
 @Composable
 fun ArtistHero(
@@ -85,6 +93,7 @@ fun ArtistHero(
     onStreamingClick: () -> Unit,
     onOpenAbout: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    featuredContent: (@Composable () -> Unit)? = null,
 ) {
     val ctx = LocalContext.current
     val uriHandler = LocalUriHandler.current
@@ -99,13 +108,15 @@ fun ArtistHero(
     var moreOpen by remember { mutableStateOf(false) }
     val painter = rememberAsyncImagePainter(wordmarkUrl)
     val wordmarkState by painter.state.collectAsState()
+    val viewportHeightDp = LocalConfiguration.current.screenHeightDp.toFloat()
 
-    Box(
-        modifier = modifier.fillMaxWidth().height(382.dp)
-            .background(atmosphere),
+    BoxWithConstraints(
+        modifier = modifier.fillMaxWidth().clipToBounds().background(atmosphere),
     ) {
+        val photoLeadIn = artistPhotoLeadInDp(maxWidth.value, viewportHeightDp).dp
         if (hero.avatarUrl != null) {
             val photo = ArtUrlUpgrader.upgrade(hero.avatarUrl)
+            var photoAspectRatio by remember(photo) { mutableFloatStateOf(1f) }
             // A muted backdrop fills spare vertical space of wide band photos.
             // The foreground preserves *all horizontal members* without distortion.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -124,7 +135,28 @@ fun ArtistHero(
                 contentDescription = "Fotografia de ${hero.name}",
                 contentScale = ContentScale.FillWidth,
                 alignment = Alignment.TopCenter,
-                modifier = Modifier.matchParentSize(),
+                onSuccess = { result ->
+                    val image = result.result.image
+                    if (image.width > 0 && image.height > 0) {
+                        photoAspectRatio = image.width.toFloat() / image.height
+                    }
+                },
+                // Fade at the actual displayed photo edge, including wide band
+                // photos that end above the card. No bitmap work on recomposition.
+                modifier = Modifier.matchParentSize().drawWithCache {
+                    val photoHeight = minOf(size.height, size.width / photoAspectRatio)
+                    val fade = Brush.verticalGradient(
+                        0f to Color.Transparent,
+                        .60f to Color.Transparent,
+                        .82f to atmosphere.copy(alpha = .55f),
+                        1f to atmosphere,
+                        endY = photoHeight,
+                    )
+                    onDrawWithContent {
+                        drawContent()
+                        drawRect(fade)
+                    }
+                },
             )
         }
         // The photograph is already almost gone before the boundary.
@@ -134,11 +166,10 @@ fun ArtistHero(
             Modifier.matchParentSize().background(
                 Brush.verticalGradient(
                     0f to Color(0x29000000),
-                    .35f to Color.Transparent,
-                    .49f to atmosphere.copy(alpha = .08f),
-                    .62f to atmosphere.copy(alpha = .30f),
-                    .76f to atmosphere.copy(alpha = .69f),
-                    .90f to atmosphere.copy(alpha = .96f),
+                    .30f to Color.Transparent,
+                    .46f to atmosphere.copy(alpha = .12f),
+                    .62f to atmosphere.copy(alpha = .62f),
+                    .80f to atmosphere.copy(alpha = .90f),
                     1f to atmosphere,
                 ),
             ),
@@ -244,16 +275,16 @@ fun ArtistHero(
         }
 
         Column(
-            modifier = Modifier.align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .padding(start = 12.dp, end = 12.dp, bottom = 29.dp),
+            modifier = Modifier.fillMaxWidth().statusBarsPadding()
+                .padding(start = 18.dp, end = 18.dp, bottom = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            Spacer(Modifier.height(photoLeadIn))
             if (wordmarkUrl != null && wordmarkState is AsyncImagePainter.State.Success) {
                 Image(
                     painter = painter,
                     contentDescription = hero.name,
-                    modifier = Modifier.fillMaxWidth(.94f).height(68.dp),
+                    modifier = Modifier.fillMaxWidth().height(80.dp),
                     contentScale = ContentScale.Fit,
                 )
             } else {
@@ -268,7 +299,7 @@ fun ArtistHero(
                     color = Color.White,
                     fontSize = size,
                     lineHeight = size * 1.06f,
-                    fontWeight = if (hero.name.length <= 3) FontWeight.Bold else FontWeight.Light,
+                    fontWeight = FontWeight.SemiBold,
                     letterSpacing = (-.7).sp,
                     textAlign = TextAlign.Center,
                     maxLines = 2,
@@ -290,6 +321,10 @@ fun ArtistHero(
                         modifier = Modifier.size(30.dp),
                     )
                 }
+            }
+            if (featuredContent != null) {
+                Spacer(Modifier.height(24.dp))
+                featuredContent()
             }
         }
     }
