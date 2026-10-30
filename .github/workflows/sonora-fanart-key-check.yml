@@ -1,0 +1,31 @@
+name: Sonora Fanart key presence check
+
+on:
+  push:
+    branches:
+      - feat/sonora-artist-wordmark-sources
+    paths:
+      - .github/workflows/sonora-fanart-key-check.yml
+
+permissions:
+  contents: read
+
+jobs:
+  check-fanart-key:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify project API key configuration without exposing its value
+        shell: bash
+        env:
+          FANART_API_KEY: ${{ secrets.FANART_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$FANART_API_KEY" ]; then
+            echo "::error::FANART_API_KEY is not configured in Actions secrets for this build."
+            exit 1
+          fi
+          if [[ ! "$FANART_API_KEY" =~ ^[A-Za-z0-9]{12,128}$ ]]; then
+            echo "::error::FANART_API_KEY is configured but has an unexpected format."
+            exit 1
+          fi
+          echo "FANART_API_KEY is present and has a valid format. No key material is displayed."
