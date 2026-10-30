@@ -1,0 +1,112 @@
+name: Sonora Artist V5 Reference Polish
+
+on:
+  push:
+    branches:
+      - feat/sonora-artist-album-neutral
+    paths:
+      - .github/workflows/sonora-artist-v5-reference-polish.yml
+
+permissions:
+  contents: write
+
+jobs:
+  verify-android:
+    name: Unit tests and verified debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Run Android unit suite
+        run: |
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest --continue --no-daemon
+      - name: Build debug APK
+        env:
+          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
+        run: ./gradlew :app:assembleDebug --no-daemon
+      - name: Confirm installer identity and signature
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          AAPT=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name aapt | sort -V | tail -n1)
+          SIGNER=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -n1)
+          "$AAPT" dump badging "$APK" | grep "^package: " | tee "$RUNNER_TEMP/pkg.txt"
+          grep -Fq "name='com.stash.app.debug' versionCode='155' versionName='0.9.119-sonora-artist-refine'" "$RUNNER_TEMP/pkg.txt"
+          "$SIGNER" verify "$APK"
+          sha256sum "$APK"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: sonora-artist-v5-verified-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  verify-workers:
+    name: Worker tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Test five workers
+        run: |
+          set -euo pipefail
+          for dir in infra/share-worker infra/sync-worker infra/tipjar-worker infra/lossless-relay infra/lastfm-proxy; do
+            (cd "$dir" && node --no-warnings --test test/*.test.js)
+          done
+
+  publish:
+    name: Publish experimental prerelease
+    needs: [verify-android, verify-workers]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          name: sonora-artist-v5-verified-apk
+          path: ${{ runner.temp }}/v5
+      - name: Publish same APK tested above
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=sonora-artist-reference-v5-20261030
+          APK="$RUNNER_TEMP/Sonora-Artista-V5-v0.9.119.apk"
+          cp "$RUNNER_TEMP/v5/app-debug.apk" "$APK"
+          test -s "$APK"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Existing tag; not overwriting"
+            exit 1
+          fi
+          SHA=$(sha256sum "$APK" | cut -d' ' -f1)
+          cat > "$RUNNER_TEMP/notes.md" <<'EOF'
+          # Sonora Artista — V5 (prévia de referência)
+
+          **Versão:** 0.9.119-sonora-artist-refine, code 155, package com.stash.app.debug.
+          **Escopo:** somente perfil de artista.
+
+          - Fotografia do artista dissolvida progressivamente no fundo que continua atrás do álbum em destaque, sem linha horizontal abrupta.
+          - Ações Voltar, Compartilhar e Menu com superfície translucente de 38 dp e alvo de toque 48 dp; ícones e alinhamentos refinados.
+          - Controles centrais Info / Play / Marcação em 42 / 50 / 42 dp, com espaçamento simétrico.
+          - Não força cinco músicas simultâneas na tela: lista continua disponível ao rolar.
+          - Mini-player, navegação, playback, downloads e página de álbum não alterados nesta rodada.
+
+          **Prévia ainda não homologada 1:1.** Necessita capturas reais do Redmi para revisão.
+          Logos são arte comunitária, não necessariamente autenticação oficial. Marcação do artista é local ao aparelho.
+          Não desinstale a variante atual se o Android exibir falha de assinatura.
+          O PR #2 permanece draft e não é mesclado automaticamente.
+          EOF
+          printf '\n**APK SHA-256:** `%s`\n**Commit compilado:** `%s`\n' "$SHA" "$GITHUB_SHA" >> "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" "$APK" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'Sonora Artista V5 — refinamento da referência' --notes-file "$RUNNER_TEMP/notes.md" --prerelease --latest=false
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,assets --jq '{url:.url,assets:[.assets[].name]}'
