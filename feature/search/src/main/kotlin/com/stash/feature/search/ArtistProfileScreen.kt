@@ -40,6 +40,8 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -90,15 +92,23 @@ fun ArtistProfileScreen(
         value = ArtistWordmarkLookup.resolve(state.hero.name)
     }
     val context = LocalContext.current
-    val atmosphere by produceState(
-        initialValue = ArtistNeutralAtmosphere,
+    val photoPalette by produceState(
+        initialValue = ArtistNeutralPalette,
         key1 = state.hero.avatarUrl,
     ) {
-        value = artistAtmosphereFromPhoto(context, state.hero.avatarUrl)
+        value = artistPaletteFromPhoto(context, state.hero.avatarUrl)
     }
     val smoothAtmosphere by animateColorAsState(
-        targetValue = atmosphere,
-        label = "artistPhotoAtmosphere",
+        targetValue = photoPalette.surface,
+        label = "artistReadingSurface",
+    )
+    val smoothBridge by animateColorAsState(
+        targetValue = photoPalette.bridge,
+        label = "artistPhotoBridge",
+    )
+    val smoothHeroTone by animateColorAsState(
+        targetValue = photoPalette.hero,
+        label = "artistPhotoTone",
     )
     val featuredAlbum = remember(state.albums, state.singles) {
         selectArtistFeaturedAlbum(state.albums, state.singles)
@@ -168,12 +178,37 @@ fun ArtistProfileScreen(
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
         snackbarHost = { SnackbarHost(snackbar, Modifier.padding(bottom = bottomChromePadding())) },
     ) { inner ->
-        // The colour belongs to the artist photograph, not the current song.
-        // It remains behind all sections on scroll and never recolours controls.
+        // A single photo-to-content fade follows the actual scroll position.
+        // Unlike a viewport-fixed wash, this does not recolour later sections
+        // after the hero scrolls away. It never touches the app's mini-player.
         Box(
-            // A viewport-relative second gradient could meet the responsive
-            // hero at a different colour. Continue its exact final atmosphere.
-            modifier = Modifier.fillMaxSize().padding(inner).background(smoothAtmosphere),
+            modifier = Modifier.fillMaxSize().padding(inner).drawBehind {
+                drawRect(smoothAtmosphere)
+                val visible = listState.layoutInfo.visibleItemsInfo
+                val heroEnd = visible.firstOrNull { it.index == 0 }
+                    ?.let { (it.offset + it.size).toFloat() }
+                val firstHeading = visible.firstOrNull { it.index == 2 }
+                    ?.offset?.toFloat()
+                // The first shelf follows the heading. Its approximate heading
+                // lead-in is only used once that heading itself is offscreen.
+                val firstShelf = visible.firstOrNull { it.index == 3 }
+                    ?.let { it.offset - 56.dp.toPx() }
+                val fadeStart = heroEnd ?: firstHeading ?: firstShelf
+                if (fadeStart != null) {
+                    val fadeEnd = fadeStart + 340.dp.toPx()
+                    if (fadeEnd > 0f && fadeStart < size.height) {
+                        drawRect(
+                            brush = Brush.verticalGradient(
+                                0f to smoothBridge,
+                                .48f to lerp(smoothBridge, smoothAtmosphere, .72f),
+                                1f to smoothAtmosphere,
+                                startY = fadeStart,
+                                endY = fadeEnd,
+                            ),
+                        )
+                    }
+                }
+            },
         ) {
         LazyColumn(
             state = listState,
@@ -186,7 +221,8 @@ fun ArtistProfileScreen(
                     status = state.status,
                     socials = state.about?.socials.orEmpty(),
                     wordmarkUrl = wordmarkUrl,
-                    atmosphere = smoothAtmosphere,
+                    bridgeAtmosphere = smoothBridge,
+                    heroAtmosphere = smoothHeroTone,
                     onBack = onBack,
                     onPlayArtist = vm::playArtist,
                     onStartRadio = vm::startRadio,
