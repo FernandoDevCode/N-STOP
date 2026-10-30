@@ -235,7 +235,7 @@ fun SongRow(
 
         // Duration label. Flat YouTube Music search rows carry no length, so an
         // unknown (0) duration shows nothing rather than a false "0:00".
-        if (item.durationSeconds > 0) {
+        if (item.durationSeconds > 0 && !(editorial && !editorialAlbum)) {
             Text(
                 text = formatDuration(item.durationSeconds),
                 style = MaterialTheme.typography.bodySmall,
