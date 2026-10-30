@@ -58,7 +58,7 @@ internal fun ArtistFeaturedAlbum(
         modifier = modifier.fillMaxWidth(),
         color = Color.White.copy(alpha = .065f),
         shape = RoundedCornerShape(17.dp),
-        border = BorderStroke(.7.dp, Color.White.copy(alpha = .085f)),
+        border = BorderStroke(0.7.dp, Color.White.copy(alpha = .085f)),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 11.dp, vertical = 10.dp),
