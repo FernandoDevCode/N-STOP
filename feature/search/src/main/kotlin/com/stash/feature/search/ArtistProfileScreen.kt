@@ -180,8 +180,8 @@ fun ArtistProfileScreen(
                     // colour. Slowly deepen the canvas *after* the release
                     // card, not at the photograph's lower edge.
                     0f to smoothAtmosphere,
-                    .51f to smoothAtmosphere,
-                    .80f to lowerWash,
+                    .58f to smoothAtmosphere,
+                    .87f to lowerWash,
                     1f to lowerWash,
                 ),
             ),
@@ -220,7 +220,7 @@ fun ArtistProfileScreen(
                     ArtistFeaturedAlbum(
                         album = featuredAlbum,
                         onOpen = onNavigateToAlbum,
-                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 9.dp),
+                        modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 13.dp, bottom = 8.dp),
                     )
                 }
             }
@@ -407,8 +407,8 @@ private fun ArtistEditorialHeading(label: String, compact: Boolean = false) {
         fontWeight = FontWeight.SemiBold,
         modifier = Modifier.fillMaxWidth()
             .padding(start = 18.dp, end = 18.dp,
-                top = if (compact) 6.dp else 15.dp,
-                bottom = if (compact) 3.dp else 7.dp),
+                top = 15.dp,
+                bottom = 7.dp),
     )
 }
 
