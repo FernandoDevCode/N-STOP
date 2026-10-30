@@ -40,6 +40,8 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -176,12 +178,37 @@ fun ArtistProfileScreen(
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
         snackbarHost = { SnackbarHost(snackbar, Modifier.padding(bottom = bottomChromePadding())) },
     ) { inner ->
-        // The colour belongs to the artist photograph, not the current song.
-        // It remains behind all sections on scroll and never recolours controls.
+        // A single photo-to-content fade follows the actual scroll position.
+        // Unlike a viewport-fixed wash, this does not recolour later sections
+        // after the hero scrolls away. It never touches the app's mini-player.
         Box(
-            // A viewport-relative second gradient could meet the responsive
-            // hero at a different colour. Continue its exact final atmosphere.
-            modifier = Modifier.fillMaxSize().padding(inner).background(smoothAtmosphere),
+            modifier = Modifier.fillMaxSize().padding(inner).drawBehind {
+                drawRect(smoothAtmosphere)
+                val visible = listState.layoutInfo.visibleItemsInfo
+                val heroEnd = visible.firstOrNull { it.index == 0 }
+                    ?.let { (it.offset + it.size).toFloat() }
+                val firstHeading = visible.firstOrNull { it.index == 2 }
+                    ?.offset?.toFloat()
+                // The first shelf follows the heading. Its approximate heading
+                // lead-in is only used once that heading itself is offscreen.
+                val firstShelf = visible.firstOrNull { it.index == 3 }
+                    ?.let { it.offset - 56.dp.toPx() }
+                val fadeStart = heroEnd ?: firstHeading ?: firstShelf
+                if (fadeStart != null) {
+                    val fadeEnd = fadeStart + 340.dp.toPx()
+                    if (fadeEnd > 0f && fadeStart < size.height) {
+                        drawRect(
+                            brush = Brush.verticalGradient(
+                                0f to smoothBridge,
+                                .48f to lerp(smoothBridge, smoothAtmosphere, .72f),
+                                1f to smoothAtmosphere,
+                                startY = fadeStart,
+                                endY = fadeEnd,
+                            ),
+                        )
+                    }
+                }
+            },
         ) {
         LazyColumn(
             state = listState,
