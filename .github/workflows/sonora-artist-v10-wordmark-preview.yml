@@ -1,0 +1,98 @@
+name: Sonora Artist V10 — Wordmark Sources Preview
+
+on:
+  push:
+    branches:
+      - feat/sonora-artist-wordmark-sources
+    paths:
+      - .github/workflows/sonora-artist-v10-wordmark-preview.yml
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    name: Test artist wordmarks and publish debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Test artist feature and build APK
+        env:
+          FANART_API_KEY: ${{ secrets.FANART_API_KEY }}
+          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          if [ -z "$FANART_API_KEY" ]; then
+            echo "::warning::Fanart project key not configured; only TheAudioDB artist logos will be available at runtime."
+          fi
+          ./gradlew :feature:search:testDebugUnitTest :app:assembleDebug --no-daemon
+
+      - name: Verify exact version, signed APK and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          AAPT=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name aapt | sort -V | tail -n1)
+          SIGNER=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -n1)
+          test -x "$AAPT"
+          test -x "$SIGNER"
+          "$AAPT" dump badging "$APK" | grep '^package:' | tee "$RUNNER_TEMP/package.txt"
+          grep -Fq "name='com.stash.app.debug' versionCode='160' versionName='0.9.124-sonora-artist-v10-logos'" "$RUNNER_TEMP/package.txt"
+          "$SIGNER" verify "$APK"
+          sha256sum "$APK"
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: sonora-artist-v10-wordmark-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Publish isolated prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FANART_CONFIGURED: ${{ secrets.FANART_API_KEY != '' }}
+        run: |
+          set -euo pipefail
+          TAG=sonora-artist-v10-wordmark-20261030
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release already exists; refusing to overwrite"
+            exit 1
+          fi
+
+          APK="$RUNNER_TEMP/Sonora-Artistas-V10-Logos-v0.9.124-debug.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$APK"
+          SHA=$(sha256sum "$APK" | cut -d' ' -f1)
+          cat > "$RUNNER_TEMP/notes.md" <<'EOF'
+          # Sonora — Artist Wordmark Sources V10
+
+          APK Debug: `com.stash.app.debug` • `0.9.124-sonora-artist-v10-logos` • code 160.
+
+          - Amplia a busca de **logos reais** com Fanart.tv HD Music Logo, por maior likes dentro da categoria, e TheAudioDB como fallback.
+          - Identidade confirmada por nome exato e MusicBrainz ID; só aceita PNG de logo em domínios controlados.
+          - Ausência de logo ou chave Fanart => fallback tipográfico, sem fotos ou capas fingindo ser logotipo.
+          - A integração Fanart exige `FANART_API_KEY` de projeto no ambiente de build.
+          - Apple Music permite logos oficiais, mas **sua API pública não oferece campo de logo**; não há extração automatizada da Apple nesta versão.
+          - Não modifica fotografias, paleta cromática V9, mini-player, reprodução ou navegação.
+          - A alteração do botão Play de vidro fumê não está incluída.
+
+          Validar os logos visualmente em bandas e solistas, inclusive casos ambíguos e sem fonte. Créditos/licenças da arte comunitária devem ser revisados antes de distribuição pública.
+          EOF
+          printf '\nFanart configurado no build: %s\nCommit: `%s`\nSHA-256 APK: `%s`\n' "$FANART_CONFIGURED" "$GITHUB_SHA" "$SHA" >> "$RUNNER_TEMP/notes.md"
+
+          gh release create "$TAG" "$APK" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Sonora Artistas V10 — Fontes de Logos" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            --prerelease --latest=false
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,assets --jq '{url:.url,assets:[.assets[].name]}'
