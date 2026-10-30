@@ -86,7 +86,7 @@ class AppleMusicWordmarkLookupTest {
             "https://is1-ssl.mzstatic.com/image/thumb/artist-photo.png"}}}</script>
         """.trimIndent()
         assertEquals(
-            "https://is1-ssl.mzstatic.com/image/thumb/l3KUzpoCcbLIyEKv9e8zjg/1600x124bb.png",
+            "https://is1-ssl.mzstatic.com/image/thumb/l3KUzpoCcbLIyEKv9e8zjg/1600x125bb.png",
             apple.parseLogo(html, artist),
         )
     }
