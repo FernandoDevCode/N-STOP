@@ -90,15 +90,23 @@ fun ArtistProfileScreen(
         value = ArtistWordmarkLookup.resolve(state.hero.name)
     }
     val context = LocalContext.current
-    val atmosphere by produceState(
-        initialValue = ArtistNeutralAtmosphere,
+    val photoPalette by produceState(
+        initialValue = ArtistNeutralPalette,
         key1 = state.hero.avatarUrl,
     ) {
-        value = artistAtmosphereFromPhoto(context, state.hero.avatarUrl)
+        value = artistPaletteFromPhoto(context, state.hero.avatarUrl)
     }
     val smoothAtmosphere by animateColorAsState(
-        targetValue = atmosphere,
-        label = "artistPhotoAtmosphere",
+        targetValue = photoPalette.surface,
+        label = "artistReadingSurface",
+    )
+    val smoothBridge by animateColorAsState(
+        targetValue = photoPalette.bridge,
+        label = "artistPhotoBridge",
+    )
+    val smoothHeroTone by animateColorAsState(
+        targetValue = photoPalette.hero,
+        label = "artistPhotoTone",
     )
     val featuredAlbum = remember(state.albums, state.singles) {
         selectArtistFeaturedAlbum(state.albums, state.singles)
@@ -187,6 +195,8 @@ fun ArtistProfileScreen(
                     socials = state.about?.socials.orEmpty(),
                     wordmarkUrl = wordmarkUrl,
                     atmosphere = smoothAtmosphere,
+                    bridgeAtmosphere = smoothBridge,
+                    heroAtmosphere = smoothHeroTone,
                     onBack = onBack,
                     onPlayArtist = vm::playArtist,
                     onStartRadio = vm::startRadio,
