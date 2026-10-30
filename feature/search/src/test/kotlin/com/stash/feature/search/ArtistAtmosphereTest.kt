@@ -114,4 +114,13 @@ class ArtistAtmosphereTest {
         assertTrue(kotlin.math.abs(palette.surface.red - palette.surface.blue) < .03f)
     }
 
+    @Test fun `dark blue photograph retains its cool tint without demanding bright majority`() {
+        val palette = artistPaletteFromPixels(photo(
+            0xFF0B1117.toInt() to 76,
+            0xFF2874AE.toInt() to 24,
+        ))
+        assertNotEquals(ArtistNeutralPalette, palette)
+        assertTrue(palette.surface.blue > palette.surface.red)
+    }
+
 }
