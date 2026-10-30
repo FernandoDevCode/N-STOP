@@ -64,7 +64,14 @@ internal object AppleMusicWordmarkLookup {
         val logo = runCatching { JSONObject(json) }.getOrNull() ?: return null
         val dictionary = logo.optJSONObject("dictionary") ?: return null
         val assetUrl = dictionary.optString("url")
-        return validateLogoAsset(assetUrl)
+        val sourceWidth = dictionary.optInt("width")
+        val sourceHeight = dictionary.optInt("height")
+        if (sourceWidth < 300 || sourceHeight < 40) return null
+        val targetWidth = minOf(1600, sourceWidth)
+        val targetHeight = (targetWidth.toDouble() * sourceHeight / sourceWidth)
+            .toInt().coerceAtLeast(1)
+        val cropStyle = logo.optString("cropStyle")
+        return validateLogoAsset(assetUrl, targetWidth, targetHeight, cropStyle)
     }
 
     // Extract exactly one JSON object without scanning arbitrary script content.
@@ -94,13 +101,22 @@ internal object AppleMusicWordmarkLookup {
         return null
     }
 
-    internal fun validateLogoAsset(raw: String): String? = runCatching {
-        if (raw.isBlank() || raw.length > 1200) return@runCatching null
-        // Apple returns a media URL template. Never pass literal placeholders
-        // to Coil or rewrite an arbitrary URL: substitute only Apple's w/h keys.
+    internal fun validateLogoAsset(
+        raw: String,
+        targetWidth: Int = 1600,
+        targetHeight: Int = 125,
+        cropStyle: String = "bb",
+    ): String? = runCatching {
+        if (raw.isBlank() || raw.length > 1200 ||
+            targetWidth !in 300..3000 || targetHeight !in 40..1500 ||
+            cropStyle != "bb"
+        ) return@runCatching null
+        // Public Apple artistLogo is a CDN image template with independent
+        // w/h/crop/format tokens. Respect the original aspect ratio.
         val resolved = raw
-            .replace("{w}", "1200")
-            .replace("{h}", "480")
+            .replace("{w}", targetWidth.toString())
+            .replace("{h}", targetHeight.toString())
+            .replace("{c}", cropStyle)
             .replace("{f}", "png")
         if ('{' in resolved || '}' in resolved) return@runCatching null
 
