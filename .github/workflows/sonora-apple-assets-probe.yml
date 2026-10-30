@@ -79,3 +79,28 @@ jobs:
                 except Exception as e:print('IMAGE ERROR',type(e).__name__,str(e)[:100])
             except Exception as e:print('PAGE ERROR',slug,type(e).__name__,str(e)[:150])
           PY
+
+      - name: Verify Apple official artistLogo image URL templates resolve as transparent PNG
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import urllib.request, json, re, struct, zlib
+          page='https://music.apple.com/us/artist/our-divide/1605542240'
+          with urllib.request.urlopen(urllib.request.Request(page,headers={'User-Agent':'Mozilla/5.0'}),timeout=10) as r:
+              html=r.read(500000).decode('utf-8')
+          m=re.search(r'"artistLogo":\s*(\{.*?\}),"circleArtwork":',html)
+          assert m, 'artistLogo missing'
+          logo=json.loads(m.group(1));d=logo['dictionary']
+          template=d['url']
+          print('Apple logo original dimensions',d['width'],d['height'],'crop',logo['cropStyle'])
+          for w in (1600,2886):
+              h=round(d['height']*w/d['width'])
+              target=template.replace('{w}',str(w)).replace('{h}',str(h)).replace('{c}',logo['cropStyle']).replace('{f}','png')
+              try:
+                  with urllib.request.urlopen(urllib.request.Request(target,headers={'User-Agent':'Mozilla/5.0'}),timeout=10) as r:
+                      content=r.read(500000)
+                      ok=content.startswith(b'\\x89PNG')
+                      colour_type=content[25] if ok else None
+                      print('CANDIDATE',w,h,'status',r.status,'mime',r.headers.get('Content-Type'),'bytes',len(content),'PNG',ok,'colorType',colour_type)
+              except Exception as e:print('IMAGE ERROR',w,type(e).__name__,str(e)[:100])
+          PY
