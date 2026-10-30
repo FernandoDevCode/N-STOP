@@ -171,8 +171,12 @@ fun ArtistProfileScreen(
         Box(
             modifier = Modifier.fillMaxSize().padding(inner).background(
                 Brush.verticalGradient(
+                    // The first card begins on precisely the hero's final
+                    // colour. Slowly deepen the canvas *after* the release
+                    // card, not at the photograph's lower edge.
                     0f to atmosphere,
-                    .54f to lowerWash,
+                    .51f to atmosphere,
+                    .80f to lowerWash,
                     1f to lowerWash,
                 ),
             ),
