@@ -6,11 +6,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -58,25 +56,25 @@ internal fun ArtistFeaturedAlbum(
     Surface(
         onClick = { onOpen(album) },
         modifier = modifier.fillMaxWidth(),
-        color = Color(0x263B4656),
-        shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = .13f)),
+        color = Color.White.copy(alpha = .065f),
+        shape = RoundedCornerShape(17.dp),
+        border = BorderStroke(.7.dp, Color.White.copy(alpha = .085f)),
     ) {
         Row(
-            modifier = Modifier.padding(10.dp),
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(13.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Box(
-                modifier = Modifier.size(70.dp)
-                    .background(Color(0xFF232831), RoundedCornerShape(9.dp)),
+                modifier = Modifier.size(64.dp)
+                    .background(Color(0xFF232831), RoundedCornerShape(8.dp)),
                 contentAlignment = Alignment.Center,
             ) {
                 if (album.thumbnailUrl != null) {
                     AsyncImage(
                         model = album.thumbnailUrl,
                         contentDescription = "Capa de ${album.title}",
-                        modifier = Modifier.size(70.dp),
+                        modifier = Modifier.size(64.dp),
                         contentScale = ContentScale.Crop,
                     )
                 } else {
@@ -110,20 +108,19 @@ internal fun ArtistFeaturedAlbum(
                 }
             }
             Surface(
-                color = Color.White.copy(alpha = .13f),
+                color = Color.White.copy(alpha = .09f),
                 shape = CircleShape,
-                modifier = Modifier.size(39.dp),
+                modifier = Modifier.size(34.dp),
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         Icons.Default.ChevronRight,
                         contentDescription = "Abrir álbum ${album.title}",
                         tint = Color.White,
-                        modifier = Modifier.size(24.dp),
+                        modifier = Modifier.size(21.dp),
                     )
                 }
             }
-            Spacer(Modifier.width(0.dp))
         }
     }
 }
