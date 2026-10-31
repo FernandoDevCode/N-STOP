@@ -20,6 +20,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.res.stringResource
+import com.stash.feature.library.R
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
@@ -33,7 +35,7 @@ fun SharedTrackScreen(onBack: () -> Unit, viewModel: SharedTrackViewModel = hilt
     val liked by viewModel.liked.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     Column(Modifier.fillMaxSize().statusBarsPadding().padding(20.dp)) {
-        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.shared_back)) }
         val t = when (val s = state) {
             SharedTrackUiState.Loading -> {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -46,7 +48,7 @@ fun SharedTrackScreen(onBack: () -> Unit, viewModel: SharedTrackViewModel = hilt
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(s.message, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
-                    if (s.retryable) { Spacer(Modifier.height(16.dp)); Button(onClick = viewModel::load) { Text("Retry") } }
+                    if (s.retryable) { Spacer(Modifier.height(16.dp)); Button(onClick = viewModel::load) { Text(stringResource(R.string.shared_retry)) } }
                 }
                 return@Column
             }
@@ -58,8 +60,8 @@ fun SharedTrackScreen(onBack: () -> Unit, viewModel: SharedTrackViewModel = hilt
         t.album?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         Spacer(Modifier.height(24.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { viewModel.play() }) { Text("Play") }
-            OutlinedButton(onClick = { viewModel.like() }, enabled = !liked) { Text(if (liked) "In your library" else "Add to library") }
+            Button(onClick = { viewModel.play() }) { Text(stringResource(R.string.shared_play)) }
+            OutlinedButton(onClick = { viewModel.like() }, enabled = !liked) { Text(stringResource(if (liked) R.string.shared_track_in_library else R.string.shared_track_add_library)) }
         }
         message?.let {
             Spacer(Modifier.height(8.dp))
