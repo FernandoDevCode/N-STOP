@@ -234,7 +234,7 @@ fun HomeScreen(
         modifier = modifier
             .fillMaxSize().sonoraHomeBackground(),
         // Edge to edge under the glass mini player + tab bar: they blur the feed as it scrolls by.
-        contentPadding = PaddingValues(top = 16.dp, bottom = bottomChromePadding(24.dp)),
+        contentPadding = PaddingValues(top = 0.dp, bottom = bottomChromePadding(24.dp)),
     ) {
         item(key = "nonstop_media_filters") {
             NonstopMediaFilters(selectedMediaTab, { selectedMediaTab = it })
