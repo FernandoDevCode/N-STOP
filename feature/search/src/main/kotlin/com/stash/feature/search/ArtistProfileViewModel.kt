@@ -6,6 +6,8 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.data.artistphotos.ArtistPhotoLookup
+import com.stash.core.data.artistphotos.ArtistIdentityLookup
+import com.stash.core.data.artistphotos.ArtistIdentityKind
 import com.stash.core.common.perf.PerfLog
 import com.stash.core.data.cache.AlbumCache
 import com.stash.core.data.cache.ArtistCache
@@ -67,6 +69,7 @@ class ArtistProfileViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val artistCache: ArtistCache,
     private val artistPhotoLookup: ArtistPhotoLookup,
+    private val artistIdentityLookup: ArtistIdentityLookup,
     private val appleAlbumMetadata: AppleMusicAlbumMetadataLookup,
     private val albumCache: AlbumCache,
     private val prefetcher: PreviewPrefetcher,
@@ -153,19 +156,52 @@ class ArtistProfileViewModel @Inject constructor(
     private var prefetchKicked = false
     private var photoJob: Job? = null
     private var curatedPhotoUrl: String? = null
+    private var curatedKind = ArtistIdentityKind.PHOTO
+    private var selectedIsIdentity = false
+    private var nativeAvatarUrl: String? = initialAvatar
+    private var fallbackPhotoJob: Job? = null
     private var appleMetadataJob: Job? = null
     private var appleMetadata: Map<String, AppleAlbumMetadata> = emptyMap()
 
-    /** Best-effort background selection, never blocks first paint or profile cache. */
+    /** Identity first, then the unmodified original band-photo selection. */
     private fun maybeLoadPhoto(name: String) {
         if (photoJob != null || name.isBlank()) return
         photoJob = viewModelScope.launch {
-            val chosen = artistPhotoLookup.find(name) ?: return@launch
-            curatedPhotoUrl = chosen
-            _uiState.update { state ->
-                state.copy(hero = state.hero.copy(avatarUrl = chosen))
+            val selected = artistIdentityLookup.find(name)
+            if (selected == null) {
+                applyLegacyPhoto(name)
+            } else {
+                curatedPhotoUrl = selected.url
+                curatedKind = selected.kind
+                selectedIsIdentity = true
+                _uiState.update { state ->
+                    state.copy(hero = state.hero.copy(
+                        avatarUrl = selected.url, artworkKind = selected.kind,
+                    ))
+                }
             }
         }
+    }
+
+    private suspend fun applyLegacyPhoto(name: String, failedIdentityUrl: String? = null) {
+        val legacy = artistPhotoLookup.find(name)
+        if (failedIdentityUrl != null && curatedPhotoUrl != failedIdentityUrl) return
+        curatedPhotoUrl = legacy
+        curatedKind = ArtistIdentityKind.PHOTO
+        selectedIsIdentity = false
+        _uiState.update { state ->
+            state.copy(hero = state.hero.copy(
+                avatarUrl = legacy ?: nativeAvatarUrl,
+                artworkKind = ArtistIdentityKind.PHOTO,
+            ))
+        }
+    }
+
+    /** Broken Commons thumbnail also triggers the original fallback; no blank hero. */
+    fun onHeroArtworkLoadFailed(url: String) {
+        if (!selectedIsIdentity || curatedPhotoUrl != url || fallbackPhotoJob != null) return
+        val name = _uiState.value.hero.name
+        fallbackPhotoJob = viewModelScope.launch { applyLegacyPhoto(name, failedIdentityUrl = url) }
     }
 
     /** Apple is preferred for existing album artwork/year, never playback IDs. */
@@ -422,11 +458,13 @@ class ArtistProfileViewModel @Inject constructor(
         status: ArtistProfileStatus,
         t0: Long,
     ) {
+        nativeAvatarUrl = profile.avatarUrl
         _uiState.value = _uiState.value.copy(
             hero = HeroState(
                 name = profile.name,
                 avatarUrl = curatedPhotoUrl ?: profile.avatarUrl,
                 subscribersText = profile.subscribersText,
+                artworkKind = curatedKind,
             ),
             popular = profile.popular,
             albums = AppleMusicAlbumMetadataLookup.enrich(profile.albums, appleMetadata),
