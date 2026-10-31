@@ -15,10 +15,10 @@ class CommunityRowsTest {
 
     @Test fun `rows say what the post is and who posted it`() {
         assertThat(post().subtitle(withAge = false, now)).isEqualTo("Playlist · 42 músicas · Maya")
-        assertThat(post(kind = "mix").subtitle(withAge = true, now)).isEqualTo("Mix · 42 songs · Maya · 3d")
+        assertThat(post(kind = "mix").subtitle(withAge = true, now)).isEqualTo("Mix · 42 músicas · Maya · há 3 dias")
         // TalkBack gets the age spelled out.
-        assertThat(post(kind = "mix").subtitle(withAge = true, now, longAge = true)).isEqualTo("Mix · 42 songs · Maya · 3 days ago")
-        assertThat(post(kind = "song").subtitle(withAge = false, now)).isEqualTo("Song · Death Plus · Maya")
+        assertThat(post(kind = "mix").subtitle(withAge = true, now, longAge = true)).isEqualTo("Mix · 42 músicas · Maya · há 3 dias")
+        assertThat(post(kind = "song").subtitle(withAge = false, now)).isEqualTo("Música · Death Plus · Maya")
         // Your own post is tagged YOU, so its age takes the name's place.
         assertThat(post(mine = true, age = 30_000).subtitle(withAge = false, now)).isEqualTo("Playlist · 42 músicas · agora")
     }
