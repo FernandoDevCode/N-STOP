@@ -62,7 +62,7 @@ internal fun ArtistFeaturedAlbum(
         border = BorderStroke(0.5.dp, Color.White.copy(alpha = .055f)),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
