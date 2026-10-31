@@ -55,7 +55,7 @@ internal fun SonoraHomeTheme(content: @Composable () -> Unit) {
 }
 
 @Composable
-internal fun Modifier.sonoraHomeBackground(): Modifier {
+fun Modifier.sonoraHomeBackground(): Modifier {
     val illuminated = LocalVisualDark.current && !LocalVisualAmoled.current
     return background(VisualDesign.Background).drawWithCache {
         val light = Brush.radialGradient(listOf(Color(0x0DD4D8E0), Color.Transparent),
