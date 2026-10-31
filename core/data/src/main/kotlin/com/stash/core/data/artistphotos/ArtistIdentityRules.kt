@@ -75,6 +75,25 @@ internal object ArtistIdentityRules {
             }
     }
 
+    /** P2238 may point to a dedicated official-symbol entity, not a file on the band. */
+    fun officialSymbolId(entityResponse: JsonObject, qid: String): String? {
+        if (!qidPattern.matches(qid)) return null
+        val entity = (entityResponse["entities"] as? JsonObject)?.get(qid) as? JsonObject
+            ?: return null
+        if ((entity["id"] as? JsonPrimitive)?.content != qid) return null
+        val claims = entity["claims"] as? JsonObject ?: return null
+        val ids = claims["P2238"]?.jsonArray.orEmpty().mapNotNull { statement ->
+            val claim = statement as? JsonObject ?: return@mapNotNull null
+            if ((claim["rank"] as? JsonPrimitive)?.content == "deprecated") return@mapNotNull null
+            val snak = claim["mainsnak"] as? JsonObject ?: return@mapNotNull null
+            if ((snak["snaktype"] as? JsonPrimitive)?.content != "value") return@mapNotNull null
+            val value = (snak["datavalue"] as? JsonObject)?.get("value") as? JsonObject
+                ?: return@mapNotNull null
+            (value["id"] as? JsonPrimitive)?.content?.takeIf(qidPattern::matches)
+        }.distinct()
+        return ids.singleOrNull()
+    }
+
     /** A logo only qualifies as a hero if its proportions suggest an emblem/symbol. */
     fun select(candidates: List<ArtistIdentityCandidate>): ArtistIdentityImage? {
         return candidates.firstNotNullOfOrNull { image ->
