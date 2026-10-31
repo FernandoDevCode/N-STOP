@@ -74,4 +74,16 @@
     <string name="nostop_schedule_daily">Todos os dias</string>
     <string name="nostop_schedule_weekdays">Dias úteis</string>
     <string name="nostop_schedule_weekends">Fins de semana</string>
+    <string name="sync_receipt_cancelled">Cancelada</string>
+    <string name="sync_receipt_failed">Falha na sincronização</string>
+    <string name="sync_receipt_failed_count">⚠ %1$d falhas</string>
+    <string name="sync_receipt_error">Erro: %1$s</string>
+    <string name="sync_receipt_diagnostics">Diagnóstico</string>
+    <string name="sync_receipt_no_details">Sem outros detalhes registrados</string>
+    <string name="sync_receipt_stream_only">Só online</string>
+    <string name="sync_receipt_download">Download</string>
+    <string name="sync_receipt_surfaced">encontradas</string>
+    <string name="sync_receipt_downloaded">baixadas</string>
+    <string name="sync_receipt_playlists_one">1 playlist</string>
+    <string name="sync_receipt_playlists_many">%1$d playlists</string>
 </resources>
