@@ -57,6 +57,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.stash.feature.home.R
+import com.stash.core.common.BrazilianDisplayFormat
 
 /**
  * Embedded under the existing Home media tabs, above the persistent music
@@ -307,13 +308,5 @@ private fun PodcastEpisodeRow(
 }
 
 
-/** RSS dates are in English regardless of the user's Android locale. */
-private fun formatPodcastDate(raw: String): String =
-    runCatching {
-        val parsed = java.time.ZonedDateTime.parse(raw, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME)
-        parsed.format(
-            java.time.format.DateTimeFormatter.ofPattern(
-                "dd MMM yyyy", java.util.Locale.getDefault(),
-            ),
-        )
-    }.getOrElse { raw.substringBefore(" GMT").take(30) }
+/** Display only; RFC 1123 RSS dates remain unchanged in feeds/cache. */
+private fun formatPodcastDate(raw: String): String = BrazilianDisplayFormat.rssDate(raw)
