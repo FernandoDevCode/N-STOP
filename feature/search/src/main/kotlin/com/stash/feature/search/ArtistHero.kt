@@ -59,6 +59,7 @@ import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
 import coil3.compose.rememberAsyncImagePainter
 import com.stash.core.common.ArtUrlUpgrader
+import com.stash.core.data.artistphotos.ArtistIdentityKind
 import com.stash.core.common.constants.StashConstants
 import com.stash.data.ytmusic.model.SocialLink
 
@@ -89,6 +90,7 @@ fun ArtistHero(
     wordmarkUrl: String? = null,
     heroAtmosphere: Color = ArtistNeutralPalette.hero,
     bridgeAtmosphere: Color = ArtistNeutralPalette.bridge,
+    onHeroArtworkLoadFailed: (String) -> Unit = {},
     onBack: () -> Unit,
     onPlayArtist: () -> Unit,
     onStartRadio: () -> Unit,
@@ -119,6 +121,7 @@ fun ArtistHero(
         val photoLeadIn = artistPhotoLeadInDp(maxWidth.value, viewportHeightDp).dp
         if (hero.avatarUrl != null) {
             val photo = ArtUrlUpgrader.upgrade(hero.avatarUrl)
+            val isSymbol = hero.artworkKind == ArtistIdentityKind.SYMBOL
             var photoAspectRatio by remember(photo) { mutableFloatStateOf(1f) }
             // A muted backdrop fills spare vertical space of wide band photos.
             // The foreground preserves *all horizontal members* without distortion.
@@ -135,9 +138,10 @@ fun ArtistHero(
             }
             AsyncImage(
                 model = photo,
-                contentDescription = "Fotografia de ${hero.name}",
-                contentScale = ContentScale.FillWidth,
-                alignment = Alignment.TopCenter,
+                contentDescription = if (isSymbol) "Símbolo de ${hero.name}" else "Fotografia de ${hero.name}",
+                contentScale = if (isSymbol) ContentScale.Fit else ContentScale.FillWidth,
+                alignment = if (isSymbol) Alignment.Center else Alignment.TopCenter,
+                onError = { onHeroArtworkLoadFailed(hero.avatarUrl) },
                 onSuccess = { result ->
                     val image = result.result.image
                     if (image.width > 0 && image.height > 0) {
@@ -146,7 +150,11 @@ fun ArtistHero(
                 },
                 // Fade at the actual displayed photo edge, including wide band
                 // photos that end above the card. No bitmap work on recomposition.
-                modifier = Modifier.matchParentSize().drawWithCache {
+                modifier = if (isSymbol) {
+                    // A symbol is not a photograph: preserve its aspect ratio and
+                    // keep it within the safe graphic area instead of cropping it.
+                    Modifier.matchParentSize().padding(horizontal = 30.dp, vertical = 56.dp)
+                } else Modifier.matchParentSize().drawWithCache {
                     val photoHeight = minOf(size.height, size.width / photoAspectRatio)
                     val fade = Brush.verticalGradient(
                         0f to Color.Transparent,
@@ -284,7 +292,8 @@ fun ArtistHero(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Spacer(Modifier.height(photoLeadIn))
-            if (wordmarkUrl != null && wordmarkState is AsyncImagePainter.State.Success) {
+            if (hero.artworkKind != ArtistIdentityKind.SYMBOL &&
+                wordmarkUrl != null && wordmarkState is AsyncImagePainter.State.Success) {
                 Image(
                     painter = painter,
                     contentDescription = hero.name,
