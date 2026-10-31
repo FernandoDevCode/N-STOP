@@ -760,8 +760,8 @@ fun HomeScreen(
                 com.stash.feature.home.podcasts.PodcastSection()
             }
         } else {
-            item(key = "nonstop_other_media") {
-                NonstopOtherMediaNotice(selectedMediaTab)
+            item(key = "sonora_audiobook_chapter_bridge") {
+                com.stash.feature.home.audiobooks.AudiobookChapterSection()
             }
         }
     }
