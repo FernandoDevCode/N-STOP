@@ -48,4 +48,19 @@
     <string name="nonstop_collection_share">Compartilhar playlist</string>
     <string name="nonstop_collection_cover">Alterar capa</string>
     <string name="nonstop_collection_more">Mais opções da playlist</string>
+    <string name="shared_back">Voltar</string>
+    <string name="shared_retry">Tentar novamente</string>
+    <string name="shared_play">Reproduzir</string>
+    <string name="shared_track_in_library">Na sua biblioteca</string>
+    <string name="shared_track_add_library">Adicionar à biblioteca</string>
+    <string name="shared_mix_by"> · compartilhado por %1$s</string>
+    <string name="shared_mix_updated"> · atualizado em %1$s</string>
+    <string name="shared_mix_tracks_one">1 música</string>
+    <string name="shared_mix_tracks_many">%1$d músicas</string>
+    <string name="shared_mix_owned">Este mix é seu</string>
+    <string name="shared_mix_following">Seguindo</string>
+    <string name="shared_mix_unfollow_confirmation">Toque novamente para deixar de seguir</string>
+    <string name="shared_mix_unfollow">Deixar de seguir</string>
+    <string name="shared_mix_follow">Seguir</string>
+    <string name="shared_mix_save_copy">Salvar uma cópia</string>
 </resources>
