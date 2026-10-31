@@ -46,6 +46,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
+import com.stash.feature.nowplaying.R
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
@@ -140,6 +142,9 @@ fun MiniPlayer(
             if (card?.isAttached == true && artwork?.isAttached == true)
                 card.localBoundingBoxOf(artwork, clipBounds = false) else Rect.Zero
         }
+        val openPlayerLabel = stringResource(R.string.mini_open)
+        val previousLabel = stringResource(R.string.mini_previous)
+        val nextLabel = stringResource(R.string.mini_next)
         Box(
             modifier = modifier
                 .fillMaxWidth()
@@ -166,13 +171,13 @@ fun MiniPlayer(
                     .indication(press, ripple())
                     // Preserve swipe navigation for assistive technology as well.
                     .semantics {
-                        onClick("Open player") { onExpand(); true }
+                        onClick(openPlayerLabel) { onExpand(); true }
                         if (!isListener) {
                             customActions = buildList {
-                                if (canPrevious) add(CustomAccessibilityAction("Previous song") {
+                                if (canPrevious) add(CustomAccessibilityAction(previousLabel) {
                                     viewModel.onSwipePrevious(); true
                                 })
-                                if (canNext) add(CustomAccessibilityAction("Next song") {
+                                if (canNext) add(CustomAccessibilityAction(nextLabel) {
                                     viewModel.onSkipNext(); true
                                 })
                             }
@@ -215,7 +220,7 @@ fun MiniPlayer(
                             }
                             AsyncImage(
                                 model = artRequest,
-                                contentDescription = "Album art",
+                                contentDescription = stringResource(R.string.mini_art),
                                 contentScale = ContentScale.Crop,
                                 modifier = artworkModifier,
                             )
@@ -275,7 +280,7 @@ fun MiniPlayer(
                     MiniIconButton(onClick = viewModel::onLikeTap) {
                         Icon(
                             imageVector = if (track?.stashLikedAt != null) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                            contentDescription = if (track?.stashLikedAt != null) "Unlike song" else "Like song",
+                            contentDescription = stringResource(if (track?.stashLikedAt != null) R.string.mini_unlike else R.string.mini_like),
                             tint = Color.White,
                             modifier = Modifier.size(25.dp),
                         )
@@ -285,11 +290,11 @@ fun MiniPlayer(
                     val playPress = remember { MutableInteractionSource() }
                     val wantsToPlay = uiState.playWhenReady || uiState.isPlaying
                     val loading = uiState.isBuffering && wantsToPlay
-                    val playAction = if (wantsToPlay) "Pause" else "Play"
+                    val playAction = stringResource(if (wantsToPlay) R.string.mini_pause else R.string.mini_play)
                     val playState = when {
-                        loading -> "Loading"
-                        uiState.isPlaying -> "Playing"
-                        else -> "Paused"
+                        loading -> stringResource(R.string.mini_loading)
+                        uiState.isPlaying -> stringResource(R.string.mini_playing)
+                        else -> stringResource(R.string.mini_paused)
                     }
                     Box(
                         modifier = Modifier

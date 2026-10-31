@@ -28,6 +28,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.stash.data.ytmusic.model.AlbumSummary
+import com.stash.core.common.BrazilianDisplayFormat
 
 /**
  * A single featured release, following actual catalog order. Prefer a real
@@ -88,7 +89,7 @@ internal fun ArtistFeaturedAlbum(
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = album.year ?: "Álbum em destaque",
+                    text = BrazilianDisplayFormat.releaseDate(album.year) ?: "Álbum em destaque",
                     style = MaterialTheme.typography.labelSmall,
                     color = Color(0xFFBCC4CF),
                     maxLines = 1,

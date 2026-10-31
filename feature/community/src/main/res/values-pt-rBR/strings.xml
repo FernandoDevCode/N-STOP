@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="post_back">Voltar</string>
+    <string name="post_more">Mais opções</string>
+    <string name="post_remove_mine">Remover minha publicação</string>
+    <string name="post_gone">Esta publicação não está mais disponível</string>
+    <string name="post_retry">Tentar novamente</string>
+    <string name="post_remove_question">Remover esta publicação?</string>
+    <string name="post_remove_warning">Ela será removida da Comunidade para todos.</string>
+    <string name="post_remove_daily"> Ela ainda conta no limite de duas publicações de hoje.</string>
+    <string name="post_removed">Publicação removida</string>
+    <string name="post_remove">Remover</string>
+    <string name="post_cancel">Cancelar</string>
+    <string name="post_posted_by">Publicado por %1$s · %2$s</string>
+    <string name="post_play">Reproduzir</string>
+    <string name="post_liked">Curtida</string>
+    <string name="post_like">Curtir</string>
+    <string name="post_save_copy">Salvar uma cópia</string>
+    <string name="post_frozen">Conteúdo da publicação original. Alterações posteriores de %1$s não aparecem aqui.</string>
+</resources>

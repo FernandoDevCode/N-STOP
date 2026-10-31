@@ -24,30 +24,8 @@ fun Long.formatFileSize(): String {
         value /= 1024.0
         unitIndex++
     } while (value >= 1024 && unitIndex < units.lastIndex)
-    return String.format(Locale.US, "%.1f %s", value, units[unitIndex])
+    return String.format(Locale.forLanguageTag("pt-BR"), "%.1f %s", value, units[unitIndex])
 }
 
-fun Long.toRelativeTimeString(): String {
-    val now = System.currentTimeMillis()
-    val diff = now - this
-    return when {
-        diff < TimeUnit.MINUTES.toMillis(1) -> "Just now"
-        diff < TimeUnit.HOURS.toMillis(1) -> {
-            val mins = TimeUnit.MILLISECONDS.toMinutes(diff)
-            "$mins min${if (mins != 1L) "s" else ""} ago"
-        }
-        diff < TimeUnit.DAYS.toMillis(1) -> {
-            val hours = TimeUnit.MILLISECONDS.toHours(diff)
-            "$hours hour${if (hours != 1L) "s" else ""} ago"
-        }
-        diff < TimeUnit.DAYS.toMillis(7) -> {
-            val days = TimeUnit.MILLISECONDS.toDays(diff)
-            "$days day${if (days != 1L) "s" else ""} ago"
-        }
-        else -> {
-            val days = TimeUnit.MILLISECONDS.toDays(diff)
-            val weeks = days / 7
-            "$weeks week${if (weeks != 1L) "s" else ""} ago"
-        }
-    }
-}
+fun Long.toRelativeTimeString(): String =
+    com.stash.core.common.BrazilianDisplayFormat.relative(this)

@@ -43,29 +43,22 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.stash.core.common.BrazilianDisplayFormat
 import com.stash.core.model.community.CommunityPost
 import com.stash.core.model.share.ShareConfig
 import com.stash.core.ui.theme.StashTheme
 
 internal fun kindLabel(kind: String): String = when (kind) {
     "mix" -> "Mix"
-    "song" -> "Song"
+    "song" -> "Música"
     else -> "Playlist"
 }
 
-internal fun songs(n: Int): String = if (n == 1) "1 song" else "$n songs"
+internal fun songs(n: Int): String = if (n == 1) "1 música" else "$n músicas"
 
 /** How long ago [then] was: "just now", "5m", "4h", "3d"; [long] spells it out: "5 minutes ago", "3 days ago". */
-internal fun ago(then: Long, now: Long, long: Boolean = false): String {
-    val minutes = (now - then).coerceAtLeast(0) / 60_000
-    fun of(n: Long, short: String, word: String) = if (long) "$n $word${if (n == 1L) "" else "s"} ago" else "$n$short"
-    return when {
-        minutes < 1 -> "just now"
-        minutes < 60 -> of(minutes, "m", "minute")
-        minutes < 24 * 60 -> of(minutes / 60, "h", "hour")
-        else -> of(minutes / (24 * 60), "d", "day")
-    }
-}
+internal fun ago(then: Long, now: Long, long: Boolean = false): String =
+    BrazilianDisplayFormat.relative(then, now)
 
 /**
  * "Playlist · 42 songs · Maya", "Song · Death Plus · Sam". Your own post is tagged YOU, so its age takes the
@@ -232,7 +225,7 @@ internal fun PostRow(
                 modifier = Modifier.semantics { contentDescription = post.subtitle(withAge, now, longAge = true) },
             )
             if (post.hidden) {
-                Text("Hidden by votes", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                Text("Oculta por votos", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
             }
         }
         VoteControl(post, onVote)
@@ -264,7 +257,7 @@ internal fun ListStatus(state: CommunityViewModel.UiState, emptyText: String, on
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
-                TextButton(onClick = onRetry) { Text("Retry") }
+                TextButton(onClick = onRetry) { Text("Tentar novamente") }
             }
             posts == null -> CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
             posts.isEmpty() -> Text(emptyText, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

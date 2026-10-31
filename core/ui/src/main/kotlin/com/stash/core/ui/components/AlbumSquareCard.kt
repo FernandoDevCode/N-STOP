@@ -25,6 +25,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.stash.core.common.ArtUrlUpgrader
+import com.stash.core.common.BrazilianDisplayFormat
 import com.stash.core.ui.components.motion.pressScale
 
 /**
@@ -109,7 +110,7 @@ fun AlbumSquareCard(
             overflow = TextOverflow.Ellipsis,
         )
         Text(
-            text = if (year != null) "$year • $artist" else artist,
+            text = BrazilianDisplayFormat.releaseDate(year)?.let { "$it • $artist" } ?: artist,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,

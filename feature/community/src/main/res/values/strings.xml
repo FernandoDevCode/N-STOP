@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="post_back">Back</string>
+    <string name="post_more">More options</string>
+    <string name="post_remove_mine">Take down my post</string>
+    <string name="post_gone">This post is no longer available</string>
+    <string name="post_retry">Retry</string>
+    <string name="post_remove_question">Take down this post?</string>
+    <string name="post_remove_warning">It leaves Community for everyone.</string>
+    <string name="post_remove_daily"> It still counts toward today\'s two posts.</string>
+    <string name="post_removed">Post taken down</string>
+    <string name="post_remove">Take down</string>
+    <string name="post_cancel">Cancel</string>
+    <string name="post_posted_by">Posted by %1$s · %2$s</string>
+    <string name="post_play">Play</string>
+    <string name="post_liked">Liked</string>
+    <string name="post_like">Like</string>
+    <string name="post_save_copy">Save a copy</string>
+    <string name="post_frozen">As posted. %1$s\'s later changes don\'t show here.</string>
+</resources>

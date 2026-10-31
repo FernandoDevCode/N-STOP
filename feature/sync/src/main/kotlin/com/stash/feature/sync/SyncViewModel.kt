@@ -758,11 +758,7 @@ class SyncViewModel @Inject constructor(
             syncHistoryDao.getRecentSyncs(limit = 1).collect { entities ->
                 val latest = entities.firstOrNull()?.toInfo()
                 val relativeTime = latest?.let {
-                    DateUtils.getRelativeTimeSpanString(
-                        it.startedAt,
-                        System.currentTimeMillis(),
-                        DateUtils.MINUTE_IN_MILLIS,
-                    ).toString()
+                    com.stash.core.common.BrazilianDisplayFormat.relative(it.startedAt)
                 } ?: ""
                 val healthLabel = when (latest?.displayStatus) {
                     null -> ""

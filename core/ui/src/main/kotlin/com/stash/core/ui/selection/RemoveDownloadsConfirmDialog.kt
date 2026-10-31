@@ -5,6 +5,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+import com.stash.core.ui.R
 
 /**
  * The one confirmation every multi-select list (Library Songs/Liked, album, artist, playlist and
@@ -23,15 +25,15 @@ fun RemoveDownloadsConfirmDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(removeDownloadsTitle(count)) },
-        text = { Text(removeDownloadsBody(totalBytes)) },
+        title = { Text(if (count == 1) stringResource(R.string.remove_download_title_one) else stringResource(R.string.remove_download_title_many, count)) },
+        text = { Text(if (totalBytes > 0) stringResource(R.string.remove_download_file_body, formatDownloadBytes(totalBytes)) else stringResource(R.string.remove_download_body)) },
         confirmButton = {
             TextButton(onClick = onConfirm) {
-                Text("Remove", color = MaterialTheme.colorScheme.error)
+                Text(stringResource(R.string.remove_download_confirm), color = MaterialTheme.colorScheme.error)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.remove_download_cancel)) }
         },
     )
 }

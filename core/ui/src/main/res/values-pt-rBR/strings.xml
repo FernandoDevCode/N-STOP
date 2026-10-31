@@ -32,4 +32,10 @@
     <string name="nostop_share_spotify_link">Link do Spotify</string>
     <string name="nostop_share_youtube_link">Link do YouTube Music</string>
     <string name="nostop_share_info_only">Somente informações da música</string>
+    <string name="remove_download_title_one">Remover 1 download?</string>
+    <string name="remove_download_title_many">Remover %1$d downloads?</string>
+    <string name="remove_download_file_body">Os arquivos de áudio (%1$s) serão removidos deste celular. As músicas continuarão nas playlists e poderão ser ouvidas online, mas precisarão ser baixadas novamente para ouvir offline.</string>
+    <string name="remove_download_body">Os arquivos de áudio serão removidos deste celular. As músicas continuarão nas playlists e poderão ser ouvidas online, mas precisarão ser baixadas novamente para ouvir offline.</string>
+    <string name="remove_download_confirm">Remover</string>
+    <string name="remove_download_cancel">Cancelar</string>
 </resources>

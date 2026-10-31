@@ -48,4 +48,19 @@
     <string name="nonstop_collection_share">Share playlist</string>
     <string name="nonstop_collection_cover">Change cover</string>
     <string name="nonstop_collection_more">More playlist actions</string>
+    <string name="shared_back">Back</string>
+    <string name="shared_retry">Retry</string>
+    <string name="shared_play">Play</string>
+    <string name="shared_track_in_library">In your library</string>
+    <string name="shared_track_add_library">Add to library</string>
+    <string name="shared_mix_by"> · shared by %1$s</string>
+    <string name="shared_mix_updated"> · updated %1$s</string>
+    <string name="shared_mix_tracks_one">1 track</string>
+    <string name="shared_mix_tracks_many">%1$d tracks</string>
+    <string name="shared_mix_owned">This is your mix</string>
+    <string name="shared_mix_following">Following</string>
+    <string name="shared_mix_unfollow_confirmation">Tap again to unfollow</string>
+    <string name="shared_mix_unfollow">Unfollow</string>
+    <string name="shared_mix_follow">Follow</string>
+    <string name="shared_mix_save_copy">Save a copy</string>
 </resources>

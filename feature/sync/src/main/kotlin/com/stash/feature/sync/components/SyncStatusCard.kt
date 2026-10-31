@@ -1,6 +1,8 @@
 package com.stash.feature.sync.components
 
-import android.text.format.DateUtils
+import com.stash.core.common.BrazilianDisplayFormat
+import com.stash.feature.sync.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -99,7 +101,7 @@ fun SyncStatusCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     StatItem(
-                        label = "Tracks",
+                        label = stringResource(R.string.sync_status_tracks),
                         value = syncStatus.totalTracks.toString(),
                         subValue = if (syncStatus.flacTracks > 0) "${syncStatus.flacTracks} FLAC" else null,
                     )
@@ -112,14 +114,14 @@ fun SyncStatusCard(
                         value = syncStatus.youTubeTracks.toString(),
                     )
                     StatItem(
-                        label = "Storage",
+                        label = stringResource(R.string.sync_status_storage),
                         value = formatBytes(syncStatus.storageUsedBytes),
                         subValue = if (syncStatus.flacStorageBytes > 0) "${formatBytes(syncStatus.flacStorageBytes)} FLAC" else null,
                     )
                 }
                 if (syncStatus.lastSyncTime != null) {
                     Text(
-                        text = "Last sync ${formatRelativeTimeForCard(syncStatus.lastSyncTime)}",
+                        text = stringResource(R.string.sync_status_last, formatRelativeTimeForCard(syncStatus.lastSyncTime)),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -140,19 +142,19 @@ private fun syncStatusLabel(
     anyServiceConnected: Boolean,
     hasEverSynced: Boolean,
 ): String = when {
-    !anyServiceConnected -> "No services connected"
-    !hasEverSynced -> "Ready to sync"
+    !anyServiceConnected -> stringResource(R.string.sync_status_no_service)
+    !hasEverSynced -> stringResource(R.string.sync_status_ready)
     else -> when (val s = syncStatus.displayStatus) {
-        SyncDisplayStatus.Idle -> "Ready to sync"
-        SyncDisplayStatus.Running -> "Syncing..."
-        SyncDisplayStatus.Success -> "Synced"
-        SyncDisplayStatus.Cancelled -> "Cancelled"
+        SyncDisplayStatus.Idle -> stringResource(R.string.sync_status_ready)
+        SyncDisplayStatus.Running -> stringResource(R.string.sync_status_syncing)
+        SyncDisplayStatus.Success -> stringResource(R.string.sync_status_synced)
+        SyncDisplayStatus.Cancelled -> stringResource(R.string.sync_status_cancelled)
         is SyncDisplayStatus.PartialSuccess ->
-            "Partially synced — ${s.downloaded} saved, ${s.failed} failed"
+            stringResource(R.string.sync_status_partial, s.downloaded, s.failed)
         is SyncDisplayStatus.Interrupted ->
-            if (s.downloaded > 0) "Interrupted — ${s.downloaded} saved"
-            else "Interrupted"
-        is SyncDisplayStatus.Failed -> "Sync failed"
+            if (s.downloaded > 0) stringResource(R.string.sync_status_interrupted_saved, s.downloaded)
+            else stringResource(R.string.sync_status_interrupted)
+        is SyncDisplayStatus.Failed -> stringResource(R.string.sync_status_failed)
     }
 }
 
@@ -234,7 +236,7 @@ private fun formatBytes(bytes: Long): String {
     val units = arrayOf("B", "KB", "MB", "GB", "TB")
     val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt()
     val safeIndex = digitGroups.coerceIn(0, units.lastIndex)
-    return "%.1f %s".format(bytes / Math.pow(1024.0, safeIndex.toDouble()), units[safeIndex])
+    return String.format(java.util.Locale.forLanguageTag("pt-BR"), "%.1f %s", bytes / Math.pow(1024.0, safeIndex.toDouble()), units[safeIndex])
 }
 
 /**
@@ -245,8 +247,4 @@ private fun formatBytes(bytes: Long): String {
  * two helpers can evolve independently without import-ambiguity surprises.
  */
 private fun formatRelativeTimeForCard(epochMillis: Long): String =
-    DateUtils.getRelativeTimeSpanString(
-        epochMillis,
-        System.currentTimeMillis(),
-        DateUtils.MINUTE_IN_MILLIS,
-    ).toString()
+    BrazilianDisplayFormat.relative(epochMillis)
