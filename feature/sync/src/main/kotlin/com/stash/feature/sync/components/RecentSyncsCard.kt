@@ -32,10 +32,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.stash.feature.sync.R
 import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.theme.SpaceGrotesk
 import com.stash.core.ui.theme.StashTheme
-import com.stash.core.common.extensions.pluralize
 import com.stash.core.common.BrazilianDisplayFormat
 
 /**
@@ -109,7 +110,11 @@ private fun RecentSyncRowItem(row: RecentSyncRow) {
                 text = buildAnnotatedString {
                     if (row.modeLabel != null) {
                         withStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)) {
-                            append(row.modeLabel)
+                            append(when (row.modeLabel) {
+                                "Stream only" -> stringResource(R.string.sync_receipt_stream_only)
+                                "Download" -> stringResource(R.string.sync_receipt_download)
+                                else -> row.modeLabel
+                            })
                         }
                         withStyle(SpanStyle(color = dim)) { append("  ·  ${row.relativeTime}") }
                     } else {
@@ -132,14 +137,14 @@ private fun RecentSyncRowItem(row: RecentSyncRow) {
         // Line 2 — the receipt: additions in green, neutral stats, failures stand out
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (row.status == SyncRowStatus.CANCELLED) {
-                Pill("Cancelled", dim)          // neutral, not the red fail tint
+                Pill(stringResource(R.string.sync_receipt_cancelled), dim)          // neutral, not the red fail tint
                 Spacer(Modifier.weight(1f))
             } else if (row.status == SyncRowStatus.FAILED) {
                 // Any FAILED row shows the pill — never a green receipt line.
                 // (Online rows bind `added` to surfaced-count, which can be >0
                 // on a late failure, so a count guard here would let a failed
                 // sync masquerade as success.)
-                Pill("Sync failed", fail)
+                Pill(stringResource(R.string.sync_receipt_failed), fail)
                 Spacer(Modifier.weight(1f))
             } else {
                 Text(
@@ -149,13 +154,17 @@ private fun RecentSyncRowItem(row: RecentSyncRow) {
                     style = MaterialTheme.typography.bodyMedium,
                     text = buildAnnotatedString {
                         withStyle(SpanStyle(color = success, fontWeight = FontWeight.Medium)) { append("+${row.added} ") }
-                        withStyle(SpanStyle(color = dim)) { append(row.addedNoun) }
-                        if (row.playlists > 0) withStyle(SpanStyle(color = dim)) { append("  ·  ${pluralize(row.playlists, "playlist")}") }
+                        withStyle(SpanStyle(color = dim)) { append(when (row.addedNoun) {
+                            "surfaced" -> stringResource(R.string.sync_receipt_surfaced)
+                            "downloaded" -> stringResource(R.string.sync_receipt_downloaded)
+                            else -> row.addedNoun
+                        }) }
+                        if (row.playlists > 0) withStyle(SpanStyle(color = dim)) { append("  ·  " + if (row.playlists == 1) stringResource(R.string.sync_receipt_playlists_one) else stringResource(R.string.sync_receipt_playlists_many, row.playlists)) }
                         if (row.sizeLabel != null) withStyle(SpanStyle(color = dim)) { append("  ·  ${row.sizeLabel}") }
                     },
                 )
                 if (row.failed > 0) {
-                    Pill("⚠ ${row.failed} failed", fail)
+                    Pill(stringResource(R.string.sync_receipt_failed_count, row.failed), fail)
                     Spacer(Modifier.width(8.dp))
                 }
             }
@@ -165,16 +174,16 @@ private fun RecentSyncRowItem(row: RecentSyncRow) {
         if (expanded) {
             Spacer(Modifier.height(8.dp))
             if (!row.errorMessage.isNullOrBlank()) {
-                Text("Error: ${row.errorMessage}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                Text(stringResource(R.string.sync_receipt_error, row.errorMessage.orEmpty()), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 Spacer(Modifier.height(4.dp))
             }
             if (!row.diagnostics.isNullOrBlank()) {
-                Text("Diagnostics", style = MaterialTheme.typography.labelSmall, color = dim, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.sync_receipt_diagnostics), style = MaterialTheme.typography.labelSmall, color = dim, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(2.dp))
                 Text(row.diagnostics, style = MaterialTheme.typography.bodySmall, color = dim, maxLines = 20)
             }
             if (row.errorMessage.isNullOrBlank() && row.diagnostics.isNullOrBlank()) {
-                Text("No further details recorded", style = MaterialTheme.typography.bodySmall, color = dim)
+                Text(stringResource(R.string.sync_receipt_no_details), style = MaterialTheme.typography.bodySmall, color = dim)
             }
             Spacer(Modifier.height(4.dp))
         }
