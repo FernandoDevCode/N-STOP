@@ -31,6 +31,7 @@ class ArtistAboutEnricherTest {
         }
         val mb = object : MusicBrainzClient {
             override suspend fun lookupUrlRels(mbid: String) = mbLookup
+            override suspend fun lookupMemberRelations(mbid: String): JsonObject? = null
             override suspend fun searchByName(name: String) = mbSearch
         }
         return RealArtistAboutEnricher(lastFm, mb)
