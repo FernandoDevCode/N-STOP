@@ -429,8 +429,8 @@ private fun ArtistEditorialHeading(label: String, compact: Boolean = false) {
         fontWeight = FontWeight.SemiBold,
         modifier = Modifier.fillMaxWidth()
             .padding(start = 18.dp, end = 18.dp,
-                top = if (compact) 20.dp else 15.dp,
-                bottom = if (compact) 10.dp else 7.dp),
+                top = if (compact) 28.dp else 18.dp,
+                bottom = if (compact) 13.dp else 9.dp),
     )
 }
 
