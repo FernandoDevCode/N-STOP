@@ -2,6 +2,7 @@ package com.stash.feature.search
 
 import android.content.Intent
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -39,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithCache
@@ -278,7 +280,7 @@ fun ArtistHero(
 
         Column(
             modifier = Modifier.fillMaxWidth().statusBarsPadding()
-                .padding(start = 18.dp, end = 18.dp, bottom = 12.dp),
+                .padding(start = 18.dp, end = 18.dp, bottom = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Spacer(Modifier.height(photoLeadIn))
@@ -308,29 +310,42 @@ fun ArtistHero(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(16.dp))
+            // Monolith: a filled, smoked-glass disc with a thin satin edge.
+            // Its tone comes from the original photograph's sampled palette,
+            // not the page surface or the already-darkened hero overlay.
             Surface(
                 onClick = onPlayArtist,
-                color = Color(0xFFF4F5F7),
+                color = artistSmokedGlassFill(heroAtmosphere),
                 shape = CircleShape,
-                modifier = Modifier.size(52.dp),
+                border = BorderStroke(0.75.dp, Color.White.copy(alpha = .24f)),
+                modifier = Modifier.size(56.dp),
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         Icons.Default.PlayArrow,
                         contentDescription = "Reproduzir ${hero.name}",
-                        tint = Color(0xFF0E1115),
-                        modifier = Modifier.size(30.dp),
+                        tint = Color(0xFFF5F1ED),
+                        modifier = Modifier.size(31.dp),
                     )
                 }
             }
             if (featuredContent != null) {
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(38.dp))
                 featuredContent()
             }
         }
     }
 }
+
+/**
+ * Source-photo-derived smoked glass, independent of background overlay opacity.
+ * A light tint tracks the real photo hue while the charcoal body stays neutral.
+ * The 58% fill opacity lets the original photography show through the disc.
+ */
+internal fun artistSmokedGlassFill(sourcePhotoTone: Color): Color =
+    lerp(Color(0xFF111418), sourcePhotoTone.copy(alpha = 1f), .16f)
+        .copy(alpha = .58f)
 
 /**
  * Reference-sized top action: 38dp visual surface in an accessible 48dp slot.
