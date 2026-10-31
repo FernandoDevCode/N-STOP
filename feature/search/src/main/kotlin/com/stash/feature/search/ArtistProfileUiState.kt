@@ -1,5 +1,6 @@
 package com.stash.feature.search
 
+import com.stash.core.data.artistphotos.ArtistIdentityKind
 import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.data.ytmusic.model.ArtistAbout
 import com.stash.data.ytmusic.model.ArtistSummary
@@ -16,6 +17,7 @@ data class HeroState(
     val name: String,
     val avatarUrl: String?,
     val subscribersText: String?,
+    val artworkKind: ArtistIdentityKind = ArtistIdentityKind.PHOTO,
 )
 
 /**
