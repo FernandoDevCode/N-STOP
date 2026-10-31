@@ -36,4 +36,15 @@
     <string name="nostop_np_lyrics">Letras</string>
     <string name="nostop_np_open_lyrics">Abrir letras</string>
     <string name="nostop_np_audio_details">Áudio e diagnóstico</string>
+    <string name="mini_open">Abrir player</string>
+    <string name="mini_previous">Música anterior</string>
+    <string name="mini_next">Próxima música</string>
+    <string name="mini_art">Capa do álbum</string>
+    <string name="mini_unlike">Descurtir música</string>
+    <string name="mini_like">Curtir música</string>
+    <string name="mini_pause">Pausar</string>
+    <string name="mini_play">Reproduzir</string>
+    <string name="mini_loading">Carregando</string>
+    <string name="mini_playing">Reproduzindo</string>
+    <string name="mini_paused">Pausado</string>
 </resources>
