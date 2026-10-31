@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import app.cash.turbine.test
 import com.stash.core.data.cache.AlbumCache
 import com.stash.core.data.cache.ArtistCache
+import com.stash.core.data.artistphotos.ArtistPhotoLookup
 import com.stash.core.data.cache.CachedProfile
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
@@ -87,6 +88,7 @@ class ArtistProfileViewModelTest {
             ),
         ),
         artistCache = cache,
+        artistPhotoLookup = mock<ArtistPhotoLookup>(),
         albumCache = albumCache,
         prefetcher = prefetcher,
         playerRepository = playerRepository,
