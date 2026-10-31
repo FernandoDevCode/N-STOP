@@ -26,7 +26,7 @@
     <string name="nostop_search_albums">Álbuns</string>
     <string name="nostop_search_kind_song">Música</string>
     <string name="nostop_search_kind_artist">Artista</string>
-    <string name="album_more_by">Mais deste artista</string>
+    <string name="album_more_by">Na mesma vibe</string>
     <string name="album_download_confirm_title">Baixar tudo?</string>
     <string name="album_download_none">Todas as músicas já foram baixadas.</string>
     <string name="album_download_count">Baixar %1$d músicas para sua biblioteca?</string>

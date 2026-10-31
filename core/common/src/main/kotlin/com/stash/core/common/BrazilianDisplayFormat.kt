@@ -2,6 +2,7 @@ package com.stash.core.common
 
 import java.time.Instant
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
@@ -17,6 +18,25 @@ object BrazilianDisplayFormat {
 
     fun date(timestampMs: Long, zone: ZoneId = ZoneId.systemDefault()): String =
         Instant.ofEpochMilli(timestampMs).atZone(zone).format(date)
+
+    /**
+     * Catalog release dates may have day, month or year precision.
+     * This is display-only and never changes the metadata persisted or sent.
+     */
+    fun releaseDate(raw: String?): String? {
+        val value = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return when {
+            Regex("""\d{4}-\d{2}-\d{2}""").matches(value) ->
+                runCatching { LocalDate.parse(value).format(date) }.getOrElse { value }
+            Regex("""\d{4}-\d{2}""").matches(value) ->
+                runCatching {
+                    YearMonth.parse(value).format(
+                        DateTimeFormatter.ofPattern("MM/uuuu", Locale.forLanguageTag("pt-BR"))
+                    )
+                }.getOrElse { value }
+            else -> value
+        }
+    }
 
     /** RSS dates are RFC 1123 (English month names in the wire format). */
     fun rssDate(raw: String, zone: ZoneId = ZoneId.systemDefault()): String {

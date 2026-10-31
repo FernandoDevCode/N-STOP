@@ -1,4 +1,4 @@
-name: Sonora V17 — Brazilian Portuguese and Date Formats
+name: Sonora V17.1 — Album Date and Recommendation Copy
 
 on:
   push:
@@ -60,37 +60,39 @@ jobs:
           AAPT=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name aapt | sort -V | tail -n1)
           SIGNER=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -n1)
           "$AAPT" dump badging "$APK" | grep '^package:' | tee "$RUNNER_TEMP/package.txt"
-          grep -Fq "name='com.stash.app.debug' versionCode='167' versionName='0.9.131-sonora-ptbr'" "$RUNNER_TEMP/package.txt"
+          grep -Fq "name='com.stash.app.debug' versionCode='168' versionName='0.9.132-sonora-ptbr-hotfix'" "$RUNNER_TEMP/package.txt"
           "$SIGNER" verify "$APK"
           sha256sum "$APK"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v6
         with:
-          name: sonora-v17-ptbr-apk
+          name: sonora-v17-1-ptbr-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
-      - name: Publish V17 prerelease
+      - name: Publish V17.1 prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          TAG=sonora-v17-ptbr-20261031
+          TAG=sonora-v17-1-ptbr-albums-20261031
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Release already exists; refusing to overwrite it"
             exit 1
           fi
-          APK="$RUNNER_TEMP/Sonora-V17-PTBR-v0.9.131-debug.apk"
+          APK="$RUNNER_TEMP/Sonora-V17-1-PTBR-Albuns-v0.9.132-debug.apk"
           cp app/build/outputs/apk/debug/app-debug.apk "$APK"
           SHA=$(sha256sum "$APK" | cut -d' ' -f1)
           cat > "$RUNNER_TEMP/release-notes.md" <<'EOF'
-          # Sonora V17 — Interface e datas em português brasileiro
+          # Sonora V17.1 — Datas dos álbuns e recomendações
 
-          APK Debug: `com.stash.app.debug` · versionCode 167 · v0.9.131.
+          APK Debug: `com.stash.app.debug` · versionCode 168 · v0.9.132.
 
           - Datas exibidas como dd/MM/aaaa e horários relativos em português brasileiro.
+          - Catálogo de álbuns: datas ISO completas em dd/MM/aaaa e ano-mês em MM/aaaa, sem inventar dia/mês para anos isolados.
+          - Recomendações entre artistas: título «Na mesma vibe» sem substituir os dados ou modificar o algoritmo.
           - Capítulos, RSS, notificações e histórico de sincronização usam formatação PT-BR.
           - Traduções para compartilhamento, comunidade, descoberta de álbuns, dispositivos e acessibilidade do mini-player.
           - Mantidos os termos consolidados: download, playlist, mix, streaming, Wi-Fi e nomes próprios.
@@ -117,6 +119,6 @@ jobs:
           gh release create "$TAG" "$APK" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Sonora V17 — Português brasileiro e datas" \
+            --title "Sonora V17.1 — Datas dos álbuns e recomendações" \
             --notes-file "$RUNNER_TEMP/release-notes.md" \
             --prerelease --latest=false

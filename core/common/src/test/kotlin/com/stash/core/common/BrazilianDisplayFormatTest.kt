@@ -23,6 +23,18 @@ class BrazilianDisplayFormatTest {
         assertEquals("Data indisponível", BrazilianDisplayFormat.rssDate("not a date", utc))
     }
 
+    @Test fun `catalog release dates respect precision and Brazilian display order`() {
+        assertEquals("09/06/2023", BrazilianDisplayFormat.releaseDate("2023-06-09"))
+        assertEquals("06/2023", BrazilianDisplayFormat.releaseDate("2023-06"))
+        assertEquals("2023", BrazilianDisplayFormat.releaseDate("2023"))
+        assertEquals("09/06/2023", BrazilianDisplayFormat.releaseDate(" 2023-06-09 "))
+        assertEquals(null, BrazilianDisplayFormat.releaseDate(null))
+        assertEquals(null, BrazilianDisplayFormat.releaseDate("  "))
+        assertEquals("2023-02-30", BrazilianDisplayFormat.releaseDate("2023-02-30"))
+        assertEquals("2023-13", BrazilianDisplayFormat.releaseDate("2023-13"))
+        assertEquals("unknown", BrazilianDisplayFormat.releaseDate("unknown"))
+    }
+
     @Test fun `relative labels are Portuguese and older entries use absolute Brazilian date`() {
         val now = Instant.parse("2026-10-31T16:00:00Z").toEpochMilli()
         assertEquals("agora", BrazilianDisplayFormat.relative(now - 5_000, now, utc))

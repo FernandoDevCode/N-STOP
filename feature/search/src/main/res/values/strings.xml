@@ -26,7 +26,7 @@
     <string name="nostop_search_albums">Albums</string>
     <string name="nostop_search_kind_song">Song</string>
     <string name="nostop_search_kind_artist">Artist</string>
-    <string name="album_more_by">More by this artist</string>
+    <string name="album_more_by">You might also like</string>
     <string name="album_download_confirm_title">Download all?</string>
     <string name="album_download_none">All tracks already downloaded.</string>
     <string name="album_download_count">Download %1$d tracks to your library?</string>
