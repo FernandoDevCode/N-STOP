@@ -54,7 +54,7 @@ fun NonstopMediaFilters(
         stringResource(R.string.nonstop_filter_audiobooks),
     )
     BoxWithConstraints(
-        modifier.fillMaxWidth().padding(horizontal = VisualDesign.Gutter, vertical = 4.dp),
+        modifier.fillMaxWidth().padding(horizontal = VisualDesign.Gutter, vertical = 0.dp),
     ) {
         val fontScale = LocalDensity.current.fontScale
         val reflow = fontScale >= 1.3f
