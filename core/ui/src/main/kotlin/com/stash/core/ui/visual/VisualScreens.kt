@@ -331,7 +331,7 @@ typealias VisualArtwork = @Composable (String?, Modifier) -> Unit
                     Column(Modifier.weight(1f).fillMaxHeight().testTag("visual-tab-${destination.name}").selectable(selected, role = Role.Tab,
                         interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                         indication = null) { actions.onPage(destination) }
-                        .padding(top = 10.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        .padding(top = 15.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
                         VisualNavigationIcon(destination, selected, Modifier.size(VisualDesign.Size.NavigationIcon))
                         Text(label, maxLines = 1, softWrap = false,
                             style = labelStyle.copy(fontSize = 10.sp * fit),
