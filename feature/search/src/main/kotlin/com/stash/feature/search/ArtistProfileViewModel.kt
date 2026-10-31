@@ -67,6 +67,7 @@ class ArtistProfileViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val artistCache: ArtistCache,
     private val artistPhotoLookup: ArtistPhotoLookup,
+    private val appleAlbumMetadata: AppleMusicAlbumMetadataLookup,
     private val albumCache: AlbumCache,
     private val prefetcher: PreviewPrefetcher,
     private val playerRepository: PlayerRepository,
@@ -152,6 +153,8 @@ class ArtistProfileViewModel @Inject constructor(
     private var prefetchKicked = false
     private var photoJob: Job? = null
     private var curatedPhotoUrl: String? = null
+    private var appleMetadataJob: Job? = null
+    private var appleMetadata: Map<String, AppleAlbumMetadata> = emptyMap()
 
     /** Best-effort background selection, never blocks first paint or profile cache. */
     private fun maybeLoadPhoto(name: String) {
@@ -161,6 +164,22 @@ class ArtistProfileViewModel @Inject constructor(
             curatedPhotoUrl = chosen
             _uiState.update { state ->
                 state.copy(hero = state.hero.copy(avatarUrl = chosen))
+            }
+        }
+    }
+
+    /** Apple is preferred for existing album artwork/year, never playback IDs. */
+    private fun maybeLoadAppleCatalog(name: String) {
+        if (appleMetadataJob != null || name.isBlank()) return
+        appleMetadataJob = viewModelScope.launch {
+            val found = appleAlbumMetadata.find(name)
+            if (found.isEmpty()) return@launch
+            appleMetadata = found
+            _uiState.update { state ->
+                state.copy(
+                    albums = AppleMusicAlbumMetadataLookup.enrich(state.albums, found),
+                    singles = AppleMusicAlbumMetadataLookup.enrich(state.singles, found),
+                )
             }
         }
     }
@@ -403,13 +422,14 @@ class ArtistProfileViewModel @Inject constructor(
                 subscribersText = profile.subscribersText,
             ),
             popular = profile.popular,
-            albums = profile.albums,
-            singles = profile.singles,
+            albums = AppleMusicAlbumMetadataLookup.enrich(profile.albums, appleMetadata),
+            singles = AppleMusicAlbumMetadataLookup.enrich(profile.singles, appleMetadata),
             related = profile.related,
             status = status,
             about = profile.about,
         )
         maybeLoadPhoto(profile.name)
+        maybeLoadAppleCatalog(profile.name)
         if (!prefetchKicked && profile.popular.isNotEmpty()) {
             prefetchKicked = true
             val videoIds = profile.popular.map { it.videoId }
