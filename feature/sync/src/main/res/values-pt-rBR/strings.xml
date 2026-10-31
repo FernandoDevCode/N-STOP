@@ -86,4 +86,16 @@
     <string name="sync_receipt_downloaded">baixadas</string>
     <string name="sync_receipt_playlists_one">1 playlist</string>
     <string name="sync_receipt_playlists_many">%1$d playlists</string>
+    <string name="sync_status_tracks">Músicas</string>
+    <string name="sync_status_storage">Armazenamento</string>
+    <string name="sync_status_last">Última sincronização: %1$s</string>
+    <string name="sync_status_no_service">Nenhum serviço conectado</string>
+    <string name="sync_status_ready">Pronto para sincronizar</string>
+    <string name="sync_status_syncing">Sincronizando…</string>
+    <string name="sync_status_synced">Sincronizado</string>
+    <string name="sync_status_cancelled">Cancelado</string>
+    <string name="sync_status_partial">Parcialmente sincronizado — %1$d salvos, %2$d falhas</string>
+    <string name="sync_status_interrupted_saved">Interrompido — %1$d salvos</string>
+    <string name="sync_status_interrupted">Interrompido</string>
+    <string name="sync_status_failed">Falha na sincronização</string>
 </resources>
