@@ -6,6 +6,15 @@ on:
       - feat/sonora-v16-integration-chrome-photos
     paths:
       - .github/workflows/sonora-v16-integration.yml
+      - build-logic/settings.gradle.kts
+      - app/build.gradle.kts
+      - feature/search/src/main/**
+      - feature/search/src/test/**
+      - feature/nowplaying/src/main/**
+      - core/data/src/main/kotlin/com/stash/core/data/artistphotos/**
+      - core/data/src/main/kotlin/com/stash/core/data/musicbrainz/**
+      - feature/home/src/main/kotlin/com/stash/feature/home/HomeScreen.kt
+      - core/ui/src/main/kotlin/com/stash/core/ui/visual/VisualScreens.kt
   workflow_dispatch:
 
 permissions:
@@ -59,7 +68,7 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
-      - name: Publish V15 prerelease
+      - name: Publish V16 prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
