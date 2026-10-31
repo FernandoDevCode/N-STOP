@@ -36,6 +36,7 @@ import com.stash.core.ui.components.GlassCard
 import com.stash.core.ui.theme.SpaceGrotesk
 import com.stash.core.ui.theme.StashTheme
 import com.stash.core.common.extensions.pluralize
+import com.stash.core.common.BrazilianDisplayFormat
 
 /**
  * View-layer row model used by [RecentSyncsCard]. Decouples the card from
@@ -207,13 +208,8 @@ fun formatSyncBytes(bytes: Long): String? = when {
     bytes <= 0 -> null
     bytes < 1024L * 1024 -> "${bytes / 1024} KB"
     bytes < 1024L * 1024 * 1024 -> "${bytes / (1024 * 1024)} MB"
-    else -> String.format("%.1f GB", bytes / (1024.0 * 1024 * 1024))
+    else -> String.format(java.util.Locale.forLanguageTag("pt-BR"), "%.1f GB", bytes / (1024.0 * 1024 * 1024))
 }
 
 /** Formats a Unix-millisecond timestamp into a relative time string (e.g. "3 minutes ago"). */
-fun formatRelativeTime(timestampMs: Long): String =
-    DateUtils.getRelativeTimeSpanString(
-        timestampMs,
-        System.currentTimeMillis(),
-        DateUtils.MINUTE_IN_MILLIS,
-    ).toString()
+fun formatRelativeTime(timestampMs: Long): String = BrazilianDisplayFormat.relative(timestampMs)
