@@ -172,7 +172,14 @@ class ArtistProfileViewModel @Inject constructor(
     private fun maybeLoadAppleCatalog(name: String) {
         if (appleMetadataJob != null || name.isBlank()) return
         appleMetadataJob = viewModelScope.launch {
-            val found = runCatching { appleAlbumMetadata.find(name) }.getOrNull().orEmpty()
+            val found = try {
+                val result: Map<String, AppleAlbumMetadata>? = appleAlbumMetadata.find(name)
+                result.orEmpty()
+            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                emptyMap()
+            }
             if (found.isEmpty()) return@launch
             appleMetadata = found
             _uiState.update { state ->
