@@ -292,15 +292,16 @@ private fun LinkedList(
     }
 }
 
+@Composable
 private fun subtitleOf(d: LinkedDevice, serverTime: Long): String = when {
-    d.isMe -> "This phone"
+    d.isMe -> stringResource(R.string.web_this_phone)
     d.trust == DeviceTrust.KEY_CHANGED -> WebLinkCopy.KEY_CHANGED
     d.trust == DeviceTrust.NOT_VERIFIED -> WebLinkCopy.NOT_VERIFIED
-    serverTime <= 0 || d.lastSeenAt <= 0 -> "Linked"
+    serverTime <= 0 || d.lastSeenAt <= 0 -> stringResource(R.string.web_linked)
     else -> when (val days = ((serverTime - d.lastSeenAt).coerceAtLeast(0) / 86_400_000L).toInt()) {
-        0 -> "Last used today"
-        1 -> "Last used yesterday"
-        else -> "Last used $days days ago"
+        0 -> stringResource(R.string.web_last_used_today)
+        1 -> stringResource(R.string.web_last_used_yesterday)
+        else -> stringResource(R.string.web_last_used_days, days)
     }
 }
 
@@ -316,12 +317,14 @@ private fun PairingPanel(state: PairingState, onLink: () -> Unit, onClose: () ->
                     LinearProgressIndicator(Modifier.fillMaxWidth())
                 }
                 is PairingState.Confirm -> {
+                    val codeStart = stringResource(R.string.web_confirm_code_start)
+                    val codeEnd = stringResource(R.string.web_confirm_code_end)
                     Text(stringResource(R.string.web_link_question, state.browserName), style = MaterialTheme.typography.titleMedium)
                     Text(
                         buildAnnotatedString {
-                            append("Your computer will ask you to check ")
+                            append(codeStart)
                             withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(PairingSession.spaced(state.code)) }
-                            append(". It will see what you're playing here, and you can choose to mirror your library with it.")
+                            append(codeEnd)
                         },
                         style = MaterialTheme.typography.bodyMedium,
                     )
@@ -339,9 +342,10 @@ private fun PairingPanel(state: PairingState, onLink: () -> Unit, onClose: () ->
                     }
                 }
                 is PairingState.Waiting -> {
+                    val waitingLabel = stringResource(R.string.web_wait_computer)
                     Text(
                         buildAnnotatedString {
-                            append("Waiting for your computer… · ")
+                            append(waitingLabel)
                             withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(PairingSession.spaced(state.code)) }
                         },
                         style = MaterialTheme.typography.titleMedium,
@@ -360,10 +364,11 @@ private fun PairingPanel(state: PairingState, onLink: () -> Unit, onClose: () ->
                     Button(onClick = onClose) { Text(stringResource(R.string.web_done)) }
                 }
                 is PairingState.Failed -> {
+                    val codeLabel = stringResource(R.string.web_code_prefix)
                     state.code?.let {
                         Text(
                             buildAnnotatedString {
-                                append("Code ")
+                                append(codeLabel)
                                 withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(PairingSession.spaced(it)) }
                             },
                             style = MaterialTheme.typography.titleMedium,
