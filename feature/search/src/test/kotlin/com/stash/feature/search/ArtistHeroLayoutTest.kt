@@ -22,8 +22,9 @@ class ArtistHeroLayoutTest {
     @Test fun `smoked glass uses original photo tone with actual transparency`() {
         val redPhoto = artistSmokedGlassFill(Color(0xFF8B2534))
         val bluePhoto = artistSmokedGlassFill(Color(0xFF1B466A))
-        assertEquals(.58f, redPhoto.alpha, .0001f)
-        assertEquals(.58f, bluePhoto.alpha, .0001f)
+        // Compose Color packs sRGB channels into 8 bits; alpha rounds to 1/255.
+        assertEquals(.58f, redPhoto.alpha, .005f)
+        assertEquals(.58f, bluePhoto.alpha, .005f)
         assertTrue(redPhoto.red > redPhoto.blue)
         assertTrue(bluePhoto.blue > bluePhoto.red)
     }
