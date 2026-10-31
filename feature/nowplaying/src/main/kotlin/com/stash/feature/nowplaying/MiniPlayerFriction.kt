@@ -233,7 +233,7 @@ internal fun Modifier.miniPlayerFriction(
                     val breathing = .82f + .18f *
                         kotlin.math.sin(phase * 3.7f + t * 9f)
                     val halfWidth = rail.strokeWidth * .42f +
-                        .45.dp.toPx() * envelope * breathing
+                        0.45.dp.toPx() * envelope * breathing
                     return point + normal * halfWidth * side
                 }
                 for (step in 0..12) {
