@@ -24,8 +24,7 @@ import kotlin.coroutines.resumeWithException
 object DiscordProfileValidator {
     private const val CLIENT_ID = "934292861724270632"
 
-    suspend fun validateAndFetchProfile(userToken: String): JsonObject {
-        val client = OkHttpClient()
+    suspend fun validateAndFetchProfile(userToken: String, client: OkHttpClient = OkHttpClient()): JsonObject {
         val req = Request.Builder().url("https://discord.com/api/v9/oauth2/authorize?client_id=$CLIENT_ID")
         DiscordHeaders.apply(req, token = userToken, bearer = false)
         // Closed on the rejected-token path too, or each bad paste leaks a connection.
@@ -33,14 +32,19 @@ object DiscordProfileValidator {
             if (!res.isSuccessful) throw IllegalStateException("Invalid Discord token")
             val bodyString = res.body?.string() ?: throw IllegalStateException("Empty response body")
             val body = Json.decodeFromString<JsonObject>(bodyString)
-            body["user"] as? JsonObject ?: throw IllegalStateException("No user in authorize response")
+            val profile = body["user"] as? JsonObject ?: throw IllegalStateException("No user in authorize response")
+            check((profile["id"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.isNotBlank() == true) { "No user ID in authorize response" }
+            profile
         }
     }
 
     private suspend fun Call.await(): Response = suspendCancellableCoroutine { cont ->
+        cont.invokeOnCancellation { cancel() }
         enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) = cont.resumeWithException(e)
-            override fun onResponse(call: Call, response: Response) = cont.resume(response)
+            override fun onFailure(call: Call, e: IOException) { if (cont.isActive) cont.resumeWithException(e) }
+            override fun onResponse(call: Call, response: Response) {
+                if (cont.isActive) cont.resume(response) else response.close()
+            }
         })
     }
 }

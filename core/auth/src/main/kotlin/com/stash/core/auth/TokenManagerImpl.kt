@@ -6,7 +6,7 @@ import com.stash.core.auth.model.AuthState
 import com.stash.core.auth.model.ServiceToken
 import com.stash.core.auth.model.UserInfo
 import com.stash.core.auth.spotify.SpotifyAuthManager
-import com.stash.core.auth.store.EncryptedTokenStore
+import com.stash.core.auth.store.TokenStore
 import com.stash.core.auth.youtube.YouTubeCookieHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -24,7 +24,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Default [TokenManager] implementation backed by [EncryptedTokenStore].
+ * Default [TokenManager] implementation backed by a platform [TokenStore].
  *
  * Observes the encrypted token and user flows for each service and maps them into
  * reactive [AuthState] values. The Spotify access-token getter automatically refreshes
@@ -32,10 +32,11 @@ import javax.inject.Singleton
  */
 @Singleton
 class TokenManagerImpl @Inject constructor(
-    private val tokenStore: EncryptedTokenStore,
+    private val tokenStore: TokenStore,
     private val spotifyAuthManager: SpotifyAuthManager,
     private val youTubeCookieHelper: YouTubeCookieHelper,
-) : TokenManager {
+    private val httpClient: okhttp3.OkHttpClient = okhttp3.OkHttpClient(),
+) : TokenManager, AutoCloseable {
 
     /**
      * Dedicated scope for collecting store flows; survives until the process dies.
@@ -46,6 +47,7 @@ class TokenManagerImpl @Inject constructor(
      * write (each Spotify refresh) re-ran six decrypts + JSON parses there.
      */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    override fun close() { scope.coroutineContext[kotlinx.coroutines.Job]?.cancel() }
 
     // -- Spotify state --------------------------------------------------------
 
@@ -207,7 +209,7 @@ class TokenManagerImpl @Inject constructor(
 
     override suspend fun clearAuth(service: AuthService) {
         when (service) {
-            AuthService.SPOTIFY -> tokenStore.clearSpotify()
+            AuthService.SPOTIFY -> spotifyRefreshLock.withLock { tokenStore.clearSpotify() }
             AuthService.YOUTUBE_MUSIC -> tokenStore.clearYouTube()
             AuthService.DISCORD -> tokenStore.clearDiscord()
         }
@@ -245,7 +247,7 @@ class TokenManagerImpl @Inject constructor(
     override suspend fun connectDiscordWithToken(token: String): Boolean {
         if (token.isBlank()) return false
         val result = runCatching {
-            com.stash.core.auth.discord.DiscordProfileValidator.validateAndFetchProfile(token)
+            com.stash.core.auth.discord.DiscordProfileValidator.validateAndFetchProfile(token, httpClient)
         }
         result.exceptionOrNull()?.let {
             Log.w("StashSync", "connectDiscordWithToken: profile validation failed", it)

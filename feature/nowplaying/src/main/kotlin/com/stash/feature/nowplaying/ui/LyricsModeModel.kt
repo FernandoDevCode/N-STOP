@@ -75,19 +75,18 @@ internal const val LYRICS_SIDE_PAD_DP = 24f
 private const val LYRICS_MAX_FONT_SP = 34f
 
 /** Lines this long or shorter keep the full size; the web's `fit` rule. */
-private const val FIT_CHARS = 25
+private const val FIT_CHARS = 32
 
 /** No line shrinks below this share of the full size. */
-private const val FIT_MIN = 0.6f
+private const val FIT_MIN = 0.9f
 
 /**
- * Lyric size for a column [widthDp] wide: `min(34, (width - 2 pad) / 14)`, so about 14 bold em fit
- * a line (~24sp on a 393dp Pixel 5).
+ * One type scale for LRC and TTML: about 26sp on a 393dp phone, capped at 34sp.
  */
 internal fun lyricFontSizeSp(widthDp: Float): Float =
-    min(LYRICS_MAX_FONT_SP, max(0f, widthDp - 2 * LYRICS_SIDE_PAD_DP) / 14f)
+    min(LYRICS_MAX_FONT_SP, max(0f, widthDp - 2 * LYRICS_SIDE_PAD_DP) / 13f)
 
-/** A long line shrinks by 25 / its length, never below 60%: most lines then hold on one row. */
+/** Long lines wrap naturally; at most 10% fitting keeps the editorial scale consistent. */
 internal fun lyricLineFit(text: String): Float {
     val chars = text.codePointCount(0, text.length)
     return if (chars <= FIT_CHARS) 1f else max(FIT_MIN, FIT_CHARS.toFloat() / chars)
@@ -96,17 +95,17 @@ internal fun lyricLineFit(text: String): Float {
 /** Where the live line's top sits in the lyrics area: `max(1.2 em, 16% of its height)`. */
 internal fun lyricAnchorPx(fontPx: Float, viewportPx: Float): Float = max(1.2f * fontPx, 0.16f * viewportPx)
 
-/**
- * The web's distance blur (`filter: blur()`: 0.04em two lines from the live one, 0.09em from
- * three) as a Compose blur radius. CSS takes a standard deviation; Android's RenderEffect takes
- * a radius it turns into sigma = 0.57735 r + 0.5, so the radius is (sigma - 0.5) / 0.57735.
- * Returns dp. Lines next to the live one stay sharp.
- */
+/** Opacity supplies most of the depth; the next two lines remain readable and sharp. */
+internal fun lyricUpcomingAlpha(distance: Int): Float = when {
+    distance <= 1 -> .90f
+    distance == 2 -> .78f
+    distance == 3 -> .60f
+    distance == 4 -> .46f
+    else -> .32f
+}
+
+/** A small, bounded softening only for distant lines, including at large font scales. */
 internal fun lyricBlurDp(distance: Int, fontSp: Float): Float {
-    val sigma = when {
-        distance <= 1 -> return 0f
-        distance == 2 -> 0.04f * fontSp
-        else -> 0.09f * fontSp
-    }
-    return max(0f, (sigma - 0.5f) / 0.57735f)
+    if (distance <= 2) return 0f
+    return (fontSp * if (distance == 3) .012f else .022f).coerceIn(0f, .75f)
 }

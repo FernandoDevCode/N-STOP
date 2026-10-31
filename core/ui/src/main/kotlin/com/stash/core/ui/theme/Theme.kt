@@ -1,28 +1,23 @@
 package com.stash.core.ui.theme
 
-import android.app.Activity
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalView
-import androidx.core.view.WindowCompat
 
 // ── Color schemes ────────────────────────────────────────────────────────
 
 val StashDarkColorScheme = darkColorScheme(
     primary = StashPurple,
-    onPrimary = Color(0xFF1C112C),
+    onPrimary = Color(0xFF0E1115),
     primaryContainer = StashPurpleDark,
     onPrimaryContainer = StashPurpleLight,
     secondary = StashCyan,
-    onSecondary = Color(0xFF0B2827),
+    onSecondary = Color(0xFF0E1115),
     secondaryContainer = StashCyanDark,
     onSecondaryContainer = StashCyanLight,
     tertiary = StashCyan,
@@ -40,14 +35,14 @@ val StashDarkColorScheme = darkColorScheme(
 )
 
 val StashLightColorScheme = lightColorScheme(
-    primary = Color(0xFF6638A8),                 // accessible deep violet on light background
+    primary = Color(0xFF242A34),                 // accessible graphite on light background
     onPrimary = Color.White,
     primaryContainer = StashPurple,
-    onPrimaryContainer = Color(0xFF28193B),
-    secondary = Color(0xFF116E68),
+    onPrimaryContainer = Color(0xFF181C22),
+    secondary = Color(0xFF424A57),
     onSecondary = Color.White,
     secondaryContainer = StashCyanLight,
-    onSecondaryContainer = Color(0xFF114D4A),
+    onSecondaryContainer = Color(0xFF181C22),
     tertiary = StashCyanDark,
     onTertiary = Color.White,
     background = StashBackgroundLight,
@@ -115,7 +110,7 @@ val LocalIsAmoledTheme = staticCompositionLocalOf { false }
  * and any `animateColorAsState` wrappers can animate between the two sets.
  *
  * The system status-bar and navigation-bar icon colors are updated via a
- * [SideEffect] so they flip in sync with the in-app theme.
+ * platform side effect so they flip in sync with the in-app theme.
  */
 @Composable
 fun StashTheme(
@@ -131,23 +126,7 @@ fun StashTheme(
     }
     val extendedColors = if (darkTheme) StashExtendedColorsDark else StashExtendedColorsLight
 
-    val view = LocalView.current
-    if (!view.isInEditMode) {
-        SideEffect {
-            val window = (view.context as Activity).window
-            window.statusBarColor = Color.Transparent.toArgb()
-            window.navigationBarColor = Color.Transparent.toArgb()
-            // No system scrim behind 3-button navigation: the glass tab bar (and Now Playing's
-            // ambient) run down under the system bar and carry its contrast themselves.
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                window.isNavigationBarContrastEnforced = false
-            }
-            val insetsController = WindowCompat.getInsetsController(window, view)
-            // Light status-bar icons on dark theme, dark icons on light theme.
-            insetsController.isAppearanceLightStatusBars = !darkTheme
-            insetsController.isAppearanceLightNavigationBars = !darkTheme
-        }
-    }
+    UpdatePlatformSystemBars(darkTheme)
 
     CompositionLocalProvider(
         LocalStashColors provides extendedColors,

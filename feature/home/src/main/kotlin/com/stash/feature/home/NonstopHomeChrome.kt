@@ -1,62 +1,30 @@
 package com.stash.feature.home
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.ui.semantics.Role
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Headphones
-import androidx.compose.material.icons.outlined.MenuBook
-import androidx.compose.material.icons.outlined.MusicNote
-import androidx.compose.material3.Icon
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shadow
-import com.stash.core.ui.theme.LocalIsDarkTheme
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.res.stringResource
-import com.stash.core.ui.ambient.rememberReducedMotion
-import com.stash.core.ui.theme.SpaceGrotesk
-
-private val brandPurple = Color(0xFFAF6AFF)
-private val brandBlue = Color(0xFF4FADFF)
-private val brandMint = Color(0xFF57F0B6)
-private val brandWhite = Color(0xFFF6F5FA)
+import com.stash.core.ui.visual.VisualDesign
 
 /**
  * Lightweight Compose rendering of the approved NØNStop wordmark. The special
@@ -65,170 +33,153 @@ private val brandWhite = Color(0xFFF6F5FA)
  */
 @Composable
 fun NonstopWordmark(modifier: Modifier = Modifier) {
-    val font = SpaceGrotesk
-    val dark = LocalIsDarkTheme.current
-    val neutral = if (dark) brandWhite else Color(0xFF211833)
-    val violet = if (dark) brandPurple else Color(0xFF7A42B2)
-    val blue = if (dark) brandBlue else Color(0xFF2469B1)
-    val mint = if (dark) brandMint else Color(0xFF127E76)
-    val common = TextStyle(
-        fontFamily = font,
-        fontWeight = FontWeight.Bold,
-        fontSize = 29.sp,
-        letterSpacing = (-1.4).sp,
-    )
-    Row(
-        modifier = modifier.semantics { contentDescription = "NØNStop" },
-        verticalAlignment = Alignment.Bottom,
-        horizontalArrangement = Arrangement.spacedBy(0.dp),
-    ) {
-        Text("N", style = common, color = neutral)
-        Box {
-            // Equalizer is centred over Ø, not an extension of its diagonal.
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Canvas(Modifier.width(31.dp).height(12.dp)) {
-                    val bars = listOf(0.32f, 0.56f, 0.82f, 1f, 0.82f, 0.56f, 0.32f)
-                    val width = size.width
-                    val height = size.height
-                    bars.forEachIndexed { index, level ->
-                        val x = width * (index + 0.5f) / bars.size
-                        val hue = if (index < 3) violet else if (index < 5) blue else mint
-                        drawLine(
-                            color = hue,
-                            start = Offset(x, height),
-                            end = Offset(x, height * (1 - level)),
-                            strokeWidth = 2.3.dp.toPx(),
-                            cap = StrokeCap.Round,
-                        )
-                    }
-                }
-                Text(
-                    "Ø",
-                    style = common.copy(
-                        brush = Brush.linearGradient(listOf(violet, blue, mint)),
-                        shadow = if (dark) Shadow(brandBlue.copy(alpha = 0.45f), Offset.Zero, 10f) else null,
-                    ),
-                )
-            }
-        }
-        Text("N", style = common, color = neutral)
-        Text(
-            "Stop",
-            style = common.copy(
-                brush = Brush.horizontalGradient(listOf(violet, blue, mint)),
-                shadow = if (dark) Shadow(brandPurple.copy(alpha = 0.24f), Offset.Zero, 8f) else null,
-                fontWeight = FontWeight.Medium,
-            ),
-        )
-    }
+    com.stash.core.ui.theme.NonstopBrand(modifier)
 }
 
 /**
- * 0 Música, 1 Podcasts, 2 Audiobooks.
- * Tapped selected tab briefly blooms, then settles to an easy-to-read
- * lilac frosted resting state (not a permanently bright CTA).
+ * 0 Música, 1 Podcasts, 2 Audiolivros.
+ * Regular text uses three equal optical columns. Enlarged text reflows instead
+ * of shrinking or clipping, and the internal tab identifiers stay unchanged.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun NonstopMediaFilters(
     selected: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var lastTapped by remember { mutableIntStateOf(-1) }
-    var pulseId by remember { mutableIntStateOf(0) }
-    val pulse = remember { Animatable(0f) }
-    val dark = LocalIsDarkTheme.current
-    val reducedMotion = rememberReducedMotion()
-    LaunchedEffect(pulseId, reducedMotion) {
-        if (pulseId > 0) {
-            pulse.snapTo(0f)
-            if (!reducedMotion) {
-                pulse.animateTo(1f, tween(130))
-                pulse.animateTo(0f, tween(470))
+    val labels = listOf(
+        stringResource(R.string.nonstop_filter_music),
+        stringResource(R.string.nonstop_filter_podcasts),
+        stringResource(R.string.nonstop_filter_audiobooks),
+    )
+    BoxWithConstraints(
+        modifier.fillMaxWidth().padding(horizontal = VisualDesign.Gutter, vertical = 0.dp),
+    ) {
+        val fontScale = LocalDensity.current.fontScale
+        val reflow = fontScale >= 1.3f
+        val showIcons = maxWidth >= 310.dp && fontScale <= 1.2f
+        if (reflow) {
+            FlowRow(
+                Modifier.fillMaxWidth().selectableGroup(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                labels.forEachIndexed { index, label ->
+                    SonoraMediaTab(index, label, selected == index, false, onSelect)
+                }
+            }
+        } else {
+            Row(
+                Modifier.fillMaxWidth().selectableGroup(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                labels.forEachIndexed { index, label ->
+                    SonoraMediaTab(
+                        index = index,
+                        label = label,
+                        active = selected == index,
+                        showIcon = showIcons,
+                        onSelect = onSelect,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
         }
     }
+}
+
+@Composable
+private fun SonoraMediaTab(
+    index: Int,
+    label: String,
+    active: Boolean,
+    showIcon: Boolean,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Row(
-        modifier = modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(9.dp),
+        modifier
+            .drawBehind {
+                if (active) {
+                    val y = size.height - 3.dp.toPx()
+                    val start = Offset(8.dp.toPx(), y)
+                    val end = Offset((size.width - 8.dp.toPx()).coerceAtLeast(start.x), y)
+                    // The wide lavender reflection and cool-white core retain
+                    // Sonora's selected energy without a generic button shell.
+                    drawLine(VisualDesign.Light.Wide.copy(alpha = .22f), start, end,
+                        strokeWidth = 10.dp.toPx(), cap = StrokeCap.Round)
+                    drawLine(VisualDesign.Light.Near.copy(alpha = .34f), start, end,
+                        strokeWidth = 5.dp.toPx(), cap = StrokeCap.Round)
+                    drawLine(VisualDesign.Light.Core.copy(alpha = .92f), start, end,
+                        strokeWidth = 2.dp.toPx(), cap = StrokeCap.Round)
+                }
+            }
+            .selectable(active, role = Role.Tab, onClick = { onSelect(index) })
+            .heightIn(min = 48.dp)
+            .padding(horizontal = if (showIcon) 4.dp else 6.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        listOf(
-            Triple(R.string.nonstop_filter_music, Icons.Outlined.MusicNote, 0),
-            Triple(R.string.nonstop_filter_podcasts, Icons.Filled.Headphones, 1),
-            Triple(R.string.nonstop_filter_audiobooks, Icons.Outlined.MenuBook, 2),
-        ).forEach { (label, icon, value) ->
-            val active = selected == value
-            val prominence by animateFloatAsState(
-                targetValue = if (active) 1f else 0f,
-                animationSpec = tween(if (reducedMotion) 0 else 260),
-                label = "media filter selection",
-            )
-            val burst = if (lastTapped == value) pulse.value else 0f
-            val shape = RoundedCornerShape(50)
-            Row(
-                modifier = Modifier
-                    .background(
-                        if (!dark && active) {
-                            Brush.horizontalGradient(
-                                listOf(
-                                    Color(0xFF703C9C).copy(alpha = 0.94f),
-                                    Color(0xFF444F8A).copy(alpha = 0.92f),
-                                ),
-                            )
-                        } else {
-                            Brush.horizontalGradient(
-                                listOf(
-                                    Color(0xFFAA79CF).copy(alpha = 0.09f + 0.25f * prominence + 0.16f * burst),
-                                    Color(0xFF6A6996).copy(alpha = 0.09f + 0.14f * prominence),
-                                ),
-                            )
-                        },
-                        shape,
-                    )
-                    .drawBehind {
-                        if (active) {
-                            drawRoundRect(
-                                brush = Brush.horizontalGradient(
-                                    listOf(
-                                        brandPurple.copy(alpha = 0.10f + 0.18f * burst),
-                                        brandBlue.copy(alpha = 0.04f + 0.10f * burst),
-                                    ),
-                                ),
-                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2),
-                            )
-                        }
-                    }
-                    .border(
-                        1.dp,
-                        Color.White.copy(alpha = 0.12f + 0.21f * prominence + 0.19f * burst),
-                        shape,
-                    )
-                    .selectable(
-                        selected = active,
-                        role = Role.Tab,
-                        onClick = {
-                            lastTapped = value
-                            pulseId += 1
-                            onSelect(value)
-                        },
-                    )
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(9.dp),
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = if (active) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp),
-                )
-                Text(
-                    text = stringResource(label),
-                    color = if (active) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
-                    style = MaterialTheme.typography.labelLarge,
-                    maxLines = 1,
-                )
+        if (showIcon) {
+            SonoraMediaGlyph(index, if (active) VisualDesign.Ink else VisualDesign.Muted)
+        }
+        Text(
+            text = label,
+            style = VisualDesign.Body,
+            color = if (active) VisualDesign.Ink else VisualDesign.Muted,
+            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+            maxLines = 1,
+            softWrap = false,
+        )
+    }
+}
+
+/** Three bespoke optical-line glyphs with one coherent stroke weight. */
+@Composable
+private fun SonoraMediaGlyph(index: Int, tint: Color) {
+    Canvas(Modifier.size(17.dp)) {
+        val u = size.minDimension / 24f
+        fun point(x: Float, y: Float) = Offset(x * u, y * u)
+        val stroke = Stroke(width = 1.65f * u, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        when (index) {
+            0 -> {
+                val path = Path().apply {
+                    moveTo(9f * u, 16f * u)
+                    lineTo(9f * u, 6f * u)
+                    lineTo(19f * u, 4f * u)
+                    lineTo(19f * u, 14f * u)
+                    moveTo(9f * u, 8f * u)
+                    lineTo(19f * u, 6f * u)
+                }
+                drawPath(path, tint, style = stroke)
+                drawOval(tint, topLeft = point(4.2f, 15.4f), size = Size(5.2f * u, 3.9f * u))
+                drawOval(tint, topLeft = point(14.2f, 13.4f), size = Size(5.2f * u, 3.9f * u))
+            }
+            1 -> {
+                drawRoundRect(tint, topLeft = point(9f, 3.5f), size = Size(6f * u, 11f * u),
+                    cornerRadius = CornerRadius(3f * u), style = stroke)
+                val arc = Path().apply {
+                    moveTo(6.4f * u, 11f * u)
+                    cubicTo(6.4f * u, 20f * u, 17.6f * u, 20f * u, 17.6f * u, 11f * u)
+                }
+                drawPath(arc, tint, style = stroke)
+                drawLine(tint, point(12f, 18.2f), point(12f, 21f), 1.65f * u, StrokeCap.Round)
+                drawLine(tint, point(9f, 21f), point(15f, 21f), 1.65f * u, StrokeCap.Round)
+            }
+            else -> {
+                val path = Path().apply {
+                    moveTo(12f * u, 6.4f * u)
+                    cubicTo(9.8f * u, 4.5f * u, 6f * u, 4.3f * u, 3f * u, 5.4f * u)
+                    lineTo(3f * u, 17.8f * u)
+                    cubicTo(6.5f * u, 16.8f * u, 9.5f * u, 17.2f * u, 12f * u, 19f * u)
+                    cubicTo(14.5f * u, 17.2f * u, 17.5f * u, 16.8f * u, 21f * u, 17.8f * u)
+                    lineTo(21f * u, 5.4f * u)
+                    cubicTo(18f * u, 4.3f * u, 14.2f * u, 4.5f * u, 12f * u, 6.4f * u)
+                    lineTo(12f * u, 19f * u)
+                }
+                drawPath(path, tint, style = stroke)
             }
         }
     }

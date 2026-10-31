@@ -61,8 +61,8 @@ internal fun NonstopCollectionHero(
                 .height(330.dp)
                 .background(
                     Brush.verticalGradient(
-                        0f to Color(0xFF34244D),
-                        0.48f to Color(0xFF20213A),
+                        0f to Color(0xFF343944),
+                        0.48f to Color(0xFF191D23),
                         1f to backdrop,
                     ),
                 ),
@@ -77,13 +77,13 @@ internal fun NonstopCollectionHero(
                     .shadow(
                         elevation = 24.dp,
                         shape = RoundedCornerShape(14.dp),
-                        ambientColor = Color(0xFF9F6BFF).copy(alpha = 0.34f),
-                        spotColor = Color(0xFF4DD8DE).copy(alpha = 0.20f),
+                        ambientColor = Color(0xFF343944).copy(alpha = 0.34f),
+                        spotColor = Color(0xFF232831).copy(alpha = 0.20f),
                     )
                     .clip(RoundedCornerShape(14.dp))
                     .background(
                         Brush.linearGradient(
-                            listOf(Color(0xFF48346D), Color(0xFF173F4D)),
+                            listOf(Color(0xFF343944), Color(0xFF191D23)),
                         ),
                     ),
                 contentAlignment = Alignment.Center,
@@ -94,7 +94,7 @@ internal fun NonstopCollectionHero(
                         contentDescription = title,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,
-                        error = androidx.compose.ui.graphics.painter.ColorPainter(Color(0xFF332B4C)),
+                        error = androidx.compose.ui.graphics.painter.ColorPainter(Color(0xFF232831)),
                     )
                 } else {
                     Icon(
@@ -111,7 +111,7 @@ internal fun NonstopCollectionHero(
                     .align(Alignment.TopStart)
                     .statusBarsPadding()
                     .padding(start = 12.dp, top = 8.dp)
-                    .background(Color(0xA80A0C18), CircleShape),
+                    .background(Color(0xAA0E1115), CircleShape),
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,

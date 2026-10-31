@@ -1,0 +1,10 @@
+
+
+
+{
+ "resultCount":1,
+ "results": [
+{"wrapperType":"collection", "collectionType":"Album", "artistId":3996865, "collectionId":1275600311, "amgArtistId":4906, "artistName":"Metallica", "collectionName":"Master of Puppets (Remastered)", "collectionCensoredName":"Master of Puppets (Remastered)", "artistViewUrl":"https://music.apple.com/us/artist/metallica/3996865?uo=4", "collectionViewUrl":"https://music.apple.com/us/album/master-of-puppets-remastered/1275600311?uo=4", "artworkUrl60":"https://is1-ssl.mzstatic.com/image/thumb/Music118/v4/69/f9/05/69f905ed-ff04-58a2-8de2-1b5338745f19/858978005226.png/60x60bb.jpg", "artworkUrl100":"https://is1-ssl.mzstatic.com/image/thumb/Music118/v4/69/f9/05/69f905ed-ff04-58a2-8de2-1b5338745f19/858978005226.png/100x100bb.jpg", "collectionPrice":9.99, "collectionExplicitness":"explicit", "contentAdvisoryRating":"Explicit", "trackCount":8, "copyright":"℗ 1986 Blackened Recordings", "country":"USA", "currency":"USD", "releaseDate":"1986-03-03T08:00:00Z", "primaryGenreName":"Metal"}]
+}
+
+

@@ -1,0 +1,1 @@
+PhaseTimings(decodeMs=45.4718, featuresMs=24.6121, directionMs=1.5192, textureMs=36.4654, totalMs=113.2196, cpuMs=62.5)

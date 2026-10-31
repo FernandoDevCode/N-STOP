@@ -1,0 +1,135 @@
+name: Sonora Artist V11 — Verified Fanart Logos Release
+
+on:
+  push:
+    branches:
+      - feat/sonora-artist-wordmark-sources
+    paths:
+      - .github/workflows/sonora-artist-v11-fanart-active.yml
+
+permissions:
+  contents: write
+
+jobs:
+  build-test-publish:
+    name: Validate Fanart API, test and publish signed APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v6
+
+      - name: Test Fanart project key with live music-artist request
+        shell: bash
+        env:
+          FANART_API_KEY: ${{ secrets.FANART_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$FANART_API_KEY" =~ ^[A-Za-z0-9]{12,128}$ ]]; then
+            echo "::error::FANART_API_KEY missing or invalid format."
+            exit 1
+          fi
+          # Use exactly the same v3.2 API and api-key header as the Android client.
+          # Neither key nor full response is printed.
+          curl --fail-with-body --silent --show-error --retry 2 \
+            --connect-timeout 8 --max-time 30 \
+            -H "api-key: $FANART_API_KEY" \
+            -H "Accept: application/json" \
+            "https://webservice.fanart.tv/v3.2/music/65f4f0c5-ef9e-490c-aee3-909e7ae6b2ab" \
+            --output "$RUNNER_TEMP/fanart-check.json"
+          python3 - "$RUNNER_TEMP/fanart-check.json" <<'PY'
+          import json,sys
+          with open(sys.argv[1],encoding="utf-8") as f:
+              data=json.load(f)
+          expected="65f4f0c5-ef9e-490c-aee3-909e7ae6b2ab"
+          assert data.get("mbid_id","").lower()==expected, "Artist identity mismatch"
+          # Never accept MBID alone: a previous Nirvana MBID request
+          # unexpectedly returned 'Evanescence' as its display name.
+          assert data.get("name","").casefold()=="metallica", "Artist name mismatch"
+          logos=data.get("hdmusiclogo",[]) or data.get("musiclogo",[])
+          assert isinstance(logos,list) and any(
+              x.get("url","").startswith("https://assets.fanart.tv/fanart/music/")
+              and x.get("url","").endswith(".png")
+              and ("/hdmusiclogo/" in x.get("url","") or "/musiclogo/" in x.get("url",""))
+              for x in logos
+          ), "No qualifying music logo"
+          print(f"Live Fanart authentication and validated Metallica logo: OK ({len(logos)} candidates)")
+          PY
+
+      - name: Configure JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Configure Gradle cache
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Test artist logo resolver and build APK with project key
+        env:
+          FANART_API_KEY: ${{ secrets.FANART_API_KEY }}
+          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          test -n "$FANART_API_KEY"
+          ./gradlew :feature:search:testDebugUnitTest :app:assembleDebug --no-daemon
+
+      - name: Verify signed APK and unique version
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          AAPT=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name aapt | sort -V | tail -n1)
+          SIGNER=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -n1)
+          test -x "$AAPT" && test -x "$SIGNER"
+          "$AAPT" dump badging "$APK" | grep "^package:" | tee "$RUNNER_TEMP/package.txt"
+          grep -Fq "name='com.stash.app.debug' versionCode='161' versionName='0.9.125-sonora-artist-v11-fanart'" "$RUNNER_TEMP/package.txt"
+          "$SIGNER" verify "$APK"
+          sha256sum "$APK"
+
+      - name: Attach verified debug build
+        uses: actions/upload-artifact@v6
+        with:
+          name: sonora-v11-fanart-active-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Publish V11 prerelease only after live source and build pass
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=sonora-artist-v11-fanart-active-20261030
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release already exists; refusing overwrite"
+            exit 1
+          fi
+          APK="$RUNNER_TEMP/Sonora-V11-Fanart-Logos-Ativos-v0.9.125-debug.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$APK"
+          HASH=$(sha256sum "$APK" | cut -d' ' -f1)
+
+          cat > "$RUNNER_TEMP/release-notes.md" <<'EOF'
+          # Sonora V11 — Logotipos Fanart.tv ativos
+
+          APK Debug: `com.stash.app.debug`, versionCode 161, versionName `0.9.125-sonora-artist-v11-fanart`.
+
+          - Project API key do Fanart.tv configurada no build, com autenticação real v3.2 previamente verificada no CI sem expor a chave.
+          - Logotipos PNG HD Music Logos selecionados pelo maior número de likes (dentro da categoria HD), com MusicBrainz ID e nome exato.
+          - TheAudioDB continua sendo fallback; quando nenhum logotipo válido existe, o nome permanece tipográfico.
+          - Sem extração da Apple Music: o campo de logotipo não consta na API pública.
+          - Mantém as cores globais V9, fotografias, reprodução, mini-player e navegação.
+          - O botão Play de vidro fumê não faz parte desta versão.
+
+          **Importante:** licença de obras comunitárias não é automaticamente concedida pela API. A chave de projeto no APK é tecnicamente extraível; não use credenciais de conta sensíveis.
+          **Validação visual no dispositivo ainda necessária** para artistas distintos e casos sem logos.
+          EOF
+          printf '\nCommit: `%s`\nSHA-256 APK: `%s`\n' "$GITHUB_SHA" "$HASH" >> "$RUNNER_TEMP/release-notes.md"
+          gh release create "$TAG" "$APK" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Sonora V11 — Logos Fanart Ativos" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
+            --prerelease --latest=false
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,assets --jq '{url:.url,assets:[.assets[].name]}'

@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.CircularProgressIndicator
@@ -60,6 +61,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -334,6 +336,8 @@ internal fun NowPlayingOptionsSheet(
     hiddenReason: (NowPlayingAction) -> String?,
     accent: Color,
     onAction: (NowPlayingAction) -> Unit,
+    onSleepTimerClick: () -> Unit,
+    onAudioClick: () -> Unit,
     onTogglePin: (NowPlayingAction) -> Unit,
     onResetPins: () -> Unit,
     onDismiss: () -> Unit,
@@ -374,6 +378,18 @@ internal fun NowPlayingOptionsSheet(
                         val v = actionVisual(action, visualState)
                         SheetOptionRow(icon = v.icon, label = v.label, onClick = { onAction(action) })
                     }
+                    Spacer(Modifier.height(8.dp))
+                    SheetOptionRow(
+                        icon = Icons.Default.Timer,
+                        label = stringResource(R.string.nostop_np_sleep_timer),
+                        onClick = onSleepTimerClick,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    SheetOptionRow(
+                        icon = Icons.Default.Speed,
+                        label = stringResource(R.string.nostop_np_audio_details),
+                        onClick = onAudioClick,
+                    )
                 }
             }
         }

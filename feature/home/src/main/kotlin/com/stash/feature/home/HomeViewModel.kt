@@ -245,7 +245,7 @@ class HomeViewModel @Inject constructor(
 
         // Hero: the builtin Daily Discover playlist, once it has materialized.
         val hero = playlists
-            .firstOrNull { it.id == builtinIdList.firstOrNull() && it.trackCount > 0 }
+            .firstOrNull { it.id == builtinIdList.firstOrNull() && it.trackCount > 0 && !it.hideFromHome }
             ?.let { playlist ->
                 DiscoverHeroState(
                     title = playlist.name,

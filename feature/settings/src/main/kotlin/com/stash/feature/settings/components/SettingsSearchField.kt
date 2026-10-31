@@ -41,6 +41,7 @@ fun SettingsSearchField(
     value: String,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
+    placeholder: String? = null,
 ) {
     val extendedColors = StashTheme.extendedColors
     Row(
@@ -62,7 +63,7 @@ fun SettingsSearchField(
         Box(modifier = Modifier.weight(1f)) {
             if (value.isEmpty()) {
                 Text(
-                    text = stringResource(R.string.nostop_settings_search_placeholder),
+                    text = placeholder ?: stringResource(R.string.nostop_settings_search_placeholder),
                     style = MaterialTheme.typography.bodyMedium,
                     color = extendedColors.textTertiary,
                 )

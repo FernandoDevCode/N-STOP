@@ -6,6 +6,7 @@ android {
 
     testOptions {
         unitTests {
+            isIncludeAndroidResources = true
             // Return Kotlin defaults from stubbed Android SDK methods so
             // android.util.Log calls in production code don't throw in JVM tests.
             isReturnDefaultValues = true
@@ -46,9 +47,16 @@ dependencies {
     implementation(libs.kotlinx.coroutines.guava)
 
     testImplementation("junit:junit:4.13.2")
+    // Stage-3 integration captures exercise the actual Home and compact transport together.
+    testImplementation(project(":feature:nowplaying"))
+    testImplementation(project(":feature:library"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
     testImplementation("com.google.truth:truth:1.4.4")
     // Matches the test harness in :feature:library — see MixOfflineTapGuardTest.
     testImplementation("org.mockito:mockito-core:5.14.2")
     testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
+    testImplementation(platform(libs.compose.bom))
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation(libs.robolectric)
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

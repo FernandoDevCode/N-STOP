@@ -1,0 +1,2 @@
+MEMORY
+PhaseTimings(decodeMs=0.0, featuresMs=0.0, directionMs=0.0, textureMs=0.0, totalMs=1.9914, cpuMs=null)

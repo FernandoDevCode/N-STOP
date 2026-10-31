@@ -229,22 +229,25 @@ private fun LineItem(
     val clock = ctx.clock
     val state by remember(item) { derivedStateOf { phaseOf(clock.value, item.startMs, item.endMs) } }
     val alphaAnim = animateFloatAsState(
-        targetValue = when (state) { PHASE_ACTIVE -> 1f; PHASE_SUNG -> SUNG_ALPHA; else -> UPCOMING_ALPHA },
+        targetValue = when (state) {
+            PHASE_ACTIVE -> 1f
+            PHASE_SUNG -> SUNG_ALPHA
+            else -> lyricUpcomingAlpha((index - activeIndex.value).coerceAtLeast(1))
+        },
         animationSpec = tween(LINE_STATE_MS),
         label = "line-alpha",
     )
     val fontSp = ctx.look.fontSize.value
     val blurTarget by remember(item, index, fontSp) {
         derivedStateOf {
-            // The line next to the active one stays crisp (just dimmer via alpha); the web's two
-            // steps from there: near at two lines away, far from three.
+            // Nearby lines stay sharp; distant lines use a bounded, light softening.
             if (state == PHASE_ACTIVE) 0f else lyricBlurDp(abs(index - activeIndex.value), fontSp)
         }
     }
     val blur by animateFloatAsState(blurTarget, tween(BLUR_FADE_MS), label = "line-blur")
 
     val line = item.line
-    // A long line shrinks (to 60% at most) so it usually holds on one row; past that it wraps.
+    // Only modest fitting; long phrases wrap instead of changing the type hierarchy.
     val fit = remember(line) { lyricLineFit(line.lead.text) }
     val leadStyle = remember(ctx, fit) { ctx.leadStyle.copy(fontSize = ctx.leadStyle.fontSize * fit) }
     val bgStyle = remember(ctx, fit) { ctx.bgStyle.copy(fontSize = ctx.bgStyle.fontSize * fit) }
@@ -260,8 +263,8 @@ private fun LineItem(
             horizontalAlignment = if (line.oppositeAligned) Alignment.End else Alignment.Start,
             modifier = Modifier
                 .fillMaxWidth()
-                .graphicsLayer { alpha = alphaAnim.value }
-                .then(if (blur > 0.25f) Modifier.blur(blur.dp, BlurredEdgeTreatment.Rectangle) else Modifier)
+                .graphicsLayer { alpha = if (state == PHASE_ACTIVE) 1f else alphaAnim.value }
+                .then(if (state != PHASE_ACTIVE && blur > 0.25f) Modifier.blur(blur.dp, BlurredEdgeTreatment.Unbounded) else Modifier)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -355,7 +358,7 @@ private fun SimpleSyllable(syl: TtmlSyllable, ctx: LyricsCtx, style: TextStyle, 
             ph != PHASE_ACTIVE && motion.asleep()
         }
     }
-    GlyphBox(syl.text, style, motion, ctx, bright, dim, yScale = 1f, blurBase = 4f, blurGain = 2f, alphaGain = 0.35f)
+    GlyphBox(syl.text, style, motion, ctx, bright, dim, yScale = 1f, blurBase = 3f, blurGain = 2f, alphaGain = 0.18f)
 }
 
 @Composable
@@ -381,7 +384,7 @@ private fun EmphasisSyllable(syl: TtmlSyllable, ctx: LyricsCtx, style: TextStyle
         },
     ) {
         letters.forEachIndexed { i, ch ->
-            GlyphBox(ch, style, motion.letters[i], ctx, bright, dim, yScale = 2f, blurBase = 4f, blurGain = 12f, alphaGain = 1.85f)
+            GlyphBox(ch, style, motion.letters[i], ctx, bright, dim, yScale = 2f, blurBase = 3f, blurGain = 6f, alphaGain = 0.45f)
         }
     }
 }

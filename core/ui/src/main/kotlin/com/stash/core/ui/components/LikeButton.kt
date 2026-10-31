@@ -47,6 +47,8 @@ fun LikeButton(
     modifier: Modifier = Modifier,
     unlikedTint: Color? = null,
     size: Dp = 24.dp,
+    /** Optional artwork-derived liked ink; absent callers keep the standard theme red. */
+    likedTint: Color? = null,
 ) {
     Box(
         modifier = modifier
@@ -61,7 +63,7 @@ fun LikeButton(
             imageVector = if (isLiked) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
             contentDescription = if (isLiked) "Unlike" else "Like",
             tint = if (isLiked) {
-                MaterialTheme.colorScheme.error
+                likedTint ?: MaterialTheme.colorScheme.error
             } else {
                 unlikedTint ?: MaterialTheme.colorScheme.onSurface
             },

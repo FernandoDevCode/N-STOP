@@ -1,0 +1,84 @@
+name: Sonora Adaptive Colors — publish verified debug APK
+
+on:
+  push:
+    branches:
+      - feat/sonora-artist-adaptive-atmosphere
+    paths:
+      - .github/workflows/sonora-adaptive-colors-prerelease.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    name: Publish verified APK as prerelease
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Check exact verified CI run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN_ID=41130241446
+          EXPECTED_COMMIT=f14db2cdd6369860c61cbe1a40416652ba86666d
+          ACTUAL_COMMIT=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq .head_sha)
+          CONCLUSION=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq .conclusion)
+          test "$ACTUAL_COMMIT" = "$EXPECTED_COMMIT"
+          test "$CONCLUSION" = success
+          mkdir -p "$RUNNER_TEMP/verified-apk"
+          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name stash-debug-apk --dir "$RUNNER_TEMP/verified-apk"
+          test -s "$RUNNER_TEMP/verified-apk/app-debug.apk"
+
+      - name: Verify the tested APK package, version and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="$RUNNER_TEMP/verified-apk/app-debug.apk"
+          AAPT=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name aapt | sort -V | tail -n1)
+          SIGNER=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -n1)
+          test -x "$AAPT"
+          test -x "$SIGNER"
+          "$AAPT" dump badging "$APK" | grep '^package:' | tee "$RUNNER_TEMP/package.txt"
+          grep -Fq "name='com.stash.app.debug' versionCode='158' versionName='0.9.122-sonora-artist-v8'" "$RUNNER_TEMP/package.txt"
+          "$SIGNER" verify "$APK"
+          sha256sum "$APK"
+
+      - name: Publish an isolated GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=sonora-artist-adaptive-colors-20261030
+          SOURCE_COMMIT=f14db2cdd6369860c61cbe1a40416652ba86666d
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release already exists; refusing to overwrite it"
+            exit 1
+          fi
+
+          APK="$RUNNER_TEMP/Sonora-Cores-Adaptativas-v0.9.122-debug.apk"
+          cp "$RUNNER_TEMP/verified-apk/app-debug.apk" "$APK"
+          DIGEST=$(sha256sum "$APK" | cut -d' ' -f1)
+          cat > "$RUNNER_TEMP/release-notes.md" <<'EOF'
+          ## Sonora — Cores adaptativas no perfil de artista
+
+          APK de teste **Debug**, pacote `com.stash.app.debug`, versão `0.9.122-sonora-artist-v8` (code 158).
+
+          - A cor é extraída da fotografia do artista, sem IA ou paleta manual.
+          - Transição cromática entre a imagem e o fundo inferior: hero, ponte e superfície.
+          - Vermelho sobre preto preservado; imagens monocromáticas usam carvão neutro.
+          - Leitura cromática fora da thread principal e cache por URL de foto.
+          - Sem alterações na reprodução, mini-player, logotipos ou layout.
+          - O novo botão Play de vidro fumê discutido depois **não está incluído**.
+
+          **Verificação:** reutiliza o APK original do CI de 4 jobs aprovados, sem recompilar ou alterar o binário. Teste visual no celular ainda necessário.
+
+          Se o Android acusar conflito de assinatura, não desinstale seu app principal automaticamente.
+          EOF
+          printf '\nCommit original verificado: `%s`\nSHA-256 APK: `%s`\n' "$SOURCE_COMMIT" "$DIGEST" >> "$RUNNER_TEMP/release-notes.md"
+          gh release create "$TAG" "$APK" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_COMMIT" --title "Sonora — Cores Adaptativas (APK de teste)" --notes-file "$RUNNER_TEMP/release-notes.md" --prerelease --latest=false
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,assets --jq '{url:.url,assets:[.assets[].name]}'

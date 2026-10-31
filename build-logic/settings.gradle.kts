@@ -1,3 +1,13 @@
+pluginManagement {
+    // kotlin-dsl plugin classpath needs Kotlin artifacts from Maven Central.
+    // Gradle Plugin Portal alone cannot reliably resolve the complete BOM.
+    repositories {
+        mavenCentral()
+        google()
+        gradlePluginPortal()
+    }
+}
+
 dependencyResolutionManagement {
     repositories {
         google()

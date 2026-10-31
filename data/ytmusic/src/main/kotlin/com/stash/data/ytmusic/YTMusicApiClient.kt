@@ -520,58 +520,6 @@ class YTMusicApiClient @Inject constructor(
     }
 
     /** Reads a search response into Search's sections, plus [SearchAllResults.topAlbum]. */
-    private fun parseSearchAll(response: JsonObject): SearchAllResults {
-        val shelves = response.navigatePath(
-            "contents", "tabbedSearchResultsRenderer", "tabs",
-        )?.firstArray()?.firstOrNull()?.asObject()
-            ?.navigatePath("tabRenderer", "content", "sectionListRenderer", "contents")
-            ?.asArray()
-            ?: return SearchAllResults(emptyList())
-
-        val sections = mutableListOf<SearchResultSection>()
-
-        // 1. Top result — musicCardShelfRenderer appears at most once, usually first.
-        val topCard = shelves.asSequence()
-            .mapNotNull { it.asObject() }
-            .firstOrNull { it.containsKey("musicCardShelfRenderer") }
-            ?.get("musicCardShelfRenderer")?.asObject()
-        topCard?.let { parseTopResultCard(it) }
-            ?.let { sections.add(SearchResultSection.Top(it)) }
-
-        // 2..4. Named musicShelfRenderer shelves, dispatched by their title text.
-        for (shelf in shelves) {
-            val renderer = shelf.asObject()?.get("musicShelfRenderer")?.asObject() ?: continue
-            val title = renderer.navigatePath("title", "runs")?.firstArray()
-                ?.firstOrNull()?.asObject()?.get("text")?.asString() ?: continue
-            // Parsers live in SearchResponseParser.kt as top-level internal funcs.
-            when (title) {
-                "Songs" -> parseSongsShelf(renderer).takeIf { it.isNotEmpty() }
-                    ?.let { sections.add(SearchResultSection.Songs(it.take(4))) }
-                "Artists" -> parseArtistsShelf(renderer).takeIf { it.isNotEmpty() }
-                    ?.let { sections.add(SearchResultSection.Artists(it)) }
-                "Albums" -> parseAlbumsShelf(renderer).takeIf { it.isNotEmpty() }
-                    ?.let { sections.add(SearchResultSection.Albums(it)) }
-            }
-        }
-
-        // The titled musicShelfRenderer shape above is only served to
-        // authenticated YT-Music clients in supported regions. Unauthenticated
-        // / region-limited requests get a FLAT itemSectionRenderer list with no
-        // titled shelves, which the loop above skips entirely — the user then
-        // sees "No results found" over a response full of hits (issue #268).
-        // Recover those rows when no list shelf matched.
-        val hasListSections = sections.any {
-            it is SearchResultSection.Songs ||
-                it is SearchResultSection.Artists ||
-                it is SearchResultSection.Albums
-        }
-        if (!hasListSections) {
-            sections.addAll(parseFlatSearchSections(shelves))
-        }
-
-        return SearchAllResults(sections, topAlbum = topCard?.let { parseAlbumTopCard(it) })
-    }
-
     /**
      * The albums a plain "<album> <artist>" search turns up, for a caller that
      * judges each candidate itself: the album screen's YouTube Music fallback for
@@ -1732,37 +1680,3 @@ class YTMusicApiClient @Inject constructor(
         parsePage: (JsonObject) -> List<T>,
     ): PaginationResult<T> = paginateBrowse(initialResponse, maxPages, parsePage)
 }
-
-// ── JsonElement navigation extensions ────────────────────────────────────────
-// Exposed as `internal` so SearchResponseParser.kt (and future parser files in
-// this module) can reuse them without duplication.
-
-/**
- * Safely navigates a chain of JSON object keys.
- *
- * Returns the [JsonElement] at the end of the path, or null if any key is missing
- * or the intermediate value is not a [JsonObject].
- */
-internal fun JsonObject.navigatePath(vararg keys: String): JsonElement? {
-    var current: JsonElement = this
-    for (key in keys) {
-        current = (current as? JsonObject)?.get(key) ?: return null
-    }
-    return current
-}
-
-/** Safely casts to [JsonObject], returning null on type mismatch. */
-internal fun JsonElement.asObject(): JsonObject? = this as? JsonObject
-
-/** Safely casts to [JsonArray], returning null on type mismatch. */
-internal fun JsonElement.asArray(): JsonArray? = this as? JsonArray
-
-/**
- * If this element is a [JsonArray], returns it; otherwise returns null.
- * Useful when the navigation target might already be an array.
- */
-internal fun JsonElement.firstArray(): JsonArray? = this as? JsonArray
-
-/** Safely extracts a string primitive value, returning null on type mismatch. */
-internal fun JsonElement.asString(): String? =
-    try { jsonPrimitive.contentOrNull } catch (_: Exception) { null }

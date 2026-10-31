@@ -1,0 +1,285 @@
+{
+    "schemaVersion": 4,
+    "sourceImageHash": "25ee37dd31e4d09b966d70e9c27aec7591fb86b0b4c5f6217d121062b244f8e7",
+    "family": "MINIMAL_MONOCHROME",
+    "familyWeights": {
+        "MINIMAL_MONOCHROME": 1.0
+    },
+    "colors": {
+        "environmental": 4279705643,
+        "interaction": 4291154136,
+        "accent": 4289377987
+    },
+    "procedural": {
+        "seed": 767821525,
+        "noiseScale": 2.8,
+        "octaves": 4,
+        "roughness": 0.5,
+        "organic": 0.16,
+        "mist": 0.07,
+        "curves": 0.012,
+        "vignette": 0.28
+    },
+    "modelVersion": "none",
+    "confidence": null,
+    "archetypeScores": {
+        "PRISMATIC_ACCENTS": 0.0,
+        "COOL_DEPTH": 0.0,
+        "CINEMATIC_DENSE": 0.742215,
+        "DARK_SYMBOLIC": 0.0,
+        "WARM_DIFFUSE": 0.0910044,
+        "MONOCHROME_EDITORIAL": 0.43499684,
+        "MULTICOLOR_GRAPHIC": 0.0
+    },
+    "canvasColor": 4278650374,
+    "favoriteColor": 4289377987,
+    "scrimTop": 0.38,
+    "scrimBottom": 0.6,
+    "environment": {
+        "regions": [
+            {
+                "x": 0.6875,
+                "y": 0.0625,
+                "radiusX": 0.62,
+                "radiusY": 0.44,
+                "color": 4285228893,
+                "intensity": 0.85,
+                "falloff": 1.6
+            },
+            {
+                "x": 0.3125,
+                "y": 0.8125,
+                "radiusX": 0.62,
+                "radiusY": 0.44,
+                "color": 4285228893,
+                "intensity": 0.84811234,
+                "falloff": 1.6
+            },
+            {
+                "x": 0.1875,
+                "y": 0.4375,
+                "radiusX": 0.62,
+                "radiusY": 0.44,
+                "color": 4285228893,
+                "intensity": 0.84762937,
+                "falloff": 1.6
+            },
+            {
+                "x": 0.0625,
+                "y": 0.8125,
+                "radiusX": 0.62,
+                "radiusY": 0.44,
+                "color": 4285228893,
+                "intensity": 0.8432599,
+                "falloff": 1.6
+            },
+            {
+                "x": 0.6875,
+                "y": 0.9375,
+                "radiusX": 0.62,
+                "radiusY": 0.44,
+                "color": 4285228893,
+                "intensity": 0.84231025,
+                "falloff": 1.6
+            }
+        ],
+        "grain": 0.012,
+        "warp": 0.12
+    },
+    "accents": [
+        {
+            "x": 0.6875,
+            "y": 0.0625,
+            "radiusX": 0.14,
+            "radiusY": 0.09,
+            "color": 4293310288,
+            "intensity": 0.0,
+            "falloff": 3.0
+        },
+        {
+            "x": 0.3125,
+            "y": 0.8125,
+            "radiusX": 0.14,
+            "radiusY": 0.09,
+            "color": 4293310032,
+            "intensity": 0.0,
+            "falloff": 3.0
+        }
+    ],
+    "directionalDetails": [
+        {
+            "x": 0.6875,
+            "y": 0.0625,
+            "angle": -164.42012,
+            "length": 1.3,
+            "width": 0.1,
+            "color": 4290746691,
+            "intensity": 0.0,
+            "coherence": 0.63540286
+        },
+        {
+            "x": 0.1875,
+            "y": 0.4375,
+            "angle": -76.50964,
+            "length": 1.3,
+            "width": 0.1,
+            "color": 4290746691,
+            "intensity": 0.0,
+            "coherence": 0.4579425
+        },
+        {
+            "x": 0.0625,
+            "y": 0.8125,
+            "angle": -65.330864,
+            "length": 1.3,
+            "width": 0.1,
+            "color": 4290746691,
+            "intensity": 0.0,
+            "coherence": 0.6754833
+        }
+    ],
+    "lights": [
+        {
+            "x": 0.6875,
+            "y": 0.0625,
+            "radiusX": 0.32,
+            "radiusY": 0.26,
+            "color": 4290293919,
+            "intensity": 0.28,
+            "falloff": 2.5
+        },
+        {
+            "x": 0.3125,
+            "y": 0.8125,
+            "radiusX": 0.32,
+            "radiusY": 0.26,
+            "color": 4290293919,
+            "intensity": 0.27905616,
+            "falloff": 2.5
+        },
+        {
+            "x": 0.1875,
+            "y": 0.4375,
+            "radiusX": 0.32,
+            "radiusY": 0.26,
+            "color": 4290293919,
+            "intensity": 0.27881467,
+            "falloff": 2.5
+        },
+        {
+            "x": 0.0625,
+            "y": 0.8125,
+            "radiusX": 0.32,
+            "radiusY": 0.26,
+            "color": 4290293919,
+            "intensity": 0.27662995,
+            "falloff": 2.5
+        },
+        {
+            "x": 0.6875,
+            "y": 0.9375,
+            "radiusX": 0.32,
+            "radiusY": 0.26,
+            "color": 4290293920,
+            "intensity": 0.2761551,
+            "falloff": 2.5
+        }
+    ],
+    "controlSurface": {
+        "fill": [
+            {
+                "position": 0.0,
+                "color": 4279309336
+            },
+            {
+                "position": 1.0,
+                "color": 4279177233
+            }
+        ],
+        "haloColor": 4291154136,
+        "haloIntensity": 0.16,
+        "haloRadius": 0.155,
+        "ink": 4294638847,
+        "rim": [
+            {
+                "position": 0.0,
+                "color": 4285428856
+            },
+            {
+                "position": 1.0,
+                "color": 4282533449
+            }
+        ],
+        "haloSpectrum": [],
+        "spectrumRotation": 135.0,
+        "diameterRatio": 0.1574,
+        "material": "EDITORIAL"
+    },
+    "progress": {
+        "fill": [
+            {
+                "position": 0.0,
+                "color": 4294308069
+            },
+            {
+                "position": 1.0,
+                "color": 4294307550
+            }
+        ],
+        "track": 4281349189,
+        "thumb": 4291154136,
+        "halo": 4291154136
+    },
+    "lyrics": {
+        "active": 4294507519,
+        "future": 4288326851,
+        "alphaProgression": [
+            0.72,
+            1.0,
+            0.52,
+            0.36,
+            0.24
+        ],
+        "surface": 1073938946
+    },
+    "analysisMetadata": {
+        "source": "CLASSICAL_PIXELS",
+        "fallbackReason": "Direção por pixels; sem IA e sem reconhecimento semântico.",
+        "measuredFeatures": {
+            "lowFraction": 0.0,
+            "midFraction": 0.0,
+            "highFraction": 1.0,
+            "meanLuminance": 0.5953869649521161,
+            "meanSaturation": 0.13000628446290705,
+            "saturatedFraction": 0.0,
+            "saturatedX": 0.5,
+            "saturatedY": 0.5,
+            "coolCoverage": 0.0,
+            "edgeDensity": 0.011331935022132051,
+            "complexity": 0.14071666903980173,
+            "sparseSpectral": 0.0,
+            "perceptualHueDiversity": 0.0,
+            "directionPeak": 0.37259070380052733,
+            "family.PRISMATIC": 0.0,
+            "family.DENSE_CHROMATIC": 0.011331935022132051,
+            "family.EDITORIAL_NATURAL": 0.4547142822768056,
+            "family.DRAMATIC_CONTRAST": 0.02225649717773363,
+            "family.SELECTIVE_LUMINOUS": 0.0,
+            "family.MINIMAL_MONOCHROME": 1.0,
+            "luminanceRange": 0.09435531325416646,
+            "spatialLuminanceDeviation": 0.05902639949776881
+        },
+        "engineVersion": "procedural-art-director-4.1",
+        "fiveSignals": [
+            "Famílias: {MINIMAL_MONOCHROME=1.0}; detalhe=0.045327740088528204; faixa tonal=0.09435531325416646",
+            "Área negativa=0.0; sinais isolados=0.0",
+            "Diversidade perceptual=0.0; cobertura saturada=0.0",
+            "Cor ambiental: cobertura × dispersão; interação: contraste × saturação",
+            "Acento: contraste local; variação espacial de luminância=0.05902639949776881"
+        ],
+        "treatmentWeights": {
+            "CINEMATIC_DENSE": 0.6304855,
+            "MONOCHROME_EDITORIAL": 0.3695145
+        }
+    }
+}

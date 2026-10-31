@@ -1,0 +1,10 @@
+
+
+
+{
+ "resultCount":1,
+ "results": [
+{"wrapperType":"collection", "collectionType":"Album", "artistId":549236696, "collectionId":1421658111, "amgArtistId":2701028, "artistName":"Travis Scott", "collectionName":"ASTROWORLD", "collectionCensoredName":"ASTROWORLD", "artistViewUrl":"https://music.apple.com/us/artist/travis-scott/549236696?uo=4", "collectionViewUrl":"https://music.apple.com/us/album/astroworld/1421658111?uo=4", "artworkUrl60":"https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/e7/49/8f/e7498f65-df8f-bead-d6e3-2a8d4d642a79/886447235317.jpg/60x60bb.jpg", "artworkUrl100":"https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/e7/49/8f/e7498f65-df8f-bead-d6e3-2a8d4d642a79/886447235317.jpg/100x100bb.jpg", "collectionPrice":12.99, "collectionExplicitness":"cleaned", "contentAdvisoryRating":"Clean", "trackCount":17, "copyright":"℗ 2018 Cactus Jack Records, LLC under exclusive licensed to Epic Records, a division of Sony Music Entertainment", "country":"USA", "currency":"USD", "releaseDate":"2018-08-03T07:00:00Z", "primaryGenreName":"Hip-Hop/Rap"}]
+}
+
+

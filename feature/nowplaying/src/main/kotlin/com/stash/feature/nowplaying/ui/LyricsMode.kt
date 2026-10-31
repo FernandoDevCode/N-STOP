@@ -121,19 +121,19 @@ internal fun LyricsPane(
 
     BoxWithConstraints(modifier = modifier.lyricsEdgeFade()) {
         val density = LocalDensity.current
-        val fontSp = lyricFontSizeSp(maxWidth.value)
+        val fontSp = lyricFontSizeSp(maxWidth.value).coerceAtLeast(16f)
         val viewportHeight = maxHeight
         val look = remember(fontSp, viewportHeight, ink, light, density) {
             with(density) {
                 val anchor = lyricAnchorPx(fontSp.sp.toPx(), viewportHeight.toPx()).toDp()
                 LyricsLook(
                     fontSize = fontSp.sp,
-                    // The web's inks: lit .85 on the dark ambient, full plum on the light wash; dim .35.
-                    bright = if (light) ink else ink.copy(alpha = 0.85f),
-                    dim = ink.copy(alpha = if (light) 0.38f else 0.35f),
+                    // Readability comes from crisp ink and distance opacity, not heavy blur.
+                    bright = if (light) ink else ink.copy(alpha = 0.98f),
+                    dim = ink.copy(alpha = if (light) 0.55f else 0.82f),
                     ink = ink,
                     sidePadding = LYRICS_SIDE_PAD_DP.dp,
-                    lineGap = (fontSp.sp.toPx() * 0.2f).toDp(),
+                    lineGap = (fontSp.sp.toPx() * 0.16f).toDp(),
                     anchor = anchor,
                     bottomRoom = (viewportHeight - anchor).coerceAtLeast(0.dp),
                 )
@@ -238,17 +238,19 @@ internal fun LyricsModeHeader(
         cover()
         Spacer(Modifier.width(14.dp))
         Column(modifier = textModifier.weight(1f)) {
-            // A long title or artist scrolls rather than ending in "…"; text that fits stays still.
-            NpMarqueeText(text = title, style = HeaderTitleStyle, color = ink)
+            // Keep the beginning visible while reading; long metadata ends in an ellipsis.
+            Text(text = title, style = HeaderTitleStyle, color = ink,
+                maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(2.dp))
-            NpMarqueeText(text = artist, style = HeaderArtistStyle, color = ink.copy(alpha = 0.7f))
+            Text(text = artist, style = HeaderArtistStyle, color = ink.copy(alpha = 0.7f),
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth())
         }
         Row(modifier = actionsModifier, verticalAlignment = Alignment.CenterVertically, content = actions)
     }
 }
 
-private val HeaderTitleStyle = TextStyle(fontFamily = SpaceGrotesk, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-private val HeaderArtistStyle = TextStyle(fontSize = 14.sp)
+private val HeaderTitleStyle = TextStyle(fontFamily = SpaceGrotesk, fontWeight = FontWeight.SemiBold, fontSize = 18.sp, lineHeight = 22.sp)
+private val HeaderArtistStyle = TextStyle(fontSize = 13.sp)
 
 /** The header's cover: the web's 64px, radius 8. A tap goes back to the big art. */
 internal val CompactCoverSize = 64.dp
@@ -328,6 +330,7 @@ internal fun CompactCover(
         onSuccess = { s: AsyncImagePainter.State.Success ->
             onBitmapLoaded(runCatching { s.result.image.toBitmap() }.getOrNull())
         },
+        onError = { onBitmapLoaded(null) },
         modifier = modifier
             .size(CompactCoverSize)
             .clip(RoundedCornerShape(8.dp))

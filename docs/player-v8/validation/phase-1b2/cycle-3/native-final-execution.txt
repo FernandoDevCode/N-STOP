@@ -1,0 +1,13 @@
+Native launcher exit code: 0
+Final packaged build, after functional fallback repair.
+ART_LAB_OFFSCREEN_COMPLETE C:\Users\User\Documents\GitHub\Spotify\Stash\docs\player-v8\validation\phase-1b2\cycle-3
+PINK_FLOYD analysis DISK: PhaseTimings(decodeMs=210.9869, featuresMs=0.0, directionMs=0.0, textureMs=163.1901, totalMs=596.7696, cpuMs=343.75)
+PINK_FLOYD FIDELIDADE offscreen CPU raster warm frames n=12: median=33.6684 ms max=44.0828 ms
+PINK_FLOYD PRODUCAO offscreen CPU raster warm frames n=12: median=37.0127 ms max=45.418 ms
+PINK_FLOYD internal Compose seek: paused state preserved, progress=0.6198726
+PINK_FLOYD memory lookup 3.728 ms; mode-independent recipe verified
+MEGADETH analysis DISK: PhaseTimings(decodeMs=26.9521, featuresMs=0.0, directionMs=0.0, textureMs=30.7981, totalMs=86.5685, cpuMs=78.125)
+MEGADETH FIDELIDADE offscreen CPU raster warm frames n=12: median=25.0844 ms max=27.2424 ms
+MEGADETH PRODUCAO offscreen CPU raster warm frames n=12: median=27.4103 ms max=29.5542 ms
+MEGADETH internal Compose seek: paused state preserved, progress=0.6191401
+MEGADETH memory lookup 3.2419 ms; mode-independent recipe verified

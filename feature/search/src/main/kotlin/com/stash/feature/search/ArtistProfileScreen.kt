@@ -6,6 +6,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
@@ -28,20 +31,27 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.media.preview.LosslessUrlPrefetcher
 import com.stash.core.ui.components.AlbumsRowSkeleton
 import com.stash.core.ui.components.DiscoveryErrorCard
 import com.stash.core.ui.components.PopularListSkeleton
-import com.stash.core.ui.components.SectionHeader
 import com.stash.core.model.TrackItem
 import com.stash.data.ytmusic.model.AlbumSummary
 import kotlinx.coroutines.flow.merge
@@ -77,6 +87,32 @@ fun ArtistProfileScreen(
     vm: ArtistProfileViewModel = hiltViewModel(),
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
+    // Optional image lookup is UI-owned, never part of catalog or playback VM.
+    val wordmarkUrl by produceState<String?>(initialValue = null, key1 = state.hero.name) {
+        value = ArtistWordmarkLookup.resolve(state.hero.name)
+    }
+    val context = LocalContext.current
+    val photoPalette by produceState(
+        initialValue = ArtistNeutralPalette,
+        key1 = state.hero.avatarUrl,
+    ) {
+        value = artistPaletteFromPhoto(context, state.hero.avatarUrl)
+    }
+    val smoothAtmosphere by animateColorAsState(
+        targetValue = photoPalette.surface,
+        label = "artistReadingSurface",
+    )
+    val smoothBridge by animateColorAsState(
+        targetValue = photoPalette.bridge,
+        label = "artistPhotoBridge",
+    )
+    val smoothHeroTone by animateColorAsState(
+        targetValue = photoPalette.hero,
+        label = "artistPhotoTone",
+    )
+    val featuredAlbum = remember(state.albums, state.singles) {
+        selectArtistFeaturedAlbum(state.albums, state.singles)
+    }
     val previewState by vm.delegate.previewState.collectAsStateWithLifecycle()
     val downloadingIds by vm.delegate.downloadingIds.collectAsStateWithLifecycle()
     val downloadedIds by vm.delegate.downloadedIds.collectAsStateWithLifecycle()
@@ -105,7 +141,7 @@ fun ArtistProfileScreen(
     val focus = remember(state.focusAlbum, state.albums, state.singles) {
         findAlbumFocus(state.focusAlbum, state.albums, state.singles)
     }
-    // The hero (0) and the artist's sticky navigation (1) are fixed.
+    // The hero (0) and featured-release slot (1) are fixed.
     // Each shelf contributes two LazyColumn items; count the optional ones
     // centrally so "open this album" lands at the right section.
     val positions = remember(
@@ -139,46 +175,77 @@ fun ArtistProfileScreen(
     }
 
     Scaffold(
+        containerColor = androidx.compose.ui.graphics.Color.Transparent,
         snackbarHost = { SnackbarHost(snackbar, Modifier.padding(bottom = bottomChromePadding())) },
     ) { inner ->
+        // A single photo-to-content fade follows the actual scroll position.
+        // Unlike a viewport-fixed wash, this does not recolour later sections
+        // after the hero scrolls away. It never touches the app's mini-player.
+        Box(
+            modifier = Modifier.fillMaxSize().padding(inner).drawBehind {
+                drawRect(smoothAtmosphere)
+                val visible = listState.layoutInfo.visibleItemsInfo
+                val heroEnd = visible.firstOrNull { it.index == 0 }
+                    ?.let { (it.offset + it.size).toFloat() }
+                val firstHeading = visible.firstOrNull { it.index == 2 }
+                    ?.offset?.toFloat()
+                // The first shelf follows the heading. Its approximate heading
+                // lead-in is only used once that heading itself is offscreen.
+                val firstShelf = visible.firstOrNull { it.index == 3 }
+                    ?.let { it.offset - 56.dp.toPx() }
+                val fadeStart = heroEnd ?: firstHeading ?: firstShelf
+                if (fadeStart != null) {
+                    val fadeEnd = fadeStart + 340.dp.toPx()
+                    if (fadeEnd > 0f && fadeStart < size.height) {
+                        drawRect(
+                            brush = Brush.verticalGradient(
+                                0f to smoothBridge,
+                                .48f to lerp(smoothBridge, smoothAtmosphere, .72f),
+                                1f to smoothAtmosphere,
+                                startY = fadeStart,
+                                endY = fadeEnd,
+                            ),
+                        )
+                    }
+                }
+            },
+        ) {
         LazyColumn(
             state = listState,
             contentPadding = PaddingValues(bottom = bottomChromePadding(96.dp)),
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(inner),
+            modifier = Modifier.fillMaxSize(),
         ) {
             item {
                 ArtistHero(
                     hero = state.hero,
                     status = state.status,
                     socials = state.about?.socials.orEmpty(),
+                    wordmarkUrl = wordmarkUrl,
+                    bridgeAtmosphere = smoothBridge,
+                    heroAtmosphere = smoothHeroTone,
                     onBack = onBack,
                     onPlayArtist = vm::playArtist,
                     onStartRadio = vm::startRadio,
                     streamingEnabled = streamingEnabled,
                     onStreamingClick = { showStreamingSheet = true },
-                )
-            }
-            // Tabs are real jumps into the populated shelves, not decorative
-            // filters. The bar stays accessible after the large hero scrolls off.
-            stickyHeader(key = "artist-section-navigation") {
-                val tabs = listOfNotNull(
-                    positions.songs?.let { stringResource(R.string.nonstop_artist_music_tab) to it },
-                    positions.albums?.let { stringResource(R.string.nonstop_artist_albums_tab) to it },
-                    positions.singles?.let { stringResource(R.string.nonstop_artist_singles_tab) to it },
-                    positions.about?.let { stringResource(R.string.nonstop_artist_about_tab) to it },
-                )
-                ArtistSectionTabs(
-                    tabs = tabs,
-                    selectedIndex = tabs.lastOrNull { it.second <= listState.firstVisibleItemIndex }?.second
-                        ?: tabs.firstOrNull()?.second,
-                    onSelect = { index ->
-                        scrollScope.launch { listState.animateScrollToItem(index) }
+                    onOpenAbout = positions.about?.let { target ->
+                        {
+                            scrollScope.launch {
+                                listState.animateScrollToItem(target, scrollOffset = -120)
+                            }
+                            Unit
+                        }
+                    },
+                    featuredContent = featuredAlbum?.let { album ->
+                        @Composable {
+                            ArtistFeaturedAlbum(album = album, onOpen = onNavigateToAlbum)
+                        }
                     },
                 )
             }
-
+            // The release now belongs to the hero composition. Keep its old
+            // index reserved, including when absent, for album/About navigation.
+            item(key = "artist-featured-release") { }
 
             when (val status = state.status) {
                 is ArtistProfileStatus.Error -> item {
@@ -209,6 +276,7 @@ fun ArtistProfileScreen(
                         onRequestAddToPlaylist = vm::onRequestAddToPlaylist,
                         onNavigateToAlbum = onNavigateToAlbum,
                         onNavigateToArtist = onNavigateToArtist,
+                        wordmarkSource = ArtistWordmarkLookup.attribution(wordmarkUrl),
                         focus = focus,
                     )
                 }
@@ -230,10 +298,12 @@ fun ArtistProfileScreen(
                     onRequestAddToPlaylist = vm::onRequestAddToPlaylist,
                     onNavigateToAlbum = onNavigateToAlbum,
                     onNavigateToArtist = onNavigateToArtist,
+                    wordmarkSource = ArtistWordmarkLookup.attribution(wordmarkUrl),
                     focus = focus,
                 )
             }
         }
+        } // artist atmosphere canvas
 
         if (showStreamingSheet) {
             com.stash.core.ui.components.streaming.StreamingModeSheet(
@@ -283,10 +353,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
     onRequestAddToPlaylist: (TrackItem) -> Unit,
     onNavigateToAlbum: (album: AlbumSummary) -> Unit,
     onNavigateToArtist: (artistId: String, name: String, avatarUrl: String?) -> Unit,
+    wordmarkSource: String?,
     focus: AlbumFocusTarget?,
 ) {
     if (state.popular.isNotEmpty()) {
-        item { SectionHeader(title = "Popular") }
+        item { ArtistEditorialHeading("Mais ouvidas", compact = true) }
         item {
             PopularTracksSection(
                 tracks = state.popular,
@@ -307,7 +378,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
         }
     }
     if (state.albums.isNotEmpty()) {
-        item { SectionHeader(title = "Albums") }
+        item { ArtistEditorialHeading("Álbuns") }
         item {
             AlbumsRow(
                 albums = state.albums,
@@ -317,7 +388,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
         }
     }
     if (state.singles.isNotEmpty()) {
-        item { SectionHeader(title = "Singles & EPs") }
+        item { ArtistEditorialHeading("Singles e EPs") }
         item {
             SinglesRow(
                 singles = state.singles,
@@ -327,7 +398,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
         }
     }
     if (state.related.isNotEmpty()) {
-        item { SectionHeader(title = "Fans also like") }
+        item { ArtistEditorialHeading("Artistas relacionados") }
         item {
             RelatedArtistsRow(
                 artists = state.related,
@@ -337,9 +408,30 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
     }
     val about = state.about
     if (about != null) {
-        item { SectionHeader(title = "About") }
-        item { AboutSection(about = about, avatarUrl = state.hero.avatarUrl) }
+        item { ArtistEditorialHeading("Sobre") }
+        item {
+            AboutSection(
+                about = about,
+                avatarUrl = state.hero.avatarUrl,
+                wordmarkSource = wordmarkSource,
+            )
+        }
     }
+}
+
+@Composable
+private fun ArtistEditorialHeading(label: String, compact: Boolean = false) {
+    Text(
+        text = label,
+        color = MaterialTheme.colorScheme.onSurface,
+        fontSize = if (compact) 17.sp else 20.sp,
+        lineHeight = if (compact) 21.sp else 25.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.fillMaxWidth()
+            .padding(start = 18.dp, end = 18.dp,
+                top = if (compact) 28.dp else 18.dp,
+                bottom = if (compact) 13.dp else 9.dp),
+    )
 }
 
 /**
@@ -357,36 +449,43 @@ private fun ArtistSectionTabs(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background.copy(alpha = 0.97f))
+            .background(MaterialTheme.colorScheme.background)
             .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 11.dp),
-        horizontalArrangement = Arrangement.spacedBy(9.dp),
+            .padding(horizontal = 19.dp, vertical = 0.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         tabs.forEach { (title, targetIndex) ->
             val selected = targetIndex == selectedIndex
-            val fill = if (selected) {
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-            } else {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.46f)
-            }
+            val indicator = MaterialTheme.colorScheme.primary
             Surface(
                 onClick = { onSelect(targetIndex) },
-                shape = RoundedCornerShape(100.dp),
-                color = fill,
-                border = BorderStroke(
-                    1.dp,
-                    if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.36f)
-                    else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                ),
+                shape = RoundedCornerShape(0.dp),
+                color = Color.Transparent,
             ) {
-                Text(
-                    text = title,
-                    modifier = Modifier.padding(horizontal = 15.dp, vertical = 10.dp),
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (selected) MaterialTheme.colorScheme.onSurface
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Column(
+                    modifier = Modifier
+                        .padding(horizontal = 1.dp)
+                        .drawBehind {
+                            if (selected) {
+                                val y = size.height - 1.5.dp.toPx()
+                                drawLine(
+                                    color = indicator,
+                                    start = Offset(0f, y),
+                                    end = Offset(size.width, y),
+                                    strokeWidth = 3.dp.toPx(),
+                                )
+                            }
+                        },
+                ) {
+                    Text(
+                        text = title,
+                        modifier = Modifier.padding(top = 12.dp, bottom = 13.dp),
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (selected) MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }

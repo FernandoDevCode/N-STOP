@@ -1,0 +1,8 @@
+PINK_FLOYD analysis MISS: PhaseTimings(decodeMs=112.7505, featuresMs=253.0252, directionMs=32.6656, textureMs=258.4915, totalMs=770.1379, cpuMs=484.375)
+PINK_FLOYD FIDELIDADE offscreen CPU raster warm frames n=12: median=100.8679 ms max=179.1206 ms
+PINK_FLOYD PRODUCAO offscreen CPU raster warm frames n=12: median=103.7974 ms max=156.6155 ms
+PINK_FLOYD memory lookup 4.2399 ms; mode-independent recipe verified
+MEGADETH analysis MISS: PhaseTimings(decodeMs=28.2143, featuresMs=342.2854, directionMs=0.6163, textureMs=83.5065, totalMs=473.9839, cpuMs=437.5)
+MEGADETH FIDELIDADE offscreen CPU raster warm frames n=12: median=87.9107 ms max=98.2417 ms
+MEGADETH PRODUCAO offscreen CPU raster warm frames n=12: median=92.7375 ms max=129.5266 ms
+MEGADETH memory lookup 12.5387 ms; mode-independent recipe verified

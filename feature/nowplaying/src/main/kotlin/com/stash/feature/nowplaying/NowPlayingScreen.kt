@@ -28,6 +28,7 @@ import com.stash.feature.nowplaying.ui.npIsLight
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -94,6 +95,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -113,6 +115,8 @@ import com.stash.core.model.isFlac
 import com.stash.core.ui.components.SaveToPlaylistSheet
 import com.stash.core.ui.components.SheetOptionRow
 import com.stash.core.ui.theme.LocalIsAmoledTheme
+import com.stash.feature.nowplaying.ui.PlayerArtDirection
+import com.stash.feature.nowplaying.ui.playerArtDirectionFromBitmap
 import com.stash.feature.nowplaying.ui.AmbientBackground
 import com.stash.feature.nowplaying.ui.GlowingProgressBar
 import com.stash.feature.nowplaying.ui.LiveLyricsBar
@@ -143,8 +147,37 @@ fun NowPlayingScreen(
     onNavigateToAlbum: (albumId: String, name: String, artUrl: String?, artistName: String) -> Unit,
     viewModel: NowPlayingViewModel = hiltViewModel(),
 ) {
+    val view = androidx.compose.ui.platform.LocalView.current
+    val window = (view.context as? android.app.Activity)?.window
+    val bars = remember(view, window) { window?.let { androidx.core.view.WindowCompat.getInsetsController(it, view) } }
+    androidx.compose.runtime.DisposableEffect(bars) {
+        val oldStatus = bars?.isAppearanceLightStatusBars
+        val oldNavigation = bars?.isAppearanceLightNavigationBars
+        onDispose {
+            if (oldStatus != null) bars?.isAppearanceLightStatusBars = oldStatus
+            if (oldNavigation != null) bars?.isAppearanceLightNavigationBars = oldNavigation
+        }
+    }
+    androidx.compose.runtime.SideEffect {
+        bars?.isAppearanceLightStatusBars = false
+        bars?.isAppearanceLightNavigationBars = false
+    }
+    MaterialTheme(colorScheme = com.stash.core.ui.theme.StashDarkColorScheme) {
+        PlayerV7Content(onDismiss, onNavigateToArtist, onNavigateToAlbum, viewModel)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PlayerV7Content(
+    onDismiss: () -> Unit,
+    onNavigateToArtist: (id: String, name: String, avatarUrl: String?, focusAlbum: String?) -> Unit,
+    onNavigateToAlbum: (albumId: String, name: String, artUrl: String?, artistName: String) -> Unit,
+    viewModel: NowPlayingViewModel,
+) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val track = uiState.currentTrack
+    var useClassicPlayer by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     val resolvingArtist by viewModel.resolvingArtist.collectAsStateWithLifecycle()
     val isDownloadingCurrent by viewModel.isDownloadingCurrent.collectAsStateWithLifecycle()
     val exportingLyricsTrackId by viewModel.exportingLyricsTrackId.collectAsStateWithLifecycle()
@@ -342,6 +375,26 @@ fun NowPlayingScreen(
     // Both covers share one decode (rememberNpArtRequest), so the colours match either way.
     var paletteArtModel by remember { mutableStateOf<Any?>(null) }
     val artModel: Any? = track?.albumArtPath ?: track?.albumArtUrl
+    // The same decoded Coil artwork feeds the existing VM palette and the
+    // v7 direction pass. Analysis is background-only and keyed by artwork,
+    // never by playback position, and cancellation follows song changes.
+    var directionBitmap by remember(artModel) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var artDirection by remember { mutableStateOf(PlayerArtDirection.Neutral) }
+    LaunchedEffect(artModel, directionBitmap) {
+        val bitmap = directionBitmap ?: return@LaunchedEffect
+        artDirection = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            runCatching {
+                playerArtDirectionFromBitmap(bitmap, artModel.toString())
+            }.getOrElse { PlayerArtDirection.Neutral }
+        }
+    }
+    val resolvedDirection = if (artModel == null) PlayerArtDirection.Neutral else artDirection
+    val dynamicProgress by androidx.compose.animation.animateColorAsState(
+        resolvedDirection.progress, tween(900), label = "v7-progress-color")
+    val dynamicFill = resolvedDirection?.playFill ?: npAccent(uiState.vibrantColor)
+    val dynamicGlow = resolvedDirection?.playGlow ?: npAccent(uiState.vibrantColor)
+    val dynamicInk = resolvedDirection?.playInk ?: Color.White
+    val dynamicGlowStrength = resolvedDirection?.glowStrength ?: 0.12f
 
     // -- Actions: where each shows (pinned row or ⋮ menu) and what it does. Everything the top
     // row reads is remembered on what it depends on, so the 250ms position tick that recomposes
@@ -700,379 +753,158 @@ fun NowPlayingScreen(
         )
     }
 
-    Box(
-        modifier = Modifier
-            .holdHeightWhileLeaving()
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
-    ) {
-        // Ambient animated background behind everything — dark canvas, the
-        // light pastel wash, or a dead-black AMOLED ground, following the
-        // resolved app theme. It runs to the screen's bottom edge, under the
-        // system navigation bar (the scaffold hides the tab bar on this route).
-        if (ambientAnimationEnabled) when (ambientStyle) {
-            com.stash.core.data.prefs.AmbientStyle.SOFT_GLOW -> AmbientBackground(
-                palette = uiState.ambientPalette,
-                lightMode = MaterialTheme.colorScheme.background.luminance() >= 0.5f,
-                amoledMode = LocalIsAmoledTheme.current,
-                modifier = Modifier.fillMaxSize(),
-            )
-            // Settings > Appearance > Ambient style: the original ambient, unchanged.
-            com.stash.core.data.prefs.AmbientStyle.CLASSIC -> com.stash.feature.nowplaying.ui.ClassicAmbientBackground(
-                dominantColor = uiState.dominantColor,
-                vibrantColor = uiState.vibrantColor,
-                mutedColor = uiState.mutedColor,
-                lightMode = MaterialTheme.colorScheme.background.luminance() >= 0.5f,
-                amoledMode = LocalIsAmoledTheme.current,
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
-
-        // The raw navigation-bar inset (never consumed by the scaffold here), so the
-        // controls sit above the gesture handle or the 3-button bar and do not move
-        // while the screen slides away.
+    val useV8 = !useClassicPlayer && !reading && room == null && track != null
+    Box(Modifier.holdHeightWhileLeaving().fillMaxSize().background(Color(0xFF05080D))) {
+        if (!useV8) PlayerV7Backdrop(artModel, resolvedDirection, ambientAnimationEnabled)
         val navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-
-        // -- Progress + transport: one piece, shared by both modes. In lyrics mode it glides
-        // from under the title to the bottom edge (a shared element, see ModeBounds). --
-        val foot: @Composable (Modifier) -> Unit = { footModifier ->
-            Column(modifier = footModifier.fillMaxWidth()) {
-                // -- Progress bar --
-                GlowingProgressBar(
-                    progress = { progressFraction(playerPosition.value, uiState.durationMs) },
-                    accentColor = npAccent(uiState.vibrantColor),
-                    elapsedMs = { playerPosition.value },
-                    totalMs = uiState.durationMs,
-                    onSeek = viewModel::onSeekTo,
-                    seekable = !isListener,
-                    modifier = Modifier.fillMaxWidth(),
-                    center = {
-                        if (isListener) {
-                            com.stash.feature.nowplaying.listen.LivePill(
-                                pausedLocally = room.pausedLocally,
-                                accent = npAccent(uiState.vibrantColor),
-                                ink = npInk(),
-                                onRejoin = together::rejoin,
-                            )
-                        }
-                    },
-                )
-
-                Spacer(modifier = Modifier.height(StackRhythm.ProgressToControls))
-
-                // -- Playback controls -- the same row for host and listener, so a role change
-                // doesn't move anything; a listener's skip slots are simply empty.
-                PlaybackControls(
-                    // The player's intent, not isPlaying (false while buffering): the button shows
-                    // Pause, and pauses, while a stream stalls. A paused buffer shows Play, not a spinner.
-                    isPlaying = uiState.playWhenReady || uiState.isPlaying,
-                    isBuffering = uiState.isBuffering && (uiState.playWhenReady || uiState.isPlaying),
-                    shuffleEnabled = uiState.shuffleEnabled,
-                    repeatMode = uiState.repeatMode,
-                    accentColor = npAccent(uiState.vibrantColor),
-                    onPlayPauseClick = viewModel::onPlayPauseClick,
-                    onSkipNext = viewModel::onSkipNext,
-                    onSkipPrevious = viewModel::onSkipPrevious,
-                    onToggleShuffle = viewModel::onToggleShuffle,
-                    onCycleRepeatMode = viewModel::onCycleRepeatMode,
-                    // In a session: shuffle and repeat do nothing there, so React takes their place.
-                    onReact = if (room != null) together::react else null,
-                    canSkip = !isListener,
-                )
+        val reduced = com.stash.core.ui.ambient.rememberReducedMotion()
+        val progress: @Composable () -> Unit = {
+            androidx.compose.runtime.key(track?.id, track?.youtubeId, uiState.currentIndex) {
+            GlowingProgressBar(
+                progress = { progressFraction(playerPosition.value, uiState.durationMs) },
+                accentColor = dynamicProgress,
+                elapsedMs = { playerPosition.value }, totalMs = uiState.durationMs,
+                onSeek = viewModel::onSeekTo,
+                seekable = !isListener && uiState.isSeekable && uiState.durationMs > 0L,
+                gradientColors = resolvedDirection.accents.takeIf { it.size >= 3 }
+                    ?: listOf(androidx.compose.ui.graphics.lerp(dynamicProgress, Color.White, .18f), dynamicProgress),
+                center = {
+                    if (isListener) com.stash.feature.nowplaying.listen.LivePill(
+                        pausedLocally = room.pausedLocally, accent = dynamicProgress, ink = Color.White,
+                        onRejoin = together::rejoin,
+                    )
+                },
+            )
             }
         }
-
-        Column(modifier = Modifier.fillMaxSize().padding(bottom = navBarInset)) {
-            // -- Top row: dismiss, then cast, the pinned actions, ⋮ and (pinned) queue. It stays
-            // put while the art and the lyrics swap beneath it. --
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                NowPlayingTopBar(
-                    fit = rowFit,
-                    visualState = visualState,
-                    hasTrack = uiState.hasTrack,
-                    isDownloading = isDownloadingCurrent,
-                    radioLock = radioLock,
-                    ink = npInk(),
-                    accent = npAccent(uiState.vibrantColor),
-                    // In lyrics mode Dismiss goes back to the art, like back and the cover.
-                    dismissDescription = if (reading) "Back to the cover" else "Dismiss",
-                    onDismiss = if (reading) viewModel::onDismissLyrics else onDismiss,
-                    onMoreClick = { showOptionsSheet = true },
-                    onAction = onPinnedAction,
-                    castButton = {
-                        com.stash.feature.nowplaying.cast.CastButton(
-                            connection = castConnection,
-                            tint = npInk(),
-                            accentColor = npAccent(uiState.vibrantColor),
-                            onClick = { showCastSheet = true },
-                        )
-                    },
-                )
-                if (room != null) {
-                    com.stash.feature.nowplaying.listen.SessionBar(
-                        room = room,
-                        onClick = { showSession = true },
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
+        val transport: @Composable (Boolean) -> Unit = { compact ->
+            PlayerV7Transport(uiState = uiState, direction = resolvedDirection, compact = compact,
+                canSkip = !isListener, onPlayPause = viewModel::onPlayPauseClick,
+                onPrevious = viewModel::onSkipPrevious, onNext = viewModel::onSkipNext,
+                onShuffle = viewModel::onToggleShuffle, onRepeat = viewModel::onCycleRepeatMode,
+                reaction = if (room != null) { { com.stash.feature.nowplaying.listen.ReactionButton(onReact = together::react) } } else null)
+        }
+        val onCoverBitmap: (android.graphics.Bitmap?) -> Unit = { bitmap ->
+            if (paletteArtModel != artModel) {
+                paletteArtModel = artModel
+                viewModel.onAlbumArtLoaded(bitmap)
+            }
+            if (bitmap == null) artDirection = PlayerArtDirection.Neutral
+            else if (bitmap !== directionBitmap) directionBitmap = bitmap
+        }
+        if (useV8) {
+            Box(Modifier.fillMaxSize().padding(bottom = navBarInset).statusBarsPadding()) {
+                V8PlayerSurface(uiState, playerPosition, viewModel, onDismiss,
+                    onMenu = { showOptionsSheet = true }, onFailure = { useClassicPlayer = true },
+                    cover = { coverModifier, image ->
+                        SwipeableArt(trackKey = track?.let { it.id to uiState.currentIndex },
+                            gesturesEnabled = true, canNext = canSwipeNext, canPrevious = canSwipePrevious,
+                            canSeek = uiState.isSeekable && uiState.durationMs > 0,
+                            positionMs = { playerPosition.value }, durationMs = uiState.durationMs,
+                            onNext = viewModel::onSkipNext, onPrevious = viewModel::onSwipePrevious,
+                            onSeekTo = viewModel::onSeekTo) { swipeModifier ->
+                            Box(coverModifier.then(swipeModifier)) { image() }
+                        }
+                    })
+                Box(Modifier.align(Alignment.TopEnd).padding(top = 12.dp, end = 24.dp)) {
+                    PlayerV7Menu(expanded = showOptionsSheet, onExpanded = { showOptionsSheet = it },
+                        actions = menuActions(emptySet(), actionCtx), visualState = visualState,
+                        accent = dynamicProgress, onAction = onAction,
+                        onTimer = { showSleepTimerSheet = true }, onAudio = { showSignalPath = true },
+                        showTrigger = false, onClassicPlayer = { useClassicPlayer = true })
                 }
             }
-
-            // The art view and the lyrics view swap here. The cover shrinks from the big art
-            // into the header (and grows back), the progress + transport glide between their
-            // two homes, and the rest crossfades, the lyrics side rising 8dp in a short stagger.
-            SharedTransitionLayout(modifier = Modifier.fillMaxWidth().weight(1f)) {
-                AnimatedContent(
-                    targetState = reading,
-                    transitionSpec = {
-                        fadeIn(tween(MODE_FADE_IN_MS, delayMillis = MODE_FADE_IN_DELAY_MS))
-                            .togetherWith(fadeOut(tween(MODE_FADE_OUT_MS)))
-                            .using(SizeTransform(clip = false))
-                    },
-                    label = "np-mode",
-                ) { showLyrics ->
-                    val artShared = Modifier.sharedElement(
-                        sharedContentState = rememberSharedContentState(ART_SHARED_KEY),
-                        animatedVisibilityScope = this@AnimatedContent,
-                        boundsTransform = ModeBounds,
-                    )
-                    val footShared = Modifier.sharedElement(
-                        sharedContentState = rememberSharedContentState(FOOT_SHARED_KEY),
-                        animatedVisibilityScope = this@AnimatedContent,
-                        boundsTransform = ModeBounds,
-                    )
-                    if (!showLyrics) {
-                        Column(modifier = Modifier.fillMaxSize()) {
-                            // #333 v2 — the slot system. No estimated heights, no thresholds:
-                            // the title/progress/controls stack is FIXED and anchors to the
-                            // bottom of the column (directly above the lyrics bar when it's
-                            // present), while the album art lives in a weight(1f) slot that
-                            // absorbs exactly whatever height this phone/scale/bar
-                            // combination leaves over. The art sizes to its slot (capped by
-                            // width and the 375dp design ceiling) and centers in it, so any
-                            // slack splits evenly around the art instead of pooling anywhere.
-                            // Every phone renders the same anatomy, scaled — nothing clips,
-                            // nothing crowds, nothing pools.
-                            NowPlayingBody(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(1f)
-                                    .padding(horizontal = 24.dp),
-                                art = {
-                                // -- Album art: NowPlayingBody sizes this slot (a square) --
-                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    // Swipe for the next / previous song, double-tap a side to seek
-                                    // 10 s: through the same ViewModel calls as the transport and the
-                                    // progress bar, and off for a listener, as those are.
-                                    SwipeableArt(
-                                        trackKey = track?.let { it.id to uiState.currentIndex },
-                                        gesturesEnabled = track != null && !isListener,
-                                        canNext = canSwipeNext,
-                                        canPrevious = canSwipePrevious,
-                                        canSeek = uiState.durationMs > 0L,
-                                        positionMs = { playerPosition.value },
-                                        durationMs = uiState.durationMs,
-                                        onNext = viewModel::onSkipNext,
-                                        onPrevious = viewModel::onSwipePrevious,
-                                        onSeekTo = viewModel::onSeekTo,
-                                        modifier = artShared,
-                                    ) { swipeModifier ->
-                                        AlbumArtSection(
-                                            albumArtUrl = track?.albumArtUrl,
-                                            albumArtPath = track?.albumArtPath,
-                                            accentColor = npAccent(uiState.vibrantColor),
-                                            onBitmapLoaded = { bitmap ->
-                                                paletteArtModel = artModel
-                                                viewModel.onAlbumArtLoaded(bitmap)
-                                            },
-                                            modifier = swipeModifier,
-                                        )
-                                    }
-                                    if (room != null) {
-                                        // "Maya joined", "Rawn skipped": over the art, so the layout never shifts.
-                                        com.stash.feature.nowplaying.listen.SessionEventChip(together.events, room.myId, Modifier.align(Alignment.TopCenter))
-                                    }
+        } else
+        Column(Modifier.fillMaxSize().padding(bottom = navBarInset).statusBarsPadding()) {
+            PlayerV7TopBar(onClose = if (reading) viewModel::onDismissLyrics else onDismiss) {
+                PlayerV7Menu(expanded = showOptionsSheet, onExpanded = { showOptionsSheet = it },
+                    actions = menuActions(emptySet(), actionCtx), visualState = visualState,
+                    accent = dynamicProgress, onAction = onAction,
+                    onTimer = { showSleepTimerSheet = true }, onAudio = { showSignalPath = true })
+            }
+            if (room != null) com.stash.feature.nowplaying.listen.SessionBar(
+                room = room, onClick = { showSession = true }, modifier = Modifier.padding(horizontal = 24.dp))
+            AnimatedContent(
+                targetState = reading,
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                transitionSpec = {
+                    (fadeIn(tween(if (reduced) 0 else 280)) +
+                        slideInVertically(tween(if (reduced) 0 else 280)) { if (targetState) it / 14 else -it / 14 })
+                        .togetherWith(fadeOut(tween(if (reduced) 0 else 140)))
+                        .using(SizeTransform(clip = false))
+                }, label = "v7-lyrics-mode",
+            ) { showLyrics ->
+                if (!showLyrics) {
+                    PlayerV7MainLayout(
+                        cover = { coverModifier ->
+                            Box(coverModifier, contentAlignment = Alignment.Center) {
+                                SwipeableArt(
+                                    trackKey = track?.let { it.id to uiState.currentIndex },
+                                    gesturesEnabled = track != null && !isListener,
+                                    canNext = canSwipeNext, canPrevious = canSwipePrevious,
+                                    canSeek = uiState.isSeekable && uiState.durationMs > 0L,
+                                    positionMs = { playerPosition.value }, durationMs = uiState.durationMs,
+                                    onNext = viewModel::onSkipNext, onPrevious = viewModel::onSwipePrevious,
+                                    onSeekTo = viewModel::onSeekTo,
+                                ) { swipeModifier ->
+                                    AlbumArtSection(track?.albumArtUrl, track?.albumArtPath,
+                                        dynamicProgress, 0f, onCoverBitmap, swipeModifier)
                                 }
-                                },
-                                stack = {
-                                // -- Track info -- (tap the title/artist to open the artist
-                                // profile; the trailing chevron signals it's actionable, and
-                                // swaps to a spinner while the artist name is being resolved).
-                                // The like heart floats at the right edge (relocated out of the
-                                // crowded top icon row); symmetric horizontal padding keeps the
-                                // title/artist block optically centred under the album art.
-                                TrackInfoBlock(
-                                    track = track,
-                                    resolvingArtist = resolvingArtist,
-                                    onTrackInfoTapped = viewModel::onTrackInfoTapped,
-                                    sleepTimerState = sleepTimerState,
-                                    onSleepTimerClick = { showSleepTimerSheet = true },
-                                    accent = npAccent(uiState.vibrantColor),
-                                    isLiked = uiState.currentTrack?.stashLikedAt != null,
-                                    onLikeTap = viewModel::onLikeTap,
-                                )
-
-                                // The approved player keeps codec/bitrate off the main canvas.
-                                // Diagnostic quality helpers remain available in the signal path UI.
-
-                                if (room != null) com.stash.feature.nowplaying.listen.PickLine(room)
-
-                                Spacer(modifier = Modifier.height(StackRhythm.InfoToProgress))
-
-                                foot(footShared)
-
-                                // "Up next · Title — Artist": a tap opens the queue, or the session
-                                // in a room (whose Up next is the room's). Art view only: lyrics
-                                // mode keeps the bottom for the lyrics.
-                                Spacer(modifier = Modifier.height(StackRhythm.ControlsToUpNext))
-                                UpNextLine(
-                                    peek = if (room != null) {
-                                        roomUpNextPeek(room.queue)
-                                    } else {
-                                        upNextPeek(uiState.queue, uiState.currentIndex, uiState.repeatMode)
-                                    },
-                                    inRoom = room != null,
-                                    onOpen = { if (room != null) showSession = true else showQueue = true },
-                                )
-                                },
-                            )
-
-                            // Live-lyrics bar — sits exactly where the MiniPlayer is on other
-                            // screens (the scaffold hides MiniPlayer on this route), directly
-                            // above the nav bar. Zero-height when Hidden, so the content
-                            // column keeps the full screen for lyric-less tracks.
-                            LiveLyricsBar(
-                                state = lyricsState,
-                                currentPositionMs = { lyricsPosition.value },
-                                accentColor = npAccent(uiState.vibrantColor),
-                                liveEnabled = liveLyricsEnabled,
-                                onTap = viewModel::onShowLyrics,
-                                isPlaying = uiState.isPlaying && !uiState.isBuffering,
-                                playbackSpeed = playbackSpeed,
-                            )
+                                if (room != null) com.stash.feature.nowplaying.listen.SessionEventChip(
+                                    together.events, room.myId, Modifier.align(Alignment.TopCenter))
+                            }
+                        },
+                        progress = progress,
+                        info = {
+                            TrackInfoBlock(track, resolvingArtist, viewModel::onTrackInfoTapped,
+                                track?.stashLikedAt != null,
+                                resolvedDirection.accents.firstOrNull { it.red > it.green * 1.3f && it.red > it.blue * 1.2f }
+                                    ?.let { androidx.compose.ui.graphics.lerp(it, Color.White, .18f) } ?: dynamicProgress,
+                                viewModel::onLikeTap)
+                            if (room != null) com.stash.feature.nowplaying.listen.PickLine(room)
+                        },
+                        controls = { transport(false) }, onLyrics = viewModel::onShowLyrics,
+                    )
+                } else {
+                    Column(Modifier.fillMaxSize()) {
+                        val lyricMenu = lyricsMenuItemsFor(lyricsState, lyricsSyncOffsetMs,
+                            canSaveToFile = track?.isDownloaded == true, outputKnown = lyricsOutputOffset != null)
+                        LyricsModeHeader(
+                            cover = {
+                                CompactCover(artModel, onCoverBitmap, viewModel::onDismissLyrics)
+                            },
+                            title = track?.title.orEmpty(), artist = track?.artist?.primaryArtist().orEmpty(),
+                            ink = Color.White,
+                            modifier = Modifier.padding(start = 24.dp, end = 12.dp, top = 4.dp)
+                                .playerV7VerticalGesture(onDown = viewModel::onDismissLyrics),
+                        ) {
+                            PlayerV7Heart(isLiked = track?.stashLikedAt != null,
+                                onClick = viewModel::onLikeTap, accent = dynamicProgress, size = 24.dp)
+                            LyricsMenuButton(items = lyricMenu, liveEnabled = liveLyricsEnabled,
+                                onLiveToggle = { viewModel.setLiveLyricsBarEnabled(it) },
+                                offsetMs = lyricsSyncOffsetMs, onOffsetChange = { viewModel.setLyricsSyncOffsetMs(it) },
+                                outputOffset = lyricsOutputOffset,
+                                onOutputOffsetChange = { viewModel.setLyricsOutputOffsetMs(it) },
+                                savingToFile = exportingLyricsTrackId != null,
+                                onSaveToFile = { viewModel.exportLyricsForCurrentTrack() }, ink = Color.White)
                         }
-                    } else {
-                        // -- Lyrics mode: the web's phone layout. A compact header, the lyrics
-                        // filling the middle, progress + transport at the bottom. --
-                        Column(modifier = Modifier.fillMaxSize()) {
-                            val displayArtist = remember(track) { track?.artist?.primaryArtist().orEmpty() }
-                            // The header reads only these settled values (not uiState itself), and
-                            // its enter/exit modifiers are remembered, so the 250ms position tick
-                            // that recomposes this screen skips the header and its marquees.
-                            val headerInk = npInk()
-                            val headerAccent = npAccent(uiState.vibrantColor)
-                            val headerLiked = uiState.currentTrack?.stashLikedAt != null
-                            val lyricsMenuItems = lyricsMenuItemsFor(lyricsState, lyricsSyncOffsetMs, canSaveToFile = track?.isDownloaded == true, outputKnown = lyricsOutputOffset != null)
-                            val savingLyrics = exportingLyricsTrackId != null
-                            val rise = with(LocalDensity.current) { RiseDistance.roundToPx() }
-                            val headerTextEnter = remember(this@AnimatedContent, rise) {
-                                Modifier.animateEnterExit(enter = riseIn(rise, RISE_STAGGER_MS), exit = fadeOut(tween(MODE_FADE_OUT_MS)))
-                            }
-                            val headerActionsEnter = remember(this@AnimatedContent, rise) {
-                                Modifier.animateEnterExit(enter = riseIn(rise, RISE_STAGGER_MS * 2), exit = fadeOut(tween(MODE_FADE_OUT_MS)))
-                            }
-                            val paneEnter = remember(this@AnimatedContent, rise) {
-                                Modifier.animateEnterExit(enter = riseIn(rise, RISE_STAGGER_MS * 3), exit = fadeOut(tween(MODE_FADE_OUT_MS)))
-                            }
-                            LyricsModeHeader(
-                                cover = {
-                                    CompactCover(
-                                        artModel = artModel,
-                                        onBitmapLoaded = { bitmap ->
-                                            if (artModel != paletteArtModel) {
-                                                paletteArtModel = artModel
-                                                viewModel.onAlbumArtLoaded(bitmap)
-                                            }
-                                        },
-                                        onClick = { viewModel.onDismissLyrics() },
-                                        modifier = artShared,
-                                    )
-                                },
-                                title = track?.title.orEmpty(),
-                                artist = displayArtist,
-                                ink = headerInk,
-                                modifier = Modifier.padding(start = 24.dp, end = 12.dp, top = 8.dp),
-                                textModifier = headerTextEnter,
-                                actionsModifier = headerActionsEnter,
-                            ) {
-                                // The sleep timer, as on the art view (and in the web's header);
-                                // accented, with its live countdown under the moon, while armed.
-                                SleepTimerButton(
-                                    state = sleepTimerState,
-                                    onClick = { showSleepTimerSheet = true },
-                                    activeTint = headerAccent,
-                                    idleTint = headerInk.copy(alpha = 0.7f),
-                                    buttonSize = 48.dp,
-                                    iconSize = 22.dp,
-                                )
-                                com.stash.core.ui.components.LikeButton(
-                                    isLiked = headerLiked,
-                                    onTap = { viewModel.onLikeTap() },
-                                    unlikedTint = headerInk.copy(alpha = 0.7f),
-                                    size = 26.dp,
-                                )
-                                LyricsMenuButton(
-                                    items = lyricsMenuItems,
-                                    liveEnabled = liveLyricsEnabled,
-                                    onLiveToggle = { viewModel.setLiveLyricsBarEnabled(it) },
-                                    offsetMs = lyricsSyncOffsetMs,
-                                    onOffsetChange = { viewModel.setLyricsSyncOffsetMs(it) },
-                                    outputOffset = lyricsOutputOffset,
-                                    onOutputOffsetChange = { viewModel.setLyricsOutputOffsetMs(it) },
-                                    savingToFile = savingLyrics,
-                                    onSaveToFile = { viewModel.exportLyricsForCurrentTrack() },
-                                    ink = headerInk,
-                                )
-                            }
-                            LyricsPane(
-                                state = lyricsState,
-                                currentPositionMs = { lyricsPosition.value },
-                                isPlaying = uiState.isPlaying && !uiState.isBuffering,
-                                playbackSpeed = playbackSpeed,
-                                onSeek = { if (!isListener) viewModel.onLyricsLineSeek(it) }, // a listener follows the room
-                                onRetry = viewModel::onLyricsRetry,
-                                ink = npInk(),
-                                accent = npAccent(uiState.vibrantColor),
-                                light = npIsLight(),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(1f)
-                                    .padding(top = 4.dp)
-                                    .then(paneEnter),
-                            )
-                            foot(Modifier.padding(horizontal = 24.dp).then(footShared))
-                            Spacer(modifier = Modifier.height(LyricsFootBottom))
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp)) {
+                            progress()
+                            transport(true)
                         }
+                        LyricsPane(state = lyricsState, currentPositionMs = { lyricsPosition.value },
+                            isPlaying = uiState.isPlaying && !uiState.isBuffering, playbackSpeed = playbackSpeed,
+                            onSeek = { if (!isListener && uiState.isSeekable) viewModel.onLyricsLineSeek(it) },
+                            onRetry = viewModel::onLyricsRetry, ink = Color.White, accent = dynamicProgress,
+                            light = false, modifier = Modifier.fillMaxWidth().weight(1f).padding(top = 2.dp))
                     }
                 }
             }
         }
-        if (room != null) com.stash.feature.nowplaying.listen.FloatingReactions(together.reactions, animate = ambientAnimationEnabled, modifier = Modifier.fillMaxSize())
+        if (room != null) com.stash.feature.nowplaying.listen.FloatingReactions(
+            together.reactions, animate = ambientAnimationEnabled, modifier = Modifier.fillMaxSize())
     }
 
-    if (showOptionsSheet && track != null) {
-        NowPlayingOptionsSheet(
-            // Pins with no room in the row this frame come back here as ordinary rows.
-            menu = menuActions(pins, actionCtx, rowFit.overflow),
-            editable = editableActions(pins, actionCtx),
-            pins = pins,
-            visualState = visualState,
-            hiddenReason = { action ->
-                hiddenReason(action, actionCtx) ?: OVERFLOW_NOTE.takeIf { action in rowFit.overflow }
-            },
-            accent = npAccent(uiState.vibrantColor),
-            onAction = { action -> onAction(action); showOptionsSheet = false },
-            onTogglePin = viewModel::onTogglePin,
-            onResetPins = viewModel::onResetPins,
-            onDismiss = { showOptionsSheet = false },
-            sheetState = optionsSheetState,
-        )
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1099,8 +931,8 @@ private val ArtMax = 375.dp
  */
 private val GapTop = 20.dp
 private val GapTopMin = 8.dp
-private val GapArt = 36.dp
-private val GapArtMin = 16.dp
+private val GapArt = 22.dp
+private val GapArtMin = 12.dp
 private val GapBottom = 28.dp
 private val GapBottomMin = 12.dp
 private const val ART_COMFORT = 0.75f
@@ -1232,10 +1064,8 @@ private fun TrackInfoBlock(
     track: com.stash.core.model.Track?,
     resolvingArtist: Boolean,
     onTrackInfoTapped: () -> Unit,
-    sleepTimerState: SleepTimerController.State,
-    onSleepTimerClick: () -> Unit,
-    accent: Color,
     isLiked: Boolean,
+    heartTint: Color,
     onLikeTap: () -> Unit,
 ) {
     val ink = npInk()
@@ -1253,16 +1083,17 @@ private fun TrackInfoBlock(
                 .weight(1f)
                 .then(
                     if (track != null) {
-                        Modifier.clickable(enabled = !resolvingArtist) { onTrackInfoTapped() }
+                        Modifier.clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                            indication = null, enabled = !resolvingArtist, onClick = onTrackInfoTapped)
                     } else Modifier,
                 ),
             horizontalAlignment = Alignment.Start,
         ) {
             Text(
                 text = track?.title ?: "Not Playing",
-                fontSize = 25.sp,
-                lineHeight = 29.sp,
-                fontWeight = FontWeight.Bold,
+                fontSize = 24.sp,
+                lineHeight = 28.sp,
+                fontWeight = FontWeight.SemiBold,
                 letterSpacing = (-0.6).sp,
                 color = ink,
                 maxLines = 2,
@@ -1279,7 +1110,7 @@ private fun TrackInfoBlock(
                     text = buildString {
                         append(displayArtist)
                         if (track != null && track.album.isNotBlank()) {
-                            append("  •  ")
+                            append(" · ")
                             append(track.album)
                         }
                     },
@@ -1289,39 +1120,13 @@ private fun TrackInfoBlock(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                if (track != null) {
-                    if (resolvingArtist) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(14.dp),
-                            strokeWidth = 2.dp,
-                            color = ink.copy(alpha = 0.65f),
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                            contentDescription = stringResource(R.string.nostop_np_open_artist),
-                            tint = ink.copy(alpha = 0.55f),
-                            modifier = Modifier.size(17.dp),
-                        )
-                    }
-                }
+                if (resolvingArtist) CircularProgressIndicator(
+                    modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = ink.copy(alpha = .65f))
             }
         }
         if (track != null) {
-            com.stash.core.ui.components.LikeButton(
-                isLiked = isLiked,
-                onTap = onLikeTap,
-                unlikedTint = ink.copy(alpha = 0.76f),
-                size = 28.dp,
-            )
-            SleepTimerButton(
-                state = sleepTimerState,
-                onClick = onSleepTimerClick,
-                activeTint = accent,
-                idleTint = ink.copy(alpha = 0.68f),
-                buttonSize = 28.dp,
-                iconSize = 20.dp,
-            )
+            PlayerV7Heart(isLiked = isLiked, onClick = onLikeTap, accent = heartTint)
+
         }
     }
 }
@@ -1338,6 +1143,7 @@ private fun AlbumArtSection(
     albumArtUrl: String?,
     albumArtPath: String?,
     accentColor: Color,
+    glowStrength: Float,
     onBitmapLoaded: (android.graphics.Bitmap?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1353,25 +1159,13 @@ private fun AlbumArtSection(
     val artRequest = com.stash.feature.nowplaying.ui.rememberNpArtRequest(artModel)
 
     Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        // Glow behind the artwork.
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(10.dp)
-                .shadow(
-                    elevation = 48.dp,
-                    shape = RoundedCornerShape(16.dp),
-                    ambientColor = accentColor.copy(alpha = 0.40f),
-                    spotColor = accentColor.copy(alpha = 0.33f),
-                ),
-        )
-
         AsyncImage(
             model = artRequest,
             contentDescription = stringResource(R.string.nostop_np_album_art),
             contentScale = ContentScale.Crop,
             error = missingArt,
             fallback = missingArt,
+            onError = { onBitmapLoaded(null) },
             onSuccess = { state: AsyncImagePainter.State.Success ->
                 try {
                     val bitmap = state.result.image.toBitmap()
@@ -1383,11 +1177,11 @@ private fun AlbumArtSection(
             },
             modifier = Modifier
                 .fillMaxSize()
-                .clip(RoundedCornerShape(16.dp))
+                .clip(RoundedCornerShape(12.dp))
                 .border(
-                    1.dp,
-                    Color.White.copy(alpha = 0.10f),
-                    RoundedCornerShape(16.dp),
+                    .5.dp,
+                    Color.White.copy(alpha = 0.09f),
+                    RoundedCornerShape(12.dp),
                 ),
         )
     }
@@ -1403,6 +1197,10 @@ private fun PlaybackControls(
     shuffleEnabled: Boolean,
     repeatMode: RepeatMode,
     accentColor: Color,
+    buttonFill: Color,
+    buttonGlow: Color,
+    buttonInk: Color,
+    glowStrength: Float,
     onPlayPauseClick: () -> Unit,
     onSkipNext: () -> Unit,
     onSkipPrevious: () -> Unit,
@@ -1448,18 +1246,19 @@ private fun PlaybackControls(
             onClick = onPlayPauseClick,
             modifier = Modifier
                 .size(64.dp)
-                .background(
-                    brush = Brush.linearGradient(
-                        colors = listOf(accentColor, accentColor.copy(alpha = 0.7f)),
-                    ),
+                .shadow(
+                    elevation = 22.dp,
                     shape = CircleShape,
-                ),
+                    ambientColor = buttonGlow.copy(alpha = glowStrength),
+                    spotColor = buttonGlow.copy(alpha = glowStrength),
+                )
+                .background(buttonFill, CircleShape),
         ) {
             // On the accent-gradient circle, not the ambient ground — stays
             // white in both themes (the accent is contrast-adjusted instead).
             if (isBuffering) {
                 CircularProgressIndicator(
-                    color = Color.White,
+                    color = buttonInk,
                     strokeWidth = 3.dp,
                     modifier = Modifier.size(28.dp),
                 )
@@ -1467,7 +1266,7 @@ private fun PlaybackControls(
                 Icon(
                     imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                     contentDescription = if (isPlaying) "Pause" else "Play",
-                    tint = Color.White,
+                    tint = buttonInk,
                     modifier = Modifier.size(32.dp),
                 )
             }

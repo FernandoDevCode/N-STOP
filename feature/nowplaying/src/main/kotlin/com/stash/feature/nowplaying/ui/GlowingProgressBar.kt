@@ -7,8 +7,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -54,10 +52,10 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 /** Height of the track bar in dp. */
-private val TrackHeight = 4.dp
+private val TrackHeight = 3.dp
 
 /** Additional touch target padding above/below the bar. */
-private val TouchPadding = 12.dp
+private val TouchPadding = 22.5.dp
 
 /** Radius of the outer thumb circle (visible during drag). */
 private const val THUMB_OUTER_RADIUS = 8f
@@ -97,6 +95,7 @@ fun GlowingProgressBar(
     seekable: Boolean = true,
     /** Centred between the two times, so it costs no height: a listener's LIVE / Back to live. */
     center: @Composable () -> Unit = {},
+    gradientColors: List<Color> = listOf(accentColor, accentColor),
 ) {
     // The position is read HERE, through lambdas, so its 250ms tick recomposes only this bar,
     // not the Now Playing screen that hosts it.
@@ -107,6 +106,13 @@ fun GlowingProgressBar(
     // A released seek's target, held as the display value until the reported progress catches
     // up (or SEEK_HOLD_MS passes): see [seekArrived].
     var pendingSeek by remember { mutableStateOf<Float?>(null) }
+
+    LaunchedEffect(seekable, totalMs > 0L) {
+        if (!seekable || totalMs <= 0L) {
+            isDragging = false
+            pendingSeek = null
+        }
+    }
 
     // The gesture detectors are keyed on Unit and read these live. Keyed on totalMs, they were
     // torn down whenever the duration changed mid-drag (a stream's estimate replaced by the
@@ -154,7 +160,9 @@ fun GlowingProgressBar(
         else -> elapsedNow
     }
 
-    Column(modifier = modifier.fillMaxWidth()) {
+    // The times share the lower half of the 48dp touch strip. The visual gap is
+    // compact without shrinking the seek target or extending it over the title.
+    Box(modifier = modifier.fillMaxWidth().height(TrackHeight + TouchPadding * 2)) {
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
@@ -177,7 +185,7 @@ fun GlowingProgressBar(
                         )
                     }
                 }
-                .then(if (!seekable) Modifier else Modifier.pointerInput(Unit) {
+                .then(if (!seekable || totalMs <= 0L) Modifier else Modifier.pointerInput(Unit) {
                     detectTapGestures { offset ->
                         seekTo(offset.x / size.width)
                     }
@@ -195,9 +203,9 @@ fun GlowingProgressBar(
                         onDragCancel = {
                             isDragging = false
                         },
-                        onHorizontalDrag = { _, dragAmount ->
-                            dragProgress = (dragProgress + dragAmount / size.width)
-                                .coerceIn(0f, 1f)
+                        onHorizontalDrag = { change, _ ->
+                            change.consume()
+                            dragProgress = (change.position.x / size.width).coerceIn(0f, 1f)
                         },
                     )
                 })
@@ -205,6 +213,10 @@ fun GlowingProgressBar(
             val barY = size.height / 2f
             val barHeight = TrackHeight.toPx()
             val barWidth = size.width
+            val colors = gradientColors.ifEmpty { listOf(accentColor, accentColor) }
+                .let { if (it.size == 1) it + it else it }
+            // One spatial coordinate system for both track and fill, at every position.
+            val spatialGradient = Brush.horizontalGradient(colors, startX = 0f, endX = barWidth)
 
             // --- Background track ---
             drawRoundRect(
@@ -213,48 +225,35 @@ fun GlowingProgressBar(
                 size = Size(barWidth, barHeight),
                 cornerRadius = CornerRadius(barHeight / 2f),
             )
+            if (colors.size >= 3) {
+                // Selective accents remain discoverable ahead of the playhead,
+                // but only the brighter foreground represents elapsed time.
+                drawRoundRect(
+                    brush = Brush.horizontalGradient(colors.map { it.copy(alpha = .18f) },
+                        startX = 0f, endX = barWidth),
+                    topLeft = Offset(0f, barY - barHeight / 2f),
+                    size = Size(barWidth, barHeight),
+                    cornerRadius = CornerRadius(barHeight / 2f),
+                )
+            }
 
             // --- Filled (elapsed) track with gradient ---
             val filledWidth = barWidth * displayProgress
             if (filledWidth > 0f) {
                 drawRoundRect(
-                    brush = Brush.horizontalGradient(
-                        colors = listOf(
-                            accentColor.copy(alpha = 0.6f),
-                            accentColor,
-                        ),
-                        startX = 0f,
-                        endX = filledWidth,
-                    ),
+                    brush = spatialGradient,
                     topLeft = Offset(0f, barY - barHeight / 2f),
                     size = Size(filledWidth, barHeight),
                     cornerRadius = CornerRadius(barHeight / 2f),
                 )
             }
 
-            // --- Glow at playhead ---
             val playheadX = filledWidth.coerceIn(0f, barWidth)
-            drawCircle(
-                color = accentColor.copy(alpha = 0.30f),
-                radius = GLOW_RADIUS,
-                center = Offset(playheadX, barY),
-            )
+            val dot = Offset(playheadX, barY)
+            drawCircle(Brush.radialGradient(listOf(accentColor.copy(alpha = .16f),
+                accentColor.copy(alpha = 0f)), dot, 9.dp.toPx()), 9.dp.toPx(), dot)
+            drawCircle(accentColor, if (isDragging) 5.dp.toPx() else 4.5.dp.toPx(), dot)
 
-            // --- Thumb (only visible while dragging) ---
-            if (isDragging) {
-                // Outer ink ring (white on dark, plum-black on light).
-                drawCircle(
-                    color = ink,
-                    radius = THUMB_OUTER_RADIUS,
-                    center = Offset(playheadX, barY),
-                )
-                // Inner accent fill.
-                drawCircle(
-                    color = accentColor,
-                    radius = THUMB_INNER_RADIUS,
-                    center = Offset(playheadX, barY),
-                )
-            }
         }
 
         // --- Scrub bubble (only while dragging): the target time above the thumb, clear of the
@@ -264,14 +263,14 @@ fun GlowingProgressBar(
                 text = formatTime(displayMs),
                 ink = ink,
                 thumbFraction = { displayProgress },
+                modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
 
         // --- Time labels ---
-        Spacer(modifier = Modifier.height(2.dp))
-
         Box(
             modifier = Modifier
+                .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .padding(horizontal = 4.dp),
             contentAlignment = Alignment.Center,
@@ -284,7 +283,7 @@ fun GlowingProgressBar(
             )
             center()
             Text(
-                text = "-${formatTime((totalMs - displayMs).coerceAtLeast(0L))}",
+                text = formatTime(totalMs.coerceAtLeast(0L)),
                 style = MaterialTheme.typography.labelSmall,
                 color = ink.copy(alpha = 0.7f),
                 modifier = Modifier.align(Alignment.CenterEnd),
@@ -304,7 +303,7 @@ private val ScrubBubbleLift = 24.dp
  * of the drag. Visual only: TalkBack reads the bar's own position and target.
  */
 @Composable
-private fun ScrubBubble(text: String, ink: Color, thumbFraction: () -> Float) {
+private fun ScrubBubble(text: String, ink: Color, thumbFraction: () -> Float, modifier: Modifier = Modifier) {
     Text(
         text = text,
         style = MaterialTheme.typography.labelMedium,
@@ -313,7 +312,7 @@ private fun ScrubBubble(text: String, ink: Color, thumbFraction: () -> Float) {
         color = if (ink == Color.White) NpInkLight else Color.White,
         maxLines = 1,
         softWrap = false,
-        modifier = Modifier
+        modifier = modifier
             .layout { measurable, constraints ->
                 val bubble = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
                 val barWidth = constraints.maxWidth

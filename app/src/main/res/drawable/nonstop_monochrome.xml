@@ -1,0 +1,7 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+<!-- Original vector geometry reconstructed from the Ø and waveform visible in reference 06. -->
+<group android:pivotX="54" android:pivotY="54" android:scaleX="0.74" android:scaleY="0.74">
+<path android:fillColor="#00000000" android:strokeColor="#F6F5FA" android:strokeWidth="3" android:strokeLineCap="round" android:pathData="M76,61 C76,35 32,35 32,61 C32,88 76,88 76,61 M30,85 L78,37"/>
+<path android:fillColor="#00000000" android:strokeColor="#FFFFFF" android:strokeWidth="2.4" android:pathData="M35,33 L35,24 M44,33 L44,18 M54,33 L54,10 M64,33 L64,18 M73,33 L73,24"/>
+</group>
+</vector>

@@ -7,6 +7,7 @@ android {
 
     testOptions {
         unitTests {
+            isIncludeAndroidResources = true
             // Return Kotlin defaults from stubbed Android SDK methods so
             // android.util.Log calls in production code don't throw in JVM tests.
             isReturnDefaultValues = true
@@ -15,6 +16,8 @@ android {
 }
 
 dependencies {
+    implementation(project(":core:art"))
+    implementation(libs.kotlinx.serialization.json)
     implementation(project(":core:media"))
     implementation(project(":core:data"))
     implementation(project(":core:auth"))
@@ -50,4 +53,7 @@ dependencies {
     testImplementation(libs.mockk)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.robolectric)
+    testImplementation(platform(libs.compose.bom))
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

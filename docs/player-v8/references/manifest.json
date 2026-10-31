@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "referenceType": "approved-mockup-not-app-screenshot",
+  "items": [
+    {
+      "id": "megadeth",
+      "album": "Rust in Peace",
+      "artist": "Megadeth",
+      "destination": "MASTER_MEGADETH.png",
+      "source": "02_CHECKPOINT_2/03_PLAYER_MEGAdeth_PALETA-AZUL.png",
+      "width": 864,
+      "height": 1536,
+      "sha256": "3547184210edca28399a0945dc28192e65341ebd1545be070873593004e3d68d"
+    },
+    {
+      "id": "pink-floyd",
+      "album": "The Dark Side of the Moon",
+      "artist": "Pink Floyd",
+      "destination": "MASTER_PINK_FLOYD.png",
+      "source": "02_CHECKPOINT_2/02_PLAYER_PINK_FLOYD_PALETA-SELETIVA.png",
+      "width": 941,
+      "height": 1672,
+      "sha256": "6b7cbd4da0fa601379b2d8d790d70aac2b532d22bb35739370fc3958fec430f0"
+    }
+  ]
+}

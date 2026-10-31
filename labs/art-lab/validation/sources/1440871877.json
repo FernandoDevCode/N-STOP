@@ -1,0 +1,10 @@
+
+
+
+{
+ "resultCount":1,
+ "results": [
+{"wrapperType":"collection", "collectionType":"Album", "artistId":368183298, "collectionId":1440871877, "amgArtistId":2412704, "artistName":"Kendrick Lamar", "collectionName":"To Pimp a Butterfly", "collectionCensoredName":"To Pimp a Butterfly", "artistViewUrl":"https://music.apple.com/us/artist/kendrick-lamar/368183298?uo=4", "collectionViewUrl":"https://music.apple.com/us/album/to-pimp-a-butterfly/1440871877?uo=4", "artworkUrl60":"https://is1-ssl.mzstatic.com/image/thumb/Music112/v4/b5/a6/91/b5a69171-5232-3d5b-9c15-8963802f83dd/15UMGIM15814.rgb.jpg/60x60bb.jpg", "artworkUrl100":"https://is1-ssl.mzstatic.com/image/thumb/Music112/v4/b5/a6/91/b5a69171-5232-3d5b-9c15-8963802f83dd/15UMGIM15814.rgb.jpg/100x100bb.jpg", "collectionPrice":11.99, "collectionExplicitness":"cleaned", "contentAdvisoryRating":"Clean", "trackCount":17, "copyright":"℗ 2015 Aftermath/Interscope (Top Dawg Entertainment)", "country":"USA", "currency":"USD", "releaseDate":"2015-03-15T07:00:00Z", "primaryGenreName":"Hip-Hop/Rap"}]
+}
+
+

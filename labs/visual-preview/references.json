@@ -1,0 +1,21 @@
+{
+  "source": "Capturas fornecidas pelo usuário em 2026-10-27; referências gerais do aplicativo, não Player v8",
+  "files": [
+    {
+      "path": "res/drawable/reference_explore.png",
+      "sha256": "f27e88154fd3fdbb3cd2c8e105273faf755c524b9622629dfd9ff09c3159278d"
+    },
+    {
+      "path": "res/drawable/reference_home.png",
+      "sha256": "c9180167d32d61163d019f0e80b95250bfbd3937715a108e8494778800226868"
+    },
+    {
+      "path": "res/drawable/reference_library.png",
+      "sha256": "533d249dd3e2bc0e391c964fa6484871f5fa48ddb36af06abc34ecd28c2a6d0f"
+    },
+    {
+      "path": "res/drawable/reference_search.png",
+      "sha256": "60097bd70427c53160c61bdf25c95545430f895268857830e7f3880816b9592e"
+    }
+  ]
+}

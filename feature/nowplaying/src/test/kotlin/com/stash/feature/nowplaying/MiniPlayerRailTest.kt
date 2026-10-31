@@ -1,0 +1,60 @@
+package com.stash.feature.nowplaying
+
+import androidx.compose.ui.geometry.Offset
+import org.junit.Assert.*
+import org.junit.Test
+
+class MiniPlayerRailTest {
+    @Test fun requiredProgressSamplesReachSidesAndFollowCornerTangents() {
+        val rail = MiniPlayerRail(360f, 24f, 13f)
+        for (f in listOf(0f, .01f, .25f, .5f, .75f, .99f, 1f)) {
+            assertEquals(f, rail.fraction(rail.point(f)), .00001f)
+            assertEquals(1f, rail.tangent(f).getDistance(), .00001f)
+        }
+        assertEquals(2.5f, rail.point(0f).x, .00001f)
+        assertTrue(rail.point(1f).x in 351f..354f)
+        assertEquals(1f, rail.tangent(0f).y, .00001f)
+        assertEquals(0f, rail.tangent(1f).y, .00001f)
+        assertEquals(1f, rail.tangent(.5f).x, .00001f)
+        val join = rail.arc / rail.length
+        assertTrue((rail.tangent(join + .00001f) - rail.tangent(join - .00001f)).getDistance() < .001f)
+    }
+
+    @Test fun everyPointRoundTripsIncludingLeftCurveAndStraightEnd() {
+        for (density in listOf(1f, 2.75f, 3.5f)) for (width in listOf(252f, 332f, 452f)) {
+            val rail = MiniPlayerRail(width * density, 24 * density, 13 * density)
+            for (i in 0..1000) {
+                val fraction = i / 1000f
+                assertEquals(fraction, rail.fraction(rail.point(fraction)), .00001f)
+            }
+            assertEquals(0f, rail.fraction(Offset(-30f, 0f)), 0f)
+            assertEquals(1f, rail.fraction(Offset(width * density + 30f, 0f)), 0f)
+        }
+    }
+
+    @Test fun curvesAreContinuousAndTimeFollowsArcLength() {
+        val rail = MiniPlayerRail(360f, 24f, 13f)
+        assertEquals(2.5f, rail.point(0f).x, .00001f)
+        assertEquals(11f, rail.point(0f).y, .00001f)
+        assertEquals(rail.right, rail.point(1f).x, .00001f)
+        assertEquals(21.5f, rail.point(.5f).y, .00001f)
+        assertEquals(rail.point(.99f).y, rail.point(1f).y, .00001f)
+        assertEquals(1f, rail.fraction(Offset(400f, 24f)), 0f)
+        val join = rail.arc / rail.length
+        assertTrue((rail.point(join + .00001f) - rail.point(join - .00001f)).getDistance() < .01f)
+        assertTrue(rail.point(join / 2).y < 21.5f)
+    }
+
+    @Test fun touchCorridorFollowsTheMeasuredPathIncludingCurves() {
+        val rail = MiniPlayerRail(360f, 56f, 13f)
+        for (fraction in listOf(0f, .02f, .05f, .5f, .95f, .98f, 1f)) {
+            val point = rail.point(fraction)
+            val tangent = rail.tangent(fraction)
+            val inward = Offset(tangent.y, -tangent.x)
+            assertTrue(rail.distanceTo(point + inward * 13.5f) <= 14f)
+        }
+        // A rectangular lower-card overlay would accept this; the path corridor does not.
+        assertTrue(rail.distanceTo(Offset(180f, 38f)) > 14f)
+        assertEquals(rail.length * .5f, rail.fraction(rail.point(.5f)) * rail.length, .0001f)
+    }
+}

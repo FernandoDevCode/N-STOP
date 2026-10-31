@@ -1,0 +1,3 @@
+PLAYER_MICRO_INTERACTIONS_V1
+6 covers, actual Compose raster + local scene pointer/focus semantics. PCM fixture RMS, no album audio or audible playback.
+3 alternating rounds x 20 frames/mode/cover. CPU raster, not GPU/Redmi/FPS.

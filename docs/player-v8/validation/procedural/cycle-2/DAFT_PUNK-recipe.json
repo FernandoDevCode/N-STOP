@@ -1,0 +1,339 @@
+{
+    "schemaVersion": 4,
+    "sourceImageHash": "d16a3ba3e50c5f50ed2aa42bf7d1d7e880e38b0744a60d3cf23a30caaa79e276",
+    "family": "PRISMATIC",
+    "familyWeights": {
+        "PRISMATIC": 1.0
+    },
+    "colors": {
+        "environmental": 4281348920,
+        "interaction": 4293976215,
+        "accent": 4293252231
+    },
+    "procedural": {
+        "seed": 1544192955,
+        "noiseScale": 2.2,
+        "octaves": 4,
+        "roughness": 0.5,
+        "organic": 0.06,
+        "mist": 0.12,
+        "curves": 0.015,
+        "vignette": 0.28
+    },
+    "modelVersion": "none",
+    "confidence": null,
+    "archetypeScores": {
+        "PRISMATIC_ACCENTS": 0.60881793,
+        "COOL_DEPTH": 0.0086937975,
+        "CINEMATIC_DENSE": 0.096510015,
+        "DARK_SYMBOLIC": 0.4503447,
+        "WARM_DIFFUSE": 0.03925012,
+        "MONOCHROME_EDITORIAL": 0.05537503,
+        "MULTICOLOR_GRAPHIC": 0.13927387
+    },
+    "canvasColor": 4278650372,
+    "favoriteColor": 4293252231,
+    "scrimTop": 0.33129457,
+    "scrimBottom": 0.5695591,
+    "environment": {
+        "regions": [
+            {
+                "x": 0.5625,
+                "y": 0.8125,
+                "radiusX": 0.62,
+                "radiusY": 0.44,
+                "color": 4285226544,
+                "intensity": 0.3288281,
+                "falloff": 1.6
+            },
+            {
+                "x": 0.6875,
+                "y": 0.5625,
+                "radiusX": 0.62,
+                "radiusY": 0.44,
+                "color": 4285225531,
+                "intensity": 0.29161578,
+                "falloff": 1.6
+            },
+            {
+                "x": 0.6875,
+                "y": 0.3125,
+                "radiusX": 0.62,
+                "radiusY": 0.44,
+                "color": 4285219643,
+                "intensity": 0.27871114,
+                "falloff": 1.6
+            },
+            {
+                "x": 0.3125,
+                "y": 0.6875,
+                "radiusX": 0.62,
+                "radiusY": 0.44,
+                "color": 4282076779,
+                "intensity": 0.33250478,
+                "falloff": 1.6
+            },
+            {
+                "x": 0.3125,
+                "y": 0.4375,
+                "radiusX": 0.62,
+                "radiusY": 0.44,
+                "color": 4282076267,
+                "intensity": 0.30489355,
+                "falloff": 1.6
+            }
+        ],
+        "grain": 0.004694185,
+        "warp": 0.04694185
+    },
+    "accents": [
+        {
+            "x": 0.65354705,
+            "y": 0.084978715,
+            "radiusX": 0.27701065,
+            "radiusY": 0.23734508,
+            "color": 4293301899,
+            "intensity": 0.10958722,
+            "falloff": 2.2
+        },
+        {
+            "x": 0.6905954,
+            "y": 0.45965382,
+            "radiusX": 0.25257212,
+            "radiusY": 0.2252534,
+            "color": 4293300567,
+            "intensity": 0.10958722,
+            "falloff": 2.2
+        },
+        {
+            "x": 0.62154293,
+            "y": 0.64360625,
+            "radiusX": 0.254259,
+            "radiusY": 0.19480641,
+            "color": 4293316717,
+            "intensity": 0.10958722,
+            "falloff": 2.2
+        },
+        {
+            "x": 0.3398255,
+            "y": 0.22490071,
+            "radiusX": 0.22285682,
+            "radiusY": 0.2247897,
+            "color": 4288523238,
+            "intensity": 0.10958722,
+            "falloff": 2.2
+        },
+        {
+            "x": 0.65354705,
+            "y": 0.58589095,
+            "radiusX": 0.35,
+            "radiusY": 0.24,
+            "color": 4290739572,
+            "intensity": 0.18264538,
+            "falloff": 2.2
+        },
+        {
+            "x": 0.62154293,
+            "y": 1.0,
+            "radiusX": 0.35,
+            "radiusY": 0.24,
+            "color": 4290751834,
+            "intensity": 0.18264538,
+            "falloff": 2.2
+        },
+        {
+            "x": 0.3398255,
+            "y": 0.8919703,
+            "radiusX": 0.35,
+            "radiusY": 0.24,
+            "color": 4286811839,
+            "intensity": 0.18264538,
+            "falloff": 2.2
+        }
+    ],
+    "directionalDetails": [
+        {
+            "x": 0.6905954,
+            "y": 0.45965382,
+            "angle": -76.91426,
+            "length": 0.6651442,
+            "width": 0.12657602,
+            "color": 4294089052,
+            "intensity": 0.30440897,
+            "coherence": 0.62286353
+        },
+        {
+            "x": 0.62154293,
+            "y": 0.64360625,
+            "angle": -56.938755,
+            "length": 0.66851795,
+            "width": 0.11744192,
+            "color": 4294105971,
+            "intensity": 0.30440897,
+            "coherence": 0.9235343
+        },
+        {
+            "x": 0.3398255,
+            "y": 0.22490071,
+            "angle": -85.56047,
+            "length": 0.60571367,
+            "width": 0.1264369,
+            "color": 4289115378,
+            "intensity": 0.30440897,
+            "coherence": 0.8007391
+        }
+    ],
+    "lights": [
+        {
+            "x": 0.3859074,
+            "y": 0.20201431,
+            "radiusX": 0.4,
+            "radiusY": 0.2,
+            "color": 4291880436,
+            "intensity": 0.1461163,
+            "falloff": 2.0
+        }
+    ],
+    "controlSurface": {
+        "fill": [
+            {
+                "position": 0.0,
+                "color": 4285228097
+            },
+            {
+                "position": 1.0,
+                "color": 4284044086
+            }
+        ],
+        "haloColor": 4293976215,
+        "haloIntensity": 0.3,
+        "haloRadius": 0.14586774,
+        "ink": 4294638847,
+        "rim": [
+            {
+                "position": 0.0,
+                "color": 4294076245
+            },
+            {
+                "position": 0.25,
+                "color": 4294087765
+            },
+            {
+                "position": 0.5,
+                "color": 4294104661
+            },
+            {
+                "position": 0.75,
+                "color": 4283790066
+            },
+            {
+                "position": 1.0,
+                "color": 4294076245
+            }
+        ],
+        "haloSpectrum": [
+            {
+                "position": 0.0,
+                "color": 4294076245
+            },
+            {
+                "position": 0.25,
+                "color": 4294087765
+            },
+            {
+                "position": 0.5,
+                "color": 4294104661
+            },
+            {
+                "position": 0.75,
+                "color": 4283790066
+            },
+            {
+                "position": 1.0,
+                "color": 4294076245
+            }
+        ],
+        "spectrumRotation": 135.0,
+        "diameterRatio": 0.16531463,
+        "material": "PRISMATIC"
+    },
+    "progress": {
+        "fill": [
+            {
+                "position": 0.0,
+                "color": 4294926669
+            },
+            {
+                "position": 0.035892464,
+                "color": 4294939981
+            },
+            {
+                "position": 0.08747725,
+                "color": 4294958925
+            },
+            {
+                "position": 0.46,
+                "color": 4283264767
+            },
+            {
+                "position": 1.0,
+                "color": 4283264767
+            }
+        ],
+        "track": 4281349189,
+        "thumb": 4293976215,
+        "halo": 4293976215
+    },
+    "lyrics": {
+        "active": 4294507519,
+        "future": 4288326851,
+        "alphaProgression": [
+            0.72,
+            1.0,
+            0.52,
+            0.36,
+            0.24
+        ],
+        "surface": 1073938946
+    },
+    "analysisMetadata": {
+        "source": "CLASSICAL_PIXELS",
+        "fallbackReason": "Direção por pixels; sem IA e sem reconhecimento semântico.",
+        "measuredFeatures": {
+            "lowFraction": 0.8314056396484375,
+            "midFraction": 0.0561981201171875,
+            "highFraction": 0.112396240234375,
+            "meanLuminance": 0.08158119855690352,
+            "meanSaturation": 0.3354996736773457,
+            "saturatedFraction": 0.0319671630859375,
+            "saturatedX": 0.6485801387231503,
+            "saturatedY": 0.6811278714200477,
+            "coolCoverage": 0.0148162841796875,
+            "edgeDensity": 0.07532957550872021,
+            "complexity": 0.4289924588163742,
+            "sparseSpectral": 0.6088179176939383,
+            "perceptualHueDiversity": 0.8333333333333334,
+            "directionPeak": 0.14584932576477508,
+            "family.PRISMATIC": 0.6088179176939383,
+            "family.DENSE_CHROMATIC": 0.14856434678121733,
+            "family.EDITORIAL_NATURAL": 0.18806735616403583,
+            "family.DRAMATIC_CONTRAST": 0.3478589580420787,
+            "family.SELECTIVE_LUMINOUS": 0.2062070225925511,
+            "family.MINIMAL_MONOCHROME": 0.12207675874665874,
+            "luminanceRange": 0.7438039312733756,
+            "spatialLuminanceDeviation": 0.1391666538994669
+        },
+        "engineVersion": "procedural-art-director-4.1",
+        "fiveSignals": [
+            "Famílias: {PRISMATIC=1.0}; detalhe=0.30131830203488086; faixa tonal=0.7438039312733756",
+            "Área negativa=0.8314056396484375; sinais isolados=0.6088179176939383",
+            "Diversidade perceptual=0.8333333333333334; cobertura saturada=0.0319671630859375",
+            "Cor ambiental: cobertura × dispersão; interação: contraste × saturação",
+            "Acento: contraste local; variação espacial de luminância=0.1391666538994669"
+        ],
+        "treatmentWeights": {
+            "PRISMATIC_ACCENTS": 0.5748106,
+            "DARK_SYMBOLIC": 0.42518938
+        }
+    }
+}

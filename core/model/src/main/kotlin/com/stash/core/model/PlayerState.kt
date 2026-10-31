@@ -5,6 +5,8 @@ data class PlayerState(
     val isPlaying: Boolean = false,
     val positionMs: Long = 0,
     val durationMs: Long = 0,
+    /** Current Media3 item and available commands permit seeking within it. */
+    val isSeekable: Boolean = false,
     val isShuffleEnabled: Boolean = false,
     val repeatMode: RepeatMode = RepeatMode.OFF,
     val queue: List<Track> = emptyList(),

@@ -1,0 +1,11 @@
+<resources>
+    <string name="v7_close">Fechar player</string>
+    <string name="v7_lyrics">LETRAS</string>
+    <string name="v7_actions">Ações do player</string>
+    <string name="v7_queue">Fila de reprodução</string>
+    <string name="v7_timer">Timer de desligamento</string>
+    <string name="v7_audio">Qualidade de áudio</string>
+    <string name="v7_together">Ouvir juntos</string>
+    <string name="v7_share">Compartilhar</string>
+    <string name="v7_more">Mais ações</string>
+</resources>
