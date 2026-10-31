@@ -107,9 +107,19 @@ internal class AppleMusicAlbumMetadataLookup @Inject constructor() {
             connection.setRequestProperty("User-Agent", "Sonora/0.9 (album metadata)")
             if (connection.responseCode != 200) return null
             // Bounded response size, unlike readText().take() which reads all bytes first.
-            val bytes = connection.inputStream.use { it.readNBytes(700_001) }
-            if (bytes.size > 700_000) return null
-            return bytes.toString(Charsets.UTF_8)
+            val content = java.io.ByteArrayOutputStream()
+            connection.inputStream.use { stream ->
+                val chunk = ByteArray(8192)
+                var total = 0
+                while (true) {
+                    val n = stream.read(chunk)
+                    if (n < 0) break
+                    total += n
+                    if (total > 700_000) return null
+                    content.write(chunk, 0, n)
+                }
+            }
+            return content.toString("UTF-8")
         } finally {
             connection.disconnect()
         }
