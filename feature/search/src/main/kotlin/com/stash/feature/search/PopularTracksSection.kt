@@ -56,7 +56,7 @@ fun PopularTracksSection(
 ) {
     Column(
         modifier = modifier.padding(horizontal = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(0.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         tracks.take(5).forEachIndexed { index, track ->
             val item = track.toSearchResultItem()
