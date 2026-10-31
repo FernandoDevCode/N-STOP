@@ -92,6 +92,18 @@ private fun RecentSyncRowItem(row: RecentSyncRow) {
     val success = StashTheme.extendedColors.success
     val dim = MaterialTheme.colorScheme.onSurfaceVariant
     val fail = Color(0xFFF87171)
+    val modeLabel = when (row.modeLabel) {
+        "Stream only" -> stringResource(R.string.sync_receipt_stream_only)
+        "Download" -> stringResource(R.string.sync_receipt_download)
+        else -> row.modeLabel
+    }
+    val addedNoun = when (row.addedNoun) {
+        "surfaced" -> stringResource(R.string.sync_receipt_surfaced)
+        "downloaded" -> stringResource(R.string.sync_receipt_downloaded)
+        else -> row.addedNoun
+    }
+    val playlistsLabel = if (row.playlists == 1) stringResource(R.string.sync_receipt_playlists_one)
+        else stringResource(R.string.sync_receipt_playlists_many, row.playlists)
 
     Column(
         modifier = Modifier
@@ -110,11 +122,7 @@ private fun RecentSyncRowItem(row: RecentSyncRow) {
                 text = buildAnnotatedString {
                     if (row.modeLabel != null) {
                         withStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)) {
-                            append(when (row.modeLabel) {
-                                "Stream only" -> stringResource(R.string.sync_receipt_stream_only)
-                                "Download" -> stringResource(R.string.sync_receipt_download)
-                                else -> row.modeLabel
-                            })
+                            append(modeLabel)
                         }
                         withStyle(SpanStyle(color = dim)) { append("  ·  ${row.relativeTime}") }
                     } else {
@@ -154,12 +162,8 @@ private fun RecentSyncRowItem(row: RecentSyncRow) {
                     style = MaterialTheme.typography.bodyMedium,
                     text = buildAnnotatedString {
                         withStyle(SpanStyle(color = success, fontWeight = FontWeight.Medium)) { append("+${row.added} ") }
-                        withStyle(SpanStyle(color = dim)) { append(when (row.addedNoun) {
-                            "surfaced" -> stringResource(R.string.sync_receipt_surfaced)
-                            "downloaded" -> stringResource(R.string.sync_receipt_downloaded)
-                            else -> row.addedNoun
-                        }) }
-                        if (row.playlists > 0) withStyle(SpanStyle(color = dim)) { append("  ·  " + if (row.playlists == 1) stringResource(R.string.sync_receipt_playlists_one) else stringResource(R.string.sync_receipt_playlists_many, row.playlists)) }
+                        withStyle(SpanStyle(color = dim)) { append(addedNoun) }
+                        if (row.playlists > 0) withStyle(SpanStyle(color = dim)) { append("  ·  " + playlistsLabel) }
                         if (row.sizeLabel != null) withStyle(SpanStyle(color = dim)) { append("  ·  ${row.sizeLabel}") }
                     },
                 )
