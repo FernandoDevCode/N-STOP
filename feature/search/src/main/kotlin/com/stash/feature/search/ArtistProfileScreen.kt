@@ -223,6 +223,7 @@ fun ArtistProfileScreen(
                     wordmarkUrl = wordmarkUrl,
                     bridgeAtmosphere = smoothBridge,
                     heroAtmosphere = smoothHeroTone,
+                    onHeroArtworkLoadFailed = vm::onHeroArtworkLoadFailed,
                     onBack = onBack,
                     onPlayArtist = vm::playArtist,
                     onStartRadio = vm::startRadio,
