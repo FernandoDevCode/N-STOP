@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.stash.core.data.artistphotos.ArtistPhotoLookup
 import com.stash.core.common.perf.PerfLog
 import com.stash.core.data.cache.AlbumCache
 import com.stash.core.data.cache.ArtistCache
@@ -65,6 +66,7 @@ import javax.inject.Inject
 class ArtistProfileViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val artistCache: ArtistCache,
+    private val artistPhotoLookup: ArtistPhotoLookup,
     private val albumCache: AlbumCache,
     private val prefetcher: PreviewPrefetcher,
     private val playerRepository: PlayerRepository,
@@ -148,6 +150,20 @@ class ArtistProfileViewModel @Inject constructor(
      * a second time (the first emission already warmed the cache).
      */
     private var prefetchKicked = false
+    private var photoJob: Job? = null
+    private var curatedPhotoUrl: String? = null
+
+    /** Best-effort background selection, never blocks first paint or profile cache. */
+    private fun maybeLoadPhoto(name: String) {
+        if (photoJob != null || name.isBlank()) return
+        photoJob = viewModelScope.launch {
+            val chosen = artistPhotoLookup.find(name) ?: return@launch
+            curatedPhotoUrl = chosen
+            _uiState.update { state ->
+                state.copy(hero = state.hero.copy(avatarUrl = chosen))
+            }
+        }
+    }
 
     /**
      * Job running the current [observeCache] subscription. Stored so
@@ -383,7 +399,7 @@ class ArtistProfileViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(
             hero = HeroState(
                 name = profile.name,
-                avatarUrl = profile.avatarUrl,
+                avatarUrl = curatedPhotoUrl ?: profile.avatarUrl,
                 subscribersText = profile.subscribersText,
             ),
             popular = profile.popular,
@@ -393,6 +409,7 @@ class ArtistProfileViewModel @Inject constructor(
             status = status,
             about = profile.about,
         )
+        maybeLoadPhoto(profile.name)
         if (!prefetchKicked && profile.popular.isNotEmpty()) {
             prefetchKicked = true
             val videoIds = profile.popular.map { it.videoId }
