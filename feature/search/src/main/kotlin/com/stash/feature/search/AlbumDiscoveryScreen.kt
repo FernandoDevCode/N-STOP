@@ -26,6 +26,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -224,7 +225,7 @@ fun AlbumDiscoveryScreen(
                             }
                         }
                         if (state.moreByArtist.isNotEmpty()) {
-                            item { SectionHeader(title = "More by this artist") }
+                            item { SectionHeader(title = stringResource(R.string.album_more_by)) }
                             item {
                                 AlbumsRow(
                                     albums = state.moreByArtist,
@@ -241,13 +242,13 @@ fun AlbumDiscoveryScreen(
             val count = state.downloadConfirmQueue.size
             AlertDialog(
                 onDismissRequest = vm::onDownloadAllDismissed,
-                title = { Text("Download all?") },
+                title = { Text(stringResource(R.string.album_download_confirm_title)) },
                 text = {
                     Text(
                         text = if (count == 0) {
-                            "All tracks already downloaded."
+                            stringResource(R.string.album_download_none)
                         } else {
-                            "Download $count track${if (count == 1) "" else "s"} to your library?"
+                            if (count == 1) stringResource(R.string.album_download_one) else stringResource(R.string.album_download_count, count)
                         },
                     )
                 },
@@ -255,12 +256,12 @@ fun AlbumDiscoveryScreen(
                     if (count == 0) {
                         TextButton(onClick = vm::onDownloadAllDismissed) { Text("OK") }
                     } else {
-                        Button(onClick = vm::onDownloadAllConfirmed) { Text("Download") }
+                        Button(onClick = vm::onDownloadAllConfirmed) { Text(stringResource(R.string.album_download_confirm_button)) }
                     }
                 },
                 dismissButton = {
                     if (count != 0) {
-                        TextButton(onClick = vm::onDownloadAllDismissed) { Text("Cancel") }
+                        TextButton(onClick = vm::onDownloadAllDismissed) { Text(stringResource(R.string.album_download_cancel)) }
                     }
                 },
             )
