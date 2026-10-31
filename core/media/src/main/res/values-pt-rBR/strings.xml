@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="notification_action_like">Adicionar às músicas curtidas</string>
+    <string name="notification_action_unlike">Remover das músicas curtidas</string>
+    <string name="notification_action_repeat_off">Repetição desativada</string>
+    <string name="notification_action_repeat_all">Repetir tudo</string>
+    <string name="notification_action_repeat_one">Repetir uma música</string>
+    <string name="notification_action_shuffle_on">Aleatório ativado</string>
+    <string name="notification_action_shuffle_off">Aleatório desativado</string>
+    <string name="shuffle_play">Reproduzir aleatoriamente</string>
+    <string name="resuming_channel_name">Reprodução</string>
+    <string name="resuming_notification_title">Retomando…</string>
+    <string name="cast_no_wifi">Não é possível transmitir: conecte o celular à mesma rede Wi-Fi da caixa de som.</string>
+</resources>
