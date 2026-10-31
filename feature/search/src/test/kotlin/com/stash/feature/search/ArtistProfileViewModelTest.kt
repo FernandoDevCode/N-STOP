@@ -89,6 +89,7 @@ class ArtistProfileViewModelTest {
         ),
         artistCache = cache,
         artistPhotoLookup = mock<ArtistPhotoLookup>(),
+        appleAlbumMetadata = mock<AppleMusicAlbumMetadataLookup>(),
         albumCache = albumCache,
         prefetcher = prefetcher,
         playerRepository = playerRepository,
