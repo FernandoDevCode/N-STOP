@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -93,7 +94,8 @@ fun StashScaffold(
         navController.currentBackStack.value
             .lastOrNull { it.destination.route in bottomTabRoutes }
             ?.destination?.route
-    val onNowPlaying = currentRoute == NowPlayingRoute::class.qualifiedName ||
+    val onMusicNowPlaying = currentRoute == NowPlayingRoute::class.qualifiedName
+    val onNowPlaying = onMusicNowPlaying ||
         currentRoute == PodcastNowPlayingRoute::class.qualifiedName
 
     // Whether a detail screen is currently in multi-select mode. Detail screens
@@ -227,9 +229,15 @@ fun StashScaffold(
         LocalChromeHazeState provides hazeState,
         LocalPodcastViewModel provides podcastViewModel,
     ) {
+    // Neutral graphite under Home's status bar; shared ambient on other screens.
+    // The music player's own cover-derived backdrop replaces this on its route.
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        if (currentRoute != HomeRoute::class.qualifiedName && !onMusicNowPlaying) {
+            com.stash.core.ui.visual.VisualBackground(Modifier.fillMaxSize()) {}
+        }
     Scaffold(
         modifier = Modifier.imePadding(),
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = Color.Transparent,
         // Use Scaffold's default safe-drawing insets so screens automatically
         // avoid the status bar (top) and gesture / 3-button nav (bottom).
         // The previous `WindowInsets(0.dp)` override was leaking content under
@@ -334,12 +342,13 @@ fun StashScaffold(
         val bottomChrome = innerPadding.calculateBottomPadding()
         val contentPadding = PaddingValues(
             start = innerPadding.calculateStartPadding(layoutDirection),
-            top = innerPadding.calculateTopPadding(),
+            // The music player draws artwork under the system clock and pads its
+            // controls with statusBarsPadding(). Podcast controls keep their inset.
+            top = if (onMusicNowPlaying) 0.dp else innerPadding.calculateTopPadding(),
             end = innerPadding.calculateEndPadding(layoutDirection),
             bottom = if (selectionActive) bottomChrome else 0.dp,
         )
         CompositionLocalProvider(LocalBottomChromeInset provides if (selectionActive) 0.dp else bottomChrome) {
-        com.stash.core.ui.visual.VisualBackground {
         StashNavHost(
             navController = navController,
             modifier = Modifier
@@ -358,7 +367,7 @@ fun StashScaffold(
             },
         )
         }
-        }
+    }
     }
 
     // Up next from the mini player: the same queue sheet Now Playing opens, over this screen.
