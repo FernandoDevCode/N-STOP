@@ -32,4 +32,10 @@
     <string name="nostop_share_spotify_link">Spotify link</string>
     <string name="nostop_share_youtube_link">YouTube Music link</string>
     <string name="nostop_share_info_only">Song info only</string>
+    <string name="remove_download_title_one">Remove 1 download?</string>
+    <string name="remove_download_title_many">Remove %1$d downloads?</string>
+    <string name="remove_download_file_body">The audio files (%1$s) will be deleted from this device. Songs remain in playlists and can still stream, but must be downloaded again for offline playback.</string>
+    <string name="remove_download_body">The audio files will be deleted from this device. Songs remain in playlists and can still stream, but must be downloaded again for offline playback.</string>
+    <string name="remove_download_confirm">Remove</string>
+    <string name="remove_download_cancel">Cancel</string>
 </resources>
