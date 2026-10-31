@@ -48,6 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
@@ -77,17 +78,17 @@ fun CommunityPostScreen(
     MessageToast(loaded?.message, viewModel::messageShown)
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.post_back)) }
             Spacer(Modifier.weight(1f))
             if (loaded != null && loaded.post.mine) {
                 var menu by remember { mutableStateOf(false) }
                 Box {
                     // Off while an action runs: it would drop a take-down confirmed meanwhile.
                     IconButton(onClick = { menu = true }, enabled = !loaded.busy) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                        Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.post_more))
                     }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        DropdownMenuItem(text = { Text("Take down my post") }, onClick = { menu = false; confirmTakeDown = true })
+                        DropdownMenuItem(text = { Text(stringResource(R.string.post_remove_mine)) }, onClick = { menu = false; confirmTakeDown = true })
                     }
                 }
             }
@@ -95,12 +96,12 @@ fun CommunityPostScreen(
         when (val s = state) {
             UiState.Loading -> Centered { CircularProgressIndicator() }
             UiState.Gone -> Centered {
-                Text("This post is no longer available", style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+                Text(stringResource(R.string.post_gone), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
             }
             is UiState.Failed -> Centered {
                 Text(s.message, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
                 Spacer(Modifier.height(16.dp))
-                Button(onClick = viewModel::load) { Text("Retry") }
+                Button(onClick = viewModel::load) { Text(stringResource(R.string.post_retry)) }
             }
             is UiState.Loaded -> PostBody(s, viewModel, onOpenPlaylist)
         }
@@ -109,22 +110,22 @@ fun CommunityPostScreen(
     if (confirmTakeDown && loaded != null) {
         AlertDialog(
             onDismissRequest = { confirmTakeDown = false },
-            title = { Text("Take down this post?") },
+            title = { Text(stringResource(R.string.post_remove_question)) },
             text = {
                 // The Worker counts a post toward the daily two for 24 hours.
                 val countsToday = System.currentTimeMillis() - loaded.post.createdAt < 86_400_000L
-                Text("It leaves Community for everyone." + if (countsToday) " It still counts toward today's two posts." else "")
+                Text(stringResource(R.string.post_remove_warning) + if (countsToday) stringResource(R.string.post_remove_daily) else "")
             },
             confirmButton = {
                 TextButton(onClick = {
                     confirmTakeDown = false
                     viewModel.takeDown {
-                        Toast.makeText(context, "Post taken down", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, context.getString(R.string.post_removed), Toast.LENGTH_SHORT).show()
                         onBack()
                     }
-                }) { Text("Take down") }
+                }) { Text(stringResource(R.string.post_remove)) }
             },
-            dismissButton = { TextButton(onClick = { confirmTakeDown = false }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { confirmTakeDown = false }) { Text(stringResource(R.string.post_cancel)) } },
         )
     }
 }
@@ -182,7 +183,7 @@ private fun PostBody(s: UiState.Loaded, viewModel: CommunityPostViewModel, onOpe
                     }
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "Posted by ${post.name} · ${ago(post.createdAt, now, long = true)}",
+                        stringResource(R.string.post_posted_by, post.name, ago(post.createdAt, now, long = true)),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -198,16 +199,16 @@ private fun PostBody(s: UiState.Loaded, viewModel: CommunityPostViewModel, onOpe
                 Button(onClick = viewModel::play, enabled = !s.busy) {
                     Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Play")
+                    Text(stringResource(R.string.post_play))
                 }
                 if (song) {
                     OutlinedButton(onClick = viewModel::like, enabled = !s.busy && !s.liked) {
                         Icon(if (s.liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text(if (s.liked) "Liked" else "Like")
+                        Text(stringResource(if (s.liked) R.string.post_liked else R.string.post_like))
                     }
                 } else {
-                    OutlinedButton(onClick = { viewModel.saveCopy(onOpenPlaylist) }, enabled = !s.busy) { Text("Save a copy") }
+                    OutlinedButton(onClick = { viewModel.saveCopy(onOpenPlaylist) }, enabled = !s.busy) { Text(stringResource(R.string.post_save_copy)) }
                 }
                 VoteControl(post, onVote = viewModel::vote, modifier = Modifier.align(Alignment.CenterVertically), vertical = false)
             }
@@ -216,7 +217,7 @@ private fun PostBody(s: UiState.Loaded, viewModel: CommunityPostViewModel, onOpe
             if (!song) {
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "As posted. ${post.name}'s later changes don't show here.",
+                    stringResource(R.string.post_frozen, post.name),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
