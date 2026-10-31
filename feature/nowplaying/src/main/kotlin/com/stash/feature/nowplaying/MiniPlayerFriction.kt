@@ -215,6 +215,40 @@ internal fun Modifier.miniPlayerFriction(
             rail.writePath(segment, until = fraction)
             drawPath(segment, Color(0xFF98A8B9), style = railStroke)
         }
+        // Quiet organic detail only within 16dp behind the moving needle:
+        // both sides expand and contract together, never deforming the actual
+        // seek rail, touch projection or its straight right cap.
+        if (state.motion && distance > 1f) {
+            val start = (distance - 16.dp.toPx()).coerceAtLeast(0f)
+            if (distance - start > 1f) {
+                val liquid = Path()
+                fun edge(step: Int, side: Float): Offset {
+                    val t = step / 12f
+                    val fractionAt = ((start + (distance - start) * t) / rail.length).coerceIn(0f, 1f)
+                    val point = rail.point(fractionAt)
+                    val tangentAt = rail.tangent(fractionAt)
+                    val normal = Offset(-tangentAt.y, tangentAt.x)
+                    val envelope = kotlin.math.sin(Math.PI.toFloat() * t).coerceAtLeast(0f)
+                    val phase = frame / 1_000_000_000f
+                    val breathing = .82f + .18f *
+                        kotlin.math.sin(phase * 3.7f + t * 9f)
+                    val halfWidth = rail.strokeWidth * .42f +
+                        .45.dp.toPx() * envelope * breathing
+                    return point + normal * halfWidth * side
+                }
+                for (step in 0..12) {
+                    val p = edge(step, 1f)
+                    if (step == 0) liquid.moveTo(p.x, p.y)
+                    else liquid.lineTo(p.x, p.y)
+                }
+                for (step in 12 downTo 0) {
+                    val p = edge(step, -1f)
+                    liquid.lineTo(p.x, p.y)
+                }
+                liquid.close()
+                drawPath(liquid, silver.copy(alpha = .60f))
+            }
+        }
         // Layered segments form a directional, tapered skid on the actual curved rail.
         val tail = (12f + particles.energy * 16f) * density
         for (j in 6 downTo 1) {
