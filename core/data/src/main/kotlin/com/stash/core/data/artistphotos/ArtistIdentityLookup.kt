@@ -74,8 +74,22 @@ class ArtistIdentityLookup @Inject constructor(
         val artist = musicBrainz.searchByName(name) ?: return null
         val qid = ArtistIdentityRules.wikidataId(artist, name) ?: return null
         val entity = getJson("https://www.wikidata.org/wiki/Special:EntityData/$qid.json")
-        val images = ArtistIdentityRules.files(entity, qid)
-        for ((filename, kind) in images) {
+        // The official emblem is sometimes represented by a distinct Wikidata
+        // entity (P2238), as with the Rolling Stones. Resolve only this explicit
+        // link, never a guessed similar-looking item or a search by name.
+        val officialSymbolId = ArtistIdentityRules.officialSymbolId(entity, qid)
+        if (officialSymbolId != null) {
+            val symbolEntity = runCatching {
+                getJson("https://www.wikidata.org/wiki/Special:EntityData/$officialSymbolId.json")
+            }.getOrNull()
+            if (symbolEntity != null) {
+                for ((file, _) in ArtistIdentityRules.files(symbolEntity, officialSymbolId)) {
+                    val candidate = commonsCandidate(file, ArtistIdentityKind.SYMBOL) ?: continue
+                    ArtistIdentityRules.select(listOf(candidate))?.let { return it }
+                }
+            }
+        }
+        for ((filename, kind) in ArtistIdentityRules.files(entity, qid)) {
             val candidate = commonsCandidate(filename, kind) ?: continue
             // Ordered: compact symbol first, then the source's main representative photo.
             ArtistIdentityRules.select(listOf(candidate))?.let { return it }
