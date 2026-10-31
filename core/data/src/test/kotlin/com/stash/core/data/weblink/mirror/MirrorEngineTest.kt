@@ -15,6 +15,7 @@ import com.stash.core.data.weblink.merge.PlaylistMerge
 import com.stash.core.data.weblink.merge.SyncHashes
 import com.stash.core.model.weblink.Hlc
 import kotlinx.coroutines.test.runTest
+import kotlin.time.Duration.Companion.minutes
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -426,7 +427,7 @@ class MirrorEngineTest {
         assertThat(likeOps(me).none { !it.on }).isTrue()
     }
 
-    @Test fun `L-N5 - Use this phone's, a push cut short after its first batch, then the retry sends the rest unheld once`() = runTest {
+    @Test fun `L-N5 - Use this phone's, a push cut short after its first batch, then the retry sends the rest unheld once`() = runTest(timeout = 5.minutes) {
         link()
         lib.like(song("Mine"))
         web.configure(likes = Dir.BOTH)

@@ -156,7 +156,7 @@ class SonoraStage3SurfaceTest(private val width: Int, private val height: Int, p
             compose.runOnIdle { backdrop = color }
             capture(name)
         }
-        compose.onNodeWithContentDescription("Play").performClick()
+        compose.onNodeWithContentDescription("Reproduzir").performClick()
         verify(player).onPlayPauseClick()
         compose.onNodeWithTag("visual-tab-Library").performClick()
         compose.runOnIdle { check(destination == VisualPage.Library) }
