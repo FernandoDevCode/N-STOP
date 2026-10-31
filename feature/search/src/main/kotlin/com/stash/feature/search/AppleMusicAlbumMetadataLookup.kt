@@ -24,7 +24,7 @@ internal data class AppleAlbumMetadata(
  * alters playback providers or requires a subscription/developer token.
  */
 @Singleton
-internal class AppleMusicAlbumMetadataLookup @Inject constructor() {
+class AppleMusicAlbumMetadataLookup @Inject constructor() {
     companion object {
         internal fun normalize(title: String) = title.trim().lowercase(Locale.ROOT)
             .replace(Regex("\\s+"), " ")
@@ -79,7 +79,7 @@ internal class AppleMusicAlbumMetadataLookup @Inject constructor() {
         }
     }
 
-    suspend fun find(artistName: String): Map<String, AppleAlbumMetadata> = withContext(Dispatchers.IO) {
+    internal suspend fun find(artistName: String): Map<String, AppleAlbumMetadata> = withContext(Dispatchers.IO) {
         val name = artistName.trim().takeIf { it.isNotEmpty() } ?: return@withContext emptyMap()
         try {
             val q = URLEncoder.encode(name, "UTF-8")
