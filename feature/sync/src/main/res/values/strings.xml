@@ -74,4 +74,16 @@
     <string name="nostop_schedule_daily">Daily</string>
     <string name="nostop_schedule_weekdays">Weekdays</string>
     <string name="nostop_schedule_weekends">Weekends</string>
+    <string name="sync_receipt_cancelled">Cancelled</string>
+    <string name="sync_receipt_failed">Sync failed</string>
+    <string name="sync_receipt_failed_count">⚠ %1$d failed</string>
+    <string name="sync_receipt_error">Error: %1$s</string>
+    <string name="sync_receipt_diagnostics">Diagnostics</string>
+    <string name="sync_receipt_no_details">No further details recorded</string>
+    <string name="sync_receipt_stream_only">Stream only</string>
+    <string name="sync_receipt_download">Download</string>
+    <string name="sync_receipt_surfaced">found</string>
+    <string name="sync_receipt_downloaded">downloaded</string>
+    <string name="sync_receipt_playlists_one">1 playlist</string>
+    <string name="sync_receipt_playlists_many">%1$d playlists</string>
 </resources>
