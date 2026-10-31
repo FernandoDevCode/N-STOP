@@ -1,6 +1,8 @@
 package com.stash.feature.library.share
 
-import android.text.format.DateUtils
+import com.stash.core.common.BrazilianDisplayFormat
+import com.stash.feature.library.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,7 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
-import com.stash.core.common.extensions.pluralize
+
 import com.stash.core.model.share.ShareConfig
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -54,14 +56,14 @@ fun SharedMixScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.shared_back)) }
         when (val s = state) {
             SharedMixUiState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             is SharedMixUiState.Error -> Column(
                 Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(s.message, style = MaterialTheme.typography.titleMedium)
-                if (s.retryable) { Spacer(Modifier.height(16.dp)); Button(onClick = viewModel::load) { Text("Retry") } }
+                if (s.retryable) { Spacer(Modifier.height(16.dp)); Button(onClick = viewModel::load) { Text(stringResource(R.string.shared_retry)) } }
             }
             is SharedMixUiState.Loaded -> LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
                 item {
@@ -73,30 +75,29 @@ fun SharedMixScreen(
                         }
                         Column {
                             Text(s.doc.name, style = MaterialTheme.typography.headlineSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            val by = s.doc.sharedBy?.let { " · shared by $it" }.orEmpty()
+                            val by = s.doc.sharedBy?.let { stringResource(R.string.shared_mix_by, it) }.orEmpty()
                             val updated = s.doc.updatedAt.takeIf { it > 0 }?.let {
-                                val now = System.currentTimeMillis()
-                                if (now - it * 1000 < DateUtils.MINUTE_IN_MILLIS) " · updated just now"
-                                else " · updated " + DateUtils.getRelativeTimeSpanString(it * 1000, now, DateUtils.MINUTE_IN_MILLIS)
+                                stringResource(R.string.shared_mix_updated,
+                                    BrazilianDisplayFormat.date(it * 1000L))
                             }.orEmpty()
-                            Text("${pluralize(s.doc.tracks.size, "track")}$by$updated", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${if (s.doc.tracks.size == 1) stringResource(R.string.shared_mix_tracks_one) else stringResource(R.string.shared_mix_tracks_many, s.doc.tracks.size)}$by$updated", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                     Spacer(Modifier.height(16.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = viewModel::play, enabled = !s.busy) { Text("Play") }
+                        Button(onClick = viewModel::play, enabled = !s.busy) { Text(stringResource(R.string.shared_play)) }
                         when {
-                            s.isOwnMix -> Text("This is your mix", Modifier.align(Alignment.CenterVertically))
+                            s.isOwnMix -> Text(stringResource(R.string.shared_mix_owned), Modifier.align(Alignment.CenterVertically))
                             s.followedPlaylistId != null -> {
-                                OutlinedButton(onClick = { onOpenPlaylist(s.followedPlaylistId) }) { Text("Following") }
+                                OutlinedButton(onClick = { onOpenPlaylist(s.followedPlaylistId) }) { Text(stringResource(R.string.shared_mix_following)) }
                                 var confirmUnfollow by remember { mutableStateOf(false) }
                                 OutlinedButton(onClick = { if (confirmUnfollow) viewModel.unfollow() else confirmUnfollow = true }, enabled = !s.busy) {
-                                    Text(if (confirmUnfollow) "Tap again to unfollow" else "Unfollow")
+                                    Text(stringResource(if (confirmUnfollow) R.string.shared_mix_unfollow_confirmation else R.string.shared_mix_unfollow))
                                 }
                             }
                             else -> {
-                                Button(onClick = { viewModel.follow(onJoinedPlaylist) }, enabled = !s.busy) { Text("Follow") }
-                                OutlinedButton(onClick = { viewModel.saveCopy(onJoinedPlaylist) }, enabled = !s.busy) { Text("Save a copy") }
+                                Button(onClick = { viewModel.follow(onJoinedPlaylist) }, enabled = !s.busy) { Text(stringResource(R.string.shared_mix_follow)) }
+                                OutlinedButton(onClick = { viewModel.saveCopy(onJoinedPlaylist) }, enabled = !s.busy) { Text(stringResource(R.string.shared_mix_save_copy)) }
                             }
                         }
                     }
