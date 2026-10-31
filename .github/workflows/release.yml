@@ -96,6 +96,7 @@ jobs:
           #   LASTFM_API_SECRET  — shared secret from the same page
           LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
           LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
+          FANART_API_KEY: ${{ secrets.FANART_API_KEY }}
           # Optional: route generic Last.fm reads through the Stash proxy Worker
           # (infra/lastfm-proxy) so the shared key never gets rate-limited.
           # Empty/unset = app talks to Last.fm directly. See

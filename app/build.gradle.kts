@@ -64,6 +64,9 @@ val lastFmApiKey: String =
     localProperties.getProperty("lastfm.apiKey") ?: System.getenv("LASTFM_API_KEY").orEmpty()
 val lastFmApiSecret: String =
     localProperties.getProperty("lastfm.apiSecret") ?: System.getenv("LASTFM_API_SECRET").orEmpty()
+// Fanart.tv project key; intentionally optional. Do not mistake upload date for capture date.
+val fanartApiKey: String =
+    localProperties.getProperty("fanart.apiKey") ?: System.getenv("FANART_API_KEY").orEmpty()
 // Optional comma-separated pool of EXTRA api keys used only for unsigned read
 // endpoints (tag/similar/etc.) to spread load and raise the shared-key rate
 // ceiling. No secret needed — reads are unsigned. Auth/scrobble always use the
@@ -139,6 +142,7 @@ android {
         // Last.fm API credentials exposed via BuildConfig for the app-level
         // Hilt module to inject into LastFmApiClient. Empty strings are
         // valid — the Settings UI just disables the connect button.
+        buildConfigField("String", "FANART_API_KEY", "\"$fanartApiKey\"")
         buildConfigField("String", "LASTFM_API_KEY", "\"$lastFmApiKey\"")
         buildConfigField("String", "LASTFM_API_SECRET", "\"$lastFmApiSecret\"")
         buildConfigField("String", "LASTFM_EXTRA_API_KEYS", "\"$lastFmExtraApiKeys\"")

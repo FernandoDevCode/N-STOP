@@ -9,6 +9,7 @@ import com.stash.core.common.perf.PerfLog
 import com.stash.core.data.cache.AlbumCache
 import com.stash.core.data.cache.ArtistCache
 import com.stash.core.data.cache.CachedProfile
+import com.stash.core.data.artistphotos.ArtistPhotoLookup
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.actions.TrackActionsDelegate
@@ -65,6 +66,7 @@ import javax.inject.Inject
 class ArtistProfileViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val artistCache: ArtistCache,
+    private val artistPhotoLookup: ArtistPhotoLookup,
     private val albumCache: AlbumCache,
     private val prefetcher: PreviewPrefetcher,
     private val playerRepository: PlayerRepository,
@@ -148,6 +150,20 @@ class ArtistProfileViewModel @Inject constructor(
      * a second time (the first emission already warmed the cache).
      */
     private var prefetchKicked = false
+    private var photoJob: Job? = null
+    private var curatedPhotoUrl: String? = null
+
+    /** Background-only; first paint and artist data never wait for Fanart/MusicBrainz. */
+    private fun maybeLoadPhoto(name: String) {
+        if (photoJob != null || name.isBlank()) return
+        photoJob = viewModelScope.launch {
+            val chosen = artistPhotoLookup.find(name) ?: return@launch
+            curatedPhotoUrl = chosen
+            _uiState.update { state ->
+                state.copy(hero = state.hero.copy(avatarUrl = chosen))
+            }
+        }
+    }
 
     /**
      * Job running the current [observeCache] subscription. Stored so
@@ -165,6 +181,7 @@ class ArtistProfileViewModel @Inject constructor(
         // can diff skeleton → paint against spec §4.1 <50ms hero target.
         PerfLog.d { "ArtistProfile hero first-frame nav-args (name=$initialName)" }
         cacheJob = viewModelScope.launch { observeCache() }
+        maybeLoadPhoto(initialName)
     }
 
     /**
@@ -383,7 +400,7 @@ class ArtistProfileViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(
             hero = HeroState(
                 name = profile.name,
-                avatarUrl = profile.avatarUrl,
+                avatarUrl = curatedPhotoUrl ?: profile.avatarUrl,
                 subscribersText = profile.subscribersText,
             ),
             popular = profile.popular,
@@ -393,6 +410,7 @@ class ArtistProfileViewModel @Inject constructor(
             status = status,
             about = profile.about,
         )
+        maybeLoadPhoto(profile.name)
         if (!prefetchKicked && profile.popular.isNotEmpty()) {
             prefetchKicked = true
             val videoIds = profile.popular.map { it.videoId }

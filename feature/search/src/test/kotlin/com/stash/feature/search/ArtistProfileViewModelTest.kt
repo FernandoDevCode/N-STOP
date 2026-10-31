@@ -5,6 +5,7 @@ import app.cash.turbine.test
 import com.stash.core.data.cache.AlbumCache
 import com.stash.core.data.cache.ArtistCache
 import com.stash.core.data.cache.CachedProfile
+import com.stash.core.data.artistphotos.ArtistPhotoLookup
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.actions.TrackActionsDelegate
@@ -87,6 +88,7 @@ class ArtistProfileViewModelTest {
             ),
         ),
         artistCache = cache,
+        artistPhotoLookup = mock(),
         albumCache = albumCache,
         prefetcher = prefetcher,
         playerRepository = playerRepository,

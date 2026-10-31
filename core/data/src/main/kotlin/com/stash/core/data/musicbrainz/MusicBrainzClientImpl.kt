@@ -40,6 +40,11 @@ class MusicBrainzClientImpl @Inject constructor(
         get("artist/$mbid?inc=url-rels&fmt=json")
     }.getOrNull()
 
+    override suspend fun lookupMemberRelations(mbid: String): JsonObject? = runCatching {
+        if (!Regex("^[0-9a-fA-F-]{36}$").matches(mbid)) return null
+        get("artist/$mbid?inc=artist-rels&fmt=json")
+    }.getOrNull()
+
     override suspend fun searchByName(name: String): JsonObject? = runCatching {
         val query = URLEncoder.encode("artist:\"${escapeLucene(name)}\"", "UTF-8")
         val body = get("artist?query=$query&fmt=json") ?: return null
