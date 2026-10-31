@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
@@ -39,6 +41,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
@@ -54,11 +58,13 @@ import com.stash.app.RequestNotificationPermissionOnce
 import com.stash.data.download.lossless.squid.CaptchaExpiredNotifier
 import com.stash.feature.nowplaying.MiniPlayer
 import com.stash.feature.nowplaying.PlayerQueueSheet
+import com.stash.feature.home.sonoraHomeBackground
 import com.stash.feature.home.podcasts.LocalPodcastViewModel
 import com.stash.feature.home.podcasts.PodcastMiniPlayer
 import com.stash.feature.home.podcasts.PodcastViewModel
 import com.stash.app.ambient.AlbumColorsViewModel
 import com.stash.core.ui.ambient.ProvideAlbumChrome
+import com.stash.core.ui.ambient.AmbientPalette
 import com.stash.core.ui.components.LocalBottomChromeInset
 import com.stash.core.ui.components.LocalChromeHazeState
 import com.stash.core.ui.components.sonoraBottomFade
@@ -81,6 +87,7 @@ fun StashScaffold(
     pendingDeepLink: String? = null,
     onDeepLinkConsumed: () -> Unit = {},
     startTab: StartTab = StartTab.HOME,
+    statusBarProbe: Boolean = false,
 ) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -229,9 +236,14 @@ fun StashScaffold(
         LocalChromeHazeState provides hazeState,
         LocalPodcastViewModel provides podcastViewModel,
     ) {
-    // Neutral graphite under Home's status bar; shared ambient on other screens.
-    // The music player's own cover-derived backdrop replaces this on its route.
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    // These are WINDOW backgrounds, not child-screen backgrounds. The clock
+    // therefore sees the very same scene as the content underneath it.
+    val windowBackground = when {
+        currentRoute == HomeRoute::class.qualifiedName -> Modifier.sonoraHomeBackground()
+        onMusicNowPlaying -> Modifier.sonoraPlayerWindowBackground(albumColors.palette)
+        else -> Modifier.background(MaterialTheme.colorScheme.background)
+    }
+    Box(Modifier.fillMaxSize().then(windowBackground)) {
         if (currentRoute != HomeRoute::class.qualifiedName && !onMusicNowPlaying) {
             com.stash.core.ui.visual.VisualBackground(Modifier.fillMaxSize()) {}
         }
@@ -368,6 +380,15 @@ fun StashScaffold(
         )
         }
     }
+        // Debug-only proof: a magenta rectangle DIRECTLY BEHIND the system icons.
+        // Enabled only from an explicit adb launch extra; absent in normal use.
+        if (statusBarProbe) {
+            androidx.compose.foundation.layout.Box(
+                Modifier.fillMaxWidth()
+                    .height(WindowInsets.statusBars.asPaddingValues().calculateTopPadding())
+                    .background(Color.Magenta),
+            )
+        }
     }
 
     // Up next from the mini player: the same queue sheet Now Playing opens, over this screen.
@@ -394,3 +415,21 @@ private fun StashBottomBar(currentRoute: String?, onNavigate: (TopLevelDestinati
         backgroundVisible = false,
     )
 }
+
+/**
+ * Only fills space BELOW the transparent Android status bar, never adds its own
+ * scrim or reserves height. Uses the same playing cover's ambient palette.
+ * NowPlaying's detailed photographic backdrop is still drawn by PlayerV7.
+ */
+@Composable
+private fun Modifier.sonoraPlayerWindowBackground(palette: AmbientPalette): Modifier =
+    background(Color(0xFF05080D)).drawWithCache {
+        val wash = Brush.radialGradient(
+            0f to palette.dom.copy(alpha = .52f),
+            .55f to palette.mut.copy(alpha = .22f),
+            1f to Color.Transparent,
+            center = Offset(size.width * .57f, size.height * .14f),
+            radius = size.width * 1.05f,
+        )
+        onDrawBehind { drawRect(wash) }
+    }
