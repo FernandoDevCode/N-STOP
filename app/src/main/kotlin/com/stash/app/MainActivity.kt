@@ -197,6 +197,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
+        // Compose paints behind the status bar; don't let the window or an OEM
+        // contrast scrim substitute the system's grey-blue strip for our backdrop.
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            window.isStatusBarContrastEnforced = false
+        }
         super.onCreate(savedInstanceState)
 
         val themeModeFlow: Flow<ThemeMode> = themePreference.themeMode
