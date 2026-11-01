@@ -1,0 +1,16 @@
+name: Sonora Lastfm Top5 Gallery Prototype
+on:
+  push:
+    branches:
+      - research/sonora-lastfm-top5-preview
+permissions:
+  contents: read
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: python -m pip install --quiet requests beautifulsoup4 pillow
+      - name: Inspect top five photo HTML structure
+        run: python tools/research/lastfm_top5_preview.py
