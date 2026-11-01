@@ -82,6 +82,8 @@ class ArtistProfileViewModelTest {
         albumCache: AlbumCache = mock(),
         playerRepository: PlayerRepository = mock(),
         musicRepository: MusicRepository = mock(),
+        identity: ArtistIdentityLookup = mock(),
+        originalPhoto: ArtistPhotoLookup = mock(),
     ): ArtistProfileViewModel = ArtistProfileViewModel(
         savedStateHandle = SavedStateHandle(
             mapOf(
@@ -91,8 +93,8 @@ class ArtistProfileViewModelTest {
             ),
         ),
         artistCache = cache,
-        artistPhotoLookup = mock<ArtistPhotoLookup>(),
-        artistIdentityLookup = mock<ArtistIdentityLookup>(),
+        artistPhotoLookup = originalPhoto,
+        artistIdentityLookup = identity,
         appleAlbumMetadata = mock<AppleMusicAlbumMetadataLookup>(),
         albumCache = albumCache,
         prefetcher = prefetcher,
@@ -391,6 +393,80 @@ class ArtistProfileViewModelTest {
         // gated and the prior fill job was cancelled before it could append.
         verify(player, org.mockito.kotlin.times(2)).setQueue(any(), eq(0), any())
         verify(player, never()).addToQueue(any<List<Track>>())
+    }
+
+    @Test
+    fun `no iconic identity uses the original photo selector`() = runTest {
+        val avatar = "https://assets.fanart.tv/fanart/music/legacy.jpg"
+        val cache = mock<ArtistCache>()
+        val profile = ArtistProfile(
+            id = "UC1", name = "LocalName", avatarUrl = "https://example.org/avatar.jpg",
+            subscribersText = null, popular = emptyList(), albums = emptyList(),
+            singles = emptyList(), related = emptyList(),
+        )
+        whenever(cache.get(eq("UC1"))).thenReturn(flowOf(CachedProfile.Fresh(profile)))
+        val identity = mock<ArtistIdentityLookup>()
+        whenever(identity.find("LocalName")).thenReturn(null)
+        val original = mock<ArtistPhotoLookup>()
+        whenever(original.find("LocalName")).thenReturn(avatar)
+
+        val vm = vmWith(cache, identity = identity, originalPhoto = original)
+        advanceUntilIdle()
+
+        verify(identity).find("LocalName")
+        verify(original).find("LocalName")
+        assertEquals(avatar, vm.uiState.value.hero.avatarUrl)
+        assertEquals(ArtistIdentityKind.PHOTO, vm.uiState.value.hero.artworkKind)
+    }
+
+    @Test
+    fun `iconic emblem takes precedence over the legacy photo`() = runTest {
+        val cache = mock<ArtistCache>()
+        val profile = ArtistProfile(
+            id = "UC1", name = "LocalName", avatarUrl = "https://example.org/avatar.jpg",
+            subscribersText = null, popular = emptyList(), albums = emptyList(),
+            singles = emptyList(), related = emptyList(),
+        )
+        whenever(cache.get(eq("UC1"))).thenReturn(flowOf(CachedProfile.Fresh(profile)))
+        val identity = mock<ArtistIdentityLookup>()
+        val emblem = "https://upload.wikimedia.org/wikipedia/commons/thumb/icon.png"
+        whenever(identity.find("LocalName")).thenReturn(ArtistIdentityImage(emblem, ArtistIdentityKind.SYMBOL))
+        val original = mock<ArtistPhotoLookup>()
+
+        val vm = vmWith(cache, identity = identity, originalPhoto = original)
+        advanceUntilIdle()
+
+        assertEquals(emblem, vm.uiState.value.hero.avatarUrl)
+        assertEquals(ArtistIdentityKind.SYMBOL, vm.uiState.value.hero.artworkKind)
+        verify(original, never()).find(any())
+    }
+
+    @Test
+    fun `iconic image render failure falls back to the existing photo logic`() = runTest {
+        val cache = mock<ArtistCache>()
+        val profile = ArtistProfile(
+            id = "UC1", name = "LocalName", avatarUrl = "https://example.org/avatar.jpg",
+            subscribersText = null, popular = emptyList(), albums = emptyList(),
+            singles = emptyList(), related = emptyList(),
+        )
+        whenever(cache.get(eq("UC1"))).thenReturn(flowOf(CachedProfile.Fresh(profile)))
+        val identity = mock<ArtistIdentityLookup>()
+        val badUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/missing.png"
+        whenever(identity.find("LocalName")).thenReturn(ArtistIdentityImage(badUrl, ArtistIdentityKind.SYMBOL))
+        val original = mock<ArtistPhotoLookup>()
+        whenever(original.find("LocalName")).thenReturn("https://assets.fanart.tv/fanart/music/good.jpg")
+
+        val vm = vmWith(cache, identity = identity, originalPhoto = original)
+        advanceUntilIdle()
+        vm.onHeroArtworkLoadFailed("https://upload.wikimedia.org/unrelated.png")
+        advanceUntilIdle()
+        verify(original, never()).find(any())
+
+        vm.onHeroArtworkLoadFailed(badUrl)
+        advanceUntilIdle()
+        assertEquals("https://assets.fanart.tv/fanart/music/good.jpg", vm.uiState.value.hero.avatarUrl)
+        assertEquals(ArtistIdentityKind.PHOTO, vm.uiState.value.hero.artworkKind)
+        verify(original).find("LocalName")
     }
 
     private fun t(id: String) = TrackSummary(
