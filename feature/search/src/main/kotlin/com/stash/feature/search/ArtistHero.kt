@@ -125,7 +125,18 @@ fun ArtistHero(
             var photoAspectRatio by remember(photo) { mutableFloatStateOf(1f) }
             // A muted backdrop fills spare vertical space of wide band photos.
             // The foreground preserves *all horizontal members* without distortion.
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // A logomark should read as a distinct icon/identity, not as a
+            // photo with an enormous blurred duplicate of the same logo.
+            if (isSymbol) {
+                Box(
+                    Modifier.matchParentSize().background(
+                        Brush.radialGradient(
+                            0f to heroAtmosphere.copy(alpha = .55f),
+                            1f to bridgeAtmosphere,
+                        ),
+                    ),
+                )
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 AsyncImage(
                     model = photo,
                     contentDescription = null,
