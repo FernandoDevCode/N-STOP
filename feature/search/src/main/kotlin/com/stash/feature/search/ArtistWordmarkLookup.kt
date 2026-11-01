@@ -22,6 +22,12 @@ import org.json.JSONObject
  */
 internal object ArtistWordmarkLookup {
     private val checked = ConcurrentHashMap<String, String>()
+    // TheAudioDB wordmarks may become hero images only when its MBID
+    // independently agrees with MusicBrainz. Name-only logos stay overlays.
+    private val crossVerifiedAudioDb = ConcurrentHashMap.newKeySet<String>()
+
+    internal fun isVerifiedAudioDbHero(url: String?): Boolean =
+        url != null && crossVerifiedAudioDb.contains(url)
     private val mbidRegex = Regex("^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$")
 
     internal data class AudioDbCandidate(val mbid: String?, val logoUrl: String?)
@@ -165,7 +171,13 @@ internal object ArtistWordmarkLookup {
         } else null
 
         val chosen = fanartUrl ?: audioDb?.logoUrl
-        if (chosen != null) checked[name] = chosen
+        if (chosen != null) {
+            if (fanartUrl == null && audioDb?.logoUrl == chosen && audioDb.mbid != null &&
+                musicBrainzId(name)?.equals(audioDb.mbid, ignoreCase = true) == true) {
+                crossVerifiedAudioDb += chosen
+            }
+            checked[name] = chosen
+        }
         chosen
     }
 }
