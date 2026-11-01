@@ -26,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -49,6 +50,7 @@ import com.stash.feature.settings.components.SettingsScaffold
 import com.stash.feature.settings.components.SettingsSectionLabel
 import com.stash.feature.settings.components.SettingsToggleRow
 import com.stash.feature.settings.components.SettingsValueRow
+import kotlinx.coroutines.launch
 
 /**
  * One radio choice of the import dialog (issue #235).
@@ -402,6 +404,57 @@ fun SettingsLibraryStorageScreen(
 
         // -- Storage ----------------------------------------------------------
         SettingsSectionLabel(stringResource(R.string.nostop_storage_storage))
+
+        // Reset artwork selection TTLs and the shared temporary image cache.
+        // Not Android's "clear app data": user downloads/settings are preserved.
+        val imageCacheScope = rememberCoroutineScope()
+        var clearingImageCache by remember { mutableStateOf(false) }
+        var imageCacheCleared by remember { mutableStateOf<Boolean?>(null) }
+        GlassCard {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = stringResource(R.string.sonora_image_cache_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = stringResource(R.string.sonora_image_cache_description),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = {
+                        clearingImageCache = true
+                        imageCacheCleared = null
+                        imageCacheScope.launch {
+                            imageCacheCleared = viewModel.clearImageCache()
+                            clearingImageCache = false
+                        }
+                    },
+                    enabled = !clearingImageCache,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(
+                        if (clearingImageCache) R.string.sonora_image_cache_clearing
+                        else R.string.sonora_image_cache_button,
+                    ))
+                }
+                imageCacheCleared?.let { success ->
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(
+                            if (success) R.string.sonora_image_cache_success
+                            else R.string.sonora_image_cache_error,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (success) MaterialTheme.colorScheme.onSurfaceVariant
+                            else MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        }
 
         val externalTree = uiState.externalTreeUri
         // Derive a human-readable folder name from the tree URI without

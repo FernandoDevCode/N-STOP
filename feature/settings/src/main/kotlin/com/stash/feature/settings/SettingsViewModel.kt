@@ -7,6 +7,8 @@ import com.stash.core.auth.model.AuthService
 import com.stash.core.auth.model.AuthState
 import com.stash.core.auth.youtube.YouTubeCookieHelper
 import android.content.Context
+import android.util.Log
+import coil3.SingletonImageLoader
 import android.net.Uri
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.diagnostics.CrashFileStore
@@ -751,6 +753,34 @@ class SettingsViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = SettingsUiState(),
     )
+
+    /**
+     * Forget the artist-photo selection TTLs (Wikidata P18 and Fanart) and
+     * purge only Coil's transient in-memory/on-disk thumbnails. Audio
+     * downloads, the music database, account credentials and settings stay
+     * untouched. Reopening the artist screen initiates a fresh lookup.
+     */
+    suspend fun clearImageCache(): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val identityCleared = appContext.getSharedPreferences(
+                "sonora_artist_identity_v4", Context.MODE_PRIVATE,
+            ).edit().clear().commit()
+            val photosCleared = appContext.getSharedPreferences(
+                "sonora_artist_photos_v1", Context.MODE_PRIVATE,
+            ).edit().clear().commit()
+            if (!identityCleared || !photosCleared) {
+                Log.w("SonoraImageCache", "Could not persist artist photo cache invalidation")
+                return@withContext false
+            }
+            val loader = SingletonImageLoader.get(appContext)
+            loader.memoryCache?.clear()
+            loader.diskCache?.clear()
+            true
+        } catch (error: Exception) {
+            Log.w("SonoraImageCache", "Image cache clearing failed", error)
+            false
+        }
+    }
 
     // -- Storage actions ------------------------------------------------------
 

@@ -312,4 +312,10 @@
     <string name="web_own_name">Your linked devices see this name.</string>
     <string name="web_other_name">This name stays on this phone.</string>
     <string name="web_save">Save</string>
+    <string name="sonora_image_cache_title">Image cache</string>
+    <string name="sonora_image_cache_description">Forget saved artist photos and temporary artwork. Images will reload on demand; downloaded music, playlists and accounts stay untouched.</string>
+    <string name="sonora_image_cache_button">Clear image cache</string>
+    <string name="sonora_image_cache_clearing">Clearing images…</string>
+    <string name="sonora_image_cache_success">Cache cleared. Reopen an artist profile to look up its photo again.</string>
+    <string name="sonora_image_cache_error">Could not clear all images. Please try again.</string>
 </resources>

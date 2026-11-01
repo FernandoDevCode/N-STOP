@@ -308,4 +308,10 @@
     <string name="web_own_name">Seus dispositivos vinculados verão este nome.</string>
     <string name="web_other_name">Este nome fica apenas neste celular.</string>
     <string name="web_save">Salvar</string>
+    <string name="sonora_image_cache_title">Cache de imagens</string>
+    <string name="sonora_image_cache_description">Apaga as fotos de artistas escolhidas anteriormente e as imagens temporárias. As imagens serão carregadas novamente. Músicas baixadas, playlists e contas não são apagadas.</string>
+    <string name="sonora_image_cache_button">Limpar cache de imagens</string>
+    <string name="sonora_image_cache_clearing">Limpando imagens…</string>
+    <string name="sonora_image_cache_success">Cache limpo. Reabra o perfil do artista para buscar outra vez.</string>
+    <string name="sonora_image_cache_error">Não foi possível limpar todas as imagens. Tente novamente.</string>
 </resources>
