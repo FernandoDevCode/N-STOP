@@ -1,0 +1,17 @@
+name: Sonora — podbox Art Fetch real test (temporary)
+on:
+  push:
+    branches:
+      - research/sonora-podbox-art-fetch-probe
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install upstream's documented dependencies
+        run: python -m pip install --quiet requests pillow mutagen
+      - name: Execute pinned upstream gallery extraction for three artists
+        run: python tools/research/podbox_lastfm_probe.py
