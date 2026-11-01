@@ -52,6 +52,45 @@ jobs:
           pathlib.Path("pinterest-probe-report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
           print("\n".join(lines))
           PY
+      - name: Verify original image bytes and image dimensions
+        shell: bash
+        run: |
+          python -m pip install --quiet requests pillow
+          python - <<'PY'
+          import io, re, requests
+          from PIL import Image
+          from pathlib import Path
+          path = Path("pinterest-probe-report.md")
+          previous = path.read_text(encoding="utf-8")
+          urls = list(dict.fromkeys(re.findall(r'https://i\.pinimg\.com/originals/[A-Za-z0-9/._-]+', previous)))
+          report = ["", "## Validate direct image URLs and intrinsic dimensions", "",
+                    "One HTTP download per URL, read-only and without cookies.", ""]
+          report += ["| Original URL | Actual pixels | Download |", "|---|---|---|"]
+          for url in urls:
+              try:
+                  response = requests.get(url, timeout=(7,18), headers={"User-Agent":"Mozilla/5.0"})
+                  response.raise_for_status()
+                  data = response.content
+                  if len(data) > 12_000_000:
+                      report.append(f"| \`{url}\` | skipped | >12MB |")
+                      continue
+                  image = Image.open(io.BytesIO(data))
+                  image.load()
+                  report.append(f"| \`{url}\` | {image.width} × {image.height} ({image.format}) | HTTP {response.status_code}, {len(data)//1024}KB |")
+              except Exception as e:
+                  report.append(f"| \`{url}\` | FAILED | {str(e)[:150]} |")
+          report.extend(["", "## Contact sheet — public Pinterest search results", "",
+                         "These are the first four images that the Pinterest extractor returned, NOT curated winners.", ""])
+          for name in ("Slipknot band", "Radiohead band", "System of a Down band"):
+              chunk = previous.split("## " + name + "\n", 1)
+              if len(chunk) < 2: continue
+              chunk = chunk[1].split("\n## ", 1)[0]
+              links = re.findall(r'https://i\.pinimg\.com/originals/[A-Za-z0-9/._-]+', chunk)
+              report += ["### " + name, "", "| 1 | 2 | 3 | 4 |", "|---|---|---|---|",
+                         "| " + " | ".join(f'<img src="{url}" width="140" />' for url in links[:4]) + " |", ""]
+          with path.open("a", encoding="utf-8") as f: f.write("\n".join(report) + "\n")
+          print("\n".join(report))
+          PY
       - name: Publish findings to the temporary research PR
         if: always()
         env:
