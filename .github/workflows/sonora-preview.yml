@@ -91,7 +91,7 @@ jobs:
           - Commit exato: \`$GITHUB_SHA\`.
           - SHA-256 do APK: \`$SHA256\`.
           - Testes de módulos, build e assinatura verificados nesta execução.
-          - Este APK é Debug (`com.stash.app.debug`), não uma release pública de produção.
+          - Este APK é Debug (com.stash.app.debug), não uma release pública de produção.
           - Não confundir aprovação automática com validação de UX/compatibilidade no aparelho.
           EOF
           gh release create "$TAG" "$APK" \
