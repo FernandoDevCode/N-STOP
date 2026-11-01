@@ -164,6 +164,10 @@ fun HomeScreen(
     onNavigateToSettings: () -> Unit = {},
     onNavigateToPlaylist: (Long) -> Unit = {},
     onNavigateToLibrary: () -> Unit = {},
+    onNavigateToArtist: (String) -> Unit = {},
+    onNavigateToExplore: () -> Unit = {},
+    onNavigateToRadio: () -> Unit = {},
+    onNavigateToSearch: () -> Unit = {},
     onNavigateToNowPlaying: () -> Unit = {},
     onNavigateToAlbum: (AlbumSummary) -> Unit = {},
     onSeeAllPlaylists: (String) -> Unit = {},
@@ -189,6 +193,8 @@ fun HomeScreen(
         onNavigateToPlaylist(id)
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val rediscoveryTracks by viewModel.rediscoveryTracks.collectAsStateWithLifecycle()
+    val quickMixes = homeQuickMixes(uiState)
     var selectedMediaTab by rememberSaveable { mutableIntStateOf(0) }
     val podcastController = com.stash.feature.home.podcasts.LocalPodcastViewModel.current
     val podcastOpenRequest = podcastController?.openRequests?.collectAsStateWithLifecycle()?.value ?: 0
@@ -326,6 +332,32 @@ fun HomeScreen(
             }
         }
 
+
+        // Shortcuts and local-listening discovery supplement the existing
+        // editorial pager; never duplicate or replace its Daily Discover card.
+        item(key = "home_discovery_shortcuts") {
+            Spacer(Modifier.height(16.dp))
+            SonoraDiscoveryShortcuts(
+                onExplore = onNavigateToExplore,
+                onRadio = onNavigateToRadio,
+                onSearch = onNavigateToSearch,
+            )
+        }
+        if (quickMixes.isNotEmpty()) {
+            item(key = "home_quick_mixes") {
+                Spacer(Modifier.height(18.dp))
+                SonoraQuickMixRow(mixes = quickMixes, onMixClick = { openMix(it.id) })
+            }
+        }
+        if (rediscoveryTracks.isNotEmpty()) {
+            item(key = "home_rediscovery_artists") {
+                Spacer(Modifier.height(18.dp))
+                SonoraRediscoveryRow(
+                    tracks = rediscoveryTracks,
+                    onArtistClick = onNavigateToArtist,
+                )
+            }
+        }
 
         // ── Lossless connect nudge ───────────────────────────────────
         // Shown when the user has lossless toggled OFF and hasn't

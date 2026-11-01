@@ -150,6 +150,12 @@ private fun StashNavGraph(
                 onNavigateToPlaylist = { playlistId ->
                     navController.navigate(PlaylistDetailRoute(playlistId))
                 },
+                onNavigateToArtist = { artistName ->
+                    navController.navigate(ArtistDetailRoute(artistName))
+                },
+                onNavigateToExplore = { onNavigateToTab(TopLevelDestination.EXPLORE) },
+                onNavigateToRadio = { onNavigateToTab(TopLevelDestination.RADIO) },
+                onNavigateToSearch = { onNavigateToTab(TopLevelDestination.SEARCH) },
                 onShareMix = { id -> navController.navigate(PlaylistDetailRoute(id, openShare = true)) },
                 onNavigateToNowPlaying = {
                     if (!navController.popBackStack(NowPlayingRoute, inclusive = false)) {

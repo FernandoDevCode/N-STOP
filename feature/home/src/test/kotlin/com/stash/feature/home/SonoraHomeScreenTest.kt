@@ -34,6 +34,7 @@ class SonoraHomeScreenTest {
     private val vm = mock<HomeViewModel> {
         on { uiState } doReturn state
         on { heroMinimized } doReturn minimized
+        on { rediscoveryTracks } doReturn MutableStateFlow<List<com.stash.core.model.Track>>(emptyList())
         on { streamingEnabled } doReturn MutableStateFlow(false)
         on { showStreamingDisclosure } doReturn MutableSharedFlow<Unit>()
         on { userMessages } doReturn MutableSharedFlow<String>()
