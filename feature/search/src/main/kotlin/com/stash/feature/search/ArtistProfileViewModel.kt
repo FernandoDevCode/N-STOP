@@ -2,7 +2,6 @@ package com.stash.feature.search
 
 import android.os.SystemClock
 import android.util.Log
-import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
