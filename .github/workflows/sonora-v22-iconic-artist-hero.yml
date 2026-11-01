@@ -1,4 +1,4 @@
-name: Sonora V22 — Iconic Artist Hero
+name: Sonora V22.1 — Verified Iconic Artist Hero
 
 on:
   push:
@@ -57,14 +57,14 @@ jobs:
           AAPT=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name aapt | sort -V | tail -n1)
           SIGNER=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -n1)
           "$AAPT" dump badging "$APK" | grep '^package:' | tee "$RUNNER_TEMP/package.txt"
-          grep -Fq "name='com.stash.app.debug' versionCode='175' versionName='0.9.139-sonora-iconic-hero'" "$RUNNER_TEMP/package.txt"
+          grep -Fq "name='com.stash.app.debug' versionCode='176' versionName='0.9.140-sonora-iconic-hero-verified'" "$RUNNER_TEMP/package.txt"
           "$SIGNER" verify "$APK"
           sha256sum "$APK"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v6
         with:
-          name: sonora-v22-iconic-artist-hero-apk
+          name: sonora-v22-1-iconic-artist-hero-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
@@ -74,19 +74,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TAG=sonora-v22-iconic-artist-hero-20261101
+          TAG=sonora-v22-1-iconic-artist-hero-20261101
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Release already exists; refusing to overwrite it"
             exit 1
           fi
-          APK="$RUNNER_TEMP/Sonora-V22-Imagem-Iconica-v0.9.139-debug.apk"
+          APK="$RUNNER_TEMP/Sonora-V22-1-Imagens-Iconicas-v0.9.140-debug.apk"
           cp app/build/outputs/apk/debug/app-debug.apk "$APK"
           SHA=$(sha256sum "$APK" | cut -d' ' -f1)
           cat > "$RUNNER_TEMP/release-notes.md" <<'EOF'
-          # Sonora V22 — Imagens icônicas efetivas
+          # Sonora V22.1 — Imagens icônicas verificadas
 
           - Corrige o vínculo entre a busca por logotipo verificado e a imagem principal do artista.
-          - Quando Wikimedia/Fanart não retornam uma imagem icônica, um logotipo oficial do Apple Music ou vinculado com MusicBrainz ao Fanart.tv pode assumir o hero (não apenas aparecer por cima da foto antiga).
+          - Quando Wikimedia/Fanart não retornam uma imagem icônica, um logotipo oficial do Apple Music, vinculado ao Fanart.tv com MusicBrainz, ou independentemente confirmado por MusicBrainz a partir do TheAudioDB, pode assumir o hero (não apenas aparecer por cima da foto antiga).
           - Identidades e logotipos são exibidos completos e com fundo atmosférico, sem duplicação desfocada.
           - Logo não confiável ou indisponível: mantém a fotografia original como segunda opção.
           - Cache do seletor é atualizado automaticamente para reavaliar escolhas antigas ao instalar.
@@ -100,6 +100,6 @@ jobs:
           gh release create "$TAG" "$APK" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Sonora V22 — Imagens icônicas efetivas" \
+            --title "Sonora V22.1 — Imagens icônicas verificadas" \
             --notes-file "$RUNNER_TEMP/release-notes.md" \
             --prerelease --latest=false
