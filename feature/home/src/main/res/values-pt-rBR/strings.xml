@@ -12,6 +12,11 @@
     <string name="nostop_home_request_access">Solicitar acesso de tradutor</string>
     <string name="nostop_home_updated_daily">Atualizado diariamente</string>
     <string name="nostop_home_your_mix">Seu mix</string>
+    <string name="sonora_shortcut_explore">Explorar</string>
+    <string name="sonora_shortcut_radio">Rádio</string>
+    <string name="sonora_shortcut_search">Buscar</string>
+    <string name="sonora_quick_mixes">Acesso rápido</string>
+    <string name="sonora_rediscovery_artists">Ouça de novo</string>
     <string name="nostop_home_discover">Descobrir</string>
     <string name="nostop_home_playlists">Suas playlists</string>
     <string name="nostop_home_new_releases">Novos lançamentos</string>
