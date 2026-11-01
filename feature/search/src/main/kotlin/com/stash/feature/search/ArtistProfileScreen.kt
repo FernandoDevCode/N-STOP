@@ -92,12 +92,19 @@ fun ArtistProfileScreen(
     val wordmarkUrl by produceState<String?>(initialValue = null, key1 = state.hero.name) {
         value = ArtistWordmarkLookup.resolve(state.hero.name)
     }
+    // The catalog portrait must not silently win when a verified artist
+    // wordmark already loaded for this same profile. The identity lookup
+    // remains the first choice; this is an independent first-tier fallback.
+    var wordmarkLoadFailed by remember(wordmarkUrl) { mutableStateOf(false) }
+    val featuredHero = if (wordmarkLoadFailed) state.hero
+        else artistHeroWithVerifiedWordmark(state.hero, wordmarkUrl)
+
     val context = LocalContext.current
     val photoPalette by produceState(
         initialValue = ArtistNeutralPalette,
-        key1 = state.hero.avatarUrl,
+        key1 = featuredHero.avatarUrl,
     ) {
-        value = artistPaletteFromPhoto(context, state.hero.avatarUrl)
+        value = artistPaletteFromPhoto(context, featuredHero.avatarUrl)
     }
     val smoothAtmosphere by animateColorAsState(
         targetValue = photoPalette.surface,
@@ -222,13 +229,22 @@ fun ArtistProfileScreen(
         ) {
             item {
                 ArtistHero(
-                    hero = state.hero,
+                    hero = featuredHero,
                     status = state.status,
                     socials = state.about?.socials.orEmpty(),
                     wordmarkUrl = wordmarkUrl,
                     bridgeAtmosphere = smoothBridge,
                     heroAtmosphere = smoothHeroTone,
-                    onHeroArtworkLoadFailed = vm::onHeroArtworkLoadFailed,
+                    onHeroArtworkLoadFailed = { failedUrl ->
+                        if (featuredHero.avatarUrl == wordmarkUrl &&
+                            featuredHero.avatarUrl != state.hero.avatarUrl) {
+                            // Do not strand a broken logo over a blank hero.
+                            // The ViewModel's original photo remains intact.
+                            wordmarkLoadFailed = true
+                        } else {
+                            vm.onHeroArtworkLoadFailed(failedUrl)
+                        }
+                    },
                     onBack = onBack,
                     onPlayArtist = vm::playArtist,
                     onStartRadio = vm::startRadio,
