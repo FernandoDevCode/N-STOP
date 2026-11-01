@@ -99,6 +99,31 @@ for name in NAMES:
               ", title="+event["title"]+
               ", photo_hashes="+str(event["gallery_photo_hashes"])+
               ", popular="+str(event["gallery_marked_popular"]),flush=True)
+# Verify a small sample of distinct candidate photos; no ranking claims.
+from io import BytesIO
+from PIL import Image
+
+for entry in result["artists"]:
+    images=[]
+    for hash_id in entry.get("sample_photo_hashes",[])[:2]:
+        image_url="https://lastfm-img.freetls.fastly.net/i/u/ar0/"+hash_id+".jpg"
+        try:
+            response=requests.get(image_url, timeout=(7,14))
+            response.raise_for_status()
+            if len(response.content)>5_000_000:
+                raise RuntimeError("Image exceeds 5MB safety limit")
+            img=Image.open(BytesIO(response.content))
+            img.verify()
+            img=Image.open(BytesIO(response.content))
+            images.append({"url":image_url,"http":response.status_code,
+                           "width":img.width,"height":img.height,
+                           "format":img.format,"bytes":len(response.content)})
+        except Exception as exc:
+            images.append({"url":image_url,"error":str(exc)[:120]})
+    entry["validated_original_samples"]=images
+    for item in images:
+        print("   PHOTO "+str(item),flush=True)
+
 print("BEGIN_PODBOX_JSON")
 print(json.dumps(result,indent=2,ensure_ascii=False))
 print("END_PODBOX_JSON")
