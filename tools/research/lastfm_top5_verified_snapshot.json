@@ -1,0 +1,24 @@
+{
+  "Slipknot": {
+    "verified_at": "2026-11-01T23:39:09Z",
+    "source": "https://github.com/FernandoDevCode/N-STOP/actions/runs/41363122808",
+    "hashes": [
+      "f7ece7da4d40d070a04c01e2b4041cb5",
+      "ddc39f9fa7c94cb05c6268e8d2671cc2",
+      "11759a781b9990459403914d63b70d60",
+      "2a6f85be690528a2cdbe97d567709b53",
+      "8a66110fbcf94a80bd8d00de73acc339"
+    ]
+  },
+  "System of a Down": {
+    "verified_at": "2026-11-01T23:39:09Z",
+    "source": "https://github.com/FernandoDevCode/N-STOP/actions/runs/41363122808",
+    "hashes": [
+      "05d78b59cf1242f09fab2176c8bf07df",
+      "c033b205cf951b707fff0cd34b764956",
+      "66174eabb9512fc458aae89c830ab37d",
+      "84a39d04387c79845fae8259872af400",
+      "0ae51ffbbb734219a37859504fa68ebd"
+    ]
+  }
+}

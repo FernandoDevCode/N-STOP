@@ -87,6 +87,25 @@ def get_top5(artist):
         result.update({"status":"network_error","reason":str(exc)[:140]})
         return result
 
+def use_verified_snapshot(res):
+    """Fallback to last actually observed grid order; never guess rankings."""
+    source_path=Path("tools/research/lastfm_top5_verified_snapshot.json")
+    cache=json.loads(source_path.read_text(encoding="utf-8"))
+    snapshot=cache.get(res["artist"])
+    if not snapshot or len(snapshot.get("hashes",[])) != 5:
+        return res
+    previous=res["status"]
+    res["live_status"]=previous
+    res["status"]="verified_snapshot"
+    res["snapshot_verified_at"]=snapshot["verified_at"]
+    res["snapshot_evidence"]=snapshot["source"]
+    gallery=res["gallery_url"]
+    res["top5"]=[
+        {"rank":idx,"hash":h,"lastfm_photo_url":gallery+"/"+h,
+         "image":image_for_hash(h)} for idx,h in enumerate(snapshot["hashes"],1)
+    ]
+    return res
+
 def make_html(results):
     css="""
     :root {color-scheme:dark}
@@ -117,10 +136,15 @@ def make_html(results):
         esc=html.escape
         name=esc(res["artist"])
         page.append("<section><h2>"+name+"</h2>")
-        if res["status"]!="top5_verified":
+        if res["status"] not in ("top5_verified","verified_snapshot"):
             page.append("<p class='notice'>Galeria indisponível nesta execução: "+
                         esc(res["status"])+". A ordem não foi inferida.</p>")
         else:
+            if res["status"]=="verified_snapshot":
+                page.append("<p class='notice'>Resultados reais de uma leitura anterior, verificados em "+
+                            esc(res["snapshot_verified_at"])+". Consulta ao vivo não disponível ("+
+                            esc(res["live_status"])+"). <a href='"+esc(res["snapshot_evidence"],quote=True)+
+                            "'>Evidência da ordem</a>.</p>")
             page.append("<div class='grid'>")
             for photo in res["top5"]:
                 img=photo["image"]
@@ -145,6 +169,8 @@ def main():
     results=[]
     for artist in ARTISTS:
         res=get_top5(artist)
+        if res["status"]!="top5_verified":
+            res=use_verified_snapshot(res)
         results.append(res)
         print("ARTIST "+artist+" status="+res["status"]+
               " grid="+str(res.get("ranked_grid_count",0))+
