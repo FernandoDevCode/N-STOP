@@ -41,10 +41,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.draw.blur
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithCache
-import android.os.Build
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -59,7 +59,6 @@ import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
 import coil3.compose.rememberAsyncImagePainter
 import com.stash.core.common.ArtUrlUpgrader
-import com.stash.core.data.artistphotos.ArtistIdentityKind
 import com.stash.core.common.constants.StashConstants
 import com.stash.data.ytmusic.model.SocialLink
 
@@ -119,83 +118,73 @@ fun ArtistHero(
         modifier = modifier.fillMaxWidth().clipToBounds().background(bridgeAtmosphere),
     ) {
         val photoLeadIn = artistPhotoLeadInDp(maxWidth.value, viewportHeightDp).dp
-        if (hero.avatarUrl != null) {
-            val photo = ArtUrlUpgrader.upgrade(hero.avatarUrl)
-            val isSymbol = hero.artworkKind == ArtistIdentityKind.SYMBOL
-            var photoAspectRatio by remember(photo) { mutableFloatStateOf(1f) }
-            // A muted backdrop fills spare vertical space of wide band photos.
-            // The foreground preserves *all horizontal members* without distortion.
-            // A logomark should read as a distinct icon/identity, not as a
-            // photo with an enormous blurred duplicate of the same logo.
-            if (isSymbol) {
-                Box(
-                    Modifier.matchParentSize().background(
-                        Brush.radialGradient(
-                            0f to heroAtmosphere.copy(alpha = .55f),
-                            1f to bridgeAtmosphere,
-                        ),
-                    ),
-                )
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                AsyncImage(
-                    model = photo,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.matchParentSize()
-                        .blur(22.dp)
-                        .background(Color.Black.copy(alpha = .25f)),
-                    alpha = .55f,
-                )
-            }
+        // Compute the frame from source dimensions. Fit guarantees that no
+        // part of a source photograph is lost to a viewport Crop/FillWidth.
+        val photo = hero.avatarUrl?.let(ArtUrlUpgrader::upgrade)
+        var photoAspectRatio by remember(photo) { mutableFloatStateOf(1.5f) }
+        val photoHeightDp = artistPhotoFrameHeightDp(
+            maxWidth.value, viewportHeightDp, photoAspectRatio,
+        ).dp
+
+        if (photo != null) {
             AsyncImage(
                 model = photo,
-                contentDescription = if (isSymbol) "Símbolo de ${hero.name}" else "Fotografia de ${hero.name}",
-                contentScale = if (isSymbol) ContentScale.Fit else ContentScale.FillWidth,
-                alignment = if (isSymbol) Alignment.Center else Alignment.TopCenter,
-                onError = { onHeroArtworkLoadFailed(hero.avatarUrl) },
+                contentDescription = "Fotografia de ${hero.name}",
+                contentScale = ContentScale.Fit,
+                alignment = Alignment.TopCenter,
+                onError = { hero.avatarUrl?.let(onHeroArtworkLoadFailed) },
                 onSuccess = { result ->
                     val image = result.result.image
                     if (image.width > 0 && image.height > 0) {
                         photoAspectRatio = image.width.toFloat() / image.height
                     }
                 },
-                // Fade at the actual displayed photo edge, including wide band
-                // photos that end above the card. No bitmap work on recomposition.
-                modifier = if (isSymbol) {
-                    // A symbol is not a photograph: preserve its aspect ratio and
-                    // keep it within the safe graphic area instead of cropping it.
-                    Modifier.matchParentSize().padding(horizontal = 30.dp, vertical = 56.dp)
-                } else Modifier.matchParentSize().drawWithCache {
-                    val photoHeight = minOf(size.height, size.width / photoAspectRatio)
-                    val fade = Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        .60f to Color.Transparent,
-                        .82f to heroAtmosphere.copy(alpha = .52f),
-                        .94f to bridgeAtmosphere.copy(alpha = .94f),
-                        1f to bridgeAtmosphere,
-                        endY = photoHeight,
-                    )
-                    onDrawWithContent {
-                        drawContent()
-                        drawRect(fade)
-                    }
-                },
+                modifier = Modifier.fillMaxWidth().height(photoHeightDp),
             )
         }
-        // The photograph is already almost gone before the boundary.
-        // Last pixel and the next LazyColumn item use the *same* atmosphere:
-        // no horizontal seam when the featured card begins.
+
+        // ONE fade over the actual photo instead of overlapping vertical
+        // scrims. Its upper edge curves downward in the centre (a soft U).
+        // Strips are prepared inside drawWithCache, never per recomposition
+        // or bitmap pixel. The outermost strips are only gently feathered.
         Box(
-            Modifier.matchParentSize().background(
-                Brush.verticalGradient(
-                    0f to Color(0x29000000),
-                    .30f to Color.Transparent,
-                    .46f to heroAtmosphere.copy(alpha = .12f),
-                    .62f to heroAtmosphere.copy(alpha = .58f),
-                    .80f to bridgeAtmosphere.copy(alpha = .92f),
-                    1f to bridgeAtmosphere,
-                ),
-            ),
+            Modifier.matchParentSize().drawWithCache {
+                val endY = photoHeightDp.toPx().coerceIn(1f, size.height.coerceAtLeast(1f))
+                val strips = 64
+                val stripW = size.width / strips
+                val fadeStrips = (0 until strips).map { n ->
+                    val x = (n + .5f) / strips
+                    Brush.verticalGradient(
+                        0f to Color.Transparent,
+                        1f to bridgeAtmosphere,
+                        startY = endY * artistPhotoFadeStartFraction(x),
+                        endY = endY,
+                    )
+                }
+                val topWash = Brush.verticalGradient(
+                    0f to Color.Black.copy(alpha = .19f),
+                    1f to Color.Transparent,
+                    startY = 0f,
+                    endY = (endY * .26f).coerceAtLeast(1f),
+                )
+                onDrawBehind {
+                    fadeStrips.forEachIndexed { n, brush ->
+                        drawRect(
+                            brush = brush,
+                            topLeft = Offset(n * stripW, 0f),
+                            size = Size(stripW + 1f, endY),
+                        )
+                    }
+                    if (endY < size.height) {
+                        drawRect(
+                            color = bridgeAtmosphere,
+                            topLeft = Offset(0f, endY),
+                            size = Size(size.width, size.height - endY),
+                        )
+                    }
+                    drawRect(brush = topWash, size = Size(size.width, endY * .26f))
+                }
+            },
         )
 
         // Match the reference's quieter 38dp translucent circles while
@@ -303,8 +292,7 @@ fun ArtistHero(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Spacer(Modifier.height(photoLeadIn))
-            if (hero.artworkKind != ArtistIdentityKind.SYMBOL &&
-                wordmarkUrl != null && wordmarkState is AsyncImagePainter.State.Success) {
+            if (wordmarkUrl != null && wordmarkState is AsyncImagePainter.State.Success) {
                 Image(
                     painter = painter,
                     contentDescription = hero.name,
