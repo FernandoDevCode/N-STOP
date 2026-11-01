@@ -4,15 +4,14 @@ import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 
 class ArtistPhotoHeroGeometryTest {
-    @Test fun uFadeStartsEarlierAtTheEdges() {
-        val left = artistPhotoFadeStartFraction(0f)
-        val center = artistPhotoFadeStartFraction(.5f)
-        val right = artistPhotoFadeStartFraction(1f)
+    @Test fun continuousRadialFadeHasSymmetricUContours() {
+        val left = artistPhotoFadeDistanceFraction(0f, .65f, 390f, 300f)
+        val center = artistPhotoFadeDistanceFraction(.5f, .65f, 390f, 300f)
+        val right = artistPhotoFadeDistanceFraction(1f, .65f, 390f, 300f)
         assertThat(left).isWithin(.0001f).of(right)
-        assertThat(center).isGreaterThan(left)
-        assertThat(center).isWithin(.001f).of(.85f)
-        assertThat(artistPhotoFadeStartFraction(.25f))
-            .isWithin(.0001f).of(artistPhotoFadeStartFraction(.75f))
+        assertThat(left).isGreaterThan(center)
+        assertThat(artistPhotoFadeDistanceFraction(.25f, .7f, 390f, 300f))
+            .isWithin(.0001f).of(artistPhotoFadeDistanceFraction(.75f, .7f, 390f, 300f))
     }
 
     @Test fun framePreservesNaturalHeightForLandscapePhotos() {

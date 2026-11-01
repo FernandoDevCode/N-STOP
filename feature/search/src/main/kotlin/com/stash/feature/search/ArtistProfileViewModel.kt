@@ -2,6 +2,7 @@ package com.stash.feature.search
 
 import android.os.SystemClock
 import android.util.Log
+import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -167,10 +168,14 @@ class ArtistProfileViewModel @Inject constructor(
     private fun maybeLoadPhoto(name: String) {
         if (photoJob != null || name.isBlank()) return
         photoJob = viewModelScope.launch {
-            val selected = artistIdentityLookup.find(name)
+            val selected = artistIdentityLookup.find(name)?.takeIf {
+                it.kind == ArtistIdentityKind.PHOTO
+            }
             if (selected == null) {
+                Log.d("SonoraArtistPhoto", "wikidata miss artist=" + name)
                 applyLegacyPhoto(name)
             } else {
+                Log.d("SonoraArtistPhoto", "source=wikidata artist=" + name + " url=" + selected.url)
                 curatedPhotoUrl = selected.url
                 curatedKind = selected.kind
                 selectedIsIdentity = true
@@ -186,6 +191,8 @@ class ArtistProfileViewModel @Inject constructor(
     private suspend fun applyLegacyPhoto(name: String, failedIdentityUrl: String? = null) {
         val legacy = artistPhotoLookup.find(name)
         if (failedIdentityUrl != null && curatedPhotoUrl != failedIdentityUrl) return
+        Log.d("SonoraArtistPhoto", "source=" + (if (legacy != null) "fanart" else "catalog") +
+            " artist=" + name + " url=" + (legacy ?: nativeAvatarUrl))
         curatedPhotoUrl = legacy
         curatedKind = ArtistIdentityKind.PHOTO
         selectedIsIdentity = false
@@ -459,6 +466,10 @@ class ArtistProfileViewModel @Inject constructor(
         t0: Long,
     ) {
         nativeAvatarUrl = profile.avatarUrl
+        if (curatedPhotoUrl == null) {
+            Log.d("SonoraArtistPhoto", "source=catalog-initial artist=" + profile.name +
+                " url=" + profile.avatarUrl)
+        }
         _uiState.value = _uiState.value.copy(
             hero = HeroState(
                 name = profile.name,

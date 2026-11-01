@@ -16,6 +16,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.lazy.LazyColumn
@@ -27,6 +29,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,6 +39,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -141,6 +145,16 @@ fun ArtistProfileScreen(
     // hero + Popular, i.e. off-screen on landing) so the inner rail's own
     // scroll + highlight (see AlbumsRow) is actually visible.
     val listState = rememberLazyListState()
+    val statusBarNeedsContrast by remember(listState) {
+        derivedStateOf {
+            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 180
+        }
+    }
+    val statusBarScrim by animateColorAsState(
+        targetValue = if (statusBarNeedsContrast) smoothAtmosphere.copy(alpha = .98f)
+            else Color.Transparent,
+        label = "artistStatusBarContrast",
+    )
     val focus = remember(state.focusAlbum, state.albums, state.singles) {
         findAlbumFocus(state.focusAlbum, state.albums, state.singles)
     }
@@ -311,6 +325,18 @@ fun ArtistProfileScreen(
                 )
             }
         }
+        // Preserve edge-to-edge photo at the top, but protect Android's clock
+        // when album art and labels scroll behind the status bar.
+        Box(
+            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
+                .height(WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 12.dp)
+                .background(
+                    Brush.verticalGradient(
+                        0f to statusBarScrim,
+                        1f to statusBarScrim.copy(alpha = 0f),
+                    ),
+                ),
+        )
         } // artist atmosphere canvas
 
         if (showStreamingSheet) {

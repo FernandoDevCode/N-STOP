@@ -15,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.stash.core.ui.components.AlbumSquareCard
 import com.stash.data.ytmusic.model.AlbumSummary
@@ -38,6 +39,7 @@ fun AlbumsRow(
     onClick: (AlbumSummary) -> Unit,
     modifier: Modifier = Modifier,
     focusIndex: Int? = null,
+    cardSize: Dp = 152.dp,
 ) {
     val rowState = rememberLazyListState()
     var highlighted by remember { mutableStateOf(false) }
@@ -69,6 +71,7 @@ fun AlbumsRow(
                 year = album.year,
                 onClick = { onClick(album) },
                 modifier = ring,
+                cardSize = cardSize,
             )
         }
     }
