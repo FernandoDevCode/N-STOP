@@ -1,0 +1,725 @@
+{
+  "at": "2026-11-01T23:51:51.962877+00:00",
+  "summary": {
+    "Metallica": {
+      "rounds": [
+        "top5_verified",
+        "top5_verified"
+      ],
+      "verified_rounds": 2,
+      "top5": [
+        {
+          "rank": 1,
+          "hash": "5c9b86331be1bdc29bb546f4386ff088",
+          "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/5c9b86331be1bdc29bb546f4386ff088.jpg",
+          "detail_url": "https://www.last.fm/music/Metallica/+images/5c9b86331be1bdc29bb546f4386ff088",
+          "image_status": "valid",
+          "width": 1128,
+          "height": 1139,
+          "bytes": 164102
+        },
+        {
+          "rank": 2,
+          "hash": "715a4451f78d4e22ceeb4490d74c60c7",
+          "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/715a4451f78d4e22ceeb4490d74c60c7.jpg",
+          "detail_url": "https://www.last.fm/music/Metallica/+images/715a4451f78d4e22ceeb4490d74c60c7",
+          "image_status": "valid",
+          "width": 540,
+          "height": 351,
+          "bytes": 43917
+        },
+        {
+          "rank": 3,
+          "hash": "8207e256f542a2c2fd6fcf88aff9fdc9",
+          "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/8207e256f542a2c2fd6fcf88aff9fdc9.jpg",
+          "detail_url": "https://www.last.fm/music/Metallica/+images/8207e256f542a2c2fd6fcf88aff9fdc9",
+          "image_status": "valid",
+          "width": 1242,
+          "height": 1242,
+          "bytes": 272151
+        },
+        {
+          "rank": 4,
+          "hash": "22fffa33531b4684a4eb269d357758ae",
+          "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/22fffa33531b4684a4eb269d357758ae.jpg",
+          "detail_url": "https://www.last.fm/music/Metallica/+images/22fffa33531b4684a4eb269d357758ae",
+          "image_status": "valid",
+          "width": 736,
+          "height": 564,
+          "bytes": 70889
+        },
+        {
+          "rank": 5,
+          "hash": "fefb6102ce0927fbdfe5a3c19028dd37",
+          "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/fefb6102ce0927fbdfe5a3c19028dd37.jpg",
+          "detail_url": "https://www.last.fm/music/Metallica/+images/fefb6102ce0927fbdfe5a3c19028dd37",
+          "image_status": "valid",
+          "width": 720,
+          "height": 720,
+          "bytes": 98410
+        }
+      ],
+      "valid_originals": 5
+    },
+    "Pink Floyd": {
+      "rounds": [
+        "unavailable",
+        "unavailable"
+      ],
+      "verified_rounds": 0,
+      "top5": [],
+      "valid_originals": 0
+    },
+    "Megadeth": {
+      "rounds": [
+        "top5_verified",
+        "top5_verified"
+      ],
+      "verified_rounds": 2,
+      "top5": [
+        {
+          "rank": 1,
+          "hash": "6ebf5c5291924ce39515fbe77cca8eab",
+          "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/6ebf5c5291924ce39515fbe77cca8eab.jpg",
+          "detail_url": "https://www.last.fm/music/Megadeth/+images/6ebf5c5291924ce39515fbe77cca8eab",
+          "image_status": "valid",
+          "width": 484,
+          "height": 480,
+          "bytes": 52824
+        },
+        {
+          "rank": 2,
+          "hash": "a4999faa1d954aabab493570c1d43873",
+          "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/a4999faa1d954aabab493570c1d43873.jpg",
+          "detail_url": "https://www.last.fm/music/Megadeth/+images/a4999faa1d954aabab493570c1d43873",
+          "image_status": "valid",
+          "width": 768,
+          "height": 576,
+          "bytes": 55232
+        },
+        {
+          "rank": 3,
+          "hash": "88b0702d46d75446ddfaa3ab0ba94604",
+          "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/88b0702d46d75446ddfaa3ab0ba94604.jpg",
+          "detail_url": "https://www.last.fm/music/Megadeth/+images/88b0702d46d75446ddfaa3ab0ba94604",
+          "image_status": "valid",
+          "width": 500,
+          "height": 500,
+          "bytes": 39430
+        },
+        {
+          "rank": 4,
+          "hash": "2cdd55e19e557d3348425eeb433e98d3",
+          "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/2cdd55e19e557d3348425eeb433e98d3.jpg",
+          "detail_url": "https://www.last.fm/music/Megadeth/+images/2cdd55e19e557d3348425eeb433e98d3",
+          "image_status": "valid",
+          "width": 500,
+          "height": 500,
+          "bytes": 52166
+        },
+        {
+          "rank": 5,
+          "hash": "302b1f74b35c5c326865dc0663026d1c",
+          "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/302b1f74b35c5c326865dc0663026d1c.jpg",
+          "detail_url": "https://www.last.fm/music/Megadeth/+images/302b1f74b35c5c326865dc0663026d1c",
+          "image_status": "valid",
+          "width": 2032,
+          "height": 2032,
+          "bytes": 570228
+        }
+      ],
+      "valid_originals": 5
+    },
+    "Deftones": {
+      "rounds": [
+        "client_challenge",
+        "unavailable"
+      ],
+      "verified_rounds": 0,
+      "top5": [],
+      "valid_originals": 0
+    },
+    "Nirvana": {
+      "rounds": [
+        "client_challenge",
+        "unavailable"
+      ],
+      "verified_rounds": 0,
+      "top5": [],
+      "valid_originals": 0
+    },
+    "Linkin Park": {
+      "rounds": [
+        "unavailable",
+        "unavailable"
+      ],
+      "verified_rounds": 0,
+      "top5": [],
+      "valid_originals": 0
+    },
+    "Rammstein": {
+      "rounds": [
+        "client_challenge",
+        "unavailable"
+      ],
+      "verified_rounds": 0,
+      "top5": [],
+      "valid_originals": 0
+    },
+    "Muse": {
+      "rounds": [
+        "client_challenge",
+        "unavailable"
+      ],
+      "verified_rounds": 0,
+      "top5": [],
+      "valid_originals": 0
+    },
+    "Slaughter to Prevail": {
+      "rounds": [
+        "top5_verified",
+        "top5_verified"
+      ],
+      "verified_rounds": 2,
+      "top5": [
+        {
+          "rank": 1,
+          "hash": "399c7a879c17db5e5dd1f209ebc0978a",
+          "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/399c7a879c17db5e5dd1f209ebc0978a.jpg",
+          "detail_url": "https://www.last.fm/music/Slaughter%20to%20Prevail/+images/399c7a879c17db5e5dd1f209ebc0978a",
+          "image_status": "valid",
+          "width": 693,
+          "height": 964,
+          "bytes": 143322
+        },
+        {
+          "rank": 2,
+          "hash": "f34c9ae935096259e57de0d28aa26877",
+          "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/f34c9ae935096259e57de0d28aa26877.jpg",
+          "detail_url": "https://www.last.fm/music/Slaughter%20to%20Prevail/+images/f34c9ae935096259e57de0d28aa26877",
+          "image_status": "valid",
+          "width": 1152,
+          "height": 1152,
+          "bytes": 232476
+        },
+        {
+          "rank": 3,
+          "hash": "bf81df1daee218b3e2f851e198b8ef0c",
+          "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/bf81df1daee218b3e2f851e198b8ef0c.jpg",
+          "detail_url": "https://www.last.fm/music/Slaughter%20to%20Prevail/+images/bf81df1daee218b3e2f851e198b8ef0c",
+          "image_status": "valid",
+          "width": 1080,
+          "height": 719,
+          "bytes": 84607
+        },
+        {
+          "rank": 4,
+          "hash": "a438e5c22ec5532007d0561763fa3f31",
+          "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/a438e5c22ec5532007d0561763fa3f31.jpg",
+          "detail_url": "https://www.last.fm/music/Slaughter%20to%20Prevail/+images/a438e5c22ec5532007d0561763fa3f31",
+          "image_status": "valid",
+          "width": 1080,
+          "height": 720,
+          "bytes": 208801
+        },
+        {
+          "rank": 5,
+          "hash": "621e3e32b23aa7973afc3f825ba80431",
+          "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/621e3e32b23aa7973afc3f825ba80431.jpg",
+          "detail_url": "https://www.last.fm/music/Slaughter%20to%20Prevail/+images/621e3e32b23aa7973afc3f825ba80431",
+          "image_status": "valid",
+          "width": 960,
+          "height": 641,
+          "bytes": 107127
+        }
+      ],
+      "valid_originals": 5
+    },
+    "Limão Rosa": {
+      "rounds": [
+        "unavailable",
+        "unavailable"
+      ],
+      "verified_rounds": 0,
+      "top5": [],
+      "valid_originals": 0
+    }
+  },
+  "raw": {
+    "Metallica": [
+      {
+        "artist": "Metallica",
+        "round": 1,
+        "url": "https://www.last.fm/music/Metallica/+images",
+        "status": "top5_verified",
+        "top5": [
+          {
+            "rank": 1,
+            "hash": "5c9b86331be1bdc29bb546f4386ff088",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/5c9b86331be1bdc29bb546f4386ff088.jpg",
+            "detail_url": "https://www.last.fm/music/Metallica/+images/5c9b86331be1bdc29bb546f4386ff088",
+            "image_status": "valid",
+            "width": 1128,
+            "height": 1139,
+            "bytes": 164102
+          },
+          {
+            "rank": 2,
+            "hash": "715a4451f78d4e22ceeb4490d74c60c7",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/715a4451f78d4e22ceeb4490d74c60c7.jpg",
+            "detail_url": "https://www.last.fm/music/Metallica/+images/715a4451f78d4e22ceeb4490d74c60c7",
+            "image_status": "valid",
+            "width": 540,
+            "height": 351,
+            "bytes": 43917
+          },
+          {
+            "rank": 3,
+            "hash": "8207e256f542a2c2fd6fcf88aff9fdc9",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/8207e256f542a2c2fd6fcf88aff9fdc9.jpg",
+            "detail_url": "https://www.last.fm/music/Metallica/+images/8207e256f542a2c2fd6fcf88aff9fdc9",
+            "image_status": "valid",
+            "width": 1242,
+            "height": 1242,
+            "bytes": 272151
+          },
+          {
+            "rank": 4,
+            "hash": "22fffa33531b4684a4eb269d357758ae",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/22fffa33531b4684a4eb269d357758ae.jpg",
+            "detail_url": "https://www.last.fm/music/Metallica/+images/22fffa33531b4684a4eb269d357758ae",
+            "image_status": "valid",
+            "width": 736,
+            "height": 564,
+            "bytes": 70889
+          },
+          {
+            "rank": 5,
+            "hash": "fefb6102ce0927fbdfe5a3c19028dd37",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/fefb6102ce0927fbdfe5a3c19028dd37.jpg",
+            "detail_url": "https://www.last.fm/music/Metallica/+images/fefb6102ce0927fbdfe5a3c19028dd37",
+            "image_status": "valid",
+            "width": 720,
+            "height": 720,
+            "bytes": 98410
+          }
+        ],
+        "http": 200,
+        "html_bytes": 164682,
+        "title": "Metallica Photos | Last.fm",
+        "grid_count": 40
+      },
+      {
+        "artist": "Metallica",
+        "round": 2,
+        "url": "https://www.last.fm/music/Metallica/+images",
+        "status": "top5_verified",
+        "top5": [
+          {
+            "rank": 1,
+            "hash": "5c9b86331be1bdc29bb546f4386ff088",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/5c9b86331be1bdc29bb546f4386ff088.jpg",
+            "detail_url": "https://www.last.fm/music/Metallica/+images/5c9b86331be1bdc29bb546f4386ff088"
+          },
+          {
+            "rank": 2,
+            "hash": "715a4451f78d4e22ceeb4490d74c60c7",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/715a4451f78d4e22ceeb4490d74c60c7.jpg",
+            "detail_url": "https://www.last.fm/music/Metallica/+images/715a4451f78d4e22ceeb4490d74c60c7"
+          },
+          {
+            "rank": 3,
+            "hash": "8207e256f542a2c2fd6fcf88aff9fdc9",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/8207e256f542a2c2fd6fcf88aff9fdc9.jpg",
+            "detail_url": "https://www.last.fm/music/Metallica/+images/8207e256f542a2c2fd6fcf88aff9fdc9"
+          },
+          {
+            "rank": 4,
+            "hash": "22fffa33531b4684a4eb269d357758ae",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/22fffa33531b4684a4eb269d357758ae.jpg",
+            "detail_url": "https://www.last.fm/music/Metallica/+images/22fffa33531b4684a4eb269d357758ae"
+          },
+          {
+            "rank": 5,
+            "hash": "fefb6102ce0927fbdfe5a3c19028dd37",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/fefb6102ce0927fbdfe5a3c19028dd37.jpg",
+            "detail_url": "https://www.last.fm/music/Metallica/+images/fefb6102ce0927fbdfe5a3c19028dd37"
+          }
+        ],
+        "http": 200,
+        "html_bytes": 164682,
+        "title": "Metallica Photos | Last.fm",
+        "grid_count": 40
+      }
+    ],
+    "Pink Floyd": [
+      {
+        "artist": "Pink Floyd",
+        "round": 1,
+        "url": "https://www.last.fm/music/Pink%20Floyd/+images",
+        "status": "unavailable",
+        "top5": [],
+        "http": 600,
+        "html_bytes": 32948,
+        "title": "Last.fm - Temporarily Unavailable"
+      },
+      {
+        "artist": "Pink Floyd",
+        "round": 2,
+        "url": "https://www.last.fm/music/Pink%20Floyd/+images",
+        "status": "unavailable",
+        "top5": [],
+        "http": 406,
+        "html_bytes": 8688,
+        "title": "Last.fm - Rate Limited"
+      }
+    ],
+    "Megadeth": [
+      {
+        "artist": "Megadeth",
+        "round": 1,
+        "url": "https://www.last.fm/music/Megadeth/+images",
+        "status": "top5_verified",
+        "top5": [
+          {
+            "rank": 1,
+            "hash": "6ebf5c5291924ce39515fbe77cca8eab",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/6ebf5c5291924ce39515fbe77cca8eab.jpg",
+            "detail_url": "https://www.last.fm/music/Megadeth/+images/6ebf5c5291924ce39515fbe77cca8eab",
+            "image_status": "valid",
+            "width": 484,
+            "height": 480,
+            "bytes": 52824
+          },
+          {
+            "rank": 2,
+            "hash": "a4999faa1d954aabab493570c1d43873",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/a4999faa1d954aabab493570c1d43873.jpg",
+            "detail_url": "https://www.last.fm/music/Megadeth/+images/a4999faa1d954aabab493570c1d43873",
+            "image_status": "valid",
+            "width": 768,
+            "height": 576,
+            "bytes": 55232
+          },
+          {
+            "rank": 3,
+            "hash": "88b0702d46d75446ddfaa3ab0ba94604",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/88b0702d46d75446ddfaa3ab0ba94604.jpg",
+            "detail_url": "https://www.last.fm/music/Megadeth/+images/88b0702d46d75446ddfaa3ab0ba94604",
+            "image_status": "valid",
+            "width": 500,
+            "height": 500,
+            "bytes": 39430
+          },
+          {
+            "rank": 4,
+            "hash": "2cdd55e19e557d3348425eeb433e98d3",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/2cdd55e19e557d3348425eeb433e98d3.jpg",
+            "detail_url": "https://www.last.fm/music/Megadeth/+images/2cdd55e19e557d3348425eeb433e98d3",
+            "image_status": "valid",
+            "width": 500,
+            "height": 500,
+            "bytes": 52166
+          },
+          {
+            "rank": 5,
+            "hash": "302b1f74b35c5c326865dc0663026d1c",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/302b1f74b35c5c326865dc0663026d1c.jpg",
+            "detail_url": "https://www.last.fm/music/Megadeth/+images/302b1f74b35c5c326865dc0663026d1c",
+            "image_status": "valid",
+            "width": 2032,
+            "height": 2032,
+            "bytes": 570228
+          }
+        ],
+        "http": 200,
+        "html_bytes": 164278,
+        "title": "Megadeth Photos | Last.fm",
+        "grid_count": 40
+      },
+      {
+        "artist": "Megadeth",
+        "round": 2,
+        "url": "https://www.last.fm/music/Megadeth/+images",
+        "status": "top5_verified",
+        "top5": [
+          {
+            "rank": 1,
+            "hash": "6ebf5c5291924ce39515fbe77cca8eab",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/6ebf5c5291924ce39515fbe77cca8eab.jpg",
+            "detail_url": "https://www.last.fm/music/Megadeth/+images/6ebf5c5291924ce39515fbe77cca8eab"
+          },
+          {
+            "rank": 2,
+            "hash": "a4999faa1d954aabab493570c1d43873",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/a4999faa1d954aabab493570c1d43873.jpg",
+            "detail_url": "https://www.last.fm/music/Megadeth/+images/a4999faa1d954aabab493570c1d43873"
+          },
+          {
+            "rank": 3,
+            "hash": "88b0702d46d75446ddfaa3ab0ba94604",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/88b0702d46d75446ddfaa3ab0ba94604.jpg",
+            "detail_url": "https://www.last.fm/music/Megadeth/+images/88b0702d46d75446ddfaa3ab0ba94604"
+          },
+          {
+            "rank": 4,
+            "hash": "2cdd55e19e557d3348425eeb433e98d3",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/2cdd55e19e557d3348425eeb433e98d3.jpg",
+            "detail_url": "https://www.last.fm/music/Megadeth/+images/2cdd55e19e557d3348425eeb433e98d3"
+          },
+          {
+            "rank": 5,
+            "hash": "302b1f74b35c5c326865dc0663026d1c",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/302b1f74b35c5c326865dc0663026d1c.jpg",
+            "detail_url": "https://www.last.fm/music/Megadeth/+images/302b1f74b35c5c326865dc0663026d1c"
+          }
+        ],
+        "http": 200,
+        "html_bytes": 164278,
+        "title": "Megadeth Photos | Last.fm",
+        "grid_count": 40
+      }
+    ],
+    "Deftones": [
+      {
+        "artist": "Deftones",
+        "round": 1,
+        "url": "https://www.last.fm/music/Deftones/+images",
+        "status": "client_challenge",
+        "top5": [],
+        "http": 200,
+        "html_bytes": 3038,
+        "title": "Client Challenge"
+      },
+      {
+        "artist": "Deftones",
+        "round": 2,
+        "url": "https://www.last.fm/music/Deftones/+images",
+        "status": "unavailable",
+        "top5": [],
+        "http": 406,
+        "html_bytes": 8688,
+        "title": "Last.fm - Rate Limited"
+      }
+    ],
+    "Nirvana": [
+      {
+        "artist": "Nirvana",
+        "round": 1,
+        "url": "https://www.last.fm/music/Nirvana/+images",
+        "status": "client_challenge",
+        "top5": [],
+        "http": 200,
+        "html_bytes": 3038,
+        "title": "Client Challenge"
+      },
+      {
+        "artist": "Nirvana",
+        "round": 2,
+        "url": "https://www.last.fm/music/Nirvana/+images",
+        "status": "unavailable",
+        "top5": [],
+        "http": 406,
+        "html_bytes": 8688,
+        "title": "Last.fm - Rate Limited"
+      }
+    ],
+    "Linkin Park": [
+      {
+        "artist": "Linkin Park",
+        "round": 1,
+        "url": "https://www.last.fm/music/Linkin%20Park/+images",
+        "status": "unavailable",
+        "top5": [],
+        "http": 600,
+        "html_bytes": 32948,
+        "title": "Last.fm - Temporarily Unavailable"
+      },
+      {
+        "artist": "Linkin Park",
+        "round": 2,
+        "url": "https://www.last.fm/music/Linkin%20Park/+images",
+        "status": "unavailable",
+        "top5": [],
+        "http": 406,
+        "html_bytes": 8688,
+        "title": "Last.fm - Rate Limited"
+      }
+    ],
+    "Rammstein": [
+      {
+        "artist": "Rammstein",
+        "round": 1,
+        "url": "https://www.last.fm/music/Rammstein/+images",
+        "status": "client_challenge",
+        "top5": [],
+        "http": 200,
+        "html_bytes": 3038,
+        "title": "Client Challenge"
+      },
+      {
+        "artist": "Rammstein",
+        "round": 2,
+        "url": "https://www.last.fm/music/Rammstein/+images",
+        "status": "unavailable",
+        "top5": [],
+        "http": 406,
+        "html_bytes": 8688,
+        "title": "Last.fm - Rate Limited"
+      }
+    ],
+    "Muse": [
+      {
+        "artist": "Muse",
+        "round": 1,
+        "url": "https://www.last.fm/music/Muse/+images",
+        "status": "client_challenge",
+        "top5": [],
+        "http": 200,
+        "html_bytes": 3038,
+        "title": "Client Challenge"
+      },
+      {
+        "artist": "Muse",
+        "round": 2,
+        "url": "https://www.last.fm/music/Muse/+images",
+        "status": "unavailable",
+        "top5": [],
+        "http": 406,
+        "html_bytes": 8688,
+        "title": "Last.fm - Rate Limited"
+      }
+    ],
+    "Slaughter to Prevail": [
+      {
+        "artist": "Slaughter to Prevail",
+        "round": 1,
+        "url": "https://www.last.fm/music/Slaughter%20to%20Prevail/+images",
+        "status": "top5_verified",
+        "top5": [
+          {
+            "rank": 1,
+            "hash": "399c7a879c17db5e5dd1f209ebc0978a",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/399c7a879c17db5e5dd1f209ebc0978a.jpg",
+            "detail_url": "https://www.last.fm/music/Slaughter%20to%20Prevail/+images/399c7a879c17db5e5dd1f209ebc0978a",
+            "image_status": "valid",
+            "width": 693,
+            "height": 964,
+            "bytes": 143322
+          },
+          {
+            "rank": 2,
+            "hash": "f34c9ae935096259e57de0d28aa26877",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/f34c9ae935096259e57de0d28aa26877.jpg",
+            "detail_url": "https://www.last.fm/music/Slaughter%20to%20Prevail/+images/f34c9ae935096259e57de0d28aa26877",
+            "image_status": "valid",
+            "width": 1152,
+            "height": 1152,
+            "bytes": 232476
+          },
+          {
+            "rank": 3,
+            "hash": "bf81df1daee218b3e2f851e198b8ef0c",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/bf81df1daee218b3e2f851e198b8ef0c.jpg",
+            "detail_url": "https://www.last.fm/music/Slaughter%20to%20Prevail/+images/bf81df1daee218b3e2f851e198b8ef0c",
+            "image_status": "valid",
+            "width": 1080,
+            "height": 719,
+            "bytes": 84607
+          },
+          {
+            "rank": 4,
+            "hash": "a438e5c22ec5532007d0561763fa3f31",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/a438e5c22ec5532007d0561763fa3f31.jpg",
+            "detail_url": "https://www.last.fm/music/Slaughter%20to%20Prevail/+images/a438e5c22ec5532007d0561763fa3f31",
+            "image_status": "valid",
+            "width": 1080,
+            "height": 720,
+            "bytes": 208801
+          },
+          {
+            "rank": 5,
+            "hash": "621e3e32b23aa7973afc3f825ba80431",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/621e3e32b23aa7973afc3f825ba80431.jpg",
+            "detail_url": "https://www.last.fm/music/Slaughter%20to%20Prevail/+images/621e3e32b23aa7973afc3f825ba80431",
+            "image_status": "valid",
+            "width": 960,
+            "height": 641,
+            "bytes": 107127
+          }
+        ],
+        "http": 200,
+        "html_bytes": 156727,
+        "title": "Slaughter to Prevail Photos | Last.fm",
+        "grid_count": 38
+      },
+      {
+        "artist": "Slaughter to Prevail",
+        "round": 2,
+        "url": "https://www.last.fm/music/Slaughter%20to%20Prevail/+images",
+        "status": "top5_verified",
+        "top5": [
+          {
+            "rank": 1,
+            "hash": "399c7a879c17db5e5dd1f209ebc0978a",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/399c7a879c17db5e5dd1f209ebc0978a.jpg",
+            "detail_url": "https://www.last.fm/music/Slaughter%20to%20Prevail/+images/399c7a879c17db5e5dd1f209ebc0978a"
+          },
+          {
+            "rank": 2,
+            "hash": "f34c9ae935096259e57de0d28aa26877",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/f34c9ae935096259e57de0d28aa26877.jpg",
+            "detail_url": "https://www.last.fm/music/Slaughter%20to%20Prevail/+images/f34c9ae935096259e57de0d28aa26877"
+          },
+          {
+            "rank": 3,
+            "hash": "bf81df1daee218b3e2f851e198b8ef0c",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/bf81df1daee218b3e2f851e198b8ef0c.jpg",
+            "detail_url": "https://www.last.fm/music/Slaughter%20to%20Prevail/+images/bf81df1daee218b3e2f851e198b8ef0c"
+          },
+          {
+            "rank": 4,
+            "hash": "a438e5c22ec5532007d0561763fa3f31",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/a438e5c22ec5532007d0561763fa3f31.jpg",
+            "detail_url": "https://www.last.fm/music/Slaughter%20to%20Prevail/+images/a438e5c22ec5532007d0561763fa3f31"
+          },
+          {
+            "rank": 5,
+            "hash": "621e3e32b23aa7973afc3f825ba80431",
+            "image_url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/621e3e32b23aa7973afc3f825ba80431.jpg",
+            "detail_url": "https://www.last.fm/music/Slaughter%20to%20Prevail/+images/621e3e32b23aa7973afc3f825ba80431"
+          }
+        ],
+        "http": 200,
+        "html_bytes": 156727,
+        "title": "Slaughter to Prevail Photos | Last.fm",
+        "grid_count": 38
+      }
+    ],
+    "Limão Rosa": [
+      {
+        "artist": "Limão Rosa",
+        "round": 1,
+        "url": "https://www.last.fm/music/Lim%C3%A3o%20Rosa/+images",
+        "status": "unavailable",
+        "top5": [],
+        "http": 406,
+        "html_bytes": 8688,
+        "title": "Last.fm - Rate Limited"
+      },
+      {
+        "artist": "Limão Rosa",
+        "round": 2,
+        "url": "https://www.last.fm/music/Lim%C3%A3o%20Rosa/+images",
+        "status": "unavailable",
+        "top5": [],
+        "http": 406,
+        "html_bytes": 8688,
+        "title": "Last.fm - Rate Limited"
+      }
+    ]
+  },
+  "artists_ok": 3,
+  "rounds_ok": 6,
+  "originals_ok": 15
+}
