@@ -1,0 +1,104 @@
+name: Sonora V20 — Iconic Identity and Status Bar Fix
+
+on:
+  push:
+    branches:
+      - fix/sonora-v20-artist-identity-statusbar
+    paths:
+      - .github/workflows/sonora-v20-iconic-statusbar-fix.yml
+      - core/data/src/main/kotlin/com/stash/core/data/artistphotos/**
+      - core/data/src/test/kotlin/com/stash/core/data/artistphotos/**
+      - feature/search/src/main/**
+      - feature/search/src/test/**
+      - feature/home/src/main/**
+      - app/build.gradle.kts
+      - app/src/main/kotlin/com/stash/app/MainActivity.kt
+      - app/src/main/kotlin/com/stash/app/navigation/StashScaffold.kt
+      - feature/nowplaying/src/main/**
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-preview:
+    name: Compile, sign and publish Android preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout V20
+        uses: actions/checkout@v6
+
+      - name: Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Test and assemble APK
+        env:
+          FANART_API_KEY: ${{ secrets.FANART_API_KEY }}
+          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew :core:data:testDebugUnitTest :feature:search:testDebugUnitTest :feature:nowplaying:testDebugUnitTest :app:assembleDebug --no-daemon
+
+      - name: Verify package, signature and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          AAPT=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name aapt | sort -V | tail -n1)
+          SIGNER=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -n1)
+          "$AAPT" dump badging "$APK" | grep '^package:' | tee "$RUNNER_TEMP/package.txt"
+          grep -Fq "name='com.stash.app.debug' versionCode='172' versionName='0.9.136-sonora-iconic-fix'" "$RUNNER_TEMP/package.txt"
+          "$SIGNER" verify "$APK"
+          sha256sum "$APK"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: sonora-v20-iconic-statusbar-fix-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Publish installable GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=sonora-v20-iconic-statusbar-20261101
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release already exists; refusing to overwrite it"
+            exit 1
+          fi
+          APK="$RUNNER_TEMP/Sonora-V20-Identidade-Barra-v0.9.136-debug.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$APK"
+          SHA=$(sha256sum "$APK" | cut -d' ' -f1)
+          cat > "$RUNNER_TEMP/release-notes.md" <<'EOF'
+          # Sonora V20 — Imagens icônicas e barra de status
+
+          - Corrige o cache negativo de buscas icônicas da V19: nova seleção é reavaliada automaticamente após instalar, sem limpar dados.\n          - Reconhece logotipos oficiais horizontais e artes com votos da Fanart.tv (identidade verificada por nome + MusicBrainz).\n          - Hierarquia: símbolo oficial, logotipo representativo, logotipo com votos confiáveis, foto do Wikidata, fallback de fotografia original.
+          - Ausência ou erro de imagem elegível: mantém a seleção original de fotografias de artistas (incluindo regra da formação atual).
+          - Imagens simbólicas exibidas sem corte; fotografia mantém a composição anterior.
+          - Barra de status: janela configurada após inicialização com transparência explícita e suporte a recorte da câmera, mantendo desenho de fundo até a borda superior.
+          - Inclui as mudanças anteriores em datas e recomendações da V17.1.
+          - APK Debug para testes, pacote com.stash.app.debug; não é release de produção.
+
+          Validação: testes de core:data, feature:search e feature:nowplaying, compilação e assinatura.
+          Confirmar visualmente em Android 16 e revisar atribuição/licenças das imagens antes de promover a produção.
+          EOF
+          printf '\nCommit: `%s`\nSHA-256: `%s`\n' "$GITHUB_SHA" "$SHA" >> "$RUNNER_TEMP/release-notes.md"
+          gh release create "$TAG" "$APK" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Sonora V20 — Imagens icônicas e barra de status" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
+            --prerelease --latest=false
