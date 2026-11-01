@@ -2,13 +2,22 @@ name: Sonora — APK de desenvolvimento (canônico)
 
 on:
   workflow_dispatch:
+  # Only an explicit consolidation commit may publish on push.
+  # Future source changes cannot accidentally create a new release.
+  push:
+    branches: [nonstop]
+    paths:
+      - .github/workflows/sonora-preview.yml
 
 permissions:
   contents: write
 
 jobs:
   build:
-    if: github.ref == 'refs/heads/nonstop'
+    if: >-
+      github.ref == 'refs/heads/nonstop' &&
+      (github.event_name == 'workflow_dispatch' ||
+       contains(github.event.head_commit.message, '[publish sonora]'))
     name: Test, build and publish from nonstop
     runs-on: ubuntu-latest
     timeout-minutes: 50
@@ -91,12 +100,17 @@ jobs:
           - Commit exato: \`$GITHUB_SHA\`.
           - SHA-256 do APK: \`$SHA256\`.
           - Testes de módulos, build e assinatura verificados nesta execução.
+          - Checkpoint consolidado: player, mini-player e visual da Home Sonora.
+          - Home nova: mixes de acesso rápido, redescoberta pelo histórico e atalhos Explorar/Rádio/Buscar.
+          - Perfis de artistas: fotografia (sem logo substituindo a foto), enquadramento Fit e fade em U.
+          - Audiolivros, capítulos, PT-BR e datas brasileiras, gêneros e demais telas da linha integrada.
+          - Estas alterações estão presentes no código, mas ainda dependem de validação visual no Redmi.
           - Este APK é Debug (com.stash.app.debug), não uma release pública de produção.
           - Não confundir aprovação automática com validação de UX/compatibilidade no aparelho.
           EOF
           gh release create "$TAG" "$APK" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Sonora Preview v${VERSION_CODE} · ${SHORT_SHA}" \
+            --title "Sonora ${VERSION_NAME} — consolidada · ${SHORT_SHA}" \
             --notes-file "$RUNNER_TEMP/notes.md" \
             --prerelease --latest=false
