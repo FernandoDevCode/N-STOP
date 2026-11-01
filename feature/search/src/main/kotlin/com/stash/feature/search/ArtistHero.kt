@@ -122,6 +122,7 @@ fun ArtistHero(
         // part of a source photograph is lost to a viewport Crop/FillWidth.
         val photo = hero.avatarUrl?.let(ArtUrlUpgrader::upgrade)
         var photoAspectRatio by remember(photo) { mutableFloatStateOf(1.5f) }
+        var photoBitmapDimensions by remember(photo) { mutableStateOf("não carregada") }
         val photoHeightDp = artistPhotoFrameHeightDp(
             maxWidth.value, viewportHeightDp, photoAspectRatio,
         ).dp
@@ -137,6 +138,7 @@ fun ArtistHero(
                     val image = result.result.image
                     if (image.width > 0 && image.height > 0) {
                         photoAspectRatio = image.width.toFloat() / image.height
+                        photoBitmapDimensions = image.width.toString() + "x" + image.height
                         android.util.Log.d(
                             "SonoraArtistPhoto",
                             "render artist=" + hero.name + " bitmap=" + image.width + "x" + image.height +
@@ -283,6 +285,23 @@ fun ArtistHero(
                             onClick = {
                                 moreOpen = false
                                 runCatching { uriHandler.openUri(support) }
+                            },
+                        )
+                    }
+                    if (photo != null) {
+                        DropdownMenuItem(
+                            text = { Text("Copiar dados da fotografia") },
+                            onClick = {
+                                moreOpen = false
+                                val clipboard = ctx.getSystemService(
+                                    android.content.Context.CLIPBOARD_SERVICE,
+                                ) as? android.content.ClipboardManager
+                                val details = "Artista: " + hero.name +
+                                    "\nURL: " + photo + "\nBitmap: " + photoBitmapDimensions +
+                                    "\nProporção: " + photoAspectRatio
+                                clipboard?.setPrimaryClip(
+                                    android.content.ClipData.newPlainText("Fotografia Sonora", details),
+                                )
                             },
                         )
                     }
