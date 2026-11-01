@@ -1,4 +1,4 @@
-name: Sonora V21 — Artist Hero Status Bar
+name: Sonora V21.1 — Artist Hero Status Bar
 
 on:
   push:
@@ -57,14 +57,14 @@ jobs:
           AAPT=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name aapt | sort -V | tail -n1)
           SIGNER=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -n1)
           "$AAPT" dump badging "$APK" | grep '^package:' | tee "$RUNNER_TEMP/package.txt"
-          grep -Fq "name='com.stash.app.debug' versionCode='173' versionName='0.9.137-sonora-artist-edge'" "$RUNNER_TEMP/package.txt"
+          grep -Fq "name='com.stash.app.debug' versionCode='174' versionName='0.9.138-sonora-artist-edge-route'" "$RUNNER_TEMP/package.txt"
           "$SIGNER" verify "$APK"
           sha256sum "$APK"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v6
         with:
-          name: sonora-v21-artist-hero-statusbar-apk
+          name: sonora-v21-1-artist-hero-statusbar-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
@@ -74,16 +74,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TAG=sonora-v21-artist-hero-statusbar-20261101
+          TAG=sonora-v21-1-artist-hero-statusbar-20261101
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Release already exists; refusing to overwrite it"
             exit 1
           fi
-          APK="$RUNNER_TEMP/Sonora-V21-Perfil-Sem-Faixa-v0.9.137-debug.apk"
+          APK="$RUNNER_TEMP/Sonora-V21-1-Perfil-Sem-Faixa-v0.9.138-debug.apk"
           cp app/build/outputs/apk/debug/app-debug.apk "$APK"
           SHA=$(sha256sum "$APK" | cut -d' ' -f1)
           cat > "$RUNNER_TEMP/release-notes.md" <<'EOF'
-          # Sonora V21 — Perfil de artista sem faixa superior
+          # Sonora V21.1 — Perfil de artista sem faixa superior
 
           - Corrige a faixa preta acima das imagens nos perfis de artistas: os dois Scaffolds não reservam mais o inset superior em duplicidade.\n          - Foto do artista alcança a borda superior atrás dos ícones do Android; botões permanecem abaixo da barra de status.\n          - Mantém seleção de identidades icônicas e correções de cache da V20 sem alterar os critérios.\n          - Reconhece logotipos oficiais horizontais e artes com votos da Fanart.tv (identidade verificada por nome + MusicBrainz).\n          - Hierarquia: símbolo oficial, logotipo representativo, logotipo com votos confiáveis, foto do Wikidata, fallback de fotografia original.
           - Ausência ou erro de imagem elegível: mantém a seleção original de fotografias de artistas (incluindo regra da formação atual).
@@ -99,6 +99,6 @@ jobs:
           gh release create "$TAG" "$APK" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Sonora V21 — Perfil de artista sem faixa superior" \
+            --title "Sonora V21.1 — Perfil de artista sem faixa superior" \
             --notes-file "$RUNNER_TEMP/release-notes.md" \
             --prerelease --latest=false
