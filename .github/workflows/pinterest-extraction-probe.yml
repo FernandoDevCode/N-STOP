@@ -1,0 +1,66 @@
+name: Sonora Pinterest public extraction probe (temporary)
+on:
+  push:
+    branches:
+      - research/sonora-pinterest-probe
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Install gallery-dl
+        run: python -m pip install --quiet gallery-dl
+      - name: Test public Pinterest searches without cookies
+        shell: bash
+        run: |
+          python - <<'PY'
+          import subprocess, urllib.parse, pathlib
+          artists = ["Slipknot band", "Radiohead band", "System of a Down band"]
+          cases = [(name, "https://www.pinterest.com/search/pins/?q=" + urllib.parse.quote(name)) for name in artists]
+          cases.append(("Known Radiohead pin", "https://www.pinterest.com/pin/145170787966292231/"))
+          lines = ["# Pinterest public extractor probe", "",
+                   "Tool: gallery-dl; environment: GitHub Actions Ubuntu; authentication: none; cookies: none.", ""]
+          v = subprocess.run(["gallery-dl", "--version"], capture_output=True, text=True)
+          lines.append("gallery-dl version: " + v.stdout.strip())
+          lines.append("")
+          for name, url in cases:
+              lines += ["## " + name, "", "Source: `" + url + "`", ""]
+              try:
+                  r = subprocess.run(
+                      ["gallery-dl", "-g", "--range", "1-4", url],
+                      capture_output=True, text=True, timeout=35,
+                  )
+                  urls = [s for s in r.stdout.splitlines() if s.strip().startswith("http")]
+                  lines += [
+                      "Return code: " + str(r.returncode),
+                      "Direct image URLs recovered: **" + str(len(urls)) + "**",
+                      "",
+                  ]
+                  for i, link in enumerate(urls[:4], 1):
+                      lines.append(str(i) + ". `" + link[:500] + "`")
+                  if r.stderr.strip():
+                      lines += ["", "Error / diagnostic: `" +
+                                r.stderr.strip()[-1200:].replace("`","'") + "`"]
+                  if not urls and not r.stderr.strip():
+                      lines.append("No URLs returned and no error emitted.")
+              except subprocess.TimeoutExpired:
+                  lines.append("Timed out after 35 seconds; no stable extraction.")
+              lines.append("")
+          pathlib.Path("pinterest-probe-report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+          print("\n".join(lines))
+          PY
+      - name: Publish findings to the temporary research PR
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          PR=$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=50" --jq '[.[] | select(.head.ref == "research/sonora-pinterest-probe") | .number] | first')
+          if [ -n "$PR" ] && [ -f pinterest-probe-report.md ]; then
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --raw-field "body=$(cat pinterest-probe-report.md)"
+          else
+            cat pinterest-probe-report.md || true
+          fi
