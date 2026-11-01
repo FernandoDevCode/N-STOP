@@ -32,6 +32,13 @@
 - O Art Lab V8 foi integrado tecnicamente; igualdade visual 1:1 das referências e teste real abrangente de reprodução/gestos continuam sujeitos à validação por dispositivo.
 - Fluxos antigos `.github/workflows/sonora-v*.yml` publicados anteriormente são históricos; não devem disparar novas releases fora de `nonstop`.
 
+## Pré-release única de desenvolvimento
+- No GitHub: **Actions → Sonora — APK de desenvolvimento (canônico) → Run workflow → branch `nonstop`**.
+- O workflow `.github/workflows/sonora-preview.yml` só permite execução em `nonstop`, executa os testes dos módulos, monta o APK Debug, confere o pacote e a assinatura, e publica uma pré-release vinculada ao SHA exato. Não dispara a cada commit.
+- As 18 workflows antigas de pré-release foram **retiradas apenas da branch principal**; suas versões permanecem no histórico/tags.
+- Um APK publicado anteriormente (incluindo V22.2) não é reescrito. O fluxo canônico produz novo artefato imutável por commit.
+- Para atualizar o checkout Windows sem perder trabalho local: verificar `git status`, depois `git fetch origin`, `git switch nonstop` e `git pull --ff-only origin nonstop`. Se houver alterações locais, revisar antes de trocar de branch.
+
 ## Evitar reincidência
 1. Trabalhar em `nonstop` como destino de todas as entregas. Branch temporária pode existir durante implementação, mas **nunca** vira nova base permanente para a tarefa seguinte.
 2. Para checar implementação de uma funcionalidade, inspecionar **código de `nonstop`**, não apenas arquivos de releases, prints, tags ou PRs abertos.
