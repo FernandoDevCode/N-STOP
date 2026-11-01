@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.lazy.LazyColumn
@@ -175,6 +176,10 @@ fun ArtistProfileScreen(
     }
 
     Scaffold(
+        // The outer NavHost deliberately draws the hero behind the Android
+        // clock. A nested Material3 Scaffold must NOT reserve a second top
+        // inset; buttons are kept clear by ArtistHero.statusBarsPadding().
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
         snackbarHost = { SnackbarHost(snackbar, Modifier.padding(bottom = bottomChromePadding())) },
     ) { inner ->
