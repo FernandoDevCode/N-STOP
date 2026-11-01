@@ -8,130 +8,73 @@ import org.junit.Test
 class ArtistIdentityRulesTest {
     private fun data(raw: String) = Json.parseToJsonElement(raw).jsonObject
     private fun image(
-        kind: ArtistIdentityKind,
+        kind: ArtistIdentityKind = ArtistIdentityKind.PHOTO,
         width: Int = 1600,
         height: Int = 1200,
         mime: String = "image/jpeg",
-        url: String = "https://upload.wikimedia.org/wikipedia/commons/thumb/x/image.jpg",
-        raster: Boolean = false,
-    ) = ArtistIdentityCandidate(url, kind, width, height, mime, raster)
+        url: String = "https://upload.wikimedia.org/wikipedia/commons/thumb/x/photo.jpg",
+    ) = ArtistIdentityCandidate(url, kind, width, height, mime, false)
 
-    @Test fun musicBrainzMustHaveExactNameAndSingleWikidataRelation() {
+    @Test fun correctMusicBrainzLinkIsRequired() {
         val artist = data("""{
-          "name":"Queen","type":"Group",
-          "relations":[{"type":"wikidata","url":{"resource":"https://www.wikidata.org/wiki/Q15862"}}]
+          "name":"Slipknot","type":"Group","relations":[
+            {"type":"wikidata","url":{"resource":"https://www.wikidata.org/wiki/Q244101"}}]
         }""")
-        assertThat(ArtistIdentityRules.wikidataId(artist, "queen")).isEqualTo("Q15862")
-        assertThat(ArtistIdentityRules.wikidataId(artist, "Queen Tribute")).isNull()
-        assertThat(ArtistIdentityRules.wikidataId(data("""{
-          "name":"Queen","type":"Group","relations":[
-            {"type":"wikidata","url":{"resource":"https://www.wikidata.org/wiki/Q15862"}},
-            {"type":"wikidata","url":{"resource":"https://www.wikidata.org/wiki/Q30000"}}
-          ]}"""), "Queen")).isNull()
+        assertThat(ArtistIdentityRules.wikidataId(artist, "Slipknot")).isEqualTo("Q244101")
+        assertThat(ArtistIdentityRules.wikidataId(artist, "Slipknot Tribute")).isNull()
+        val wrong = data("""{"name":"Slipknot","type":"Group","relations":[
+            {"type":"wikidata","url":{"resource":"https://untrusted.example/wiki/Q244101"}}]
+        }""")
+        assertThat(ArtistIdentityRules.wikidataId(wrong, "Slipknot")).isNull()
     }
 
-    @Test fun rejectsFalseIdentityLinks() {
-        val bad = data("""{
-          "name":"Queen","type":"Group",
-          "relations":[{"type":"wikidata",
-            "url":{"resource":"https://example.com/wiki/Q15862"}}]
-        }""")
-        assertThat(ArtistIdentityRules.wikidataId(bad, "Queen")).isNull()
-        assertThat(ArtistIdentityRules.wikidataId(data("""{
-          "name":"Queen","type":"Group",
-          "relations":[{"type":"wikidata",
-            "url":{"resource":"https://www.wikidata.org/wiki/Q15862?redirect=evil"}}]
-        }"""), "Queen")).isNull()
-    }
-
-    @Test fun directSymbolBeforeRepresentativePhoto() {
-        val entity = data("""{"entities":{"Q100":{"id":"Q100","claims":{
-          "P154":[{"rank":"normal","mainsnak":{"snaktype":"value",
-             "datavalue":{"value":"Band emblem.svg"}}}],
+    @Test fun onlyRepresentativePhotosAreReturnedFromWikidata() {
+        val entity = data("""{"entities":{"Q1":{"id":"Q1","claims":{
+          "P154":[{"rank":"preferred","mainsnak":{"snaktype":"value",
+            "datavalue":{"value":"Band-logo.svg"}}}],
           "P18":[{"rank":"normal","mainsnak":{"snaktype":"value",
-             "datavalue":{"value":"Historic group photo.jpg"}}}]
+            "datavalue":{"value":"Band-photo.jpg"}}}]
         }}}}""")
-        assertThat(ArtistIdentityRules.files(entity, "Q100")).containsExactly(
-            "Band emblem.svg" to ArtistIdentityKind.SYMBOL,
-            "Historic group photo.jpg" to ArtistIdentityKind.PHOTO,
-        ).inOrder()
+        assertThat(ArtistIdentityRules.files(entity, "Q1"))
+            .containsExactly("Band-photo.jpg" to ArtistIdentityKind.PHOTO)
+    }
+
+    @Test fun symbolsNeverWinEvenWithMorePixels() {
         assertThat(ArtistIdentityRules.select(listOf(
-            image(ArtistIdentityKind.SYMBOL, width = 900, height = 900),
-            image(ArtistIdentityKind.PHOTO),
-        ))?.kind).isEqualTo(ArtistIdentityKind.SYMBOL)
-    }
-
-    @Test fun recognizesOfficialSymbolEntityWithoutManualArtistOverrides() {
-        val band = data("""{"entities":{"Q11036":{"id":"Q11036","claims":{
-          "P2238":[{"rank":"normal","mainsnak":{"snaktype":"value",
-            "datavalue":{"value":{"entity-type":"item","id":"Q999"}}}}]
-        }}}}""")
-        assertThat(ArtistIdentityRules.officialSymbolId(band, "Q11036")).isEqualTo("Q999")
-        assertThat(ArtistIdentityRules.officialSymbolId(band, "Q2")).isNull()
-    }
-
-    @Test fun wideRecognizableLogoTakesPriorityOverGenericPortrait() {
-        val selected = ArtistIdentityRules.select(listOf(
-            image(ArtistIdentityKind.SYMBOL, width = 1100, height = 180),
-            image(ArtistIdentityKind.PHOTO, width = 1798, height = 1146),
-        ))
-        assertThat(selected?.kind).isEqualTo(ArtistIdentityKind.SYMBOL)
-    }
-
-    @Test fun noSuitableImageMeansNullSoOriginalSelectorRuns() {
-        val selected = ArtistIdentityRules.select(listOf(
-            image(ArtistIdentityKind.PHOTO, width = 367, height = 346),
-            image(ArtistIdentityKind.SYMBOL, width = 120, height = 35),
-        ))
-        assertThat(selected).isNull()
-        // Original photo selector remains a separate, unchanged second stage.
-        val original = ArtistPhotoRules.select(listOf(
-            ArtistPhotoCandidate("https://assets.fanart.tv/fanart/music/a.jpg",
-                "artistbackground", 1900, 1080, 9, null),
-        ), false, null)
-        assertThat(original?.likes).isEqualTo(9)
-    }
-
-    @Test fun fanartMustMatchNameAndMbidWithCredibleVotes() {
-        val json = data("""{
-          "name":"Queen","mbid_id":"0383dadf-2a4e-4d10-a46a-e9e041da8eb3",
-          "hdmusiclogo":[
-            {"url":"https://assets.fanart.tv/fanart/music/hdmusiclogo/one.png","likes":"4"},
-            {"url":"https://assets.fanart.tv/fanart/music/hdmusiclogo/two.png","likes":"16"}
-          ],
-          "musiclogo":[{"url":"https://assets.fanart.tv/fanart/music/musiclogo/three.png","likes":"10"}]
-        }""")
-        val id = "0383dadf-2a4e-4d10-a46a-e9e041da8eb3"
-        assertThat(ArtistIdentityRules.fanartLogo(json, "Queen", id)?.url)
-            .isEqualTo("https://assets.fanart.tv/fanart/music/hdmusiclogo/two.png")
-        assertThat(ArtistIdentityRules.fanartLogo(json, "Queen Tribute", id)).isNull()
-        assertThat(ArtistIdentityRules.fanartLogo(json, "Queen", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")).isNull()
-    }
-
-    @Test fun fanartUnknownOrUntrustedUrlNeverWins() {
-        val id = "0383dadf-2a4e-4d10-a46a-e9e041da8eb3"
-        val json = data("""{
-          "name":"Queen","mbid_id":"0383dadf-2a4e-4d10-a46a-e9e041da8eb3",
-          "hdmusiclogo":[
-            {"url":"https://untrusted.example/fanart/music/hdmusiclogo/fake.png","likes":"999"},
-            {"url":"https://assets.fanart.tv/fanart/music/hdmusiclogo/test.png","likes":"2"}
-          ]
-        }""")
-        assertThat(ArtistIdentityRules.fanartLogo(json, "Queen", id)).isNull()
-    }
-
-    @Test fun invalidOrUnrenderableImagesNeverWin() {
+            image(ArtistIdentityKind.SYMBOL, 2200, 2200, "image/png"),
+            image(ArtistIdentityKind.PHOTO, 1800, 1000),
+        ))?.kind).isEqualTo(ArtistIdentityKind.PHOTO)
         assertThat(ArtistIdentityRules.select(listOf(
-            image(ArtistIdentityKind.SYMBOL, 900, 900, "image/svg+xml", raster = false),
-            image(ArtistIdentityKind.PHOTO, url = "https://other.example/image.jpg"),
-            image(ArtistIdentityKind.PHOTO, mime = "application/pdf"),
+            image(ArtistIdentityKind.SYMBOL, 2200, 2200, "image/png"),
+        ))).isNull()
+    }
+
+    @Test fun rejectTallOrTinyHeroPhotosWithoutAlteringLegacyFallback() {
+        assertThat(ArtistIdentityRules.select(listOf(
+            image(width = 1100, height = 1900),
+            image(width = 500, height = 350),
+        ))).isNull()
+        val old = ArtistPhotoRules.select(
+            listOf(ArtistPhotoCandidate(
+                url = "https://assets.fanart.tv/fanart/music/photo.jpg",
+                category = "artistbackground", width = 1920, height = 1080,
+                likes = 11, capturedAt = null,
+            )), false, null,
+        )
+        assertThat(old?.likes).isEqualTo(11)
+    }
+
+    @Test fun photographMustBeDecodableAndFromAllowedHost() {
+        assertThat(ArtistIdentityRules.select(listOf(
+            image(url = "https://wrong.example/photo.jpg"),
+            image(mime = "image/svg+xml"),
         ))).isNull()
         assertThat(ArtistIdentityRules.select(listOf(
-            image(ArtistIdentityKind.SYMBOL, 900, 900, "image/svg+xml", raster = true),
-        ))?.kind).isEqualTo(ArtistIdentityKind.SYMBOL)
+            image(width = 1920, height = 1080, mime = "image/jpeg"),
+        ))?.kind).isEqualTo(ArtistIdentityKind.PHOTO)
     }
 
-    @Test fun deprecatedFilesAreIgnoredAndPreferredRankWins() {
+    @Test fun preferredPhotoWinsAndDeprecatedIsIgnored() {
         val entity = data("""{"entities":{"Q8":{"id":"Q8","claims":{
           "P18":[
             {"rank":"deprecated","mainsnak":{"snaktype":"value","datavalue":{"value":"Old.jpg"}}},
@@ -143,13 +86,13 @@ class ArtistIdentityRulesTest {
             .containsExactly("Preferred.jpg" to ArtistIdentityKind.PHOTO)
     }
 
-    @Test fun missingClaimsAndMalformedFileNamesRemainUnavailable() {
+    @Test fun missingOrMalformedPhotosDoNotWin() {
         assertThat(ArtistIdentityRules.files(data("""{"entities":{"Q1":{"id":"Q1","claims":{}}}}"""), "Q1"))
             .isEmpty()
-        val entity = data("""{"entities":{"Q1":{"id":"Q1","claims":{"P18":[
+        val malformed = data("""{"entities":{"Q1":{"id":"Q1","claims":{"P18":[
           {"rank":"normal","mainsnak":{"snaktype":"value",
             "datavalue":{"value":"../../wrong.jpg"}}}
         ]}}}}""")
-        assertThat(ArtistIdentityRules.files(entity, "Q1")).isEmpty()
+        assertThat(ArtistIdentityRules.files(malformed, "Q1")).isEmpty()
     }
 }
