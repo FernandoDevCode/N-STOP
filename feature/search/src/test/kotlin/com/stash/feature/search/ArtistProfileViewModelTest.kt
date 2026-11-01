@@ -420,7 +420,7 @@ class ArtistProfileViewModelTest {
     }
 
     @Test
-    fun `iconic emblem takes precedence over the legacy photo`() = runTest {
+    fun `iconic emblem never replaces a photograph`() = runTest {
         val cache = mock<ArtistCache>()
         val profile = ArtistProfile(
             id = "UC1", name = "LocalName", avatarUrl = "https://example.org/avatar.jpg",
@@ -432,13 +432,15 @@ class ArtistProfileViewModelTest {
         val emblem = "https://upload.wikimedia.org/wikipedia/commons/thumb/icon.png"
         whenever(identity.find("LocalName")).thenReturn(ArtistIdentityImage(emblem, ArtistIdentityKind.SYMBOL))
         val original = mock<ArtistPhotoLookup>()
+        val legacyPhoto = "https://assets.fanart.tv/fanart/music/photo.jpg"
+        whenever(original.find("LocalName")).thenReturn(legacyPhoto)
 
         val vm = vmWith(cache, identity = identity, originalPhoto = original)
         advanceUntilIdle()
 
-        assertEquals(emblem, vm.uiState.value.hero.avatarUrl)
-        assertEquals(ArtistIdentityKind.SYMBOL, vm.uiState.value.hero.artworkKind)
-        verify(original, never()).find(any())
+        assertEquals(legacyPhoto, vm.uiState.value.hero.avatarUrl)
+        assertEquals(ArtistIdentityKind.PHOTO, vm.uiState.value.hero.artworkKind)
+        verify(original).find("LocalName")
     }
 
     @Test
@@ -452,7 +454,7 @@ class ArtistProfileViewModelTest {
         whenever(cache.get(eq("UC1"))).thenReturn(flowOf(CachedProfile.Fresh(profile)))
         val identity = mock<ArtistIdentityLookup>()
         val badUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/missing.png"
-        whenever(identity.find("LocalName")).thenReturn(ArtistIdentityImage(badUrl, ArtistIdentityKind.SYMBOL))
+        whenever(identity.find("LocalName")).thenReturn(ArtistIdentityImage(badUrl, ArtistIdentityKind.PHOTO))
         val original = mock<ArtistPhotoLookup>()
         whenever(original.find("LocalName")).thenReturn("https://assets.fanart.tv/fanart/music/good.jpg")
 

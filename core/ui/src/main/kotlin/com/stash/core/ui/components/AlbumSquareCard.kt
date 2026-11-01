@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.stash.core.common.ArtUrlUpgrader
@@ -53,18 +54,19 @@ fun AlbumSquareCard(
     year: String?,
     modifier: Modifier = Modifier,
     isLossless: Boolean = false,
+    cardSize: Dp = 152.dp,
     onClick: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     Column(
         modifier = modifier
-            .width(152.dp)
+            .width(cardSize)
             .pressScale(interactionSource)
             .clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
     ) {
         Box(
             modifier = Modifier
-                .size(152.dp)
+                .size(cardSize)
                 .clip(RoundedCornerShape(12.dp))
                 .background(
                     Brush.linearGradient(

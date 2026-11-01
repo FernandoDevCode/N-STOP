@@ -8,6 +8,8 @@ on:
     branches: [nonstop]
     paths:
       - .github/workflows/sonora-preview.yml
+      # Only explicit version bumps can publish automatically (with marker).
+      - app/build.gradle.kts
 
 permissions:
   contents: write

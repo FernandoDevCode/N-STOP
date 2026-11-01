@@ -2,6 +2,7 @@ package com.stash.feature.search
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.stash.data.ytmusic.model.AlbumSummary
 
 /**
@@ -24,5 +25,6 @@ fun SinglesRow(
         onClick = onClick,
         modifier = modifier,
         focusIndex = focusIndex,
+        cardSize = 132.dp,
     )
 }

@@ -122,6 +122,7 @@ fun ArtistHero(
         // part of a source photograph is lost to a viewport Crop/FillWidth.
         val photo = hero.avatarUrl?.let(ArtUrlUpgrader::upgrade)
         var photoAspectRatio by remember(photo) { mutableFloatStateOf(1.5f) }
+        var photoBitmapDimensions by remember(photo) { mutableStateOf("não carregada") }
         val photoHeightDp = artistPhotoFrameHeightDp(
             maxWidth.value, viewportHeightDp, photoAspectRatio,
         ).dp
@@ -137,30 +138,39 @@ fun ArtistHero(
                     val image = result.result.image
                     if (image.width > 0 && image.height > 0) {
                         photoAspectRatio = image.width.toFloat() / image.height
+                        photoBitmapDimensions = image.width.toString() + "x" + image.height
+                        android.util.Log.d(
+                            "SonoraArtistPhoto",
+                            "render artist=" + hero.name + " bitmap=" + image.width + "x" + image.height +
+                                " ratio=" + photoAspectRatio + " url=" + photo,
+                        )
                     }
                 },
                 modifier = Modifier.fillMaxWidth().height(photoHeightDp),
             )
         }
 
-        // ONE fade over the actual photo instead of overlapping vertical
-        // scrims. Its upper edge curves downward in the centre (a soft U).
-        // Strips are prepared inside drawWithCache, never per recomposition
-        // or bitmap pixel. The outermost strips are only gently feathered.
+        // A continuous distance-field gradient forms the U without strips.
+        // The left and right disappear sooner while the center reaches lower.
         Box(
             Modifier.matchParentSize().drawWithCache {
                 val endY = photoHeightDp.toPx().coerceIn(1f, size.height.coerceAtLeast(1f))
-                val strips = 64
-                val stripW = size.width / strips
-                val fadeStrips = (0 until strips).map { n ->
-                    val x = (n + .5f) / strips
-                    Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        1f to bridgeAtmosphere,
-                        startY = endY * artistPhotoFadeStartFraction(x),
-                        endY = endY,
-                    )
-                }
+                val radialFade = Brush.radialGradient(
+                    0f to Color.Transparent,
+                    .62f to Color.Transparent,
+                    .78f to bridgeAtmosphere.copy(alpha = .17f),
+                    .90f to bridgeAtmosphere.copy(alpha = .72f),
+                    1f to bridgeAtmosphere,
+                    center = Offset(size.width * .5f, -endY * .08f),
+                    radius = artistPhotoFadeRadius(size.width, endY),
+                )
+                val bottomFade = Brush.verticalGradient(
+                    0f to Color.Transparent,
+                    .72f to Color.Transparent,
+                    1f to bridgeAtmosphere,
+                    startY = 0f,
+                    endY = endY,
+                )
                 val topWash = Brush.verticalGradient(
                     0f to Color.Black.copy(alpha = .19f),
                     1f to Color.Transparent,
@@ -168,13 +178,9 @@ fun ArtistHero(
                     endY = (endY * .26f).coerceAtLeast(1f),
                 )
                 onDrawBehind {
-                    fadeStrips.forEachIndexed { n, brush ->
-                        drawRect(
-                            brush = brush,
-                            topLeft = Offset(n * stripW, 0f),
-                            size = Size(stripW + 1f, endY),
-                        )
-                    }
+                    val imageSize = Size(size.width, endY)
+                    drawRect(brush = radialFade, size = imageSize)
+                    drawRect(brush = bottomFade, size = imageSize)
                     if (endY < size.height) {
                         drawRect(
                             color = bridgeAtmosphere,
@@ -279,6 +285,23 @@ fun ArtistHero(
                             onClick = {
                                 moreOpen = false
                                 runCatching { uriHandler.openUri(support) }
+                            },
+                        )
+                    }
+                    if (photo != null) {
+                        DropdownMenuItem(
+                            text = { Text("Copiar dados da fotografia") },
+                            onClick = {
+                                moreOpen = false
+                                val clipboard = ctx.getSystemService(
+                                    android.content.Context.CLIPBOARD_SERVICE,
+                                ) as? android.content.ClipboardManager
+                                val details = "Artista: " + hero.name +
+                                    "\nURL: " + photo + "\nBitmap: " + photoBitmapDimensions +
+                                    "\nProporção: " + photoAspectRatio
+                                clipboard?.setPrimaryClip(
+                                    android.content.ClipData.newPlainText("Fotografia Sonora", details),
+                                )
                             },
                         )
                     }

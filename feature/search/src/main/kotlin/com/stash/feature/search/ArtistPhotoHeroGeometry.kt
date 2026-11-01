@@ -15,9 +15,15 @@ internal fun artistPhotoFrameHeightDp(
     return (width / aspect).coerceIn(1f, maxHeight)
 }
 
-/** Earliest at left/right, latest at the middle: smooth symmetric U. */
-internal fun artistPhotoFadeStartFraction(xFraction: Float): Float {
-    val x = xFraction.coerceIn(0f, 1f)
-    val centered = 2f * x - 1f
-    return .62f + .23f * (1f - centered * centered)
+/** A continuous circular distance field creates the U contour without strips. */
+internal fun artistPhotoFadeRadius(widthPx: Float, photoHeightPx: Float): Float =
+    kotlin.math.hypot(widthPx.coerceAtLeast(1f) * .5f, photoHeightPx.coerceAtLeast(1f) * .88f)
+        .coerceAtLeast(1f)
+
+internal fun artistPhotoFadeDistanceFraction(
+    xFraction: Float, yFraction: Float, widthPx: Float, photoHeightPx: Float,
+): Float {
+    val dx = (xFraction.coerceIn(0f, 1f) - .5f) * widthPx
+    val dy = (yFraction.coerceIn(0f, 1f) + .08f) * photoHeightPx
+    return kotlin.math.hypot(dx, dy) / artistPhotoFadeRadius(widthPx, photoHeightPx)
 }
