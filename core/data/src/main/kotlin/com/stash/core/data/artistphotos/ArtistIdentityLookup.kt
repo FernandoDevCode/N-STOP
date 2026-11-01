@@ -38,7 +38,7 @@ class ArtistIdentityLookup @Inject constructor(
 ) {
     private val http = okHttp.newBuilder().callTimeout(6, TimeUnit.SECONDS).build()
     private val json = Json { ignoreUnknownKeys = true }
-    private val prefs by lazy { context.getSharedPreferences("sonora_artist_identity_v3", Context.MODE_PRIVATE) }
+    private val prefs by lazy { context.getSharedPreferences("sonora_artist_identity_v4", Context.MODE_PRIVATE) }
 
     suspend fun find(artistName: String): ArtistIdentityImage? = withContext(Dispatchers.IO) {
         val name = artistName.trim()
@@ -53,7 +53,7 @@ class ArtistIdentityLookup @Inject constructor(
             val kind = prefs.getString("$key.kind", null)?.let {
                 runCatching { ArtistIdentityKind.valueOf(it) }.getOrNull()
             }
-            return@withContext if (cachedUrl != null && kind != null)
+            return@withContext if (cachedUrl != null && kind == ArtistIdentityKind.PHOTO)
                 ArtistIdentityImage(cachedUrl, kind) else null
         }
 
@@ -73,63 +73,26 @@ class ArtistIdentityLookup @Inject constructor(
                 .putString("$key.kind", selected.kind.name)
                 .putLong("$key.checked", System.currentTimeMillis())
                 .apply()
-            Log.d("ArtistIdentityLookup", "Selected ${selected.kind} for $name")
+            Log.d("ArtistIdentityLookup", "Selected verified photo for $name: ${selected.url}")
         }
         selected
     }
 
     private suspend fun resolve(name: String): ArtistIdentityImage? {
         val artist = musicBrainz.searchByName(name) ?: return null
-        val mbid = (artist["id"] as? JsonPrimitive)?.content ?: return null
-        if (!MBID_REGEX.matches(mbid)) return null
-        // Independently sourced symbols always precede generic portraits.
-        val qid = ArtistIdentityRules.wikidataId(artist, name)
-        val entity = qid?.let { id ->
-            runCatching { getJson("https://www.wikidata.org/wiki/Special:EntityData/$id.json") }
-                .getOrNull()
-        }
+        val qid = ArtistIdentityRules.wikidataId(artist, name) ?: return null
+        val entity = getJson("https://www.wikidata.org/wiki/Special:EntityData/$qid.json")
 
-        if (qid != null && entity != null) {
-            val symbolId = ArtistIdentityRules.officialSymbolId(entity, qid)
-            if (symbolId != null) {
-                val symbolData = runCatching {
-                    getJson("https://www.wikidata.org/wiki/Special:EntityData/$symbolId.json")
-                }.getOrNull()
-                if (symbolData != null) {
-                    for ((file, _) in ArtistIdentityRules.files(symbolData, symbolId)) {
-                        safeCommons(file, ArtistIdentityKind.SYMBOL)?.let { return it }
-                    }
-                }
-            }
-            // Treat both emblem-style marks and wide wordmarks as valid identities.
-            for ((file, kind) in ArtistIdentityRules.files(entity, qid)) {
-                if (kind == ArtistIdentityKind.SYMBOL) {
-                    safeCommons(file, kind)?.let { return it }
-                }
-            }
+        // The artist hero is PHOTOGRAPHIC. P154 logos, P2238 symbols and
+        // Fanart musiclogos must never replace its source photograph.
+        // A Wikidata P18 image is explicitly a representative image, but
+        // still has to pass media validation and the hero's aspect-ratio gate.
+        for ((filename, kind) in ArtistIdentityRules.files(entity, qid)) {
+            if (kind != ArtistIdentityKind.PHOTO) continue
+            safeCommons(filename, ArtistIdentityKind.PHOTO)?.let { return it }
         }
-
-        // Fanart's community-rated official artist logos cover many musicians
-        // whose Wikidata entry only has an ordinary portrait, or no image.
-        val key = fanartConfig.apiKey.trim()
-        if (key.isNotBlank()) {
-            val fanart = runCatching {
-                getJson("https://webservice.fanart.tv/v3.2/music/$mbid", apiKey = key)
-            }.getOrNull()
-            if (fanart != null) {
-                ArtistIdentityRules.fanartLogo(fanart, name, mbid)?.let { return it }
-            }
-        }
-
-        // Finally use the explicitly curated Wikidata representative photo.
-        // If none is eligible, the ViewModel invokes the UNMODIFIED photo rules.
-        if (qid != null && entity != null) {
-            for ((file, kind) in ArtistIdentityRules.files(entity, qid)) {
-                if (kind == ArtistIdentityKind.PHOTO) {
-                    safeCommons(file, kind)?.let { return it }
-                }
-            }
-        }
+        // The ViewModel executes the existing ArtistPhotoLookup without
+        // changing its formation-floor/date/likes requirements.
         return null
     }
 
