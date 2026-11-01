@@ -102,6 +102,9 @@ fun StashScaffold(
             .lastOrNull { it.destination.route in bottomTabRoutes }
             ?.destination?.route
     val onMusicNowPlaying = currentRoute == NowPlayingRoute::class.qualifiedName
+    // The artist hero is edge-to-edge too. Its own controls already apply
+    // statusBarsPadding; do not inset the entire screen above the artwork.
+    val onArtistProfile = currentRoute == SearchArtistRoute::class.qualifiedName
     val onNowPlaying = onMusicNowPlaying ||
         currentRoute == PodcastNowPlayingRoute::class.qualifiedName
 
@@ -244,7 +247,7 @@ fun StashScaffold(
         else -> Modifier.background(MaterialTheme.colorScheme.background)
     }
     Box(Modifier.fillMaxSize().then(windowBackground)) {
-        if (currentRoute != HomeRoute::class.qualifiedName && !onMusicNowPlaying) {
+        if (currentRoute != HomeRoute::class.qualifiedName && !onMusicNowPlaying && !onArtistProfile) {
             com.stash.core.ui.visual.VisualBackground(Modifier.fillMaxSize()) {}
         }
     Scaffold(
@@ -356,7 +359,7 @@ fun StashScaffold(
             start = innerPadding.calculateStartPadding(layoutDirection),
             // The music player draws artwork under the system clock and pads its
             // controls with statusBarsPadding(). Podcast controls keep their inset.
-            top = if (onMusicNowPlaying) 0.dp else innerPadding.calculateTopPadding(),
+            top = if (onMusicNowPlaying || onArtistProfile) 0.dp else innerPadding.calculateTopPadding(),
             end = innerPadding.calculateEndPadding(layoutDirection),
             bottom = if (selectionActive) bottomChrome else 0.dp,
         )
@@ -368,7 +371,7 @@ fun StashScaffold(
                 .padding(contentPadding)
                 // Off Now Playing the bottom chrome owns the system bar inset, so screens'
                 // own Scaffolds don't pad it again; Now Playing still reads it.
-                .consumeWindowInsets(if (onNowPlaying) contentPadding else innerPadding)
+                .consumeWindowInsets(if (onNowPlaying || onArtistProfile) contentPadding else innerPadding)
                 .hazeSource(hazeState),
             onSelectionModeChanged = { selectionActive = it },
             onNavigateToTab = ::navigateToTab,
