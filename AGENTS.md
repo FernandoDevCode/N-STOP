@@ -11,3 +11,11 @@
 
 ## Outras tarefas do repositório
 Estas instruções de v8 não substituem as regras técnicas gerais do projeto nem autorizam refatorações fora do escopo pedido.
+
+## Sonora — fluxo canônico (desde 2026-11-01)
+- Repositório `FernandoDevCode/N-STOP`: a branch padrão e única fonte integrada para trabalho futuro é `nonstop`. Não presuma `main`; confirme a branch padrão antes de atuar.
+- A partir do checkpoint V22.2, toda tarefa nova deve ramificar de `nonstop`, testar, abrir PR **para `nonstop`** e integrá-lo antes de chamar o trabalho de concluído. Não encadear PRs entre branches de pré-release.
+- As branches `feat/*`, `fix/sonora-v*`, `checkpoint/*`, `research/*` anteriores ao checkpoint são históricas. Não extrair código nem fazer merges automáticos dessas branches sem auditar alterações e decisões de produto posteriores.
+- Publicar APK de validação usando o commit que foi integrado ao fluxo canônico; release/pré-release são artefatos e **não** significam que a branch de origem tenha sido integrada.
+- Preserve os IDs de aplicativo, a assinatura, os dados do usuário e a distinção Debug/Release. Não reverter decisões mais novas por commits antigos.
+- O estado consolidado, testes e exceções estão documentados em `docs/SONORA_CONSOLIDATION.md`. O teste visual das fotos/fade no Redmi é uma pendência distinta do sucesso do CI.
