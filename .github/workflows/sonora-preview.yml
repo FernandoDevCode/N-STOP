@@ -1,0 +1,102 @@
+name: Sonora — APK de desenvolvimento (canônico)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/nonstop'
+    name: Test, build and publish from nonstop
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout canonical nonstop
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: All module tests and debug APK
+        env:
+          FANART_API_KEY: ${{ secrets.FANART_API_KEY }}
+          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest :app:assembleDebug --no-daemon
+
+      - name: Verify version, package, signature and SHA
+        id: verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          AAPT=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name aapt | sort -V | tail -n1)
+          SIGNER=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -n1)
+          test -n "$AAPT" && test -n "$SIGNER"
+          BADGING=$("$AAPT" dump badging "$APK" | grep '^package:')
+          [[ "$BADGING" == *"name='com.stash.app.debug'"* ]] || { echo "::error::Unexpected applicationId"; exit 1; }
+          VERSION_CODE=$(sed -n "s/.*versionCode='\\([0-9][0-9]*\\)'.*/\\1/p" <<< "$BADGING")
+          VERSION_NAME=$(sed -n "s/.*versionName='\\([^']*\\)'.*/\\1/p" <<< "$BADGING")
+          [[ "$VERSION_CODE" =~ ^[0-9]+$ ]] && test -n "$VERSION_NAME"
+          "$SIGNER" verify "$APK"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          sha256sum "$APK" | tee "$RUNNER_TEMP/sonora-sha256.txt"
+          echo "$BADGING"
+
+      - name: Upload immutable APK artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: sonora-nonstop-${{ github.sha }}
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish canonical GitHub prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION_CODE: ${{ steps.verify.outputs.version_code }}
+          VERSION_NAME: ${{ steps.verify.outputs.version_name }}
+        run: |
+          set -euo pipefail
+          SHORT_SHA=${GITHUB_SHA:0:12}
+          TAG="sonora-preview-v${VERSION_CODE}-${SHORT_SHA}"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Preview already published for this exact commit; not overwriting an existing APK"
+            exit 1
+          fi
+          APK="$RUNNER_TEMP/Sonora-v${VERSION_CODE}-${SHORT_SHA}-debug.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$APK"
+          SHA256=$(sha256sum "$APK" | cut -d' ' -f1)
+          cat > "$RUNNER_TEMP/notes.md" <<EOF
+          Sonora — preview do código canônico \`nonstop\`.
+
+          - Versão: \`$VERSION_NAME\` (versionCode $VERSION_CODE).
+          - Commit exato: \`$GITHUB_SHA\`.
+          - SHA-256 do APK: \`$SHA256\`.
+          - Testes de módulos, build e assinatura verificados nesta execução.
+          - Este APK é Debug (`com.stash.app.debug`), não uma release pública de produção.
+          - Não confundir aprovação automática com validação de UX/compatibilidade no aparelho.
+          EOF
+          gh release create "$TAG" "$APK" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Sonora Preview v${VERSION_CODE} · ${SHORT_SHA}" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            --prerelease --latest=false
