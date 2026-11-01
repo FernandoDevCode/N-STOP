@@ -12,7 +12,7 @@ for artist in ("Slipknot", "Radiohead", "System of a Down"):
         response=requests.get(url,timeout=17,headers={"User-Agent":"Mozilla/5.0"})
         soup=BeautifulSoup(response.text,"html.parser")
         title=soup.title.get_text(" ",strip=True) if soup.title else ""
-        is_gallery=("Photos | Last.fm" in title and "Client Challenge" not in title)
+        is_gallery=("photos" in title.lower() and "last.fm" in title.lower() and "client challenge" not in title.lower())
         print("\nARTIST="+artist+" HTTP="+str(response.status_code)+
               " bytes="+str(len(response.content))+" title="+repr(title)+" gallery="+str(is_gallery),flush=True)
         if not is_gallery: continue
