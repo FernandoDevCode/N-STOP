@@ -38,7 +38,7 @@ class ArtistIdentityLookup @Inject constructor(
 ) {
     private val http = okHttp.newBuilder().callTimeout(6, TimeUnit.SECONDS).build()
     private val json = Json { ignoreUnknownKeys = true }
-    private val prefs by lazy { context.getSharedPreferences("sonora_artist_identity_v2", Context.MODE_PRIVATE) }
+    private val prefs by lazy { context.getSharedPreferences("sonora_artist_identity_v3", Context.MODE_PRIVATE) }
 
     suspend fun find(artistName: String): ArtistIdentityImage? = withContext(Dispatchers.IO) {
         val name = artistName.trim()
