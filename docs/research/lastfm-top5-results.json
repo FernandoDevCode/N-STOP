@@ -1,0 +1,29 @@
+[
+  {
+    "artist": "Slipknot",
+    "gallery_url": "https://www.last.fm/music/Slipknot/+images",
+    "status": "access_challenge",
+    "top5": [],
+    "http": 200,
+    "page_title": "Client Challenge",
+    "html_bytes": 3038
+  },
+  {
+    "artist": "Radiohead",
+    "gallery_url": "https://www.last.fm/music/Radiohead/+images",
+    "status": "access_challenge",
+    "top5": [],
+    "http": 200,
+    "page_title": "Client Challenge",
+    "html_bytes": 3038
+  },
+  {
+    "artist": "System of a Down",
+    "gallery_url": "https://www.last.fm/music/System%20of%20a%20Down/+images",
+    "status": "invalid_gallery_page",
+    "top5": [],
+    "http": 600,
+    "page_title": "Last.fm - Temporarily Unavailable",
+    "html_bytes": 32948
+  }
+]
