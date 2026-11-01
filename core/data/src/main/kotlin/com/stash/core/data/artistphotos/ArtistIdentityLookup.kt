@@ -1,6 +1,7 @@
 package com.stash.core.data.artistphotos
 
 import android.content.Context
+import android.util.Log
 import com.stash.core.data.musicbrainz.MusicBrainzClient
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -32,11 +33,12 @@ import javax.inject.Singleton
 class ArtistIdentityLookup @Inject constructor(
     @ApplicationContext private val context: Context,
     private val musicBrainz: MusicBrainzClient,
+    private val fanartConfig: FanartConfig,
     okHttp: OkHttpClient,
 ) {
     private val http = okHttp.newBuilder().callTimeout(6, TimeUnit.SECONDS).build()
     private val json = Json { ignoreUnknownKeys = true }
-    private val prefs by lazy { context.getSharedPreferences("sonora_artist_identity_v1", Context.MODE_PRIVATE) }
+    private val prefs by lazy { context.getSharedPreferences("sonora_artist_identity_v2", Context.MODE_PRIVATE) }
 
     suspend fun find(artistName: String): ArtistIdentityImage? = withContext(Dispatchers.IO) {
         val name = artistName.trim()
@@ -44,8 +46,10 @@ class ArtistIdentityLookup @Inject constructor(
         val key = name.lowercase(Locale.ROOT)
         val checked = prefs.getLong("$key.checked", 0L)
         val cachedUrl = prefs.getString("$key.url", null)
-        val ttl = if (cachedUrl == null) NEGATIVE_TTL_MS else POSITIVE_TTL_MS
-        if (System.currentTimeMillis() - checked in 0 until ttl) {
+        // The original V19 cached unsuccessful lookups for a full day. A slow
+        // MusicBrainz/Wikidata response looked like "no identity" on repeat visits.
+        // V2 only caches SUCCESS, so installing an update is enough to retry.
+        if (cachedUrl != null && System.currentTimeMillis() - checked in 0 until POSITIVE_TTL_MS) {
             val kind = prefs.getString("$key.kind", null)?.let {
                 runCatching { ArtistIdentityKind.valueOf(it) }.getOrNull()
             }
@@ -57,45 +61,82 @@ class ArtistIdentityLookup @Inject constructor(
             resolve(name)
         } catch (cancel: CancellationException) {
             throw cancel
-        } catch (_: Exception) {
+        } catch (error: Exception) {
             // A timeout is NOT a confident absence of a representative image.
             // Do not negatively cache faults: the legacy photo still loads now.
+            Log.w("ArtistIdentityLookup", "Identity request failed for $name", error)
             return@withContext null
         }
-        prefs.edit()
-            .putString("$key.url", selected?.url)
-            .putString("$key.kind", selected?.kind?.name)
-            .putLong("$key.checked", System.currentTimeMillis())
-            .apply()
+        if (selected != null) {
+            prefs.edit()
+                .putString("$key.url", selected.url)
+                .putString("$key.kind", selected.kind.name)
+                .putLong("$key.checked", System.currentTimeMillis())
+                .apply()
+            Log.d("ArtistIdentityLookup", "Selected ${selected.kind} for $name")
+        }
         selected
     }
 
     private suspend fun resolve(name: String): ArtistIdentityImage? {
         val artist = musicBrainz.searchByName(name) ?: return null
-        val qid = ArtistIdentityRules.wikidataId(artist, name) ?: return null
-        val entity = getJson("https://www.wikidata.org/wiki/Special:EntityData/$qid.json")
-        // The official emblem is sometimes represented by a distinct Wikidata
-        // entity (P2238), as with the Rolling Stones. Resolve only this explicit
-        // link, never a guessed similar-looking item or a search by name.
-        val officialSymbolId = ArtistIdentityRules.officialSymbolId(entity, qid)
-        if (officialSymbolId != null) {
-            val symbolEntity = runCatching {
-                getJson("https://www.wikidata.org/wiki/Special:EntityData/$officialSymbolId.json")
-            }.getOrNull()
-            if (symbolEntity != null) {
-                for ((file, _) in ArtistIdentityRules.files(symbolEntity, officialSymbolId)) {
-                    val candidate = commonsCandidate(file, ArtistIdentityKind.SYMBOL) ?: continue
-                    ArtistIdentityRules.select(listOf(candidate))?.let { return it }
+        val mbid = (artist["id"] as? JsonPrimitive)?.content ?: return null
+        if (!MBID_REGEX.matches(mbid)) return null
+        // Independently sourced symbols always precede generic portraits.
+        val qid = ArtistIdentityRules.wikidataId(artist, name)
+        val entity = qid?.let { id ->
+            runCatching { getJson("https://www.wikidata.org/wiki/Special:EntityData/$id.json") }
+                .getOrNull()
+        }
+
+        if (qid != null && entity != null) {
+            val symbolId = ArtistIdentityRules.officialSymbolId(entity, qid)
+            if (symbolId != null) {
+                val symbolData = runCatching {
+                    getJson("https://www.wikidata.org/wiki/Special:EntityData/$symbolId.json")
+                }.getOrNull()
+                if (symbolData != null) {
+                    for ((file, _) in ArtistIdentityRules.files(symbolData, symbolId)) {
+                        safeCommons(file, ArtistIdentityKind.SYMBOL)?.let { return it }
+                    }
+                }
+            }
+            // Treat both emblem-style marks and wide wordmarks as valid identities.
+            for ((file, kind) in ArtistIdentityRules.files(entity, qid)) {
+                if (kind == ArtistIdentityKind.SYMBOL) {
+                    safeCommons(file, kind)?.let { return it }
                 }
             }
         }
-        for ((filename, kind) in ArtistIdentityRules.files(entity, qid)) {
-            val candidate = commonsCandidate(filename, kind) ?: continue
-            // Ordered: compact symbol first, then the source's main representative photo.
-            ArtistIdentityRules.select(listOf(candidate))?.let { return it }
+
+        // Fanart's community-rated official artist logos cover many musicians
+        // whose Wikidata entry only has an ordinary portrait, or no image.
+        val key = fanartConfig.apiKey.trim()
+        if (key.isNotBlank()) {
+            val fanart = runCatching {
+                getJson("https://webservice.fanart.tv/v3.2/music/$mbid", apiKey = key)
+            }.getOrNull()
+            if (fanart != null) {
+                ArtistIdentityRules.fanartLogo(fanart, name, mbid)?.let { return it }
+            }
+        }
+
+        // Finally use the explicitly curated Wikidata representative photo.
+        // If none is eligible, the ViewModel invokes the UNMODIFIED photo rules.
+        if (qid != null && entity != null) {
+            for ((file, kind) in ArtistIdentityRules.files(entity, qid)) {
+                if (kind == ArtistIdentityKind.PHOTO) {
+                    safeCommons(file, kind)?.let { return it }
+                }
+            }
         }
         return null
     }
+
+    private fun safeCommons(file: String, kind: ArtistIdentityKind): ArtistIdentityImage? =
+        runCatching {
+            commonsCandidate(file, kind)?.let { ArtistIdentityRules.select(listOf(it)) }
+        }.getOrNull()
 
     private fun commonsCandidate(file: String, kind: ArtistIdentityKind): ArtistIdentityCandidate? {
         val title = URLEncoder.encode("File:$file", "UTF-8")
@@ -126,11 +167,12 @@ class ArtistIdentityLookup @Inject constructor(
         )
     }
 
-    private fun getJson(url: String): JsonObject {
-        val request = Request.Builder().url(url)
+    private fun getJson(url: String, apiKey: String? = null): JsonObject {
+        val builder = Request.Builder().url(url)
             .header("User-Agent", "Sonora/0.9 (artist identity; github.com/FernandoDevCode/N-STOP)")
             .header("Accept", "application/json")
-            .build()
+        if (apiKey != null) builder.header("api-key", apiKey)
+        val request = builder.build()
         return http.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw java.io.IOException("Identity source HTTP ${response.code}")
             val content = response.body?.string() ?: throw java.io.IOException("Empty identity response")
@@ -140,6 +182,6 @@ class ArtistIdentityLookup @Inject constructor(
 
     private companion object {
         const val POSITIVE_TTL_MS = 30L * 24 * 60 * 60 * 1000
-        const val NEGATIVE_TTL_MS = 24L * 60 * 60 * 1000
+        val MBID_REGEX = Regex("[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}")
     }
 }
