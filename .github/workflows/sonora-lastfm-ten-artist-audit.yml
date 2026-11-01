@@ -1,0 +1,36 @@
+name: Sonora Lastfm Ten Artist Reliability Audit
+on:
+  push:
+    branches:
+      - research/sonora-lastfm-ten-artist-audit
+    paths:
+      - "tools/research/lastfm_ten_artist_audit.py"
+      - ".github/workflows/sonora-lastfm-ten-artist-audit.yml"
+permissions:
+  contents: write
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: python -m pip install --quiet requests beautifulsoup4 pillow
+      - name: Probe ten artists across two rounds
+        run: python tools/research/lastfm_ten_artist_audit.py
+      - name: Archive audit on research branch
+        if: always()
+        run: |
+          test -f docs/research/lastfm-ten-artist-audit.json || exit 1
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/research/lastfm-ten-artist-audit.json docs/research/lastfm-ten-artist-audit.md
+          git commit -m "research: archive Last.fm audit [skip ci]" || true
+          git push
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sonora-lastfm-ten-artist-audit
+          path: |
+            docs/research/lastfm-ten-artist-audit.json
+            docs/research/lastfm-ten-artist-audit.md
+          retention-days: 14
