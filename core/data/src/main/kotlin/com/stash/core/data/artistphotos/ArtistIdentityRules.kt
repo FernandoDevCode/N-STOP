@@ -94,7 +94,33 @@ internal object ArtistIdentityRules {
         return ids.singleOrNull()
     }
 
-    /** A logo only qualifies as a hero if its proportions suggest an emblem/symbol. */
+    /** Fanart community rating only counts on an exact MBID+name match.
+     * Unlike P154, logos from this source need evidence of community adoption. */
+    fun fanartLogo(response: JsonObject, name: String, mbid: String): ArtistIdentityImage? {
+        val sourceName = (response["name"] as? JsonPrimitive)?.content?.trim()
+        val sourceId = ((response["mbid_id"] ?: response["mbid"]) as? JsonPrimitive)?.content
+        if (sourceName?.equals(name.trim(), ignoreCase = true) != true ||
+            sourceId?.equals(mbid, ignoreCase = true) != true) return null
+        val options = listOf("hdmusiclogo", "musiclogo").flatMap { key ->
+            response[key]?.jsonArray.orEmpty().mapNotNull { element ->
+                val obj = element as? JsonObject ?: return@mapNotNull null
+                val url = (obj["url"] as? JsonPrimitive)?.content ?: return@mapNotNull null
+                val likes = (obj["likes"] as? JsonPrimitive)?.content?.toIntOrNull() ?: 0
+                val uri = runCatching { URI(url) }.getOrNull() ?: return@mapNotNull null
+                if (uri.scheme != "https" || uri.host != "assets.fanart.tv" ||
+                    uri.port != -1 || uri.userInfo != null || uri.query != null ||
+                    uri.fragment != null || !uri.path.endsWith(".png", ignoreCase = true) ||
+                    !uri.path.contains("/musiclogo/") && !uri.path.contains("/hdmusiclogo/")) {
+                    return@mapNotNull null
+                }
+                if (likes < 5) return@mapNotNull null
+                ArtistIdentityImage(url, ArtistIdentityKind.SYMBOL) to likes
+            }
+        }
+        return options.maxByOrNull { it.second }?.first
+    }
+
+    /** Recognizable identity graphics fit the hero without the photo's crop. */
     fun select(candidates: List<ArtistIdentityCandidate>): ArtistIdentityImage? {
         return candidates.firstNotNullOfOrNull { image ->
             val host = runCatching { URI(image.url) }.getOrNull()
@@ -106,9 +132,13 @@ internal object ArtistIdentityRules {
             if (!supported) return@firstNotNullOfOrNull null
             val ratio = image.width.toDouble() / image.height
             val suitable = when (image.kind) {
+                // Identity assets often ARE deliberately wide (Queen, Nirvana,
+                // AC/DC, etc.). This is presentation metadata, not photo art:
+                // Fit preserves the entire mark and avoids cropping.
                 ArtistIdentityKind.SYMBOL ->
-                    ratio in 0.70..1.45 &&
-                    (image.mime == "image/svg+xml" || (image.width >= 400 && image.height >= 400))
+                    ratio in 0.22..6.5 &&
+                    (image.mime == "image/svg+xml" ||
+                        (image.width >= 280 && image.height >= 100))
                 ArtistIdentityKind.PHOTO ->
                     image.width >= 800 && image.height >= 450 && ratio in 0.5..3.2
             }
