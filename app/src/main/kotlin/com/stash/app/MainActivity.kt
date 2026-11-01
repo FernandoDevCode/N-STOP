@@ -196,15 +196,25 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // Apply AFTER Activity initialization: the app window, not the
+        // splash/decor defaults, owns the edge-to-edge flags.
         enableEdgeToEdge()
-        // Compose paints behind the status bar; don't let the window or an OEM
-        // contrast scrim substitute the system's grey-blue strip for our backdrop.
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+        window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)
         window.statusBarColor = android.graphics.Color.TRANSPARENT
+        // Some OEMs letterbox the full status-bar band around the punch-hole
+        // unless the activity explicitly opts into drawing behind the cutout.
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            val attrs = window.attributes
+            attrs.layoutInDisplayCutoutMode =
+                android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            window.attributes = attrs
+        }
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
             window.isStatusBarContrastEnforced = false
         }
-        super.onCreate(savedInstanceState)
 
         val themeModeFlow: Flow<ThemeMode> = themePreference.themeMode
 
