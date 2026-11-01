@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import com.stash.app.R
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.data.prefs.StartTab
@@ -104,7 +105,7 @@ fun StashScaffold(
     val onMusicNowPlaying = currentRoute == NowPlayingRoute::class.qualifiedName
     // The artist hero is edge-to-edge too. Its own controls already apply
     // statusBarsPadding; do not inset the entire screen above the artwork.
-    val onArtistProfile = currentRoute == SearchArtistRoute::class.qualifiedName
+    val onArtistProfile = navBackStackEntry?.destination?.hasRoute<SearchArtistRoute>() == true
     val onNowPlaying = onMusicNowPlaying ||
         currentRoute == PodcastNowPlayingRoute::class.qualifiedName
 
