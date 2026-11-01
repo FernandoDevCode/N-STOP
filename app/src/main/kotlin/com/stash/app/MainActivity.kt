@@ -287,6 +287,8 @@ class MainActivity : ComponentActivity() {
                         pendingDeepLink = pendingDeepLink.value,
                         onDeepLinkConsumed = { pendingDeepLink.value = null },
                         startTab = startTab,
+                        statusBarProbe = BuildConfig.DEBUG &&
+                            intent?.getBooleanExtra("sonora_status_probe", false) == true,
                     )
                 }
             }

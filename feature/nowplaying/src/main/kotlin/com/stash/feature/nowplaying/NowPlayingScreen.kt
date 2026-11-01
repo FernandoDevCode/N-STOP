@@ -754,7 +754,9 @@ private fun PlayerV7Content(
     }
 
     val useV8 = !useClassicPlayer && !reading && room == null && track != null
-    Box(Modifier.holdHeightWhileLeaving().fillMaxSize().background(Color(0xFF05080D))) {
+    // The shared window already paints the artist ambience behind the system
+    // clock; a second opaque fallback here can recreate the hard horizontal seam.
+    Box(Modifier.holdHeightWhileLeaving().fillMaxSize()) {
         if (!useV8) PlayerV7Backdrop(artModel, resolvedDirection, ambientAnimationEnabled)
         val navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
         val reduced = com.stash.core.ui.ambient.rememberReducedMotion()
