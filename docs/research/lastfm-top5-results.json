@@ -2,11 +2,80 @@
   {
     "artist": "Slipknot",
     "gallery_url": "https://www.last.fm/music/Slipknot/+images",
-    "status": "access_challenge",
-    "top5": [],
+    "status": "verified_snapshot",
+    "top5": [
+      {
+        "rank": 1,
+        "hash": "f7ece7da4d40d070a04c01e2b4041cb5",
+        "lastfm_photo_url": "https://www.last.fm/music/Slipknot/+images/f7ece7da4d40d070a04c01e2b4041cb5",
+        "image": {
+          "url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/f7ece7da4d40d070a04c01e2b4041cb5.jpg",
+          "variant": "ar0",
+          "width": 844,
+          "height": 844,
+          "bytes": 141512,
+          "color_fraction": 0.575
+        }
+      },
+      {
+        "rank": 2,
+        "hash": "ddc39f9fa7c94cb05c6268e8d2671cc2",
+        "lastfm_photo_url": "https://www.last.fm/music/Slipknot/+images/ddc39f9fa7c94cb05c6268e8d2671cc2",
+        "image": {
+          "url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/ddc39f9fa7c94cb05c6268e8d2671cc2.jpg",
+          "variant": "ar0",
+          "width": 564,
+          "height": 673,
+          "bytes": 76496,
+          "color_fraction": 0.78
+        }
+      },
+      {
+        "rank": 3,
+        "hash": "11759a781b9990459403914d63b70d60",
+        "lastfm_photo_url": "https://www.last.fm/music/Slipknot/+images/11759a781b9990459403914d63b70d60",
+        "image": {
+          "url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/11759a781b9990459403914d63b70d60.jpg",
+          "variant": "ar0",
+          "width": 1122,
+          "height": 1087,
+          "bytes": 239001,
+          "color_fraction": 0.548
+        }
+      },
+      {
+        "rank": 4,
+        "hash": "2a6f85be690528a2cdbe97d567709b53",
+        "lastfm_photo_url": "https://www.last.fm/music/Slipknot/+images/2a6f85be690528a2cdbe97d567709b53",
+        "image": {
+          "url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/2a6f85be690528a2cdbe97d567709b53.jpg",
+          "variant": "ar0",
+          "width": 1242,
+          "height": 1221,
+          "bytes": 189965,
+          "color_fraction": 0.353
+        }
+      },
+      {
+        "rank": 5,
+        "hash": "8a66110fbcf94a80bd8d00de73acc339",
+        "lastfm_photo_url": "https://www.last.fm/music/Slipknot/+images/8a66110fbcf94a80bd8d00de73acc339",
+        "image": {
+          "url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/8a66110fbcf94a80bd8d00de73acc339.jpg",
+          "variant": "ar0",
+          "width": 491,
+          "height": 634,
+          "bytes": 66709,
+          "color_fraction": 0.588
+        }
+      }
+    ],
     "http": 200,
     "page_title": "Client Challenge",
-    "html_bytes": 3038
+    "html_bytes": 3038,
+    "live_status": "access_challenge",
+    "snapshot_verified_at": "2026-11-01T23:39:09Z",
+    "snapshot_evidence": "https://github.com/FernandoDevCode/N-STOP/actions/runs/41363122808"
   },
   {
     "artist": "Radiohead",
@@ -20,10 +89,79 @@
   {
     "artist": "System of a Down",
     "gallery_url": "https://www.last.fm/music/System%20of%20a%20Down/+images",
-    "status": "invalid_gallery_page",
-    "top5": [],
+    "status": "verified_snapshot",
+    "top5": [
+      {
+        "rank": 1,
+        "hash": "05d78b59cf1242f09fab2176c8bf07df",
+        "lastfm_photo_url": "https://www.last.fm/music/System%20of%20a%20Down/+images/05d78b59cf1242f09fab2176c8bf07df",
+        "image": {
+          "url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/05d78b59cf1242f09fab2176c8bf07df.jpg",
+          "variant": "ar0",
+          "width": 556,
+          "height": 550,
+          "bytes": 94161,
+          "color_fraction": 0.325
+        }
+      },
+      {
+        "rank": 2,
+        "hash": "c033b205cf951b707fff0cd34b764956",
+        "lastfm_photo_url": "https://www.last.fm/music/System%20of%20a%20Down/+images/c033b205cf951b707fff0cd34b764956",
+        "image": {
+          "url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/c033b205cf951b707fff0cd34b764956.jpg",
+          "variant": "ar0",
+          "width": 736,
+          "height": 736,
+          "bytes": 114184,
+          "color_fraction": 0.416
+        }
+      },
+      {
+        "rank": 3,
+        "hash": "66174eabb9512fc458aae89c830ab37d",
+        "lastfm_photo_url": "https://www.last.fm/music/System%20of%20a%20Down/+images/66174eabb9512fc458aae89c830ab37d",
+        "image": {
+          "url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/66174eabb9512fc458aae89c830ab37d.jpg",
+          "variant": "ar0",
+          "width": 666,
+          "height": 1000,
+          "bytes": 66625,
+          "color_fraction": 0.18
+        }
+      },
+      {
+        "rank": 4,
+        "hash": "84a39d04387c79845fae8259872af400",
+        "lastfm_photo_url": "https://www.last.fm/music/System%20of%20a%20Down/+images/84a39d04387c79845fae8259872af400",
+        "image": {
+          "url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/84a39d04387c79845fae8259872af400.jpg",
+          "variant": "ar0",
+          "width": 1080,
+          "height": 980,
+          "bytes": 237445,
+          "color_fraction": 0.554
+        }
+      },
+      {
+        "rank": 5,
+        "hash": "0ae51ffbbb734219a37859504fa68ebd",
+        "lastfm_photo_url": "https://www.last.fm/music/System%20of%20a%20Down/+images/0ae51ffbbb734219a37859504fa68ebd",
+        "image": {
+          "url": "https://lastfm-img.freetls.fastly.net/i/u/ar0/0ae51ffbbb734219a37859504fa68ebd.jpg",
+          "variant": "ar0",
+          "width": 662,
+          "height": 467,
+          "bytes": 59348,
+          "color_fraction": 0.879
+        }
+      }
+    ],
     "http": 600,
     "page_title": "Last.fm - Temporarily Unavailable",
-    "html_bytes": 32948
+    "html_bytes": 32948,
+    "live_status": "invalid_gallery_page",
+    "snapshot_verified_at": "2026-11-01T23:39:09Z",
+    "snapshot_evidence": "https://github.com/FernandoDevCode/N-STOP/actions/runs/41363122808"
   }
 ]
