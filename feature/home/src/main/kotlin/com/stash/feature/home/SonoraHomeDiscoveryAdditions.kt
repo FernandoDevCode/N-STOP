@@ -45,12 +45,16 @@ import com.stash.core.ui.visual.VisualDesign
 
 /** Exactly one available ready, image-backed mix from each source category.
  * The full configured mix rails stay intact below. */
-internal fun homeQuickMixes(state: HomeUiState): List<HomeMix> = listOfNotNull(
-    state.yourMixes.firstOrNull { !it.artUrl.isNullOrBlank() && it.buildState == MixBuildState.READY },
-    state.madeForYou.firstOrNull { !it.artUrl.isNullOrBlank() && it.buildState == MixBuildState.READY },
-    state.radios.firstOrNull { !it.artUrl.isNullOrBlank() && it.buildState == MixBuildState.READY },
-    state.moodDecades.firstOrNull { !it.artUrl.isNullOrBlank() && it.buildState == MixBuildState.READY },
-).distinctBy { it.id }.take(4)
+internal fun homeQuickMixes(state: HomeUiState): List<HomeMix> {
+    val selectedIds = mutableSetOf<Long>()
+    return listOf(state.yourMixes, state.madeForYou, state.radios, state.moodDecades)
+        .mapNotNull { rail ->
+            rail.firstOrNull {
+                !it.artUrl.isNullOrBlank() && it.buildState == MixBuildState.READY &&
+                    it.id !in selectedIds
+            }?.also { selectedIds.add(it.id) }
+        }.take(4)
+}
 
 /** Deliberately compact. Existing Daily Discover hero remains above it. */
 @Composable
