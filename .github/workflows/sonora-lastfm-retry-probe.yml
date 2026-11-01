@@ -1,0 +1,29 @@
+name: Sonora — Last.fm bounded retry research (temporary)
+on:
+  push:
+    branches:
+      - research/sonora-lastfm-retry-probe
+    paths:
+      - "tools/research/lastfm_retry_probe.py"
+      - ".github/workflows/sonora-lastfm-retry-probe.yml"
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install read-only probe dependencies
+        run: python -m pip install --quiet requests beautifulsoup4
+      - name: Test retries and fresh session
+        run: python tools/research/lastfm_retry_probe.py
+      - name: Archive results in temporary branch
+        if: always()
+        run: |
+          test -f docs/research/lastfm-retry-result.md || exit 1
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f docs/research/lastfm-retry-result.md
+          git commit -m "research: record Lastfm retry results [skip ci]" || true
+          git push
