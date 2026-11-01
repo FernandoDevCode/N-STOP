@@ -70,18 +70,18 @@ class ArtistIdentityRulesTest {
         assertThat(ArtistIdentityRules.officialSymbolId(band, "Q2")).isNull()
     }
 
-    @Test fun wideWordmarkDoesNotReplaceHeroButHistoricPhotoCan() {
+    @Test fun wideRecognizableLogoTakesPriorityOverGenericPortrait() {
         val selected = ArtistIdentityRules.select(listOf(
             image(ArtistIdentityKind.SYMBOL, width = 1100, height = 180),
             image(ArtistIdentityKind.PHOTO, width = 1798, height = 1146),
         ))
-        assertThat(selected?.kind).isEqualTo(ArtistIdentityKind.PHOTO)
+        assertThat(selected?.kind).isEqualTo(ArtistIdentityKind.SYMBOL)
     }
 
     @Test fun noSuitableImageMeansNullSoOriginalSelectorRuns() {
         val selected = ArtistIdentityRules.select(listOf(
             image(ArtistIdentityKind.PHOTO, width = 367, height = 346),
-            image(ArtistIdentityKind.SYMBOL, width = 288, height = 106),
+            image(ArtistIdentityKind.SYMBOL, width = 120, height = 35),
         ))
         assertThat(selected).isNull()
         // Original photo selector remains a separate, unchanged second stage.
@@ -90,6 +90,34 @@ class ArtistIdentityRulesTest {
                 "artistbackground", 1900, 1080, 9, null),
         ), false, null)
         assertThat(original?.likes).isEqualTo(9)
+    }
+
+    @Test fun fanartMustMatchNameAndMbidWithCredibleVotes() {
+        val json = data("""{
+          "name":"Queen","mbid_id":"0383dadf-2a4e-4d10-a46a-e9e041da8eb3",
+          "hdmusiclogo":[
+            {"url":"https://assets.fanart.tv/fanart/music/hdmusiclogo/one.png","likes":"4"},
+            {"url":"https://assets.fanart.tv/fanart/music/hdmusiclogo/two.png","likes":"16"}
+          ],
+          "musiclogo":[{"url":"https://assets.fanart.tv/fanart/music/musiclogo/three.png","likes":"10"}]
+        }""")
+        val id = "0383dadf-2a4e-4d10-a46a-e9e041da8eb3"
+        assertThat(ArtistIdentityRules.fanartLogo(json, "Queen", id)?.url)
+            .isEqualTo("https://assets.fanart.tv/fanart/music/hdmusiclogo/two.png")
+        assertThat(ArtistIdentityRules.fanartLogo(json, "Queen Tribute", id)).isNull()
+        assertThat(ArtistIdentityRules.fanartLogo(json, "Queen", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")).isNull()
+    }
+
+    @Test fun fanartUnknownOrUntrustedUrlNeverWins() {
+        val id = "0383dadf-2a4e-4d10-a46a-e9e041da8eb3"
+        val json = data("""{
+          "name":"Queen","mbid_id":"0383dadf-2a4e-4d10-a46a-e9e041da8eb3",
+          "hdmusiclogo":[
+            {"url":"https://untrusted.example/fanart/music/hdmusiclogo/fake.png","likes":"999"},
+            {"url":"https://assets.fanart.tv/fanart/music/hdmusiclogo/test.png","likes":"2"}
+          ]
+        }""")
+        assertThat(ArtistIdentityRules.fanartLogo(json, "Queen", id)).isNull()
     }
 
     @Test fun invalidOrUnrenderableImagesNeverWin() {
