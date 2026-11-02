@@ -6,6 +6,10 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -90,6 +94,7 @@ fun ArtistHero(
     heroAtmosphere: Color = ArtistNeutralPalette.hero,
     bridgeAtmosphere: Color = ArtistNeutralPalette.bridge,
     onHeroArtworkLoadFailed: (String) -> Unit = {},
+    onEditPhoto: () -> Unit = {},
     onBack: () -> Unit,
     onPlayArtist: () -> Unit,
     onStartRadio: () -> Unit,
@@ -193,6 +198,21 @@ fun ArtistHero(
             },
         )
 
+        // Only the photograph itself handles a long press. Top action buttons
+        // and playback controls are drawn above this gesture layer.
+        Box(
+            Modifier.fillMaxWidth().height(photoHeightDp)
+                .pointerInput(onEditPhoto) {
+                    detectTapGestures(onLongPress = { onEditPhoto() })
+                }
+                .semantics {
+                    onLongClick("Editar fotografia do artista") {
+                        onEditPhoto()
+                        true
+                    }
+                },
+        )
+
         // Match the reference's quieter 38dp translucent circles while
         // retaining a full 48dp touch target for Android accessibility.
         ArtistTopAction(
@@ -260,6 +280,19 @@ fun ArtistHero(
                             favorites.edit().putBoolean(bookmarkKey, bookmarked).apply()
                         },
                     )
+                    DropdownMenuItem(
+                        text = { Text("Editar fotografia") },
+                        onClick = { moreOpen = false; onEditPhoto() },
+                    )
+                    if (hero.spotifyArtistUrl != null) {
+                        DropdownMenuItem(
+                            text = { Text("Foto fornecida pelo Spotify") },
+                            onClick = {
+                                moreOpen = false
+                                runCatching { uriHandler.openUri(hero.spotifyArtistUrl) }
+                            },
+                        )
+                    }
                     DropdownMenuItem(
                         text = { Text("Rádio do artista") },
                         leadingIcon = { Icon(Icons.Default.Radio, contentDescription = null) },

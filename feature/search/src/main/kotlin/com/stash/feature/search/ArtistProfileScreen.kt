@@ -1,6 +1,11 @@
 package com.stash.feature.search
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -126,6 +131,12 @@ fun ArtistProfileScreen(
     val previewLoadingId by vm.delegate.previewLoadingId.collectAsStateWithLifecycle()
     val currentPlayingYoutubeId by vm.currentPlayingYoutubeId.collectAsStateWithLifecycle()
     val streamingEnabled by vm.streamingEnabled.collectAsStateWithLifecycle()
+    var showPhotoEditor by rememberSaveable { mutableStateOf(false) }
+    var showPhotoLinkDialog by rememberSaveable { mutableStateOf(false) }
+    var photoLink by rememberSaveable { mutableStateOf("") }
+    val pickPhoto = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+    ) { uri -> if (uri != null) vm.setLocalPhoto(uri) }
     var showStreamingSheet by rememberSaveable { mutableStateOf(false) }
     val streamingSheetState = androidx.compose.material3.rememberModalBottomSheetState()
     val playlistSheetItem by vm.playlistSheetItem.collectAsStateWithLifecycle()
@@ -245,6 +256,7 @@ fun ArtistProfileScreen(
                     bridgeAtmosphere = smoothBridge,
                     heroAtmosphere = smoothHeroTone,
                     onHeroArtworkLoadFailed = vm::onHeroArtworkLoadFailed,
+                    onEditPhoto = { showPhotoEditor = true },
                     onBack = onBack,
                     onPlayArtist = vm::playArtist,
                     onStartRadio = vm::startRadio,
@@ -348,6 +360,59 @@ fun ArtistProfileScreen(
                 },
                 onDismiss = { showStreamingSheet = false },
                 sheetState = streamingSheetState,
+            )
+        }
+
+        if (showPhotoEditor) {
+            AlertDialog(
+                onDismissRequest = { showPhotoEditor = false },
+                title = { Text("Fotografia de " + state.hero.name) },
+                text = {
+                    Column {
+                        Text("A mudança ficará salva somente neste aparelho.")
+                        TextButton(onClick = {
+                            showPhotoEditor = false
+                            photoLink = ""
+                            showPhotoLinkDialog = true
+                        }) { Text("Usar link de imagem") }
+                        TextButton(onClick = {
+                            showPhotoEditor = false
+                            pickPhoto.launch("image/*")
+                        }) { Text("Escolher imagem do celular") }
+                        TextButton(onClick = {
+                            showPhotoEditor = false
+                            vm.restoreSpotifyPhoto()
+                        }) { Text("Restaurar fotografia padrão") }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showPhotoEditor = false }) { Text("Fechar") }
+                },
+            )
+        }
+
+        if (showPhotoLinkDialog) {
+            AlertDialog(
+                onDismissRequest = { showPhotoLinkDialog = false },
+                title = { Text("Usar imagem por link") },
+                text = {
+                    OutlinedTextField(
+                        value = photoLink,
+                        onValueChange = { photoLink = it },
+                        label = { Text("URL HTTPS da fotografia") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        vm.setPhotoLink(photoLink)
+                        showPhotoLinkDialog = false
+                    }) { Text("Salvar") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showPhotoLinkDialog = false }) { Text("Cancelar") }
+                },
             )
         }
 
