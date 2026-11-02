@@ -70,7 +70,7 @@ class ArtistHeroPhotoStore @Inject constructor(
             val final = File(folder, key(artistId) + "-" + System.nanoTime() + ".img")
             if (!temp.renameTo(final)) throw IOException("Não foi possível guardar a imagem.")
             val previous = get(artistId)
-            val result = final.toURI().toString()
+            val result = Uri.fromFile(final).toString()
             prefs.edit().putString(key(artistId), result).apply()
             deleteOldLocal(previous)
             result
