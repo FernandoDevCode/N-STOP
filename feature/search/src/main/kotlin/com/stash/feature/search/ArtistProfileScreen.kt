@@ -319,7 +319,7 @@ fun ArtistProfileScreen(
                     onOpenAbout = positions.about?.let { target ->
                         {
                             scrollScope.launch {
-                                listState.animateScrollToItem(target, scrollOffset = -120)
+                                listState.animateScrollToItem(target, scrollOffset = -tabScrollOffsetPx)
                             }
                             Unit
                         }
