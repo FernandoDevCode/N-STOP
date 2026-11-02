@@ -18,6 +18,7 @@ data class HeroState(
     val avatarUrl: String?,
     val subscribersText: String?,
     val artworkKind: ArtistIdentityKind = ArtistIdentityKind.PHOTO,
+    val spotifyArtistUrl: String? = null,
 )
 
 /**
