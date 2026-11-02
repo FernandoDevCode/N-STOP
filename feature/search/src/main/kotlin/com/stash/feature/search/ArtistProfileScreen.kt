@@ -20,10 +20,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.blur
-import androidx.compose.ui.layout.ContentScale
-import coil3.compose.AsyncImage
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.asPaddingValues
@@ -113,6 +109,12 @@ fun ArtistProfileScreen(
         key1 = state.hero.avatarUrl,
     ) {
         value = artistPaletteFromPhoto(context, state.hero.avatarUrl)
+    }
+    val edgeColors by produceState<List<Color>>(
+        initialValue = emptyList(),
+        key1 = state.hero.avatarUrl,
+    ) {
+        value = artistBottomEdgeColors(context, state.hero.avatarUrl)
     }
     val smoothAtmosphere by animateColorAsState(
         targetValue = photoPalette.surface,
@@ -298,25 +300,28 @@ fun ArtistProfileScreen(
                 }
             },
         ) {
-        // The original photo remains a no-crop Fit image in the hero. This
-        // decorative copy supplies only a low-opacity ambient colour wash.
-        state.hero.avatarUrl?.takeIf { it.isNotBlank() }?.let { url ->
-            AsyncImage(
-                model = url,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize().blur(56.dp).alpha(ambientImageAlpha * .65f),
-            )
-        }
-        // A translucent bottom scrim allows the artist photograph to tint
-        // early content while preserving text contrast and a graphite ending.
+        // Spatial continuation of the lower photographic edge. Reusing a
+        // cropped full-screen image duplicated the source and broke continuity.
+        // These seven horizontally ordered samples preserve the edge's local
+        // colour distribution without inventing photographic detail.
+        Box(
+            modifier = Modifier.matchParentSize().drawBehind {
+                if (edgeColors.size >= 2 && ambientImageAlpha > 0f) {
+                    drawRect(
+                        brush = Brush.horizontalGradient(edgeColors),
+                        alpha = ambientImageAlpha * .85f,
+                    )
+                }
+            },
+        )
+        // The soft vertical scrim returns every photograph to charcoal.
         Box(
             modifier = Modifier.matchParentSize().background(
                 Brush.verticalGradient(
                     0f to Color.Transparent,
-                    .40f to smoothAtmosphere.copy(alpha = .20f),
-                    .78f to smoothAtmosphere.copy(alpha = .70f),
-                    1f to smoothAtmosphere.copy(alpha = .96f),
+                    .35f to smoothAtmosphere.copy(alpha = .18f),
+                    .75f to smoothAtmosphere.copy(alpha = .75f),
+                    1f to smoothAtmosphere,
                 ),
             ),
         )
