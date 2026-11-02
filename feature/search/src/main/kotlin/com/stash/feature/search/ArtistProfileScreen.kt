@@ -20,6 +20,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.layout.ContentScale
+import coil3.compose.AsyncImage
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.asPaddingValues
@@ -156,6 +160,15 @@ fun ArtistProfileScreen(
     // hero + Popular, i.e. off-screen on landing) so the inner rail's own
     // scroll + highlight (see AlbumsRow) is actually visible.
     val listState = rememberLazyListState()
+    // A dim, softly blurred copy of the artist photograph provides continuity
+    // behind the shelves. The original hero retains its uncropped Fit image.
+    val ambientImageAlpha by remember(listState) {
+        derivedStateOf {
+            val progress = (listState.firstVisibleItemIndex / 12f +
+                listState.firstVisibleItemScrollOffset / 9600f).coerceIn(0f, 1f)
+            .32f * (1f - progress)
+        }
+    }
     val statusBarNeedsContrast by remember(listState) {
         derivedStateOf {
             listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 180
@@ -242,6 +255,27 @@ fun ArtistProfileScreen(
                 }
             },
         ) {
+        // Static atmospheric backdrop: no per-frame blur computation tied to
+        // scrolling. As later sections enter view, the image fades to Sonora's
+        // graphite surface. The bottom gradient keeps the navigation legible.
+        state.hero.avatarUrl?.takeIf { it.isNotBlank() }?.let { url ->
+            AsyncImage(
+                model = url,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize().blur(56.dp).alpha(ambientImageAlpha),
+            )
+        }
+        Box(
+            modifier = Modifier.matchParentSize().background(
+                Brush.verticalGradient(
+                    0f to smoothBridge.copy(alpha = .54f),
+                    .38f to smoothAtmosphere.copy(alpha = .76f),
+                    .72f to smoothAtmosphere.copy(alpha = .91f),
+                    1f to smoothAtmosphere,
+                ),
+            ),
+        )
         LazyColumn(
             state = listState,
             contentPadding = PaddingValues(bottom = bottomChromePadding(96.dp)),
