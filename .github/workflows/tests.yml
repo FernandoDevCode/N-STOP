@@ -183,6 +183,9 @@ jobs:
       - name: Fix gradlew permission
         run: chmod +x gradlew
 
+      - name: Verify Sonora launcher PNG integrity
+        run: python3 tools/verify_sonora_launcher.py
+
       - name: Assemble debug APK
         env:
           LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
