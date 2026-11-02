@@ -1,8 +1,8 @@
 package com.stash.feature.search
 
 /**
- * Item positions in the artist LazyColumn. The hero and the sticky section
- * navigator are always the first two items; each populated shelf contributes
+ * Item positions in the artist LazyColumn. The hero and reserved featured-release slot
+ * are always the first two items; each populated shelf contributes
  * a heading followed by a shelf/list. Keeping the mapping pure prevents
  * album deep-links from landing in the wrong section when data is missing.
  */
@@ -22,7 +22,7 @@ internal fun artistSectionPositions(
     hasRelated: Boolean,
     hasAbout: Boolean,
 ): ArtistSectionPositions {
-    var index = 2 // hero (0), sticky section navigator (1)
+    var index = 2 // hero (0), reserved featured release (1)
     fun reserve(hasContent: Boolean): Int? {
         if (!hasContent) return null
         val result = index

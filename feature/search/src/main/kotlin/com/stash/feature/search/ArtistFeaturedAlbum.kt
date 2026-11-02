@@ -58,14 +58,14 @@ internal fun ArtistFeaturedAlbum(
     Surface(
         onClick = { onOpen(album) },
         modifier = modifier.fillMaxWidth(),
-        color = Color.White.copy(alpha = .045f),
-        shape = RoundedCornerShape(17.dp),
-        border = BorderStroke(0.5.dp, Color.White.copy(alpha = .055f)),
+        color = Color.White.copy(alpha = .085f),
+        shape = RoundedCornerShape(22.dp),
+        border = BorderStroke(0.6.dp, Color.White.copy(alpha = .12f)),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
+            modifier = Modifier.padding(horizontal = 13.dp, vertical = 13.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(13.dp),
         ) {
             Box(
                 modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp))
@@ -89,21 +89,21 @@ internal fun ArtistFeaturedAlbum(
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = BrazilianDisplayFormat.releaseDate(album.year) ?: "Álbum em destaque",
+                    text = "Lançamento em destaque",
                     style = MaterialTheme.typography.labelSmall,
                     color = Color(0xFFBCC4CF),
                     maxLines = 1,
                 )
                 Text(
                     text = album.title,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.titleSmall,
                     color = Color(0xFFF4F5F7),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
                 album.trackCount?.takeIf { it > 0 }?.let { count ->
                     Text(
-                        text = if (count == 1) "1 música" else "$count músicas",
+                        text = listOfNotNull(BrazilianDisplayFormat.releaseDate(album.year), if (count == 1) "1 música" else "$count músicas").joinToString(" • "),
                         style = MaterialTheme.typography.labelSmall,
                         color = Color(0xFFBCC4CF),
                     )

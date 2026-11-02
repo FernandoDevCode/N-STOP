@@ -20,6 +20,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.layout.ContentScale
+import coil3.compose.AsyncImage
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.asPaddingValues
@@ -156,6 +160,15 @@ fun ArtistProfileScreen(
     // hero + Popular, i.e. off-screen on landing) so the inner rail's own
     // scroll + highlight (see AlbumsRow) is actually visible.
     val listState = rememberLazyListState()
+    // A dim, softly blurred copy of the artist photograph provides continuity
+    // behind the shelves. The original hero retains its uncropped Fit image.
+    val ambientImageAlpha by remember(listState) {
+        derivedStateOf {
+            val progress = (listState.firstVisibleItemIndex / 12f +
+                listState.firstVisibleItemScrollOffset / 9600f).coerceIn(0f, 1f)
+            .32f * (1f - progress)
+        }
+    }
     val statusBarNeedsContrast by remember(listState) {
         derivedStateOf {
             listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 180
@@ -183,6 +196,34 @@ fun ArtistProfileScreen(
             hasRelated = state.related.isNotEmpty(),
             hasAbout = state.about != null,
         )
+    }
+    // The editorial section navigator is an overlay, not another LazyColumn
+    // item: deep-link indices and existing shelf anchors remain unchanged.
+    val artistTabs = remember(positions) {
+        listOfNotNull(
+            positions.songs?.let { "Músicas" to it },
+            positions.albums?.let { "Álbuns" to it },
+            positions.singles?.let { "Singles e EPs" to it },
+            positions.about?.let { "Sobre" to it },
+        )
+    }
+    val tabScrollOffsetPx = with(LocalDensity.current) { 92.dp.roundToPx() }
+    val selectedArtistTab by remember(listState, artistTabs) {
+        derivedStateOf {
+            // Use the visible heading's actual pixel position: when a chapter
+            // approaches the overlay, selection advances before its first row
+            // becomes the LazyColumn's first visible item.
+            val chapterIndices = artistTabs.map { it.second }.toSet()
+            val visibleHeading = listState.layoutInfo.visibleItemsInfo
+                .filter { it.index in chapterIndices && it.offset <= tabScrollOffsetPx }
+                .maxByOrNull { it.index }
+            visibleHeading?.index
+                ?: artistTabs.lastOrNull { it.second < listState.firstVisibleItemIndex }?.second
+                ?: artistTabs.firstOrNull()?.second
+        }
+    }
+    val showArtistTabs by remember(listState, artistTabs) {
+        derivedStateOf { artistTabs.size > 1 && listState.firstVisibleItemIndex > 0 }
     }
     val sectionOuterIndex = remember(focus, positions) {
         when (focus?.shelf) {
@@ -242,6 +283,27 @@ fun ArtistProfileScreen(
                 }
             },
         ) {
+        // Static atmospheric backdrop: no per-frame blur computation tied to
+        // scrolling. As later sections enter view, the image fades to Sonora's
+        // graphite surface. The bottom gradient keeps the navigation legible.
+        state.hero.avatarUrl?.takeIf { it.isNotBlank() }?.let { url ->
+            AsyncImage(
+                model = url,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize().blur(56.dp).alpha(ambientImageAlpha),
+            )
+        }
+        Box(
+            modifier = Modifier.matchParentSize().background(
+                Brush.verticalGradient(
+                    0f to smoothBridge.copy(alpha = .54f),
+                    .38f to smoothAtmosphere.copy(alpha = .76f),
+                    .72f to smoothAtmosphere.copy(alpha = .91f),
+                    1f to smoothAtmosphere,
+                ),
+            ),
+        )
         LazyColumn(
             state = listState,
             contentPadding = PaddingValues(bottom = bottomChromePadding(96.dp)),
@@ -265,7 +327,7 @@ fun ArtistProfileScreen(
                     onOpenAbout = positions.about?.let { target ->
                         {
                             scrollScope.launch {
-                                listState.animateScrollToItem(target, scrollOffset = -120)
+                                listState.animateScrollToItem(target, scrollOffset = -tabScrollOffsetPx)
                             }
                             Unit
                         }
@@ -349,6 +411,26 @@ fun ArtistProfileScreen(
                     ),
                 ),
         )
+        // A quiet floating chapter selector appears only after the hero has
+        // left the viewport. It retains the Android clock inset and does not
+        // introduce another destination or affect the app's bottom navigation.
+        if (showArtistTabs) {
+            Box(
+                modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
+                    .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 9.dp)
+                    .background(smoothAtmosphere.copy(alpha = .96f)),
+            ) {
+                ArtistSectionTabs(
+                    tabs = artistTabs,
+                    selectedIndex = selectedArtistTab,
+                    onSelect = { target ->
+                        scrollScope.launch {
+                            listState.animateScrollToItem(target, scrollOffset = -tabScrollOffsetPx)
+                        }
+                    },
+                )
+            }
+        }
         } // artist atmosphere canvas
 
         if (showStreamingSheet) {
@@ -523,13 +605,16 @@ private fun ArtistEditorialHeading(label: String, compact: Boolean = false) {
     Text(
         text = label,
         color = MaterialTheme.colorScheme.onSurface,
-        fontSize = if (compact) 17.sp else 20.sp,
-        lineHeight = if (compact) 21.sp else 25.sp,
+        fontSize = if (compact) 19.sp else 21.sp,
+        lineHeight = if (compact) 24.sp else 27.sp,
         fontWeight = FontWeight.SemiBold,
+        letterSpacing = (-0.35).sp,
         modifier = Modifier.fillMaxWidth()
-            .padding(start = 18.dp, end = 18.dp,
-                top = if (compact) 28.dp else 18.dp,
-                bottom = if (compact) 13.dp else 9.dp),
+            .padding(
+                start = 20.dp, end = 20.dp,
+                top = if (compact) 24.dp else 28.dp,
+                bottom = if (compact) 10.dp else 12.dp,
+            ),
     )
 }
 
@@ -548,14 +633,13 @@ private fun ArtistSectionTabs(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background)
             .horizontalScroll(rememberScrollState())
             .padding(horizontal = 19.dp, vertical = 0.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         tabs.forEach { (title, targetIndex) ->
             val selected = targetIndex == selectedIndex
-            val indicator = MaterialTheme.colorScheme.primary
+            val indicator = MaterialTheme.colorScheme.onSurface.copy(alpha = .84f)
             Surface(
                 onClick = { onSelect(targetIndex) },
                 shape = RoundedCornerShape(0.dp),
@@ -571,7 +655,7 @@ private fun ArtistSectionTabs(
                                     color = indicator,
                                     start = Offset(0f, y),
                                     end = Offset(size.width, y),
-                                    strokeWidth = 3.dp.toPx(),
+                                    strokeWidth = 2.dp.toPx(),
                                 )
                             }
                         },
