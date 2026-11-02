@@ -11,6 +11,14 @@ ROOT = Path(__file__).resolve().parents[1]
 RES = ROOT / "app/src/main/res"
 SRC = RES / "drawable-nodpi/sonora_icon_foreground.png"
 
+# Validate the exact approved source before decoding. The v183 build contained a
+# corrupted PNG with an intact header; checking image dimensions was insufficient.
+import hashlib
+source_bytes = SRC.read_bytes()
+source_sha = hashlib.sha256(source_bytes).hexdigest()
+with Image.open(SRC) as check_source:
+    if check_source.mode == "P":
+        assert source_sha == "e1c2d05e937bdd4bf34d3994a448ae69703325868d70a9406dbe90a77f8063b1", f"Unexpected source hash: {source_sha}"
 original = Image.open(SRC).convert("RGBA")
 alpha = original.getchannel("A")
 bounds = alpha.getbbox()
