@@ -68,7 +68,7 @@ internal fun ArtistFeaturedAlbum(
             horizontalArrangement = Arrangement.spacedBy(13.dp),
         ) {
             Box(
-                modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp))
+                modifier = Modifier.size(62.dp).clip(RoundedCornerShape(8.dp))
                     .background(Color(0xFF232831), RoundedCornerShape(8.dp)),
                 contentAlignment = Alignment.Center,
             ) {
@@ -76,7 +76,7 @@ internal fun ArtistFeaturedAlbum(
                     AsyncImage(
                         model = album.thumbnailUrl,
                         contentDescription = "Capa de ${album.title}",
-                        modifier = Modifier.size(56.dp),
+                        modifier = Modifier.size(62.dp),
                         contentScale = ContentScale.Crop,
                     )
                 } else {
@@ -100,12 +100,19 @@ internal fun ArtistFeaturedAlbum(
                     color = Color(0xFFF4F5F7),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
+                    lineHeight = MaterialTheme.typography.titleSmall.lineHeight,
                 )
-                album.trackCount?.takeIf { it > 0 }?.let { count ->
+                val details = listOfNotNull(
+                    BrazilianDisplayFormat.releaseDate(album.year),
+                    album.trackCount?.takeIf { it > 0 }?.let { if (it == 1) "1 música" else "$it músicas" },
+                ).joinToString(" • ")
+                if (details.isNotBlank()) {
                     Text(
-                        text = listOfNotNull(BrazilianDisplayFormat.releaseDate(album.year), if (count == 1) "1 música" else "$count músicas").joinToString(" • "),
+                        text = details,
                         style = MaterialTheme.typography.labelSmall,
                         color = Color(0xFFBCC4CF),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }

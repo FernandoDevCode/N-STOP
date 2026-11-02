@@ -210,7 +210,8 @@ fun ArtistProfileScreen(
             positions.about?.let { "Sobre" to it },
         )
     }
-    val tabScrollOffsetPx = with(LocalDensity.current) { 92.dp.roundToPx() }
+    // A positive scroll offset positions the heading BELOW the floating tabs.
+    val tabScrollOffsetPx = with(LocalDensity.current) { 112.dp.roundToPx() }
     val selectedArtistTab by remember(listState, artistTabs) {
         derivedStateOf {
             // Use the visible heading's actual pixel position: when a chapter
@@ -259,51 +260,63 @@ fun ArtistProfileScreen(
         // after the hero scrolls away. It never touches the app's mini-player.
         Box(
             modifier = Modifier.fillMaxSize().padding(inner).drawBehind {
-                drawRect(smoothAtmosphere)
+                // One continuous transition anchored to the hero's actual
+                // bottom. The previous surface fill introduced a hard line.
+                drawRect(smoothBridge)
                 val visible = listState.layoutInfo.visibleItemsInfo
                 val heroEnd = visible.firstOrNull { it.index == 0 }
                     ?.let { (it.offset + it.size).toFloat() }
-                val firstHeading = visible.firstOrNull { it.index == 2 }
-                    ?.offset?.toFloat()
-                // The first shelf follows the heading. Its approximate heading
-                // lead-in is only used once that heading itself is offscreen.
-                val firstShelf = visible.firstOrNull { it.index == 3 }
+                val heading = visible.firstOrNull { it.index == 2 }?.offset?.toFloat()
+                val shelf = visible.firstOrNull { it.index == 3 }
                     ?.let { it.offset - 56.dp.toPx() }
-                val fadeStart = heroEnd ?: firstHeading ?: firstShelf
-                if (fadeStart != null) {
-                    val fadeEnd = fadeStart + 340.dp.toPx()
+                val transitionY = heroEnd ?: heading ?: shelf
+                if (transitionY != null) {
+                    val fadeStart = transitionY - 40.dp.toPx()
+                    val fadeEnd = fadeStart + 650.dp.toPx()
                     if (fadeEnd > 0f && fadeStart < size.height) {
                         drawRect(
                             brush = Brush.verticalGradient(
                                 0f to smoothBridge,
-                                .48f to lerp(smoothBridge, smoothAtmosphere, .72f),
+                                .52f to lerp(smoothBridge, smoothAtmosphere, .52f),
                                 1f to smoothAtmosphere,
                                 startY = fadeStart,
                                 endY = fadeEnd,
                             ),
                         )
+                        if (fadeEnd < size.height) {
+                            drawRect(
+                                smoothAtmosphere,
+                                topLeft = Offset(0f, fadeEnd),
+                                size = androidx.compose.ui.geometry.Size(size.width, size.height - fadeEnd),
+                            )
+                        }
+                    } else if (fadeEnd <= 0f) {
+                        drawRect(smoothAtmosphere)
                     }
+                } else if (listState.firstVisibleItemIndex > 3) {
+                    drawRect(smoothAtmosphere)
                 }
             },
         ) {
-        // Static atmospheric backdrop: no per-frame blur computation tied to
-        // scrolling. As later sections enter view, the image fades to Sonora's
-        // graphite surface. The bottom gradient keeps the navigation legible.
+        // The original photo remains a no-crop Fit image in the hero. This
+        // decorative copy supplies only a low-opacity ambient colour wash.
         state.hero.avatarUrl?.takeIf { it.isNotBlank() }?.let { url ->
             AsyncImage(
                 model = url,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize().blur(56.dp).alpha(ambientImageAlpha),
+                modifier = Modifier.fillMaxSize().blur(56.dp).alpha(ambientImageAlpha * .65f),
             )
         }
+        // A translucent bottom scrim allows the artist photograph to tint
+        // early content while preserving text contrast and a graphite ending.
         Box(
             modifier = Modifier.matchParentSize().background(
                 Brush.verticalGradient(
-                    0f to smoothBridge.copy(alpha = .54f),
-                    .38f to smoothAtmosphere.copy(alpha = .76f),
-                    .72f to smoothAtmosphere.copy(alpha = .91f),
-                    1f to smoothAtmosphere,
+                    0f to Color.Transparent,
+                    .40f to smoothAtmosphere.copy(alpha = .20f),
+                    .78f to smoothAtmosphere.copy(alpha = .70f),
+                    1f to smoothAtmosphere.copy(alpha = .96f),
                 ),
             ),
         )
@@ -330,7 +343,7 @@ fun ArtistProfileScreen(
                     onOpenAbout = positions.about?.let { target ->
                         {
                             scrollScope.launch {
-                                listState.animateScrollToItem(target, scrollOffset = -tabScrollOffsetPx)
+                                listState.animateScrollToItem(target, scrollOffset = tabScrollOffsetPx)
                             }
                             Unit
                         }
@@ -428,7 +441,7 @@ fun ArtistProfileScreen(
                     selectedIndex = selectedArtistTab,
                     onSelect = { target ->
                         scrollScope.launch {
-                            listState.animateScrollToItem(target, scrollOffset = -tabScrollOffsetPx)
+                            listState.animateScrollToItem(target, scrollOffset = tabScrollOffsetPx)
                         }
                     },
                 )
