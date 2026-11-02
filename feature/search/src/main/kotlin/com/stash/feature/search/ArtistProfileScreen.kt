@@ -352,17 +352,27 @@ fun ArtistProfileScreen(
                 }
             },
         )
-        // As the viewer moves through the opening sections, the coloured
-        // continuation gradually yields to the graphite reading surface.
+        // Anchor the dissolve to the real hero bottom while it is visible.
+        // A viewport-wide fixed scrim made the same horizontal colour band
+        // appear regardless of where the photo actually ended.
         Box(
-            modifier = Modifier.matchParentSize().background(
-                Brush.verticalGradient(
-                    0f to smoothAtmosphere.copy(alpha = atmosphereProgress * .20f),
-                    .35f to smoothAtmosphere.copy(alpha = .18f + atmosphereProgress * .20f),
-                    .75f to smoothAtmosphere.copy(alpha = .75f + atmosphereProgress * .15f),
-                    1f to smoothAtmosphere,
-                ),
-            ),
+            modifier = Modifier.matchParentSize().drawBehind {
+                val heroEnd = listState.layoutInfo.visibleItemsInfo
+                    .firstOrNull { it.index == 0 }
+                    ?.let { (it.offset + it.size).toFloat() }
+                val start = heroEnd?.minus(120.dp.toPx()) ?: 0f
+                val end = heroEnd?.plus(700.dp.toPx()) ?: size.height
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        0f to smoothAtmosphere.copy(alpha = atmosphereProgress * .20f),
+                        .35f to smoothAtmosphere.copy(alpha = .18f + atmosphereProgress * .20f),
+                        .75f to smoothAtmosphere.copy(alpha = .75f + atmosphereProgress * .15f),
+                        1f to smoothAtmosphere,
+                        startY = start,
+                        endY = end.coerceAtLeast(start + 1f),
+                    ),
+                )
+            },
         )
         LazyColumn(
             state = listState,
