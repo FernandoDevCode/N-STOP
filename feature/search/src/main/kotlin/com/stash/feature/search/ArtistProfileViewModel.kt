@@ -87,6 +87,7 @@ class ArtistProfileViewModel @Inject constructor(
     private val initialAvatar: String? = savedStateHandle["avatarUrl"]
     private val initialFocusAlbum: String? = savedStateHandle["focusAlbum"]
     private var customPhotoUrl: String? = artistHeroPhotoStore.get(artistId)
+    private var failedCustomPhotoUrl: String? = null
     private var spotifyPhoto: SpotifyArtistPhoto? = null
     private var nativeAvatarUrl: String? = initialAvatar
     private var photoJob: Job? = null
@@ -163,11 +164,11 @@ class ArtistProfileViewModel @Inject constructor(
 
     /** The user's manual choice wins over Spotify, including late asynchronous responses. */
     private fun chosenHeroPhoto(): String? =
-        customPhotoUrl ?: spotifyPhoto?.imageUrl ?: nativeAvatarUrl
+        customPhotoUrl?.takeUnless { it == failedCustomPhotoUrl } ?: spotifyPhoto?.imageUrl ?: nativeAvatarUrl
 
     private fun updateHeroPhoto() {
         _uiState.update { state ->
-            val spotifyActive = customPhotoUrl == null && spotifyPhoto != null
+            val spotifyActive = (customPhotoUrl == null || customPhotoUrl == failedCustomPhotoUrl) && spotifyPhoto != null
             state.copy(hero = state.hero.copy(
                 avatarUrl = chosenHeroPhoto(),
                 artworkKind = ArtistIdentityKind.PHOTO,
@@ -177,7 +178,8 @@ class ArtistProfileViewModel @Inject constructor(
     }
 
     private fun maybeLoadPhoto(name: String) {
-        if (name.isBlank() || photoJob != null || customPhotoUrl != null) return
+        if (name.isBlank() || photoJob != null ||
+            (customPhotoUrl != null && customPhotoUrl != failedCustomPhotoUrl)) return
         photoJob = viewModelScope.launch {
             spotifyPhoto = spotifyArtistLookup.find(name)
             if (customPhotoUrl == null) updateHeroPhoto()
@@ -189,14 +191,12 @@ class ArtistProfileViewModel @Inject constructor(
         if (chosenHeroPhoto() != url) return
         when {
             customPhotoUrl == url -> {
-                artistHeroPhotoStore.clear(artistId)
-                customPhotoUrl = null
+                // Keep a user's chosen URL in preferences on transient offline/404.
+                // Fall back only for this screen lifetime; it can be retried on reopen.
+                failedCustomPhotoUrl = url
                 updateHeroPhoto()
-                _userMessages.tryEmit("Imagem personalizada indisponível. Foto padrão restaurada.")
-                if (spotifyPhoto == null) {
-                    photoJob = null
-                    maybeLoadPhoto(_uiState.value.hero.name)
-                }
+                _userMessages.tryEmit("Imagem indisponível no momento. Mostrando foto padrão.")
+                if (spotifyPhoto == null) maybeLoadPhoto(_uiState.value.hero.name)
             }
             spotifyPhoto?.imageUrl == url -> {
                 spotifyPhoto = null
@@ -211,6 +211,7 @@ class ArtistProfileViewModel @Inject constructor(
             return
         }
         customPhotoUrl = input.trim()
+        failedCustomPhotoUrl = null
         updateHeroPhoto()
     }
 
@@ -219,6 +220,7 @@ class ArtistProfileViewModel @Inject constructor(
             try {
                 val saved = artistHeroPhotoStore.saveImage(artistId, uri)
                 customPhotoUrl = saved
+                failedCustomPhotoUrl = null
                 updateHeroPhoto()
             } catch (cancel: kotlinx.coroutines.CancellationException) {
                 throw cancel
@@ -231,6 +233,7 @@ class ArtistProfileViewModel @Inject constructor(
     fun restoreSpotifyPhoto() {
         artistHeroPhotoStore.clear(artistId)
         customPhotoUrl = null
+        failedCustomPhotoUrl = null
         updateHeroPhoto()
         if (spotifyPhoto == null) {
             photoJob = null
@@ -493,7 +496,7 @@ class ArtistProfileViewModel @Inject constructor(
         t0: Long,
     ) {
         nativeAvatarUrl = profile.avatarUrl
-        val spotifyActive = customPhotoUrl == null && spotifyPhoto != null
+        val spotifyActive = (customPhotoUrl == null || customPhotoUrl == failedCustomPhotoUrl) && spotifyPhoto != null
         _uiState.value = _uiState.value.copy(
             hero = HeroState(
                 name = profile.name,
