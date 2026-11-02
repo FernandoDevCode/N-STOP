@@ -18,7 +18,7 @@ for density, px in DENSITIES.items():
 
 def check(path: Path, dimensions: tuple[int, int]) -> None:
     data = path.read_bytes()
-    assert data[:8] == b"\\x89PNG\\r\\n\\x1a\\n", f"{path}: bad PNG signature"
+    assert data[:8] == b"\x89PNG\r\n\x1a\n", f"{path}: bad PNG signature"
     off = 8
     compressed = bytearray()
     size = None
