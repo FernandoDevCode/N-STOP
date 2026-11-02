@@ -342,60 +342,71 @@ fun ArtistHero(
             }
         }
 
+        // Editorial identity stays close to the photograph; the play action
+        // shares the same baseline rather than floating in an empty row.
         Column(
             modifier = Modifier.fillMaxWidth().statusBarsPadding()
-                .padding(start = 18.dp, end = 18.dp, bottom = 20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+                .padding(start = 20.dp, end = 20.dp, bottom = 20.dp),
         ) {
             Spacer(Modifier.height(photoLeadIn))
-            if (wordmarkUrl != null && wordmarkState is AsyncImagePainter.State.Success) {
-                Image(
-                    painter = painter,
-                    contentDescription = hero.name,
-                    modifier = Modifier.fillMaxWidth().height(80.dp),
-                    contentScale = ContentScale.Fit,
-                )
-            } else {
-                val size = when {
-                    hero.name.length <= 3 -> 63.sp
-                    hero.name.length <= 12 -> 38.sp
-                    hero.name.length <= 19 -> 31.sp
-                    else -> 25.sp
-                }
-                Text(
-                    hero.name,
-                    color = Color.White,
-                    fontSize = size,
-                    lineHeight = size * 1.06f,
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = (-.7).sp,
-                    textAlign = TextAlign.Center,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Spacer(Modifier.height(16.dp))
-            // Monolith: a filled, smoked-glass disc with a thin satin edge.
-            // Its tone comes from the original photograph's sampled palette,
-            // not the page surface or the already-darkened hero overlay.
-            Surface(
-                onClick = onPlayArtist,
-                color = artistSmokedGlassFill(heroAtmosphere),
-                shape = CircleShape,
-                border = BorderStroke(0.75.dp, Color.White.copy(alpha = .24f)),
-                modifier = Modifier.size(56.dp),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        Icons.Default.PlayArrow,
-                        contentDescription = "Reproduzir ${hero.name}",
-                        tint = Color(0xFFF5F1ED),
-                        modifier = Modifier.size(31.dp),
+                Column(modifier = Modifier.weight(1f)) {
+                    if (wordmarkUrl != null && wordmarkState is AsyncImagePainter.State.Success) {
+                        Image(
+                            painter = painter,
+                            contentDescription = hero.name,
+                            modifier = Modifier.fillMaxWidth().height(76.dp),
+                            contentScale = ContentScale.Fit,
+                            alignment = Alignment.CenterStart,
+                        )
+                    } else {
+                        val size = when {
+                            hero.name.length <= 3 -> 56.sp
+                            hero.name.length <= 12 -> 37.sp
+                            hero.name.length <= 19 -> 30.sp
+                            else -> 24.sp
+                        }
+                        Text(
+                            hero.name,
+                            color = Color.White,
+                            fontSize = size,
+                            lineHeight = size * 1.07f,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = (-.7).sp,
+                            textAlign = TextAlign.Start,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Spacer(Modifier.height(7.dp))
+                    Text(
+                        text = "Artista",
+                        color = Color.White.copy(alpha = .76f),
+                        fontSize = 13.sp,
                     )
+                }
+                Surface(
+                    onClick = onPlayArtist,
+                    color = Color(0xFFE9EAED),
+                    shape = CircleShape,
+                    modifier = Modifier.size(50.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = "Reproduzir ${hero.name}",
+                            tint = Color(0xFF151A20),
+                            modifier = Modifier.size(29.dp),
+                        )
+                    }
                 }
             }
             if (featuredContent != null) {
-                Spacer(Modifier.height(38.dp))
+                Spacer(Modifier.height(24.dp))
                 featuredContent()
             }
         }
