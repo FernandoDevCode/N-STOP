@@ -207,9 +207,18 @@ fun ArtistProfileScreen(
             positions.about?.let { "Sobre" to it },
         )
     }
+    val tabScrollOffsetPx = with(LocalDensity.current) { 92.dp.roundToPx() }
     val selectedArtistTab by remember(listState, artistTabs) {
         derivedStateOf {
-            artistTabs.lastOrNull { it.second <= listState.firstVisibleItemIndex }?.second
+            // Use the visible heading's actual pixel position: when a chapter
+            // approaches the overlay, selection advances before its first row
+            // becomes the LazyColumn's first visible item.
+            val chapterIndices = artistTabs.map { it.second }.toSet()
+            val visibleHeading = listState.layoutInfo.visibleItemsInfo
+                .filter { it.index in chapterIndices && it.offset <= tabScrollOffsetPx }
+                .maxByOrNull { it.index }
+            visibleHeading?.index
+                ?: artistTabs.lastOrNull { it.second < listState.firstVisibleItemIndex }?.second
                 ?: artistTabs.firstOrNull()?.second
         }
     }
@@ -224,7 +233,6 @@ fun ArtistProfileScreen(
         }
     }
     val scrollScope = rememberCoroutineScope()
-    val tabScrollOffsetPx = with(LocalDensity.current) { 92.dp.roundToPx() }
     var focusHandled by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(sectionOuterIndex, state.status) {
         val target = sectionOuterIndex ?: return@LaunchedEffect
