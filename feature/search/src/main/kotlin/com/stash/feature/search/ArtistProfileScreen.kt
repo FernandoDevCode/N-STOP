@@ -25,6 +25,11 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
@@ -162,18 +167,27 @@ fun ArtistProfileScreen(
     // hero + Popular, i.e. off-screen on landing) so the inner rail's own
     // scroll + highlight (see AlbumsRow) is actually visible.
     val listState = rememberLazyListState()
-    // A dim, softly blurred copy of the artist photograph provides continuity
-    // behind the shelves. The original hero retains its uncropped Fit image.
-    val ambientImageAlpha by remember(listState) {
+    // The atmosphere is spatially tied to the first chapters, not the full
+    // discography length. Motion remains secondary to scroll position.
+    val atmosphereProgress by remember(listState) {
         derivedStateOf {
-            // Keep the color wash near the opening chapters only. The
-            // previous divisor (12 items) kept a photograph across most of
-            // the discography, even after the hero had long disappeared.
-            val progress = ((listState.firstVisibleItemIndex - 1).coerceAtLeast(0) / 4f +
+            ((listState.firstVisibleItemIndex - 1).coerceAtLeast(0) / 4f +
                 listState.firstVisibleItemScrollOffset / 1800f).coerceIn(0f, 1f)
-            .32f * (1f - progress)
         }
     }
+    val ambientImageAlpha = .32f * (1f - atmosphereProgress)
+    // Compose animation clocks honor Android's animator duration scale (0
+    // disables motion). No per-frame image decoding or blur is performed.
+    val ambientTransition = rememberInfiniteTransition(label = "artistAmbientMotion")
+    val ambientPhase by ambientTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 26000),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "artistAmbientDrift",
+    )
     val statusBarNeedsContrast by remember(listState) {
         derivedStateOf {
             listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 180
@@ -300,27 +314,52 @@ fun ArtistProfileScreen(
                 }
             },
         ) {
-        // Spatial continuation of the lower photographic edge. Reusing a
-        // cropped full-screen image duplicated the source and broke continuity.
-        // These seven horizontally ordered samples preserve the edge's local
-        // colour distribution without inventing photographic detail.
+        // Evolve the edge-derived colour field with scrolling. The tiny,
+        // slow lateral drift is applied only to already sampled colours:
+        // no duplicated photograph, new blur pass, or artist-specific asset.
         Box(
             modifier = Modifier.matchParentSize().drawBehind {
                 if (edgeColors.size >= 2 && ambientImageAlpha > 0f) {
+                    val drift = (ambientPhase - .5f) * size.width * .055f
+                    val travel = atmosphereProgress * size.width * .12f
+                    val startX = -size.width * .10f + drift - travel
+                    val endX = size.width * 1.10f + drift - travel
                     drawRect(
-                        brush = Brush.horizontalGradient(edgeColors),
+                        brush = Brush.horizontalGradient(
+                            colors = edgeColors,
+                            startX = startX,
+                            endX = endX,
+                        ),
                         alpha = ambientImageAlpha * .85f,
+                    )
+                    // A second, broad lobe gives subtle spatial variation
+                    // instead of uniformly colouring the entire viewport.
+                    drawRect(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                edgeColors[edgeColors.size / 2].copy(alpha = .18f),
+                                Color.Transparent,
+                            ),
+                            center = Offset(
+                                size.width * (.56f - atmosphereProgress * .14f +
+                                    (ambientPhase - .5f) * .025f),
+                                size.height * (.33f + atmosphereProgress * .20f),
+                            ),
+                            radius = size.width * .83f,
+                        ),
+                        alpha = (1f - atmosphereProgress) * .32f,
                     )
                 }
             },
         )
-        // The soft vertical scrim returns every photograph to charcoal.
+        // As the viewer moves through the opening sections, the coloured
+        // continuation gradually yields to the graphite reading surface.
         Box(
             modifier = Modifier.matchParentSize().background(
                 Brush.verticalGradient(
-                    0f to Color.Transparent,
-                    .35f to smoothAtmosphere.copy(alpha = .18f),
-                    .75f to smoothAtmosphere.copy(alpha = .75f),
+                    0f to smoothAtmosphere.copy(alpha = atmosphereProgress * .20f),
+                    .35f to smoothAtmosphere.copy(alpha = .18f + atmosphereProgress * .20f),
+                    .75f to smoothAtmosphere.copy(alpha = .75f + atmosphereProgress * .15f),
                     1f to smoothAtmosphere,
                 ),
             ),
