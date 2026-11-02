@@ -39,7 +39,7 @@ fun AlbumsRow(
     onClick: (AlbumSummary) -> Unit,
     modifier: Modifier = Modifier,
     focusIndex: Int? = null,
-    cardSize: Dp = 152.dp,
+    cardSize: Dp = 144.dp,
 ) {
     val rowState = rememberLazyListState()
     var highlighted by remember { mutableStateOf(false) }
@@ -55,8 +55,8 @@ fun AlbumsRow(
     LazyRow(
         state = rowState,
         modifier = modifier,
-        contentPadding = PaddingValues(horizontal = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         itemsIndexed(albums, key = { _, album -> album.id }) { index, album ->
             val ring = if (highlighted && index == focusIndex) {
