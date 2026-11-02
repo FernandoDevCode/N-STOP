@@ -38,6 +38,9 @@ jobs:
       - name: Gradle
         uses: gradle/actions/setup-gradle@v6
 
+      - name: Verify Sonora launcher PNG integrity
+        run: python3 tools/verify_sonora_launcher.py
+
       - name: All module tests and debug APK
         env:
           FANART_API_KEY: ${{ secrets.FANART_API_KEY }}
