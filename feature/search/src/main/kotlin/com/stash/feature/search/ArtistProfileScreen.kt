@@ -197,6 +197,26 @@ fun ArtistProfileScreen(
             hasAbout = state.about != null,
         )
     }
+    // The editorial section navigator is an overlay, not another LazyColumn
+    // item: deep-link indices and existing shelf anchors remain unchanged.
+    val artistTabs = remember(positions) {
+        listOfNotNull(
+            positions.songs?.let { "Músicas" to it },
+            positions.albums?.let { "Álbuns" to it },
+            positions.singles?.let { "Singles e EPs" to it },
+            positions.related?.let { "Relacionados" to it },
+            positions.about?.let { "Sobre" to it },
+        )
+    }
+    val selectedArtistTab by remember(listState, artistTabs) {
+        derivedStateOf {
+            artistTabs.lastOrNull { it.second <= listState.firstVisibleItemIndex }?.second
+                ?: artistTabs.firstOrNull()?.second
+        }
+    }
+    val showArtistTabs by remember(listState, artistTabs) {
+        derivedStateOf { artistTabs.size > 1 && listState.firstVisibleItemIndex > 0 }
+    }
     val sectionOuterIndex = remember(focus, positions) {
         when (focus?.shelf) {
             AlbumShelf.ALBUMS -> positions.albums
@@ -205,6 +225,7 @@ fun ArtistProfileScreen(
         }
     }
     val scrollScope = rememberCoroutineScope()
+    val tabScrollOffsetPx = with(LocalDensity.current) { 92.dp.roundToPx() }
     var focusHandled by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(sectionOuterIndex, state.status) {
         val target = sectionOuterIndex ?: return@LaunchedEffect
@@ -383,6 +404,26 @@ fun ArtistProfileScreen(
                     ),
                 ),
         )
+        // A quiet floating chapter selector appears only after the hero has
+        // left the viewport. It retains the Android clock inset and does not
+        // introduce another destination or affect the app's bottom navigation.
+        if (showArtistTabs) {
+            Box(
+                modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
+                    .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 9.dp)
+                    .background(smoothAtmosphere.copy(alpha = .96f)),
+            ) {
+                ArtistSectionTabs(
+                    tabs = artistTabs,
+                    selectedIndex = selectedArtistTab,
+                    onSelect = { target ->
+                        scrollScope.launch {
+                            listState.animateScrollToItem(target, scrollOffset = -tabScrollOffsetPx)
+                        }
+                    },
+                )
+            }
+        }
         } // artist atmosphere canvas
 
         if (showStreamingSheet) {
@@ -585,14 +626,13 @@ private fun ArtistSectionTabs(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background)
             .horizontalScroll(rememberScrollState())
             .padding(horizontal = 19.dp, vertical = 0.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         tabs.forEach { (title, targetIndex) ->
             val selected = targetIndex == selectedIndex
-            val indicator = MaterialTheme.colorScheme.primary
+            val indicator = MaterialTheme.colorScheme.onSurface.copy(alpha = .84f)
             Surface(
                 onClick = { onSelect(targetIndex) },
                 shape = RoundedCornerShape(0.dp),
@@ -608,7 +648,7 @@ private fun ArtistSectionTabs(
                                     color = indicator,
                                     start = Offset(0f, y),
                                     end = Offset(size.width, y),
-                                    strokeWidth = 3.dp.toPx(),
+                                    strokeWidth = 2.dp.toPx(),
                                 )
                             }
                         },
