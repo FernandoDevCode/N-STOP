@@ -557,13 +557,16 @@ private fun ArtistEditorialHeading(label: String, compact: Boolean = false) {
     Text(
         text = label,
         color = MaterialTheme.colorScheme.onSurface,
-        fontSize = if (compact) 17.sp else 20.sp,
-        lineHeight = if (compact) 21.sp else 25.sp,
+        fontSize = if (compact) 19.sp else 21.sp,
+        lineHeight = if (compact) 24.sp else 27.sp,
         fontWeight = FontWeight.SemiBold,
+        letterSpacing = (-0.35).sp,
         modifier = Modifier.fillMaxWidth()
-            .padding(start = 18.dp, end = 18.dp,
-                top = if (compact) 28.dp else 18.dp,
-                bottom = if (compact) 13.dp else 9.dp),
+            .padding(
+                start = 20.dp, end = 20.dp,
+                top = if (compact) 24.dp else 28.dp,
+                bottom = if (compact) 10.dp else 12.dp,
+            ),
     )
 }
 
