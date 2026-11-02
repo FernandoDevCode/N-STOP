@@ -21,6 +21,6 @@ object NonstopDesign {
 
 @Composable
 fun NonstopBrand(modifier: Modifier = Modifier) {
-    Image(painterResource(if (LocalIsDarkTheme.current) R.drawable.nonstop_wordmark else R.drawable.nonstop_wordmark_light), "NØNSTOP",
+    Image(painterResource(if (LocalIsDarkTheme.current) R.drawable.nonstop_wordmark else R.drawable.nonstop_wordmark_light), "Sonora",
         modifier.width(146.dp).height(38.dp))
 }

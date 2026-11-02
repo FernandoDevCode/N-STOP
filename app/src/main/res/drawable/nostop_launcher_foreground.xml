@@ -1,7 +1,14 @@
-<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-<!-- Original vector geometry reconstructed from the Ø and waveform visible in reference 06. -->
-<group android:pivotX="54" android:pivotY="54" android:scaleX="0.74" android:scaleY="0.74">
-<path android:fillColor="#00000000" android:strokeColor="#F6F5FA" android:strokeWidth="3" android:strokeLineCap="round" android:pathData="M76,61 C76,35 32,35 32,61 C32,88 76,88 76,61 M30,85 L78,37"/>
-<path android:fillColor="#00000000" android:strokeColor="#CB80ED" android:strokeWidth="2.4" android:pathData="M35,33 L35,24 M44,33 L44,18 M54,33 L54,10 M64,33 L64,18 M73,33 L73,24"/>
-</group>
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Sonora emblem: 65dp tall and within the Android adaptive icon safe zone. -->
+    <path android:fillColor="#DCCFF0" android:pathData="M50,32 C39,34 32,43 30,52 C26,65 34,75 46,78 C50,79 53,78 54,85 L54,79 C53,76 49,77 46,76 C35,73 31,63 33,53 C35,44 42,36 50,32 Z" />
+<path android:fillColor="#F5EAF3" android:pathData="M54,22 C54.5,30 55,34 59,35 C70,38 76,46 77,57 C78,67 70,75 61,78 L58,79 C71,77 75,65 74,57 C73,47 67,40 59,39 C56,38 55.5,40 55.5,46 L55.5,87 C54.8,83 53.5,80 52,79 C54,81 54,84 54,87 Z" />
+<path android:fillColor="#E3D5ED" android:pathData="M39.5,51 H39.5 Q40.5,51 40.5,52 V56 Q40.5,57 39.5,57 H39.5 Q38.5,57 38.5,56 V52 Q38.5,51 39.5,51 Z" />
+<path android:fillColor="#E3D5ED" android:pathData="M44.1,47 H44.1 Q45.2,47 45.2,48.1 V59.9 Q45.2,61 44.1,61 H44.1 Q43,61 43,59.9 V48.1 Q43,47 44.1,47 Z" />
+<path android:fillColor="#E3D5ED" android:pathData="M49.1,43 H49.1 Q50.2,43 50.2,44.1 V63.9 Q50.2,65 49.1,65 H49.1 Q48,65 48,63.9 V44.1 Q48,43 49.1,43 Z" />
+<path android:fillColor="#E3D5ED" android:pathData="M59.1,43 H59.1 Q60.2,43 60.2,44.1 V63.9 Q60.2,65 59.1,65 H59.1 Q58,65 58,63.9 V44.1 Q58,43 59.1,43 Z" />
+<path android:fillColor="#E3D5ED" android:pathData="M64.1,47 H64.10000000000001 Q65.2,47 65.2,48.1 V59.9 Q65.2,61 64.10000000000001,61 H64.1 Q63,61 63,59.9 V48.1 Q63,47 64.1,47 Z" />
+<path android:fillColor="#E3D5ED" android:pathData="M68.5,51 H68.5 Q69.5,51 69.5,52 V56 Q69.5,57 68.5,57 H68.5 Q67.5,57 67.5,56 V52 Q67.5,51 68.5,51 Z" />
 </vector>
