@@ -36,7 +36,7 @@ dependencies {
     implementation(project(":core:media"))
     implementation(project(":data:download"))
     implementation(project(":data:spotify"))
-    implementation(libs.androidx.activity.compose)
+    implementation(libs.activity.compose)
     implementation(project(":data:ytmusic"))
     implementation(libs.compose.material.icons.extended)
     implementation(libs.coil.compose)
