@@ -167,12 +167,20 @@ fun ArtistProfileScreen(
     // hero + Popular, i.e. off-screen on landing) so the inner rail's own
     // scroll + highlight (see AlbumsRow) is actually visible.
     val listState = rememberLazyListState()
-    // The atmosphere is spatially tied to the first chapters, not the full
-    // discography length. Motion remains secondary to scroll position.
+    // Use measured hero displacement in pixels, independent of how many or
+    // how tall the following LazyColumn items are. Motion remains secondary.
     val atmosphereProgress by remember(listState) {
         derivedStateOf {
-            ((listState.firstVisibleItemIndex - 1).coerceAtLeast(0) / 4f +
-                listState.firstVisibleItemScrollOffset / 1800f).coerceIn(0f, 1f)
+            val heroItem = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == 0 }
+            when {
+                heroItem != null -> {
+                    // Real pixel displacement of the hero from its initial top.
+                    // Fade completes exactly as the hero exits the viewport.
+                    (-heroItem.offset.toFloat() / heroItem.size.coerceAtLeast(1)).coerceIn(0f, 1f)
+                }
+                listState.firstVisibleItemIndex > 0 -> 1f
+                else -> 0f
+            }
         }
     }
     val ambientImageAlpha = .32f * (1f - atmosphereProgress)
