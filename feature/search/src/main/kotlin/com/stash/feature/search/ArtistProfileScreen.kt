@@ -204,7 +204,6 @@ fun ArtistProfileScreen(
             positions.songs?.let { "Músicas" to it },
             positions.albums?.let { "Álbuns" to it },
             positions.singles?.let { "Singles e EPs" to it },
-            positions.related?.let { "Relacionados" to it },
             positions.about?.let { "Sobre" to it },
         )
     }
