@@ -4,10 +4,8 @@ import androidx.lifecycle.SavedStateHandle
 import app.cash.turbine.test
 import com.stash.core.data.cache.AlbumCache
 import com.stash.core.data.cache.ArtistCache
-import com.stash.core.data.artistphotos.ArtistPhotoLookup
-import com.stash.core.data.artistphotos.ArtistIdentityLookup
-import com.stash.core.data.artistphotos.ArtistIdentityImage
 import com.stash.core.data.artistphotos.ArtistIdentityKind
+import com.stash.data.spotify.SpotifyArtistPhoto
 import com.stash.core.data.cache.CachedProfile
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
@@ -82,8 +80,8 @@ class ArtistProfileViewModelTest {
         albumCache: AlbumCache = mock(),
         playerRepository: PlayerRepository = mock(),
         musicRepository: MusicRepository = mock(),
-        identity: ArtistIdentityLookup = mock(),
-        originalPhoto: ArtistPhotoLookup = mock(),
+        spotify: SpotifyArtistPhotoLookup = mock(),
+        store: ArtistHeroPhotoStore = mock(),
     ): ArtistProfileViewModel = ArtistProfileViewModel(
         savedStateHandle = SavedStateHandle(
             mapOf(
@@ -93,8 +91,8 @@ class ArtistProfileViewModelTest {
             ),
         ),
         artistCache = cache,
-        artistPhotoLookup = originalPhoto,
-        artistIdentityLookup = identity,
+        spotifyArtistLookup = spotify,
+        artistHeroPhotoStore = store,
         appleAlbumMetadata = mock<AppleMusicAlbumMetadataLookup>(),
         albumCache = albumCache,
         prefetcher = prefetcher,
@@ -395,9 +393,7 @@ class ArtistProfileViewModelTest {
         verify(player, never()).addToQueue(any<List<Track>>())
     }
 
-    @Test
-    fun `no iconic identity uses the original photo selector`() = runTest {
-        val avatar = "https://assets.fanart.tv/fanart/music/legacy.jpg"
+    @Test fun officialSpotifyBecomesDefault() = runTest {
         val cache = mock<ArtistCache>()
         val profile = ArtistProfile(
             id = "UC1", name = "LocalName", avatarUrl = "https://example.org/avatar.jpg",
@@ -405,22 +401,18 @@ class ArtistProfileViewModelTest {
             singles = emptyList(), related = emptyList(),
         )
         whenever(cache.get(eq("UC1"))).thenReturn(flowOf(CachedProfile.Fresh(profile)))
-        val identity = mock<ArtistIdentityLookup>()
-        whenever(identity.find("LocalName")).thenReturn(null)
-        val original = mock<ArtistPhotoLookup>()
-        whenever(original.find("LocalName")).thenReturn(avatar)
-
-        val vm = vmWith(cache, identity = identity, originalPhoto = original)
+        val spotify = mock<SpotifyArtistPhotoLookup>()
+        whenever(spotify.find("LocalName")).thenReturn(
+            SpotifyArtistPhoto("https://i.scdn.co/image/official", "https://open.spotify.com/artist/artist")
+        )
+        val vm = vmWith(cache, spotify = spotify)
         advanceUntilIdle()
-
-        verify(identity).find("LocalName")
-        verify(original).find("LocalName")
-        assertEquals(avatar, vm.uiState.value.hero.avatarUrl)
+        assertEquals("https://i.scdn.co/image/official", vm.uiState.value.hero.avatarUrl)
+        assertEquals("https://open.spotify.com/artist/artist", vm.uiState.value.hero.spotifyArtistUrl)
         assertEquals(ArtistIdentityKind.PHOTO, vm.uiState.value.hero.artworkKind)
     }
 
-    @Test
-    fun `iconic emblem never replaces a photograph`() = runTest {
+    @Test fun missingSpotifyUsesCatalogFallback() = runTest {
         val cache = mock<ArtistCache>()
         val profile = ArtistProfile(
             id = "UC1", name = "LocalName", avatarUrl = "https://example.org/avatar.jpg",
@@ -428,23 +420,13 @@ class ArtistProfileViewModelTest {
             singles = emptyList(), related = emptyList(),
         )
         whenever(cache.get(eq("UC1"))).thenReturn(flowOf(CachedProfile.Fresh(profile)))
-        val identity = mock<ArtistIdentityLookup>()
-        val emblem = "https://upload.wikimedia.org/wikipedia/commons/thumb/icon.png"
-        whenever(identity.find("LocalName")).thenReturn(ArtistIdentityImage(emblem, ArtistIdentityKind.SYMBOL))
-        val original = mock<ArtistPhotoLookup>()
-        val legacyPhoto = "https://assets.fanart.tv/fanart/music/photo.jpg"
-        whenever(original.find("LocalName")).thenReturn(legacyPhoto)
-
-        val vm = vmWith(cache, identity = identity, originalPhoto = original)
+        val vm = vmWith(cache)
         advanceUntilIdle()
-
-        assertEquals(legacyPhoto, vm.uiState.value.hero.avatarUrl)
-        assertEquals(ArtistIdentityKind.PHOTO, vm.uiState.value.hero.artworkKind)
-        verify(original).find("LocalName")
+        assertEquals("https://example.org/avatar.jpg", vm.uiState.value.hero.avatarUrl)
+        assertEquals(null, vm.uiState.value.hero.spotifyArtistUrl)
     }
 
-    @Test
-    fun `iconic image render failure falls back to the existing photo logic`() = runTest {
+    @Test fun manualOverrideSurvivesRefreshAndSkipsAutomaticLookup() = runTest {
         val cache = mock<ArtistCache>()
         val profile = ArtistProfile(
             id = "UC1", name = "LocalName", avatarUrl = "https://example.org/avatar.jpg",
@@ -452,23 +434,34 @@ class ArtistProfileViewModelTest {
             singles = emptyList(), related = emptyList(),
         )
         whenever(cache.get(eq("UC1"))).thenReturn(flowOf(CachedProfile.Fresh(profile)))
-        val identity = mock<ArtistIdentityLookup>()
-        val badUrl = "https://upload.wikimedia.org/wikipedia/commons/thumb/missing.png"
-        whenever(identity.find("LocalName")).thenReturn(ArtistIdentityImage(badUrl, ArtistIdentityKind.PHOTO))
-        val original = mock<ArtistPhotoLookup>()
-        whenever(original.find("LocalName")).thenReturn("https://assets.fanart.tv/fanart/music/good.jpg")
+        val store = mock<ArtistHeroPhotoStore>()
+        whenever(store.get("UC1")).thenReturn("https://myimages.example/photo.png")
+        val spotify = mock<SpotifyArtistPhotoLookup>()
+        val vm = vmWith(cache, store = store, spotify = spotify)
+        assertEquals("https://myimages.example/photo.png", vm.uiState.value.hero.avatarUrl)
+        advanceUntilIdle()
+        assertEquals("https://myimages.example/photo.png", vm.uiState.value.hero.avatarUrl)
+        verify(spotify, never()).find(any())
+    }
 
-        val vm = vmWith(cache, identity = identity, originalPhoto = original)
+    @Test fun failedSpotifyImageRestoresCatalog() = runTest {
+        val cache = mock<ArtistCache>()
+        val profile = ArtistProfile(
+            id = "UC1", name = "LocalName", avatarUrl = "https://example.org/avatar.jpg",
+            subscribersText = null, popular = emptyList(), albums = emptyList(),
+            singles = emptyList(), related = emptyList(),
+        )
+        whenever(cache.get(eq("UC1"))).thenReturn(flowOf(CachedProfile.Fresh(profile)))
+        val spotify = mock<SpotifyArtistPhotoLookup>()
+        whenever(spotify.find("LocalName")).thenReturn(
+            SpotifyArtistPhoto("https://i.scdn.co/image/broken", "https://open.spotify.com/artist/a")
+        )
+        val vm = vmWith(cache, spotify = spotify)
         advanceUntilIdle()
-        vm.onHeroArtworkLoadFailed("https://upload.wikimedia.org/unrelated.png")
-        advanceUntilIdle()
-        verify(original, never()).find(any())
-
-        vm.onHeroArtworkLoadFailed(badUrl)
-        advanceUntilIdle()
-        assertEquals("https://assets.fanart.tv/fanart/music/good.jpg", vm.uiState.value.hero.avatarUrl)
-        assertEquals(ArtistIdentityKind.PHOTO, vm.uiState.value.hero.artworkKind)
-        verify(original).find("LocalName")
+        vm.onHeroArtworkLoadFailed("https://i.scdn.co/image/other")
+        assertEquals("https://i.scdn.co/image/broken", vm.uiState.value.hero.avatarUrl)
+        vm.onHeroArtworkLoadFailed("https://i.scdn.co/image/broken")
+        assertEquals("https://example.org/avatar.jpg", vm.uiState.value.hero.avatarUrl)
     }
 
     private fun t(id: String) = TrackSummary(

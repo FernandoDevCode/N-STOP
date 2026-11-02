@@ -766,6 +766,37 @@ class SpotifyApiClient @Inject constructor(
         candidates
     }
 
+    /**
+     * Official Spotify artist profile image; no scraped galleries, no album cover proxy.
+     * Search requires a connected user's token (same documented constraint as searchTracks).
+     * Failures/429 are not retried here; the artist screen retains its current catalog art.
+     */
+    suspend fun searchArtistPhoto(name: String): SpotifyArtistPhoto? = withContext(Dispatchers.IO) {
+        if (name.isBlank()) return@withContext null
+        val token = tokenManager.getSpotifyAccessToken() ?: return@withContext null
+        val url = WEB_API_BASE + "/search?type=artist&limit=5&q=" +
+            URLEncoder.encode(name.trim(), "UTF-8")
+        try {
+            fun readWith(bearer: String): Pair<Int, String?> =
+                executeSearchRequest(url, bearer).use { response ->
+                    response.code to (if (response.isSuccessful) response.body?.string() else null)
+                }
+            var (status, body) = readWith(token)
+            if (status == 401) {
+                val refreshed = tokenManager.forceRefreshSpotifyAccessToken() ?: return@withContext null
+                val retry = readWith(refreshed)
+                status = retry.first
+                body = retry.second
+            }
+            if (status !in 200..299 || body == null) return@withContext null
+            parseSpotifyArtistPhoto(body, name)
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     /** Builds and executes a single authenticated GET against the search endpoint. */
     private fun executeSearchRequest(url: String, token: String): okhttp3.Response {
         val request = Request.Builder()

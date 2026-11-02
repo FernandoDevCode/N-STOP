@@ -1,12 +1,12 @@
 package com.stash.feature.search
 
 import android.os.SystemClock
+import android.net.Uri
+import com.stash.data.spotify.SpotifyArtistPhoto
 import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.stash.core.data.artistphotos.ArtistPhotoLookup
-import com.stash.core.data.artistphotos.ArtistIdentityLookup
 import com.stash.core.data.artistphotos.ArtistIdentityKind
 import com.stash.core.common.perf.PerfLog
 import com.stash.core.data.cache.AlbumCache
@@ -68,8 +68,8 @@ import javax.inject.Inject
 class ArtistProfileViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val artistCache: ArtistCache,
-    private val artistPhotoLookup: ArtistPhotoLookup,
-    private val artistIdentityLookup: ArtistIdentityLookup,
+    private val spotifyArtistLookup: SpotifyArtistPhotoLookup,
+    private val artistHeroPhotoStore: ArtistHeroPhotoStore,
     private val appleAlbumMetadata: AppleMusicAlbumMetadataLookup,
     private val albumCache: AlbumCache,
     private val prefetcher: PreviewPrefetcher,
@@ -86,12 +86,17 @@ class ArtistProfileViewModel @Inject constructor(
     private val initialName: String = savedStateHandle["name"] ?: ""
     private val initialAvatar: String? = savedStateHandle["avatarUrl"]
     private val initialFocusAlbum: String? = savedStateHandle["focusAlbum"]
+    private var customPhotoUrl: String? = artistHeroPhotoStore.get(artistId)
+    private var failedCustomPhotoUrl: String? = null
+    private var spotifyPhoto: SpotifyArtistPhoto? = null
+    private var nativeAvatarUrl: String? = initialAvatar
+    private var photoJob: Job? = null
 
     private val _uiState = MutableStateFlow(
         ArtistProfileUiState(
             hero = HeroState(
                 name = initialName,
-                avatarUrl = initialAvatar,
+                avatarUrl = customPhotoUrl ?: initialAvatar,
                 subscribersText = null,
             ),
             status = ArtistProfileStatus.Loading,
@@ -154,60 +159,86 @@ class ArtistProfileViewModel @Inject constructor(
      * a second time (the first emission already warmed the cache).
      */
     private var prefetchKicked = false
-    private var photoJob: Job? = null
-    private var curatedPhotoUrl: String? = null
-    private var curatedKind = ArtistIdentityKind.PHOTO
-    private var selectedIsIdentity = false
-    private var nativeAvatarUrl: String? = initialAvatar
-    private var fallbackPhotoJob: Job? = null
     private var appleMetadataJob: Job? = null
     private var appleMetadata: Map<String, AppleAlbumMetadata> = emptyMap()
 
-    /** Identity first, then the unmodified original band-photo selection. */
-    private fun maybeLoadPhoto(name: String) {
-        if (photoJob != null || name.isBlank()) return
-        photoJob = viewModelScope.launch {
-            val selected = artistIdentityLookup.find(name)?.takeIf {
-                it.kind == ArtistIdentityKind.PHOTO
-            }
-            if (selected == null) {
-                Log.d("SonoraArtistPhoto", "wikidata miss artist=" + name)
-                applyLegacyPhoto(name)
-            } else {
-                Log.d("SonoraArtistPhoto", "source=wikidata artist=" + name + " url=" + selected.url)
-                curatedPhotoUrl = selected.url
-                curatedKind = selected.kind
-                selectedIsIdentity = true
-                _uiState.update { state ->
-                    state.copy(hero = state.hero.copy(
-                        avatarUrl = selected.url, artworkKind = selected.kind,
-                    ))
-                }
-            }
-        }
-    }
+    /** The user's manual choice wins over Spotify, including late asynchronous responses. */
+    private fun chosenHeroPhoto(): String? =
+        customPhotoUrl?.takeUnless { it == failedCustomPhotoUrl } ?: spotifyPhoto?.imageUrl ?: nativeAvatarUrl
 
-    private suspend fun applyLegacyPhoto(name: String, failedIdentityUrl: String? = null) {
-        val legacy = artistPhotoLookup.find(name)
-        if (failedIdentityUrl != null && curatedPhotoUrl != failedIdentityUrl) return
-        Log.d("SonoraArtistPhoto", "source=" + (if (legacy != null) "fanart" else "catalog") +
-            " artist=" + name + " url=" + (legacy ?: nativeAvatarUrl))
-        curatedPhotoUrl = legacy
-        curatedKind = ArtistIdentityKind.PHOTO
-        selectedIsIdentity = false
+    private fun updateHeroPhoto() {
         _uiState.update { state ->
+            val spotifyActive = (customPhotoUrl == null || customPhotoUrl == failedCustomPhotoUrl) && spotifyPhoto != null
             state.copy(hero = state.hero.copy(
-                avatarUrl = legacy ?: nativeAvatarUrl,
+                avatarUrl = chosenHeroPhoto(),
                 artworkKind = ArtistIdentityKind.PHOTO,
+                spotifyArtistUrl = if (spotifyActive) spotifyPhoto?.artistUrl else null,
             ))
         }
     }
 
-    /** Broken Commons thumbnail also triggers the original fallback; no blank hero. */
+    private fun maybeLoadPhoto(name: String) {
+        if (name.isBlank() || photoJob != null ||
+            (customPhotoUrl != null && customPhotoUrl != failedCustomPhotoUrl)) return
+        photoJob = viewModelScope.launch {
+            spotifyPhoto = spotifyArtistLookup.find(name)
+            if (customPhotoUrl == null) updateHeroPhoto()
+        }
+    }
+
+    /** Called when Coil cannot render the active photo. Never replace it with a blank hero. */
     fun onHeroArtworkLoadFailed(url: String) {
-        if (!selectedIsIdentity || curatedPhotoUrl != url || fallbackPhotoJob != null) return
-        val name = _uiState.value.hero.name
-        fallbackPhotoJob = viewModelScope.launch { applyLegacyPhoto(name, failedIdentityUrl = url) }
+        if (chosenHeroPhoto() != url) return
+        when {
+            customPhotoUrl == url -> {
+                // Keep a user's chosen URL in preferences on transient offline/404.
+                // Fall back only for this screen lifetime; it can be retried on reopen.
+                failedCustomPhotoUrl = url
+                updateHeroPhoto()
+                _userMessages.tryEmit("Imagem indisponível no momento. Mostrando foto padrão.")
+                if (spotifyPhoto == null) maybeLoadPhoto(_uiState.value.hero.name)
+            }
+            spotifyPhoto?.imageUrl == url -> {
+                spotifyPhoto = null
+                updateHeroPhoto()
+            }
+        }
+    }
+
+    fun setPhotoLink(input: String) {
+        if (!artistHeroPhotoStore.saveLink(artistId, input)) {
+            _userMessages.tryEmit("Use um link HTTPS válido para uma imagem.")
+            return
+        }
+        customPhotoUrl = input.trim()
+        failedCustomPhotoUrl = null
+        updateHeroPhoto()
+    }
+
+    fun setLocalPhoto(uri: Uri) {
+        viewModelScope.launch {
+            try {
+                val saved = artistHeroPhotoStore.saveImage(artistId, uri)
+                customPhotoUrl = saved
+                failedCustomPhotoUrl = null
+                updateHeroPhoto()
+            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                _userMessages.emit("Não foi possível usar a imagem. Escolha outra foto.")
+            }
+        }
+    }
+
+    fun restoreSpotifyPhoto() {
+        artistHeroPhotoStore.clear(artistId)
+        customPhotoUrl = null
+        failedCustomPhotoUrl = null
+        updateHeroPhoto()
+        if (spotifyPhoto == null) {
+            photoJob = null
+            maybeLoadPhoto(_uiState.value.hero.name)
+        }
     }
 
     /** Apple is preferred for existing album artwork/year, never playback IDs. */
@@ -465,16 +496,14 @@ class ArtistProfileViewModel @Inject constructor(
         t0: Long,
     ) {
         nativeAvatarUrl = profile.avatarUrl
-        if (curatedPhotoUrl == null) {
-            Log.d("SonoraArtistPhoto", "source=catalog-initial artist=" + profile.name +
-                " url=" + profile.avatarUrl)
-        }
+        val spotifyActive = (customPhotoUrl == null || customPhotoUrl == failedCustomPhotoUrl) && spotifyPhoto != null
         _uiState.value = _uiState.value.copy(
             hero = HeroState(
                 name = profile.name,
-                avatarUrl = curatedPhotoUrl ?: profile.avatarUrl,
+                avatarUrl = chosenHeroPhoto(),
                 subscribersText = profile.subscribersText,
-                artworkKind = curatedKind,
+                artworkKind = ArtistIdentityKind.PHOTO,
+                spotifyArtistUrl = if (spotifyActive) spotifyPhoto?.artistUrl else null,
             ),
             popular = profile.popular,
             albums = AppleMusicAlbumMetadataLookup.enrich(profile.albums, appleMetadata),
