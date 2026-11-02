@@ -164,8 +164,11 @@ fun ArtistProfileScreen(
     // behind the shelves. The original hero retains its uncropped Fit image.
     val ambientImageAlpha by remember(listState) {
         derivedStateOf {
-            val progress = (listState.firstVisibleItemIndex / 12f +
-                listState.firstVisibleItemScrollOffset / 9600f).coerceIn(0f, 1f)
+            // Keep the color wash near the opening chapters only. The
+            // previous divisor (12 items) kept a photograph across most of
+            // the discography, even after the hero had long disappeared.
+            val progress = ((listState.firstVisibleItemIndex - 1).coerceAtLeast(0) / 4f +
+                listState.firstVisibleItemScrollOffset / 1800f).coerceIn(0f, 1f)
             .32f * (1f - progress)
         }
     }
