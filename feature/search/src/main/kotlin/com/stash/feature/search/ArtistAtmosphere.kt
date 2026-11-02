@@ -216,3 +216,59 @@ internal suspend fun artistPaletteFromPhoto(
         ArtistNeutralPalette
     }
 }
+
+
+/**
+ * Samples the lower band of the original photo, not a second cropped photo.
+ * Horizontal samples retain left/center/right colour placement. The caller
+ * fades this strip vertically into the reading surface; no bitmap is repeated.
+ */
+internal suspend fun artistBottomEdgeColors(context: Context, photoUrl: String?): List<Color> {
+    if (photoUrl.isNullOrBlank()) return emptyList()
+    return try {
+        val request = ImageRequest.Builder(context)
+            .data(ArtUrlUpgrader.upgrade(photoUrl))
+            .size(Size(160, 160))
+            .allowHardware(false)
+            .build()
+        val result = withContext(Dispatchers.IO) {
+            SingletonImageLoader.get(context).execute(request)
+        }
+        if (result !is SuccessResult) return emptyList()
+        withContext(Dispatchers.Default) {
+            val bitmap = result.image.toBitmap()
+            val width = bitmap.width
+            val height = bitmap.height
+            if (width < 3 || height < 3) return@withContext emptyList()
+            (0..6).map { index ->
+                val centerX = (index * (width - 1) / 6)
+                val radiusX = (width / 11).coerceAtLeast(1)
+                val startY = (height * .72f).toInt().coerceIn(0, height - 1)
+                var red = 0L
+                var green = 0L
+                var blue = 0L
+                var count = 0L
+                val step = (height / 36).coerceAtLeast(1)
+                for (y in startY until height step step) {
+                    for (x in (centerX - radiusX).coerceAtLeast(0)..(centerX + radiusX).coerceAtMost(width - 1)) {
+                        val pixel = bitmap.getPixel(x, y)
+                        if ((pixel ushr 24) < 128) continue
+                        red += (pixel ushr 16) and 255
+                        green += (pixel ushr 8) and 255
+                        blue += pixel and 255
+                        count++
+                    }
+                }
+                if (count == 0L) ArtistNeutralPalette.bridge else Color(
+                    (red.toFloat() / count / 255f),
+                    (green.toFloat() / count / 255f),
+                    (blue.toFloat() / count / 255f),
+                )
+            }
+        }
+    } catch (cancel: CancellationException) {
+        throw cancel
+    } catch (_: Exception) {
+        emptyList()
+    }
+}
