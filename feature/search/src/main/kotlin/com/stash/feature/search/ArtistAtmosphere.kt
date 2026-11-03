@@ -3,6 +3,8 @@ package com.stash.feature.search
 import android.content.Context
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import coil3.SingletonImageLoader
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
@@ -270,5 +272,81 @@ internal suspend fun artistBottomEdgeColors(context: Context, photoUrl: String?)
         throw cancel
     } catch (_: Exception) {
         emptyList()
+    }
+}
+
+
+/**
+ * V4: a real photo-derived continuation, rather than a flat seven-stop wash.
+ * A low resolution texture samples a progressively deeper part of the actual
+ * bottom third. Horizontal averaging increases toward the bottom so recognizable
+ * objects disappear while their spatial light/colour remains. Transparent
+ * output dissolves into the page charcoal. Never repeats the full photograph.
+ * Bitmap construction runs off the main thread, once per photo change.
+ */
+internal suspend fun artistPhotoContinuation(
+    context: Context,
+    photoUrl: String?,
+): ImageBitmap? {
+    if (photoUrl.isNullOrBlank()) return null
+    return try {
+        val request = ImageRequest.Builder(context)
+            .data(ArtUrlUpgrader.upgrade(photoUrl))
+            .size(Size(192, 192))
+            .allowHardware(false)
+            .build()
+        val result = withContext(Dispatchers.IO) {
+            SingletonImageLoader.get(context).execute(request)
+        }
+        if (result !is SuccessResult) return null
+        withContext(Dispatchers.Default) {
+            val source = result.image.toBitmap()
+            val sampled = Bitmap.createScaledBitmap(source, 112, 112, true)
+            val outWidth = 112
+            val outHeight = 240
+            try {
+                val pixels = IntArray(outWidth * outHeight)
+                for (y in 0 until outHeight) {
+                    val progress = y.toFloat() / (outHeight - 1)
+                    // Start with actual lower-image pixels; gradually approach
+                    // the bottom edge as detail diffuses away.
+                    val sourceY = (76 + (35 * progress).toInt()).coerceIn(0, 111)
+                    val radius = 2 + (progress * 25).toInt()
+                    // Smoothstep opacity gives one continuous dissolve without
+                    // a horizontal boundary or repeated photographic objects.
+                    val fade = (1f - progress * progress * (3f - 2f * progress))
+                    val alpha = (fade * 255f).toInt().coerceIn(0, 255)
+                    for (x in 0 until outWidth) {
+                        var r = 0
+                        var g = 0
+                        var b = 0
+                        var n = 0
+                        for (dx in -radius..radius step 3) {
+                            val sx = (x + dx).coerceIn(0, outWidth - 1)
+                            val c = sampled.getPixel(sx, sourceY)
+                            r += (c ushr 16) and 255
+                            g += (c ushr 8) and 255
+                            b += c and 255
+                            n++
+                        }
+                        // Slight neutral darkening keeps white costumes from
+                        // washing out section titles; colour character remains.
+                        val attenuation = .83f - progress * .16f
+                        pixels[y * outWidth + x] =
+                            (alpha shl 24) or
+                            ((r.toFloat() / n * attenuation).toInt().coerceIn(0, 255) shl 16) or
+                            ((g.toFloat() / n * attenuation).toInt().coerceIn(0, 255) shl 8) or
+                            (b.toFloat() / n * attenuation).toInt().coerceIn(0, 255)
+                    }
+                }
+                Bitmap.createBitmap(pixels, outWidth, outHeight, Bitmap.Config.ARGB_8888).asImageBitmap()
+            } finally {
+                if (sampled !== source) sampled.recycle()
+            }
+        }
+    } catch (cancel: CancellationException) {
+        throw cancel
+    } catch (_: Exception) {
+        null
     }
 }
