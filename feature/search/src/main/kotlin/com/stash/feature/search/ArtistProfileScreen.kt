@@ -354,10 +354,19 @@ fun ArtistProfileScreen(
             modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
                 .height(WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 12.dp)
                 .background(
-                    Brush.verticalGradient(
-                        0f to statusBarScrim,
-                        1f to statusBarScrim.copy(alpha = 0f),
-                    ),
+                    if (showArtistTabs) {
+                        // When navigation is pinned, tracks must not bleed behind
+                        // the Android clock or through the gap above the tabs.
+                        Brush.verticalGradient(
+                            0f to smoothDeep,
+                            1f to smoothDeep,
+                        )
+                    } else {
+                        Brush.verticalGradient(
+                            0f to statusBarScrim,
+                            1f to statusBarScrim.copy(alpha = 0f),
+                        )
+                    },
                 ),
         )
         // A quiet floating chapter selector appears only after the hero has
