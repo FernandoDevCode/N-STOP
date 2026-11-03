@@ -96,6 +96,14 @@ fun ArtistProfileScreen(
     ) {
         value = artistPaletteFromPhoto(context, state.hero.avatarUrl)
     }
+    // One asynchronously decoded and preblurred photo per artist, reused across all tabs.
+    // The request key follows edited hero photos; no processing occurs during scroll.
+    val photoBackdrop by produceState<androidx.compose.ui.graphics.ImageBitmap?>(
+        initialValue = null,
+        key1 = state.hero.avatarUrl,
+    ) {
+        value = artistPhotoBackdrop(context, state.hero.avatarUrl)
+    }
     val smoothAtmosphere by animateColorAsState(
         targetValue = photoPalette.surface,
         label = "artistReadingSurface",
@@ -213,6 +221,7 @@ fun ArtistProfileScreen(
             mid = smoothMid,
             deep = smoothDeep,
             bridge = smoothBridge,
+            photoBackdrop = photoBackdrop,
         ) {
         LazyColumn(
             state = listState,
