@@ -8,12 +8,17 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 
 /**
- * Continuous photo-derived chromatic atmosphere shared by all artist tabs.
- * No synthesized, repeated or stretched hero bitmap: the original photograph
- * remains owned by ArtistHero and fades naturally onto this procedural canvas.
+ * V4: one photo-derived, heavily blurred and fixed backdrop per artist.
+ *
+ * The original hero keeps its native Fit crop and U fade; the backdrop is a
+ * compact independent center crop of the SAME photo, prepared once off-thread.
+ * If loading fails or the photo is undersized, the V3 chromatic canvas remains.
  */
 @Composable
 internal fun ArtistProfileBackdrop(
@@ -21,10 +26,12 @@ internal fun ArtistProfileBackdrop(
     mid: Color,
     deep: Color,
     bridge: Color,
+    photoBackdrop: ImageBitmap?,
     content: @Composable BoxScope.() -> Unit,
 ) {
     Box(
         modifier = modifier.drawBehind {
+            // Always render V3 as a fallback, with no flash from app graphite.
             drawRect(
                 brush = Brush.verticalGradient(
                     0f to mid,
@@ -32,28 +39,44 @@ internal fun ArtistProfileBackdrop(
                     1f to deep,
                 ),
             )
-            // Diffuse low-contrast illumination; no image-shaped texture.
-            drawRect(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        bridge.copy(alpha = .42f),
-                        mid.copy(alpha = .12f),
-                        Color.Transparent,
+            if (photoBackdrop != null) {
+                // Fixed to the viewport, not LazyColumn scroll offset. The preblurred
+                // image has no recognizable objects or horizontal seams after scaling.
+                drawImage(
+                    image = photoBackdrop,
+                    dstOffset = IntOffset.Zero,
+                    dstSize = IntSize(
+                        size.width.toInt().coerceAtLeast(1),
+                        size.height.toInt().coerceAtLeast(1),
                     ),
-                    center = Offset(size.width * .14f, size.height * .04f),
-                    radius = size.width * 1.9f,
-                ),
-            )
-            drawRect(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        bridge.copy(alpha = .21f),
-                        Color.Transparent,
+                    alpha = .82f,
+                )
+                // The real photograph supplies all spatial variation. A subtle
+                // dark scrim provides contrast without adding fake light or texture.
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        0f to deep.copy(alpha = .28f),
+                        .48f to deep.copy(alpha = .45f),
+                        1f to deep.copy(alpha = .57f),
                     ),
-                    center = Offset(size.width * .87f, size.height * .82f),
-                    radius = size.width * 1.65f,
-                ),
-            )
+                )
+            } else {
+                // Only the photo-unavailable fallback retains V3 diffused light.
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(bridge.copy(alpha = .42f), Color.Transparent),
+                        center = Offset(size.width * .14f, size.height * .04f),
+                        radius = size.width * 1.9f,
+                    ),
+                )
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(bridge.copy(alpha = .21f), Color.Transparent),
+                        center = Offset(size.width * .87f, size.height * .82f),
+                        radius = size.width * 1.65f,
+                    ),
+                )
+            }
         },
         content = content,
     )
