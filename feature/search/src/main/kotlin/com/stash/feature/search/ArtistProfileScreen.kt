@@ -36,14 +36,13 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.flow.collect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -169,28 +168,25 @@ fun ArtistProfileScreen(
         "Singles e EPs" to 2,
         "Sobre" to 3,
     )
-    // The non-Music destinations reserve the same top area as their pinned
-    // identity and tabs. Focused rows must scroll BELOW that header too.
+    // The identity and section tabs are regular LazyColumn items, not a
+    // floating overlay. They leave the viewport together with the content.
     val systemTopPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val pinnedHeaderHeight = 52.dp + 48.dp
-    val secondaryContentTop = systemTopPadding + 8.dp + pinnedHeaderHeight + 16.dp
-    val secondaryContentTopPx = with(LocalDensity.current) { secondaryContentTop.roundToPx() }
 
     val focus = remember(state.focusAlbum, state.albums, state.singles) {
         findAlbumFocus(state.focusAlbum, state.albums, state.singles)
     }
-    LaunchedEffect(focus, state.status, secondaryContentTopPx) {
+    LaunchedEffect(focus, state.status) {
         if (focus != null && (state.status is ArtistProfileStatus.Fresh ||
             state.status is ArtistProfileStatus.Stale)) {
             when (focus.shelf) {
                 AlbumShelf.ALBUMS -> {
                     selectedArtistTab = 1
-                    albumsListState.scrollToItem(1 + focus.index / 2, -secondaryContentTopPx)
+                    albumsListState.scrollToItem(3 + focus.index / 2)
                 }
                 AlbumShelf.SINGLES -> {
                     selectedArtistTab = 2
                     releaseFilter = 0
-                    singlesListState.scrollToItem(2 + focus.index / 2, -secondaryContentTopPx)
+                    singlesListState.scrollToItem(4 + focus.index / 2)
                 }
             }
         }
@@ -212,13 +208,6 @@ fun ArtistProfileScreen(
             else Color.Transparent,
         label = "artistStatusBarContrast",
     )
-    // One consistent pinned header for every secondary destination; on Music
-    // it appears only once the in-flow selector has scrolled offscreen.
-    val showArtistTabs by remember(listState, selectedArtistTab) {
-        derivedStateOf {
-            selectedArtistTab != 0 || listState.firstVisibleItemIndex > 1
-        }
-    }
     Scaffold(
         // The outer NavHost deliberately draws the hero behind the Android
         // clock. A nested Material3 Scaffold must NOT reserve a second top
@@ -236,10 +225,7 @@ fun ArtistProfileScreen(
         ) {
         LazyColumn(
             state = listState,
-            contentPadding = PaddingValues(
-                top = if (selectedArtistTab == 0) 0.dp else secondaryContentTop,
-                bottom = bottomChromePadding(96.dp),
-            ),
+            contentPadding = PaddingValues(bottom = bottomChromePadding(96.dp)),
             modifier = Modifier.fillMaxSize(),
         ) {
             if (selectedArtistTab == 0) item {
@@ -266,19 +252,35 @@ fun ArtistProfileScreen(
                     },
                 )
             }
-            // In-flow tabs switch content; they are no longer scroll anchors.
-            // The music hero owns its in-flow tabs. Secondary destinations use
-            // the single pinned header below; no duplicate title or tab rows in
-            // their lazy content, preventing content from sliding under the tabs.
-            if (selectedArtistTab == 0) {
-                item(key = "artist-profile-tabs") {
-                    Box(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp)) {
-                        ArtistSectionTabs(
-                            tabs = artistTabs,
-                            selectedIndex = selectedArtistTab,
-                            onSelect = { selectedArtistTab = it },
+            // All destinations use ordinary scrolling content. Once scrolled
+            // away, neither the artist identity nor the tabs overlay the albums.
+            if (selectedArtistTab != 0) {
+                item(key = "artist-destination-identity") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth()
+                            .padding(top = systemTopPadding + 8.dp, start = 8.dp, end = 20.dp)
+                            .height(52.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TextButton(onClick = onBack) { Text("‹ Voltar") }
+                        Text(
+                            text = state.hero.name,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f).padding(start = 8.dp),
                         )
                     }
+                }
+            }
+            item(key = "artist-profile-tabs") {
+                Box(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp)) {
+                    ArtistSectionTabs(
+                        tabs = artistTabs,
+                        selectedIndex = selectedArtistTab,
+                        onSelect = { selectedArtistTab = it },
+                    )
                 }
             }
 
@@ -345,68 +347,18 @@ fun ArtistProfileScreen(
                 )
             }
         }
-        // Preserve edge-to-edge photo at the top, but protect Android's clock
-        // when album art and labels scroll behind the status bar.
+        // Status bar contrast remains independent from the scrolling section menu.
+        // No fixed artist name, tabs or scrim is drawn over album artwork.
         Box(
             modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
                 .height(systemTopPadding + 12.dp)
                 .background(
-                    if (showArtistTabs) {
-                        // When navigation is pinned, tracks must not bleed behind
-                        // the Android clock or through the gap above the tabs.
-                        Brush.verticalGradient(
-                            0f to smoothDeep,
-                            1f to smoothDeep,
-                        )
-                    } else {
-                        Brush.verticalGradient(
-                            0f to statusBarScrim,
-                            1f to statusBarScrim.copy(alpha = 0f),
-                        )
-                    },
+                    Brush.verticalGradient(
+                        0f to statusBarScrim,
+                        1f to statusBarScrim.copy(alpha = 0f),
+                    ),
                 ),
         )
-        // One pinned artist identity/navigation shell for all four destinations.
-        // All secondary content starts BELOW it (see secondaryContentTop).
-        if (showArtistTabs) {
-            Column(
-                modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
-                    .padding(top = systemTopPadding + 8.dp),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().height(52.dp)
-                        .background(smoothDeep)
-                        .padding(start = 8.dp, end = 20.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    TextButton(onClick = onBack) { Text("‹ Voltar") }
-                    Text(
-                        text = state.hero.name,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f).padding(start = 8.dp),
-                    )
-                }
-                Box(Modifier.fillMaxWidth().background(smoothDeep)) {
-                    ArtistSectionTabs(
-                        tabs = artistTabs,
-                        selectedIndex = selectedArtistTab,
-                        onSelect = { selectedArtistTab = it },
-                    )
-                }
-                Box(
-                    Modifier.fillMaxWidth().height(16.dp)
-                        .background(
-                            Brush.verticalGradient(
-                                0f to smoothDeep,
-                                1f to Color.Transparent,
-                            ),
-                        ),
-                )
-            }
-        }
         } // artist atmosphere canvas
 
         if (showStreamingSheet) {
