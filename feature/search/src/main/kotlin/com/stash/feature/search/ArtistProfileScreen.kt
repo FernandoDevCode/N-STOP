@@ -53,6 +53,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.collect
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
@@ -115,12 +121,14 @@ fun ArtistProfileScreen(
     ) {
         value = artistPaletteFromPhoto(context, state.hero.avatarUrl)
     }
-    val edgeColors by produceState<List<Color>>(
-        initialValue = emptyList(),
+    // The photographic continuation is sampled off-thread once per image.
+    val continuation by produceState<androidx.compose.ui.graphics.ImageBitmap?>(
+        initialValue = null,
         key1 = state.hero.avatarUrl,
     ) {
-        value = artistBottomEdgeColors(context, state.hero.avatarUrl)
+        value = artistPhotoContinuation(context, state.hero.avatarUrl)
     }
+    var photoFrameHeightPx by remember(state.hero.avatarUrl) { mutableFloatStateOf(0f) }
     val smoothAtmosphere by animateColorAsState(
         targetValue = photoPalette.surface,
         label = "artistReadingSurface",
@@ -167,6 +175,31 @@ fun ArtistProfileScreen(
     // hero + Popular, i.e. off-screen on landing) so the inner rail's own
     // scroll + highlight (see AlbumsRow) is actually visible.
     val listState = rememberLazyListState()
+    // Preserve absolute page position after the hero leaves LazyColumn's
+    // composition. Tracking actual item sizes avoids both index-based fade
+    // jumps and a photo backdrop that disappears as soon as item 0 is recycled.
+    val itemHeightPx = remember { mutableStateMapOf<Int, Int>() }
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index to it.size } }
+            .collect { items ->
+                items.forEach { (index, height) ->
+                    if (height > 0) itemHeightPx[index] = height
+                }
+            }
+    }
+    val absoluteScrollPx by remember(listState, itemHeightPx) {
+        derivedStateOf {
+            val index = listState.firstVisibleItemIndex
+            if (index == 0) listState.firstVisibleItemScrollOffset.toFloat()
+            else {
+                val measured = (0 until index).map { itemHeightPx[it] }
+                if (measured.any { it == null }) null
+                else measured.filterNotNull().sum().toFloat() +
+                    listState.firstVisibleItemScrollOffset
+            }
+        }
+    }
+
     // Use measured hero displacement in pixels, independent of how many or
     // how tall the following LazyColumn items are. Motion remains secondary.
     val atmosphereProgress by remember(listState) {
@@ -251,7 +284,7 @@ fun ArtistProfileScreen(
         }
     }
     val showArtistTabs by remember(listState, artistTabs) {
-        derivedStateOf { artistTabs.size > 1 && listState.firstVisibleItemIndex > 0 }
+        derivedStateOf { artistTabs.size > 1 && listState.firstVisibleItemIndex > 1 }
     }
     val sectionOuterIndex = remember(focus, positions) {
         when (focus?.shelf) {
@@ -279,109 +312,42 @@ fun ArtistProfileScreen(
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
         snackbarHost = { SnackbarHost(snackbar, Modifier.padding(bottom = bottomChromePadding())) },
     ) { inner ->
-        // A single photo-to-content fade follows the actual scroll position.
-        // Unlike a viewport-fixed wash, this does not recolour later sections
-        // after the hero scrolls away. It never touches the app's mini-player.
+        // V4: a single photographed canvas under the hero AND content.
+        // Texture starts inside the image's fade region (measured in actual
+        // pixels), keeps the image's horizontal light/dark distribution, and
+        // dissolves to charcoal through alpha in the bitmap itself.
         Box(
             modifier = Modifier.fillMaxSize().padding(inner).drawBehind {
-                // One continuous transition anchored to the hero's actual
-                // bottom. The previous surface fill introduced a hard line.
-                drawRect(smoothBridge)
-                val visible = listState.layoutInfo.visibleItemsInfo
-                val heroEnd = visible.firstOrNull { it.index == 0 }
-                    ?.let { (it.offset + it.size).toFloat() }
-                val heading = visible.firstOrNull { it.index == 2 }?.offset?.toFloat()
-                val shelf = visible.firstOrNull { it.index == 3 }
-                    ?.let { it.offset - 56.dp.toPx() }
-                val transitionY = heroEnd ?: heading ?: shelf
-                if (transitionY != null) {
-                    val fadeStart = transitionY - 40.dp.toPx()
-                    val fadeEnd = fadeStart + 650.dp.toPx()
-                    if (fadeEnd > 0f && fadeStart < size.height) {
+                drawRect(ArtistNeutralAtmosphere)
+                val frameEnd = absoluteScrollPx?.let { photoFrameHeightPx - it }
+                if (continuation != null && frameEnd != null && photoFrameHeightPx > 0f) {
+                    val bleed = photoFrameHeightPx * .36f
+                    val startY = frameEnd - bleed
+                    val heightPx = 1120.dp.toPx()
+                    if (startY < size.height && startY + heightPx > 0f) {
+                        val horizontalBleed = 18.dp.toPx()
+                        val drift = (ambientPhase - .5f) * 20.dp.toPx()
+                        drawImage(
+                            image = continuation!!,
+                            dstOffset = IntOffset((-horizontalBleed + drift).toInt(), startY.toInt()),
+                            dstSize = IntSize((size.width + 2f * horizontalBleed).toInt().coerceAtLeast(1), heightPx.toInt().coerceAtLeast(1)),
+                            alpha = 1f,
+                        )
+                        // Reading scrim joins the photo-derived material
+                        // rather than covering it with a second opaque panel.
                         drawRect(
                             brush = Brush.verticalGradient(
-                                0f to smoothBridge,
-                                .52f to lerp(smoothBridge, smoothAtmosphere, .52f),
-                                1f to smoothAtmosphere,
-                                startY = fadeStart,
-                                endY = fadeEnd,
+                                0f to Color.Transparent,
+                                .42f to Color(0x5520252B),
+                                1f to ArtistNeutralAtmosphere,
+                                startY = frameEnd + 60.dp.toPx(),
+                                endY = startY + heightPx,
                             ),
                         )
-                        if (fadeEnd < size.height) {
-                            drawRect(
-                                smoothAtmosphere,
-                                topLeft = Offset(0f, fadeEnd),
-                                size = androidx.compose.ui.geometry.Size(size.width, size.height - fadeEnd),
-                            )
-                        }
-                    } else if (fadeEnd <= 0f) {
-                        drawRect(smoothAtmosphere)
                     }
-                } else if (listState.firstVisibleItemIndex > 3) {
-                    drawRect(smoothAtmosphere)
                 }
             },
         ) {
-        // Evolve the edge-derived colour field with scrolling. The tiny,
-        // slow lateral drift is applied only to already sampled colours:
-        // no duplicated photograph, new blur pass, or artist-specific asset.
-        Box(
-            modifier = Modifier.matchParentSize().drawBehind {
-                if (edgeColors.size >= 2 && ambientImageAlpha > 0f) {
-                    val drift = (ambientPhase - .5f) * size.width * .055f
-                    val travel = atmosphereProgress * size.width * .12f
-                    val startX = -size.width * .10f + drift - travel
-                    val endX = size.width * 1.10f + drift - travel
-                    drawRect(
-                        brush = Brush.horizontalGradient(
-                            colors = edgeColors,
-                            startX = startX,
-                            endX = endX,
-                        ),
-                        alpha = ambientImageAlpha * .85f,
-                    )
-                    // A second, broad lobe gives subtle spatial variation
-                    // instead of uniformly colouring the entire viewport.
-                    drawRect(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                edgeColors[edgeColors.size / 2].copy(alpha = .18f),
-                                Color.Transparent,
-                            ),
-                            center = Offset(
-                                size.width * (.56f - atmosphereProgress * .14f +
-                                    (ambientPhase - .5f) * .025f),
-                                size.height * (.33f + atmosphereProgress * .20f),
-                            ),
-                            radius = size.width * .83f,
-                        ),
-                        alpha = (1f - atmosphereProgress) * .32f,
-                    )
-                }
-            },
-        )
-        // Anchor the dissolve to the real hero bottom while it is visible.
-        // A viewport-wide fixed scrim made the same horizontal colour band
-        // appear regardless of where the photo actually ended.
-        Box(
-            modifier = Modifier.matchParentSize().drawBehind {
-                val heroEnd = listState.layoutInfo.visibleItemsInfo
-                    .firstOrNull { it.index == 0 }
-                    ?.let { (it.offset + it.size).toFloat() }
-                val start = heroEnd?.minus(120.dp.toPx()) ?: 0f
-                val end = heroEnd?.plus(700.dp.toPx()) ?: size.height
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        0f to smoothAtmosphere.copy(alpha = atmosphereProgress * .20f),
-                        .35f to smoothAtmosphere.copy(alpha = .18f + atmosphereProgress * .20f),
-                        .75f to smoothAtmosphere.copy(alpha = .75f + atmosphereProgress * .15f),
-                        1f to smoothAtmosphere,
-                        startY = start,
-                        endY = end.coerceAtLeast(start + 1f),
-                    ),
-                )
-            },
-        )
         LazyColumn(
             state = listState,
             contentPadding = PaddingValues(bottom = bottomChromePadding(96.dp)),
@@ -397,6 +363,7 @@ fun ArtistProfileScreen(
                     heroAtmosphere = smoothHeroTone,
                     onHeroArtworkLoadFailed = vm::onHeroArtworkLoadFailed,
                     onEditPhoto = { showPhotoEditor = true },
+                    onPhotoFrameMeasured = { photoFrameHeightPx = it.toFloat() },
                     onBack = onBack,
                     onPlayArtist = vm::playArtist,
                     onStartRadio = vm::startRadio,
@@ -417,9 +384,26 @@ fun ArtistProfileScreen(
                     },
                 )
             }
-            // The release now belongs to the hero composition. Keep its old
-            // index reserved, including when absent, for album/About navigation.
-            item(key = "artist-featured-release") { }
+            // The formerly empty reserved index is now the integrated
+            // chapter selector. This keeps existing section indices stable.
+            item(key = "artist-featured-release") {
+                if (artistTabs.size > 1) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth()
+                            .padding(top = 12.dp, bottom = 4.dp),
+                    ) {
+                        ArtistSectionTabs(
+                            tabs = artistTabs,
+                            selectedIndex = selectedArtistTab,
+                            onSelect = { target ->
+                                scrollScope.launch {
+                                    listState.animateScrollToItem(target, scrollOffset = tabScrollOffsetPx)
+                                }
+                            },
+                        )
+                    }
+                }
+            }
 
             when (val status = state.status) {
                 is ArtistProfileStatus.Error -> item {

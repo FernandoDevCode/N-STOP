@@ -48,7 +48,13 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -95,6 +101,7 @@ fun ArtistHero(
     bridgeAtmosphere: Color = ArtistNeutralPalette.bridge,
     onHeroArtworkLoadFailed: (String) -> Unit = {},
     onEditPhoto: () -> Unit = {},
+    onPhotoFrameMeasured: (Int) -> Unit = {},
     onBack: () -> Unit,
     onPlayArtist: () -> Unit,
     onStartRadio: () -> Unit,
@@ -120,7 +127,7 @@ fun ArtistHero(
     val viewportHeightDp = LocalConfiguration.current.screenHeightDp.toFloat()
 
     BoxWithConstraints(
-        modifier = modifier.fillMaxWidth().clipToBounds().background(bridgeAtmosphere),
+        modifier = modifier.fillMaxWidth().clipToBounds().background(if (hero.avatarUrl.isNullOrBlank()) bridgeAtmosphere else Color.Transparent),
     ) {
         val photoLeadIn = artistPhotoLeadInDp(maxWidth.value, viewportHeightDp).dp
         // Compute the frame from source dimensions. Fit guarantees that no
@@ -151,50 +158,54 @@ fun ArtistHero(
                         )
                     }
                 },
-                modifier = Modifier.fillMaxWidth().height(photoHeightDp),
+                modifier = Modifier.fillMaxWidth().height(photoHeightDp)
+                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                    .drawWithContent {
+                        drawContent()
+                        // A true transparency mask: the original photo
+                        // dissolves into the photographic backdrop underneath.
+                        // Painting opaque bridge colour here made a hard block.
+                        drawRect(
+                            brush = Brush.verticalGradient(
+                                0f to Color.White,
+                                .59f to Color.White,
+                                .79f to Color.White.copy(alpha = .76f),
+                                1f to Color.Transparent,
+                            ),
+                            blendMode = BlendMode.DstIn,
+                        )
+                        // Preserve the original U silhouette: sides fade
+                        // before the centre, but to transparency, not to an
+                        // opaque tinted rectangle.
+                        drawRect(
+                            brush = Brush.radialGradient(
+                                0f to Color.White,
+                                .62f to Color.White,
+                                .78f to Color.White.copy(alpha = .84f),
+                                .90f to Color.White.copy(alpha = .35f),
+                                1f to Color.Transparent,
+                                center = Offset(size.width * .5f, -size.height * .08f),
+                                radius = artistPhotoFadeRadius(size.width, size.height),
+                            ),
+                            blendMode = BlendMode.DstIn,
+                        )
+                    },
             )
         }
 
-        // A continuous distance-field gradient forms the U without strips.
-        // The left and right disappear sooner while the center reaches lower.
+        // Keep the U-shaped edge light treatment, but never repaint the
+        // entire photo bottom with an opaque colour. The photo's alpha fade
+        // now reveals the same continuation texture behind the full screen.
         Box(
-            Modifier.matchParentSize().drawWithCache {
-                val endY = photoHeightDp.toPx().coerceIn(1f, size.height.coerceAtLeast(1f))
-                val radialFade = Brush.radialGradient(
-                    0f to Color.Transparent,
-                    .62f to Color.Transparent,
-                    .78f to bridgeAtmosphere.copy(alpha = .17f),
-                    .90f to bridgeAtmosphere.copy(alpha = .72f),
-                    1f to bridgeAtmosphere,
-                    center = Offset(size.width * .5f, -endY * .08f),
-                    radius = artistPhotoFadeRadius(size.width, endY),
+            Modifier.fillMaxWidth().height(photoHeightDp).drawBehind {
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        0f to Color.Black.copy(alpha = .18f),
+                        .24f to Color.Transparent,
+                        .66f to Color.Transparent,
+                        1f to Color.Black.copy(alpha = .12f),
+                    ),
                 )
-                val bottomFade = Brush.verticalGradient(
-                    0f to Color.Transparent,
-                    .72f to Color.Transparent,
-                    1f to bridgeAtmosphere,
-                    startY = 0f,
-                    endY = endY,
-                )
-                val topWash = Brush.verticalGradient(
-                    0f to Color.Black.copy(alpha = .19f),
-                    1f to Color.Transparent,
-                    startY = 0f,
-                    endY = (endY * .26f).coerceAtLeast(1f),
-                )
-                onDrawBehind {
-                    val imageSize = Size(size.width, endY)
-                    drawRect(brush = radialFade, size = imageSize)
-                    drawRect(brush = bottomFade, size = imageSize)
-                    if (endY < size.height) {
-                        drawRect(
-                            color = bridgeAtmosphere,
-                            topLeft = Offset(0f, endY),
-                            size = Size(size.width, size.height - endY),
-                        )
-                    }
-                    drawRect(brush = topWash, size = Size(size.width, endY * .26f))
-                }
             },
         )
 
@@ -202,6 +213,7 @@ fun ArtistHero(
         // and playback controls are drawn above this gesture layer.
         Box(
             Modifier.fillMaxWidth().height(photoHeightDp)
+                .onSizeChanged { onPhotoFrameMeasured(it.height) }
                 .pointerInput(onEditPhoto) {
                     detectTapGestures(onLongPress = { onEditPhoto() })
                 }
