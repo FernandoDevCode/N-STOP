@@ -56,6 +56,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.collect
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
@@ -172,6 +175,31 @@ fun ArtistProfileScreen(
     // hero + Popular, i.e. off-screen on landing) so the inner rail's own
     // scroll + highlight (see AlbumsRow) is actually visible.
     val listState = rememberLazyListState()
+    // Preserve absolute page position after the hero leaves LazyColumn's
+    // composition. Tracking actual item sizes avoids both index-based fade
+    // jumps and a photo backdrop that disappears as soon as item 0 is recycled.
+    val itemHeightPx = remember { mutableStateMapOf<Int, Int>() }
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index to it.size } }
+            .collect { items ->
+                items.forEach { (index, height) ->
+                    if (height > 0) itemHeightPx[index] = height
+                }
+            }
+    }
+    val absoluteScrollPx by remember(listState, itemHeightPx) {
+        derivedStateOf {
+            val index = listState.firstVisibleItemIndex
+            if (index == 0) listState.firstVisibleItemScrollOffset.toFloat()
+            else {
+                val measured = (0 until index).map { itemHeightPx[it] }
+                if (measured.any { it == null }) null
+                else measured.filterNotNull().sum().toFloat() +
+                    listState.firstVisibleItemScrollOffset
+            }
+        }
+    }
+
     // Use measured hero displacement in pixels, independent of how many or
     // how tall the following LazyColumn items are. Motion remains secondary.
     val atmosphereProgress by remember(listState) {
@@ -291,17 +319,18 @@ fun ArtistProfileScreen(
         Box(
             modifier = Modifier.fillMaxSize().padding(inner).drawBehind {
                 drawRect(ArtistNeutralAtmosphere)
-                val heroItem = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == 0 }
-                val frameEnd = heroItem?.let { it.offset.toFloat() + photoFrameHeightPx }
+                val frameEnd = absoluteScrollPx?.let { photoFrameHeightPx - it }
                 if (continuation != null && frameEnd != null && photoFrameHeightPx > 0f) {
                     val bleed = 160.dp.toPx()
                     val startY = frameEnd - bleed
                     val heightPx = 1120.dp.toPx()
                     if (startY < size.height && startY + heightPx > 0f) {
+                        val horizontalBleed = 18.dp.toPx()
+                        val drift = (ambientPhase - .5f) * 20.dp.toPx()
                         drawImage(
                             image = continuation!!,
-                            dstOffset = IntOffset(0, startY.toInt()),
-                            dstSize = IntSize(size.width.toInt().coerceAtLeast(1), heightPx.toInt().coerceAtLeast(1)),
+                            dstOffset = IntOffset((-horizontalBleed + drift).toInt(), startY.toInt()),
+                            dstSize = IntSize((size.width + 2f * horizontalBleed).toInt().coerceAtLeast(1), heightPx.toInt().coerceAtLeast(1)),
                             alpha = 1f,
                         )
                         // Reading scrim joins the photo-derived material
