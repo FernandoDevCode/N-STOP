@@ -190,7 +190,7 @@ fun AboutSection(
             Spacer(Modifier.height(26.dp))
             Text(
                 text = listOfNotNull(
-                    wordmarkSource?.let { "Imagem de perfil: " + it },
+                    wordmarkSource?.let { "Marca gráfica: " + it },
                     if (bio != null) "Biografia: Last.fm" else null,
                 ).joinToString(" · "),
                 style = MaterialTheme.typography.labelSmall,
