@@ -1,15 +1,11 @@
-name: Sonora — APK de desenvolvimento (canônico)
+name: Sonora — APK EXPERIMENTAL PR43
 
 on:
   workflow_dispatch:
-  # Only an explicit consolidation commit may publish on push.
-  # Future source changes cannot accidentally create a new release.
   push:
-    branches: [nonstop]
+    branches: [refactor/sonora-artist-sections]
     paths:
       - .github/workflows/sonora-preview.yml
-      # Only explicit version bumps can publish automatically (with marker).
-      - app/build.gradle.kts
 
 permissions:
   contents: write
@@ -17,14 +13,14 @@ permissions:
 jobs:
   build:
     if: >-
-      github.ref == 'refs/heads/nonstop' &&
-      (github.event_name == 'workflow_dispatch' ||
-       contains(github.event.head_commit.message, '[publish sonora]'))
-    name: Test, build and publish from nonstop
+      github.ref == 'refs/heads/refactor/sonora-artist-sections' &&
+      github.event_name == 'push' &&
+      contains(github.event.head_commit.message, '[publish sonora experimental]')
+    name: Build experimental APK for PR43
     runs-on: ubuntu-latest
     timeout-minutes: 50
     steps:
-      - name: Checkout canonical nonstop
+      - name: Checkout PR43 exact commit
         uses: actions/checkout@v6
         with:
           persist-credentials: false
@@ -50,7 +46,7 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x gradlew
-          ./gradlew testDebugUnitTest :app:assembleDebug --no-daemon
+          ./gradlew :app:assembleDebug --no-daemon
 
       - name: Verify version, package, signature and SHA
         id: verify
@@ -90,24 +86,24 @@ jobs:
         run: |
           set -euo pipefail
           SHORT_SHA=${GITHUB_SHA:0:12}
-          TAG="sonora-preview-v${VERSION_CODE}-${SHORT_SHA}"
+          TAG="sonora-exp-refactor43-${SHORT_SHA}"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Preview already published for this exact commit; not overwriting an existing APK"
             exit 1
           fi
-          APK="$RUNNER_TEMP/Sonora-v${VERSION_CODE}-${SHORT_SHA}-debug.apk"
+          APK="$RUNNER_TEMP/Sonora-Experimental-PR43-${SHORT_SHA}-debug.apk"
           cp app/build/outputs/apk/debug/app-debug.apk "$APK"
           SHA256=$(sha256sum "$APK" | cut -d' ' -f1)
           cat > "$RUNNER_TEMP/notes.md" <<EOF
-          Sonora — preview do código canônico \`nonstop\`.
+          Sonora — APK EXPERIMENTAL da branch \`refactor/sonora-artist-sections\` (PR #43).
 
           - Versão: \`$VERSION_NAME\` (versionCode $VERSION_CODE).
           - Commit exato: \`$GITHUB_SHA\`.
           - SHA-256 do APK: \`$SHA256\`.
-          - Testes de módulos, build e assinatura verificados nesta execução.
-          - Checkpoint consolidado: player, mini-player e visual da Home Sonora.
-          - Home nova: mixes de acesso rápido, redescoberta pelo histórico e atalhos Explorar/Rádio/Buscar.
-          - Perfis de artistas: fotografia (sem logo substituindo a foto), enquadramento Fit e fade em U.
+          - Build Debug e assinatura verificados nesta execução. Testes completos da refatoração passaram em GitHub Actions run 41616526424.
+          - Objetivo deste build: testar equivalência visual e funcional com a versão atual do Redmi.
+          - NÃO é integração na nonstop nem release oficial.
+          - Não inclui a V3 cromática não integrada (PR #42).
           - Audiolivros, capítulos, PT-BR e datas brasileiras, gêneros e demais telas da linha integrada.
           - Estas alterações estão presentes no código, mas ainda dependem de validação visual no Redmi.
           - Este APK é Debug (com.stash.app.debug), não uma release pública de produção.
@@ -116,6 +112,6 @@ jobs:
           gh release create "$TAG" "$APK" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Sonora ${VERSION_NAME} — consolidada · ${SHORT_SHA}" \
+            --title "Sonora EXPERIMENTAL PR43 — ${SHORT_SHA}" \
             --notes-file "$RUNNER_TEMP/notes.md" \
             --prerelease --latest=false
