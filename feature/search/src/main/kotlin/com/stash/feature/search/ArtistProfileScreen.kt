@@ -50,12 +50,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.snapshotFlow
-import kotlinx.coroutines.flow.collect
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
@@ -118,17 +112,18 @@ fun ArtistProfileScreen(
     ) {
         value = artistPaletteFromPhoto(context, state.hero.avatarUrl)
     }
-    // The photographic continuation is sampled off-thread once per image.
-    val continuation by produceState<androidx.compose.ui.graphics.ImageBitmap?>(
-        initialValue = null,
-        key1 = state.hero.avatarUrl,
-    ) {
-        value = artistPhotoContinuation(context, state.hero.avatarUrl)
-    }
-    var photoFrameHeightPx by remember(state.hero.avatarUrl) { mutableFloatStateOf(0f) }
+    // The photo stays inside ArtistHero; the page backdrop is procedural.
     val smoothAtmosphere by animateColorAsState(
         targetValue = photoPalette.surface,
         label = "artistReadingSurface",
+    )
+    val smoothMid by animateColorAsState(
+        targetValue = photoPalette.mid,
+        label = "artistCanvasMid",
+    )
+    val smoothDeep by animateColorAsState(
+        targetValue = photoPalette.deep,
+        label = "artistCanvasDeep",
     )
     val smoothBridge by animateColorAsState(
         targetValue = photoPalette.bridge,
@@ -222,26 +217,6 @@ fun ArtistProfileScreen(
     val showArtistTabs by remember(listState) {
         derivedStateOf { listState.firstVisibleItemIndex > 1 }
     }
-    // Photo continuation tracks only the original, image-led music destination.
-    val itemHeightPx = remember(state.hero.name) { mutableStateMapOf<Int, Int>() }
-    LaunchedEffect(musicListState) {
-        snapshotFlow { musicListState.layoutInfo.visibleItemsInfo.map { it.index to it.size } }
-            .collect { entries ->
-                entries.forEach { (index, height) ->
-                    if (height > 0) itemHeightPx[index] = height
-                }
-            }
-    }
-    val absoluteScrollPx by remember(musicListState, itemHeightPx) {
-        derivedStateOf {
-            val index = musicListState.firstVisibleItemIndex
-            val preceding = (0 until index).map { itemHeightPx[it] }
-            if (preceding.any { it == null }) null else
-                preceding.filterNotNull().sum().toFloat() +
-                    musicListState.firstVisibleItemScrollOffset
-        }
-    }
-
     Scaffold(
         // The outer NavHost deliberately draws the hero behind the Android
         // clock. A nested Material3 Scaffold must NOT reserve a second top
@@ -250,65 +225,41 @@ fun ArtistProfileScreen(
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
         snackbarHost = { SnackbarHost(snackbar, Modifier.padding(bottom = bottomChromePadding())) },
     ) { inner ->
-        // V4: a single photographed canvas under the hero AND content.
-        // Texture starts inside the image's fade region (measured in actual
-        // pixels), keeps the image's horizontal light/dark distribution, and
-        // dissolves to charcoal through alpha in the bitmap itself.
+        // V3: one procedural canvas shared by every destination.
+        // No sampled image continuation, stretched pixels or fading to default
+        // app graphite. Both base colours belong to the hero's hue family.
         Box(
             modifier = Modifier.fillMaxSize().padding(inner).drawBehind {
-                // V2: spatial pools of photo-derived light, not a flat tint.
-                drawRect(ArtistNeutralAtmosphere)
-                val glow = lerp(smoothAtmosphere, smoothBridge, .86f)
-                drawRect(
-                    brush = Brush.radialGradient(
-                        colors = listOf(glow.copy(alpha = .91f), Color.Transparent),
-                        center = Offset(size.width * .12f, size.height * .03f),
-                        radius = size.width * 1.50f,
-                    ),
-                )
-                drawRect(
-                    brush = Brush.radialGradient(
-                        colors = listOf(glow.copy(alpha = .60f), Color.Transparent),
-                        center = Offset(size.width * .94f, size.height * .78f),
-                        radius = size.width * 1.17f,
-                    ),
-                )
                 drawRect(
                     brush = Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        1f to smoothAtmosphere.copy(alpha = .24f),
+                        0f to smoothMid,
+                        .48f to lerp(smoothMid, smoothDeep, .48f),
+                        1f to smoothDeep,
                     ),
                 )
-                val frameEnd = if (selectedArtistTab == 0) {
-                    absoluteScrollPx?.let { photoFrameHeightPx - it }
-                } else null
-                if (continuation != null && frameEnd != null && photoFrameHeightPx > 0f) {
-                    val bleed = photoFrameHeightPx * .36f
-                    val startY = frameEnd - bleed
-                    val heightPx = 740.dp.toPx()
-                    if (startY < size.height && startY + heightPx > 0f) {
-                        // Preserve photo alignment: lateral drift on a
-                        // source-derived backdrop produced visible seams and
-                        // giant moving columns in the actual Redmi capture.
-                        drawImage(
-                            image = continuation!!,
-                            dstOffset = IntOffset(0, startY.toInt()),
-                            dstSize = IntSize(size.width.toInt().coerceAtLeast(1), heightPx.toInt().coerceAtLeast(1)),
-                            alpha = 1f,
-                        )
-                        // Reading scrim joins the photo-derived material
-                        // rather than covering it with a second opaque panel.
-                        drawRect(
-                            brush = Brush.verticalGradient(
-                                0f to Color.Transparent,
-                                .58f to Color(0x3320252B),
-                                1f to ArtistNeutralAtmosphere,
-                                startY = frameEnd + 60.dp.toPx(),
-                                endY = startY + heightPx,
-                            ),
-                        )
-                    }
-                }
+                // Large, low-contrast light pools. Their edges disappear
+                // outside the viewport; nothing image-shaped is painted.
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            smoothBridge.copy(alpha = .42f),
+                            smoothMid.copy(alpha = .12f),
+                            Color.Transparent,
+                        ),
+                        center = Offset(size.width * .14f, size.height * .04f),
+                        radius = size.width * 1.9f,
+                    ),
+                )
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            smoothBridge.copy(alpha = .21f),
+                            Color.Transparent,
+                        ),
+                        center = Offset(size.width * .87f, size.height * .82f),
+                        radius = size.width * 1.65f,
+                    ),
+                )
             },
         ) {
         LazyColumn(
@@ -326,7 +277,7 @@ fun ArtistProfileScreen(
                     heroAtmosphere = smoothHeroTone,
                     onHeroArtworkLoadFailed = vm::onHeroArtworkLoadFailed,
                     onEditPhoto = { showPhotoEditor = true },
-                    onPhotoFrameMeasured = { photoFrameHeightPx = it.toFloat() },
+                    onPhotoFrameMeasured = {},
                     onBack = onBack,
                     onPlayArtist = vm::playArtist,
                     onStartRadio = vm::startRadio,
@@ -459,7 +410,7 @@ fun ArtistProfileScreen(
                     .shadow(8.dp)
                     // Fully opaque reading surface: album artwork and text
                     // must not bleed through the sticky chapter navigation.
-                    .background(lerp(ArtistNeutralAtmosphere, smoothAtmosphere, .5f)),
+                    .background(smoothDeep),
             ) {
                 ArtistSectionTabs(
                     tabs = artistTabs,
