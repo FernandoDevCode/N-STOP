@@ -25,11 +25,6 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
@@ -52,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -200,35 +196,6 @@ fun ArtistProfileScreen(
         }
     }
 
-    // Use measured hero displacement in pixels, independent of how many or
-    // how tall the following LazyColumn items are. Motion remains secondary.
-    val atmosphereProgress by remember(listState) {
-        derivedStateOf {
-            val heroItem = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == 0 }
-            when {
-                heroItem != null -> {
-                    // Real pixel displacement of the hero from its initial top.
-                    // Fade completes exactly as the hero exits the viewport.
-                    (-heroItem.offset.toFloat() / heroItem.size.coerceAtLeast(1)).coerceIn(0f, 1f)
-                }
-                listState.firstVisibleItemIndex > 0 -> 1f
-                else -> 0f
-            }
-        }
-    }
-    val ambientImageAlpha = .32f * (1f - atmosphereProgress)
-    // Compose animation clocks honor Android's animator duration scale (0
-    // disables motion). No per-frame image decoding or blur is performed.
-    val ambientTransition = rememberInfiniteTransition(label = "artistAmbientMotion")
-    val ambientPhase by ambientTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 26000),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "artistAmbientDrift",
-    )
     val statusBarNeedsContrast by remember(listState) {
         derivedStateOf {
             listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 180
@@ -283,8 +250,18 @@ fun ArtistProfileScreen(
                 ?: artistTabs.firstOrNull()?.second
         }
     }
-    val showArtistTabs by remember(listState, artistTabs) {
-        derivedStateOf { artistTabs.size > 1 && listState.firstVisibleItemIndex > 1 }
+    // Switch to sticky only after the in-flow tab row has passed its
+    // resting position. A fixed first-visible-index check caused jumps.
+    val stickyTopPx = with(LocalDensity.current) { 90.dp.roundToPx() }
+    val showArtistTabs by remember(listState, artistTabs, stickyTopPx) {
+        derivedStateOf {
+            val inFlow = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == 1 }
+            artistTabs.size > 1 && when {
+                inFlow != null -> inFlow.offset + inFlow.size <= stickyTopPx
+                listState.firstVisibleItemIndex > 1 -> true
+                else -> false
+            }
+        }
     }
     val sectionOuterIndex = remember(focus, positions) {
         when (focus?.shelf) {
@@ -323,14 +300,15 @@ fun ArtistProfileScreen(
                 if (continuation != null && frameEnd != null && photoFrameHeightPx > 0f) {
                     val bleed = photoFrameHeightPx * .36f
                     val startY = frameEnd - bleed
-                    val heightPx = 1120.dp.toPx()
+                    val heightPx = 740.dp.toPx()
                     if (startY < size.height && startY + heightPx > 0f) {
-                        val horizontalBleed = 18.dp.toPx()
-                        val drift = (ambientPhase - .5f) * 20.dp.toPx()
+                        // Preserve photo alignment: lateral drift on a
+                        // source-derived backdrop produced visible seams and
+                        // giant moving columns in the actual Redmi capture.
                         drawImage(
                             image = continuation!!,
-                            dstOffset = IntOffset((-horizontalBleed + drift).toInt(), startY.toInt()),
-                            dstSize = IntSize((size.width + 2f * horizontalBleed).toInt().coerceAtLeast(1), heightPx.toInt().coerceAtLeast(1)),
+                            dstOffset = IntOffset(0, startY.toInt()),
+                            dstSize = IntSize(size.width.toInt().coerceAtLeast(1), heightPx.toInt().coerceAtLeast(1)),
                             alpha = 1f,
                         )
                         // Reading scrim joins the photo-derived material
@@ -338,7 +316,7 @@ fun ArtistProfileScreen(
                         drawRect(
                             brush = Brush.verticalGradient(
                                 0f to Color.Transparent,
-                                .42f to Color(0x5520252B),
+                                .58f to Color(0x3320252B),
                                 1f to ArtistNeutralAtmosphere,
                                 startY = frameEnd + 60.dp.toPx(),
                                 endY = startY + heightPx,
@@ -480,7 +458,10 @@ fun ArtistProfileScreen(
             Box(
                 modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
                     .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 9.dp)
-                    .background(smoothAtmosphere.copy(alpha = .96f)),
+                    .shadow(8.dp)
+                    // Fully opaque reading surface: album artwork and text
+                    // must not bleed through the sticky chapter navigation.
+                    .background(ArtistNeutralAtmosphere),
             ) {
                 ArtistSectionTabs(
                     tabs = artistTabs,
