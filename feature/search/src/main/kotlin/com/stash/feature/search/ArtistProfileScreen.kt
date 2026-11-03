@@ -39,9 +39,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.shadow
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.collect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
@@ -99,17 +96,17 @@ fun ArtistProfileScreen(
     ) {
         value = artistPaletteFromPhoto(context, state.hero.avatarUrl)
     }
-    // The photographic continuation is sampled off-thread once per image.
-    val continuation by produceState<androidx.compose.ui.graphics.ImageBitmap?>(
-        initialValue = null,
-        key1 = state.hero.avatarUrl,
-    ) {
-        value = artistPhotoContinuation(context, state.hero.avatarUrl)
-    }
-    var photoFrameHeightPx by remember(state.hero.avatarUrl) { mutableFloatStateOf(0f) }
     val smoothAtmosphere by animateColorAsState(
         targetValue = photoPalette.surface,
         label = "artistReadingSurface",
+    )
+    val smoothMid by animateColorAsState(
+        targetValue = photoPalette.mid,
+        label = "artistCanvasMid",
+    )
+    val smoothDeep by animateColorAsState(
+        targetValue = photoPalette.deep,
+        label = "artistCanvasDeep",
     )
     val smoothBridge by animateColorAsState(
         targetValue = photoPalette.bridge,
@@ -203,26 +200,6 @@ fun ArtistProfileScreen(
     val showArtistTabs by remember(listState) {
         derivedStateOf { listState.firstVisibleItemIndex > 1 }
     }
-    // Photo continuation tracks only the original, image-led music destination.
-    val itemHeightPx = remember(state.hero.name) { mutableStateMapOf<Int, Int>() }
-    LaunchedEffect(musicListState) {
-        snapshotFlow { musicListState.layoutInfo.visibleItemsInfo.map { it.index to it.size } }
-            .collect { entries ->
-                entries.forEach { (index, height) ->
-                    if (height > 0) itemHeightPx[index] = height
-                }
-            }
-    }
-    val absoluteScrollPx by remember(musicListState, itemHeightPx) {
-        derivedStateOf {
-            val index = musicListState.firstVisibleItemIndex
-            val preceding = (0 until index).map { itemHeightPx[it] }
-            if (preceding.any { it == null }) null else
-                preceding.filterNotNull().sum().toFloat() +
-                    musicListState.firstVisibleItemScrollOffset
-        }
-    }
-
     Scaffold(
         // The outer NavHost deliberately draws the hero behind the Android
         // clock. A nested Material3 Scaffold must NOT reserve a second top
@@ -233,12 +210,9 @@ fun ArtistProfileScreen(
     ) { inner ->
         ArtistProfileBackdrop(
             modifier = Modifier.fillMaxSize().padding(inner),
-            smoothAtmosphere = smoothAtmosphere,
-            smoothBridge = smoothBridge,
-            continuation = continuation,
-            absoluteScrollPx = absoluteScrollPx,
-            photoFrameHeightPx = photoFrameHeightPx,
-            showHeroContinuation = selectedArtistTab == 0,
+            mid = smoothMid,
+            deep = smoothDeep,
+            bridge = smoothBridge,
         ) {
         LazyColumn(
             state = listState,
@@ -255,7 +229,7 @@ fun ArtistProfileScreen(
                     heroAtmosphere = smoothHeroTone,
                     onHeroArtworkLoadFailed = vm::onHeroArtworkLoadFailed,
                     onEditPhoto = { showPhotoEditor = true },
-                    onPhotoFrameMeasured = { photoFrameHeightPx = it.toFloat() },
+                    onPhotoFrameMeasured = {},
                     onBack = onBack,
                     onPlayArtist = vm::playArtist,
                     onStartRadio = vm::startRadio,
