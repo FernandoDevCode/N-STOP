@@ -372,7 +372,8 @@ fun ArtistProfileScreen(
                     // Fade the scrim OUT below the text so no horizontal edge remains.
                     .background(
                         Brush.verticalGradient(
-                            0f to smoothDeep.copy(alpha = .82f),
+                            0f to Color.Transparent,
+                            .16f to smoothDeep.copy(alpha = .72f),
                             .50f to smoothDeep.copy(alpha = .64f),
                             .76f to smoothDeep.copy(alpha = .35f),
                             1f to Color.Transparent,
