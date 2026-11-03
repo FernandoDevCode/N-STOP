@@ -277,12 +277,15 @@ internal suspend fun artistBottomEdgeColors(context: Context, photoUrl: String?)
 
 
 /**
- * V4: a real photo-derived continuation, rather than a flat seven-stop wash.
- * A low resolution texture samples a progressively deeper part of the actual
- * bottom third. Horizontal averaging increases toward the bottom so recognizable
- * objects disappear while their spatial light/colour remains. Transparent
- * output dissolves into the page charcoal. Never repeats the full photograph.
- * Bitmap construction runs off the main thread, once per photo change.
+ * Photo-derived transitional atmosphere for an artist hero.
+ *
+ * The top rows preserve spatial variation from the lower part of the photo.
+ * Both axes diffuse toward an average of the photo's bottom band as distance
+ * increases; alpha fades to zero before the end of the canvas. This prevents
+ * the tall vertical bars produced by stretching a single scanline.
+ *
+ * It is a deliberately soft, non-generative continuation, not outpainting.
+ * All bitmap work stays off the main thread.
  */
 internal suspend fun artistPhotoContinuation(
     context: Context,
@@ -301,52 +304,71 @@ internal suspend fun artistPhotoContinuation(
         if (result !is SuccessResult) return null
         withContext(Dispatchers.Default) {
             val source = result.image.toBitmap()
-            val sampled = Bitmap.createScaledBitmap(source, 112, 112, true)
-            val outWidth = 112
-            val outHeight = 240
+            val width = 112
+            val height = 192
+            val sampled = Bitmap.createScaledBitmap(source, width, width, true)
             try {
-                val pixels = IntArray(outWidth * outHeight)
-                for (y in 0 until outHeight) {
-                    val progress = y.toFloat() / (outHeight - 1)
-                    // Start with actual lower-image pixels; gradually approach
-                    // the bottom edge as detail diffuses away.
-                    val sourceY = (76 + (35 * progress).toInt()).coerceIn(0, 111)
-                    val radiusX = 2f + progress * 25f
-                    val radiusY = 1f + progress * 13f
-                    // Smoothstep opacity gives one continuous dissolve without
-                    // a horizontal boundary or repeated photographic objects.
-                    val fade = (1f - progress * progress * (3f - 2f * progress))
-                    val alpha = (fade * 255f).toInt().coerceIn(0, 255)
-                    for (x in 0 until outWidth) {
-                        var r = 0
-                        var g = 0
-                        var b = 0
-                        var n = 0
-                        // A small two-dimensional diffusion kernel avoids
-                        // the vertical colour stripes of a horizontal-only
-                        // average. Kernel radius increases smoothly by depth.
-                        for (oy in -2..2) {
-                            for (ox in -4..4) {
-                                val sx = (x + ox * radiusX / 4f).toInt().coerceIn(0, outWidth - 1)
-                                val sy = (sourceY + oy * radiusY / 2f).toInt().coerceIn(0, 111)
-                                val c = sampled.getPixel(sx, sy)
-                                r += (c ushr 16) and 255
-                                g += (c ushr 8) and 255
-                                b += c and 255
-                                n++
-                            }
-                        }
-                        // Slight neutral darkening keeps white costumes from
-                        // washing out section titles; colour character remains.
-                        val attenuation = .83f - progress * .16f
-                        pixels[y * outWidth + x] =
-                            (alpha shl 24) or
-                            ((r.toFloat() / n * attenuation).toInt().coerceIn(0, 255) shl 16) or
-                            ((g.toFloat() / n * attenuation).toInt().coerceIn(0, 255) shl 8) or
-                            (b.toFloat() / n * attenuation).toInt().coerceIn(0, 255)
+                // Weighted lower-edge colour provides a spatially neutral
+                // destination for the continuation, instead of long stripes.
+                var edgeR = 0L
+                var edgeG = 0L
+                var edgeB = 0L
+                var edgeCount = 0
+                for (y in 94 until width step 3) {
+                    for (x in 0 until width step 3) {
+                        val pixel = sampled.getPixel(x, y)
+                        edgeR += (pixel ushr 16) and 255
+                        edgeG += (pixel ushr 8) and 255
+                        edgeB += pixel and 255
+                        edgeCount++
                     }
                 }
-                Bitmap.createBitmap(pixels, outWidth, outHeight, Bitmap.Config.ARGB_8888).asImageBitmap()
+                val neutralR = (edgeR / edgeCount).toFloat()
+                val neutralG = (edgeG / edgeCount).toFloat()
+                val neutralB = (edgeB / edgeCount).toFloat()
+                val pixels = IntArray(width * height)
+                for (y in 0 until height) {
+                    val t = y.toFloat() / (height - 1)
+                    val smooth = t * t * (3f - 2f * t)
+                    // Sample a *range* of lower image rows, then lose
+                    // recognisable detail well before the canvas ends.
+                    val sourceY = (70f + 37f * kotlin.math.min(1f, t * 1.75f))
+                        .toInt().coerceIn(0, width - 1)
+                    val radiusX = 2f + 18f * smooth
+                    val radiusY = 2f + 13f * smooth
+                    val neutralMix = (smooth * .94f).coerceIn(0f, 1f)
+                    // The atmosphere finishes in charcoal with no bottom seam.
+                    val fade = 1f - smooth
+                    val alpha = (255f * fade * fade).toInt().coerceIn(0, 255)
+                    val darken = .87f - .18f * smooth
+                    for (x in 0 until width) {
+                        var r = 0L
+                        var g = 0L
+                        var b = 0L
+                        var count = 0
+                        for (oy in -3..3) {
+                            for (ox in -4..4) {
+                                val sx = (x + ox * radiusX / 4f).toInt().coerceIn(0, width - 1)
+                                val sy = (sourceY + oy * radiusY / 3f).toInt().coerceIn(0, width - 1)
+                                val px = sampled.getPixel(sx, sy)
+                                r += (px ushr 16) and 255
+                                g += (px ushr 8) and 255
+                                b += px and 255
+                                count++
+                            }
+                        }
+                        val red = (((r.toFloat() / count) * (1f - neutralMix) +
+                            neutralR * neutralMix) * darken).toInt().coerceIn(0, 255)
+                        val green = (((g.toFloat() / count) * (1f - neutralMix) +
+                            neutralG * neutralMix) * darken).toInt().coerceIn(0, 255)
+                        val blue = (((b.toFloat() / count) * (1f - neutralMix) +
+                            neutralB * neutralMix) * darken).toInt().coerceIn(0, 255)
+                        pixels[y * width + x] = (alpha shl 24) or
+                            (red shl 16) or (green shl 8) or blue
+                    }
+                }
+                Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
+                    .asImageBitmap()
             } finally {
                 if (sampled !== source) sampled.recycle()
             }
