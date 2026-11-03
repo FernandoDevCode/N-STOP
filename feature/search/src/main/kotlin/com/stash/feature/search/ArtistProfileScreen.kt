@@ -342,16 +342,22 @@ fun ArtistProfileScreen(
             }
             // In-flow tabs switch content; they are no longer scroll anchors.
             if (selectedArtistTab != 0) item {
-                Text(
-                    text = state.hero.name,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 12.dp)
-                        .padding(horizontal = 20.dp, vertical = 12.dp),
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 8.dp)
+                        .padding(start = 8.dp, end = 20.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = onBack) { Text("‹ Voltar") }
+                    Text(
+                        text = state.hero.name,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f).padding(start = 8.dp),
+                    )
+                }
             }
             item(key = "artist-profile-tabs") {
                 if (artistTabs.size > 1) {
