@@ -24,13 +24,16 @@ import kotlin.math.min
 import kotlin.math.sin
 
 /**
- * Three distinct jobs: preserve the photo's colour near the hero, connect it to
- * the page, then leave a quiet dark reading surface. No artist-specific rules.
+ * Derive one coherent colour family from the displayed artist photograph.
+ * The hero retains its own tones; mid and deep sustain the same hue across
+ * every tab, even at the bottom. No stretched or generated photo textures.
  */
 internal data class ArtistAtmospherePalette(
     val hero: Color,
     val bridge: Color,
     val surface: Color,
+    val mid: Color = surface,
+    val deep: Color = surface,
 )
 
 internal val ArtistNeutralAtmosphere = Color(0xFF202124)
@@ -132,9 +135,12 @@ internal fun artistPaletteFromPixels(pixels: IntArray): ArtistAtmospherePalette 
     return ArtistAtmospherePalette(
         hero = artistHsv(hue, 0.49 + depth * 0.17, 0.30),
         bridge = artistHsv(hue, 0.36 + depth * 0.16, 0.23),
-        // Keep the artist's temperature but return to the app's quiet charcoal.
-        // A pure HSV surface uniformly dyes long track lists (brown/red/blue).
+        // Compatibility reading tone for the older hero/status-bar consumers.
         surface = artistSurface(hue, depth),
+        // Saturation is retained as luminance falls; the canvas never reverts
+        // to an unrelated default graphite at the end of the page.
+        mid = artistHsv(hue, 0.36 + depth * 0.12, 0.20),
+        deep = artistHsv(hue, 0.37 + depth * 0.11, 0.125),
     )
 }
 
