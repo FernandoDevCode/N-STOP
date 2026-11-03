@@ -3,8 +3,6 @@ package com.stash.feature.search
 import android.content.Context
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import coil3.SingletonImageLoader
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
@@ -24,13 +22,16 @@ import kotlin.math.min
 import kotlin.math.sin
 
 /**
- * Three distinct jobs: preserve the photo's colour near the hero, connect it to
- * the page, then leave a quiet dark reading surface. No artist-specific rules.
+ * Derive one coherent colour family from the displayed artist photograph.
+ * The hero retains its own tones; mid and deep sustain the same hue across
+ * every tab, even at the bottom. No stretched or generated photo textures.
  */
 internal data class ArtistAtmospherePalette(
     val hero: Color,
     val bridge: Color,
     val surface: Color,
+    val mid: Color = surface,
+    val deep: Color = surface,
 )
 
 internal val ArtistNeutralAtmosphere = Color(0xFF202124)
@@ -132,9 +133,12 @@ internal fun artistPaletteFromPixels(pixels: IntArray): ArtistAtmospherePalette 
     return ArtistAtmospherePalette(
         hero = artistHsv(hue, 0.49 + depth * 0.17, 0.30),
         bridge = artistHsv(hue, 0.36 + depth * 0.16, 0.23),
-        // Keep the artist's temperature but return to the app's quiet charcoal.
-        // A pure HSV surface uniformly dyes long track lists (brown/red/blue).
+        // Compatibility reading tone for the older hero/status-bar consumers.
         surface = artistSurface(hue, depth),
+        // Saturation is retained as luminance falls; the canvas never reverts
+        // to an unrelated default graphite at the end of the page.
+        mid = artistHsv(hue, 0.36 + depth * 0.12, 0.20),
+        deep = artistHsv(hue, 0.37 + depth * 0.11, 0.125),
     )
 }
 
@@ -272,110 +276,5 @@ internal suspend fun artistBottomEdgeColors(context: Context, photoUrl: String?)
         throw cancel
     } catch (_: Exception) {
         emptyList()
-    }
-}
-
-
-/**
- * Photo-derived transitional atmosphere for an artist hero.
- *
- * The top rows preserve spatial variation from the lower part of the photo.
- * Both axes diffuse toward an average of the photo's bottom band as distance
- * increases; alpha fades to zero before the end of the canvas. This prevents
- * the tall vertical bars produced by stretching a single scanline.
- *
- * It is a deliberately soft, non-generative continuation, not outpainting.
- * All bitmap work stays off the main thread.
- */
-internal suspend fun artistPhotoContinuation(
-    context: Context,
-    photoUrl: String?,
-): ImageBitmap? {
-    if (photoUrl.isNullOrBlank()) return null
-    return try {
-        val request = ImageRequest.Builder(context)
-            .data(ArtUrlUpgrader.upgrade(photoUrl))
-            .size(Size(192, 192))
-            .allowHardware(false)
-            .build()
-        val result = withContext(Dispatchers.IO) {
-            SingletonImageLoader.get(context).execute(request)
-        }
-        if (result !is SuccessResult) return null
-        withContext(Dispatchers.Default) {
-            val source = result.image.toBitmap()
-            val width = 112
-            val height = 192
-            val sampled = Bitmap.createScaledBitmap(source, width, width, true)
-            try {
-                // Weighted lower-edge colour provides a spatially neutral
-                // destination for the continuation, instead of long stripes.
-                var edgeR = 0L
-                var edgeG = 0L
-                var edgeB = 0L
-                var edgeCount = 0
-                for (y in 94 until width step 3) {
-                    for (x in 0 until width step 3) {
-                        val pixel = sampled.getPixel(x, y)
-                        edgeR += (pixel ushr 16) and 255
-                        edgeG += (pixel ushr 8) and 255
-                        edgeB += pixel and 255
-                        edgeCount++
-                    }
-                }
-                val neutralR = (edgeR / edgeCount).toFloat()
-                val neutralG = (edgeG / edgeCount).toFloat()
-                val neutralB = (edgeB / edgeCount).toFloat()
-                val pixels = IntArray(width * height)
-                for (y in 0 until height) {
-                    val t = y.toFloat() / (height - 1)
-                    val smooth = t * t * (3f - 2f * t)
-                    // Sample a *range* of lower image rows, then lose
-                    // recognisable detail well before the canvas ends.
-                    val sourceY = (70f + 37f * kotlin.math.min(1f, t * 1.75f))
-                        .toInt().coerceIn(0, width - 1)
-                    val radiusX = 2f + 18f * smooth
-                    val radiusY = 2f + 13f * smooth
-                    val neutralMix = (smooth * .94f).coerceIn(0f, 1f)
-                    // The atmosphere finishes in charcoal with no bottom seam.
-                    val fade = 1f - smooth
-                    val alpha = (255f * fade * fade).toInt().coerceIn(0, 255)
-                    val darken = .87f - .18f * smooth
-                    for (x in 0 until width) {
-                        var r = 0L
-                        var g = 0L
-                        var b = 0L
-                        var count = 0
-                        for (oy in -3..3) {
-                            for (ox in -4..4) {
-                                val sx = (x + ox * radiusX / 4f).toInt().coerceIn(0, width - 1)
-                                val sy = (sourceY + oy * radiusY / 3f).toInt().coerceIn(0, width - 1)
-                                val px = sampled.getPixel(sx, sy)
-                                r += (px ushr 16) and 255
-                                g += (px ushr 8) and 255
-                                b += px and 255
-                                count++
-                            }
-                        }
-                        val red = (((r.toFloat() / count) * (1f - neutralMix) +
-                            neutralR * neutralMix) * darken).toInt().coerceIn(0, 255)
-                        val green = (((g.toFloat() / count) * (1f - neutralMix) +
-                            neutralG * neutralMix) * darken).toInt().coerceIn(0, 255)
-                        val blue = (((b.toFloat() / count) * (1f - neutralMix) +
-                            neutralB * neutralMix) * darken).toInt().coerceIn(0, 255)
-                        pixels[y * width + x] = (alpha shl 24) or
-                            (red shl 16) or (green shl 8) or blue
-                    }
-                }
-                Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
-                    .asImageBitmap()
-            } finally {
-                if (sampled !== source) sampled.recycle()
-            }
-        }
-    } catch (cancel: CancellationException) {
-        throw cancel
-    } catch (_: Exception) {
-        null
     }
 }

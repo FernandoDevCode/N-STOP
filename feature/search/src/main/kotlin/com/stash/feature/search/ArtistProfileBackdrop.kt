@@ -2,90 +2,58 @@ package com.stash.feature.search
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.dp
-import androidx.compose.runtime.Composable
 
 /**
- * Single artist-profile canvas, independent of navigation and content.
- * This is a structural extraction only: rendering is kept byte-for-byte
- * equivalent to the previous screen so the V3 canvas can replace it safely.
+ * Continuous photo-derived chromatic atmosphere shared by all artist tabs.
+ * No synthesized, repeated or stretched hero bitmap: the original photograph
+ * remains owned by ArtistHero and fades naturally onto this procedural canvas.
  */
 @Composable
 internal fun ArtistProfileBackdrop(
     modifier: Modifier = Modifier,
-    smoothAtmosphere: Color,
-    smoothBridge: Color,
-    continuation: ImageBitmap?,
-    absoluteScrollPx: Float?,
-    photoFrameHeightPx: Float,
-    showHeroContinuation: Boolean,
+    mid: Color,
+    deep: Color,
+    bridge: Color,
     content: @Composable BoxScope.() -> Unit,
 ) {
     Box(
         modifier = modifier.drawBehind {
-                // V2: spatial pools of photo-derived light, not a flat tint.
-                drawRect(ArtistNeutralAtmosphere)
-                val glow = lerp(smoothAtmosphere, smoothBridge, .86f)
-                drawRect(
-                    brush = Brush.radialGradient(
-                        colors = listOf(glow.copy(alpha = .91f), Color.Transparent),
-                        center = Offset(size.width * .12f, size.height * .03f),
-                        radius = size.width * 1.50f,
+            drawRect(
+                brush = Brush.verticalGradient(
+                    0f to mid,
+                    .48f to lerp(mid, deep, .48f),
+                    1f to deep,
+                ),
+            )
+            // Diffuse low-contrast illumination; no image-shaped texture.
+            drawRect(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        bridge.copy(alpha = .42f),
+                        mid.copy(alpha = .12f),
+                        Color.Transparent,
                     ),
-                )
-                drawRect(
-                    brush = Brush.radialGradient(
-                        colors = listOf(glow.copy(alpha = .60f), Color.Transparent),
-                        center = Offset(size.width * .94f, size.height * .78f),
-                        radius = size.width * 1.17f,
+                    center = Offset(size.width * .14f, size.height * .04f),
+                    radius = size.width * 1.9f,
+                ),
+            )
+            drawRect(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        bridge.copy(alpha = .21f),
+                        Color.Transparent,
                     ),
-                )
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        1f to smoothAtmosphere.copy(alpha = .24f),
-                    ),
-                )
-                val frameEnd = if (showHeroContinuation) {
-                    absoluteScrollPx?.let { photoFrameHeightPx - it }
-                } else null
-                if (continuation != null && frameEnd != null && photoFrameHeightPx > 0f) {
-                    val bleed = photoFrameHeightPx * .36f
-                    val startY = frameEnd - bleed
-                    val heightPx = 740.dp.toPx()
-                    if (startY < size.height && startY + heightPx > 0f) {
-                        // Preserve photo alignment: lateral drift on a
-                        // source-derived backdrop produced visible seams and
-                        // giant moving columns in the actual Redmi capture.
-                        drawImage(
-                            image = continuation!!,
-                            dstOffset = IntOffset(0, startY.toInt()),
-                            dstSize = IntSize(size.width.toInt().coerceAtLeast(1), heightPx.toInt().coerceAtLeast(1)),
-                            alpha = 1f,
-                        )
-                        // Reading scrim joins the photo-derived material
-                        // rather than covering it with a second opaque panel.
-                        drawRect(
-                            brush = Brush.verticalGradient(
-                                0f to Color.Transparent,
-                                .58f to Color(0x3320252B),
-                                1f to ArtistNeutralAtmosphere,
-                                startY = frameEnd + 60.dp.toPx(),
-                                endY = startY + heightPx,
-                            ),
-                        )
-                    }
-                }
-
+                    center = Offset(size.width * .87f, size.height * .82f),
+                    radius = size.width * 1.65f,
+                ),
+            )
         },
         content = content,
     )
