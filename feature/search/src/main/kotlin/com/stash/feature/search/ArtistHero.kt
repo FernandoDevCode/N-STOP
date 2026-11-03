@@ -162,27 +162,30 @@ fun ArtistHero(
                     .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
                     .drawWithContent {
                         drawContent()
-                        // A true transparency mask: the original photo
-                        // dissolves into the photographic backdrop underneath.
-                        // Painting opaque bridge colour here made a hard block.
+                        // Wide, feathered vertical fade dissolves the photo into
+                        // the real photographic blur before the frame ends.
+                        // The mask always reaches zero alpha at its boundary.
                         drawRect(
                             brush = Brush.verticalGradient(
                                 0f to Color.White,
-                                .59f to Color.White,
-                                .79f to Color.White.copy(alpha = .76f),
+                                .52f to Color.White,
+                                .70f to Color.White.copy(alpha = .94f),
+                                .84f to Color.White.copy(alpha = .53f),
+                                .95f to Color.White.copy(alpha = .12f),
                                 1f to Color.Transparent,
                             ),
                             blendMode = BlendMode.DstIn,
                         )
-                        // Preserve the original U silhouette: sides fade
-                        // before the centre, but to transparency, not to an
-                        // opaque tinted rectangle.
+                        // A broad soft U: sides fade earlier than the centre.
+                        // Both masks reach transparency before the photo frame
+                        // ends; no dark edge or stretched image is drawn.
                         drawRect(
                             brush = Brush.radialGradient(
                                 0f to Color.White,
-                                .62f to Color.White,
-                                .78f to Color.White.copy(alpha = .84f),
-                                .90f to Color.White.copy(alpha = .35f),
+                                .60f to Color.White,
+                                .74f to Color.White.copy(alpha = .96f),
+                                .86f to Color.White.copy(alpha = .66f),
+                                .96f to Color.White.copy(alpha = .14f),
                                 1f to Color.Transparent,
                                 center = Offset(size.width * .5f, -size.height * .08f),
                                 radius = artistPhotoFadeRadius(size.width, size.height),
@@ -193,17 +196,17 @@ fun ArtistHero(
             )
         }
 
-        // Keep the U-shaped edge light treatment, but never repaint the
-        // entire photo bottom with an opaque colour. The photo's alpha fade
-        // now reveals the same continuation texture behind the full screen.
+        // A transparent-ended scrim must not create a full-width seam at
+        // photoHeightDp. The original bottom 12% black alpha stopped abruptly
+        // at this Box boundary even though the photo itself faded to zero.
         Box(
             Modifier.fillMaxWidth().height(photoHeightDp).drawBehind {
                 drawRect(
                     brush = Brush.verticalGradient(
                         0f to Color.Black.copy(alpha = .18f),
                         .24f to Color.Transparent,
-                        .66f to Color.Transparent,
-                        1f to Color.Black.copy(alpha = .12f),
+                        .76f to Color.Transparent,
+                        1f to Color.Transparent,
                     ),
                 )
             },
