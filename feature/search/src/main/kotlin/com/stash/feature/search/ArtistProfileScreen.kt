@@ -165,40 +165,52 @@ fun ArtistProfileScreen(
         ).collect { message -> snackbar.showSnackbar(message) }
     }
 
-    // Tap-to-album focus: when the Now Playing screen navigated here with a
-    // focusAlbum, locate it in the Albums/Singles shelves and bring it into
-    // view. Two-axis: the outer LazyColumn scrolls to the section (below the
-    // hero + Popular, i.e. off-screen on landing) so the inner rail's own
-    // scroll + highlight (see AlbumsRow) is actually visible.
-    val listState = rememberLazyListState()
-    // Preserve absolute page position after the hero leaves LazyColumn's
-    // composition. Tracking actual item sizes avoids both index-based fade
-    // jumps and a photo backdrop that disappears as soon as item 0 is recycled.
-    val itemHeightPx = remember { mutableStateMapOf<Int, Int>() }
-    LaunchedEffect(listState) {
-        snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index to it.size } }
-            .collect { items ->
-                items.forEach { (index, height) ->
-                    if (height > 0) itemHeightPx[index] = height
-                }
-            }
+    // Each destination owns an independent scroll position.
+    val musicListState = rememberLazyListState()
+    val albumsListState = rememberLazyListState()
+    val singlesListState = rememberLazyListState()
+    val aboutListState = rememberLazyListState()
+    var selectedArtistTab by rememberSaveable(state.hero.name) {
+        androidx.compose.runtime.mutableIntStateOf(0)
     }
-    val absoluteScrollPx by remember(listState, itemHeightPx) {
-        derivedStateOf {
-            val index = listState.firstVisibleItemIndex
-            if (index == 0) listState.firstVisibleItemScrollOffset.toFloat()
-            else {
-                val measured = (0 until index).map { itemHeightPx[it] }
-                if (measured.any { it == null }) null
-                else measured.filterNotNull().sum().toFloat() +
-                    listState.firstVisibleItemScrollOffset
+    var releaseFilter by rememberSaveable(state.hero.name) {
+        androidx.compose.runtime.mutableIntStateOf(0)
+    }
+    val artistTabs = listOf(
+        "Músicas" to 0,
+        "Álbuns" to 1,
+        "Singles e EPs" to 2,
+        "Sobre" to 3,
+    )
+    val focus = remember(state.focusAlbum, state.albums, state.singles) {
+        findAlbumFocus(state.focusAlbum, state.albums, state.singles)
+    }
+    LaunchedEffect(focus, state.status) {
+        if (focus != null && (state.status is ArtistProfileStatus.Fresh ||
+            state.status is ArtistProfileStatus.Stale)) {
+            when (focus.shelf) {
+                AlbumShelf.ALBUMS -> {
+                    selectedArtistTab = 1
+                    albumsListState.scrollToItem(2 + focus.index / 2)
+                }
+                AlbumShelf.SINGLES -> {
+                    selectedArtistTab = 2
+                    releaseFilter = 0
+                    singlesListState.scrollToItem(2 + focus.index / 2)
+                }
             }
         }
     }
-
-    val statusBarNeedsContrast by remember(listState) {
+    val listState = when (selectedArtistTab) {
+        1 -> albumsListState
+        2 -> singlesListState
+        3 -> aboutListState
+        else -> musicListState
+    }
+    val statusBarNeedsContrast by remember(listState, selectedArtistTab) {
         derivedStateOf {
-            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 180
+            selectedArtistTab != 0 || listState.firstVisibleItemIndex > 0 ||
+                listState.firstVisibleItemScrollOffset > 180
         }
     }
     val statusBarScrim by animateColorAsState(
@@ -206,78 +218,15 @@ fun ArtistProfileScreen(
             else Color.Transparent,
         label = "artistStatusBarContrast",
     )
-    val focus = remember(state.focusAlbum, state.albums, state.singles) {
-        findAlbumFocus(state.focusAlbum, state.albums, state.singles)
+    val showArtistTabs by remember(listState) {
+        derivedStateOf { listState.firstVisibleItemIndex > 1 }
     }
-    // The hero (0) and featured-release slot (1) are fixed.
-    // Each shelf contributes two LazyColumn items; count the optional ones
-    // centrally so "open this album" lands at the right section.
-    val positions = remember(
-        state.popular.isNotEmpty(), state.albums.isNotEmpty(),
-        state.singles.isNotEmpty(), state.related.isNotEmpty(), state.about != null,
-    ) {
-        artistSectionPositions(
-            hasSongs = state.popular.isNotEmpty(),
-            hasAlbums = state.albums.isNotEmpty(),
-            hasSingles = state.singles.isNotEmpty(),
-            hasRelated = state.related.isNotEmpty(),
-            hasAbout = state.about != null,
-        )
-    }
-    // The editorial section navigator is an overlay, not another LazyColumn
-    // item: deep-link indices and existing shelf anchors remain unchanged.
-    val artistTabs = remember(positions) {
-        listOfNotNull(
-            positions.songs?.let { "Músicas" to it },
-            positions.albums?.let { "Álbuns" to it },
-            positions.singles?.let { "Singles e EPs" to it },
-            positions.about?.let { "Sobre" to it },
-        )
-    }
-    // A positive scroll offset positions the heading BELOW the floating tabs.
-    val tabScrollOffsetPx = with(LocalDensity.current) { 112.dp.roundToPx() }
-    val selectedArtistTab by remember(listState, artistTabs) {
+    // Photo continuation tracks only the original, image-led music destination.
+    val absoluteScrollPx by remember(musicListState) {
         derivedStateOf {
-            // Use the visible heading's actual pixel position: when a chapter
-            // approaches the overlay, selection advances before its first row
-            // becomes the LazyColumn's first visible item.
-            val chapterIndices = artistTabs.map { it.second }.toSet()
-            val visibleHeading = listState.layoutInfo.visibleItemsInfo
-                .filter { it.index in chapterIndices && it.offset <= tabScrollOffsetPx }
-                .maxByOrNull { it.index }
-            visibleHeading?.index
-                ?: artistTabs.lastOrNull { it.second < listState.firstVisibleItemIndex }?.second
-                ?: artistTabs.firstOrNull()?.second
-        }
-    }
-    // Switch to sticky only after the in-flow tab row has passed its
-    // resting position. A fixed first-visible-index check caused jumps.
-    val stickyTopPx = with(LocalDensity.current) { 90.dp.roundToPx() }
-    val showArtistTabs by remember(listState, artistTabs, stickyTopPx) {
-        derivedStateOf {
-            val inFlow = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == 1 }
-            artistTabs.size > 1 && when {
-                inFlow != null -> inFlow.offset + inFlow.size <= stickyTopPx
-                listState.firstVisibleItemIndex > 1 -> true
-                else -> false
-            }
-        }
-    }
-    val sectionOuterIndex = remember(focus, positions) {
-        when (focus?.shelf) {
-            AlbumShelf.ALBUMS -> positions.albums
-            AlbumShelf.SINGLES -> positions.singles
-            null -> null
-        }
-    }
-    val scrollScope = rememberCoroutineScope()
-    var focusHandled by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(sectionOuterIndex, state.status) {
-        val target = sectionOuterIndex ?: return@LaunchedEffect
-        if (focusHandled) return@LaunchedEffect
-        if (state.status is ArtistProfileStatus.Fresh || state.status is ArtistProfileStatus.Stale) {
-            focusHandled = true
-            listState.animateScrollToItem(target)
+            if (musicListState.firstVisibleItemIndex == 0)
+                musicListState.firstVisibleItemScrollOffset.toFloat()
+            else null
         }
     }
 
