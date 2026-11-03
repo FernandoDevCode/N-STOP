@@ -173,6 +173,21 @@ fun ArtistHero(
                             ),
                             blendMode = BlendMode.DstIn,
                         )
+                        // Preserve the original U silhouette: sides fade
+                        // before the centre, but to transparency, not to an
+                        // opaque tinted rectangle.
+                        drawRect(
+                            brush = Brush.radialGradient(
+                                0f to Color.White,
+                                .62f to Color.White,
+                                .78f to Color.White.copy(alpha = .84f),
+                                .90f to Color.White.copy(alpha = .35f),
+                                1f to Color.Transparent,
+                                center = Offset(size.width * .5f, -size.height * .08f),
+                                radius = artistPhotoFadeRadius(size.width, size.height),
+                            ),
+                            blendMode = BlendMode.DstIn,
+                        )
                     },
             )
         }
