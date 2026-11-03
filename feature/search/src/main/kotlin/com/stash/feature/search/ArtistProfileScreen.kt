@@ -223,11 +223,22 @@ fun ArtistProfileScreen(
         derivedStateOf { listState.firstVisibleItemIndex > 1 }
     }
     // Photo continuation tracks only the original, image-led music destination.
-    val absoluteScrollPx by remember(musicListState) {
+    val itemHeightPx = remember(state.hero.name) { mutableStateMapOf<Int, Int>() }
+    LaunchedEffect(musicListState) {
+        snapshotFlow { musicListState.layoutInfo.visibleItemsInfo.map { it.index to it.size } }
+            .collect { entries ->
+                entries.forEach { (index, height) ->
+                    if (height > 0) itemHeightPx[index] = height
+                }
+            }
+    }
+    val absoluteScrollPx by remember(musicListState, itemHeightPx) {
         derivedStateOf {
-            if (musicListState.firstVisibleItemIndex == 0)
-                musicListState.firstVisibleItemScrollOffset.toFloat()
-            else null
+            val index = musicListState.firstVisibleItemIndex
+            val preceding = (0 until index).map { itemHeightPx[it] }
+            if (preceding.any { it == null }) null else
+                preceding.filterNotNull().sum().toFloat() +
+                    musicListState.firstVisibleItemScrollOffset
         }
     }
 
@@ -245,15 +256,27 @@ fun ArtistProfileScreen(
         // dissolves to charcoal through alpha in the bitmap itself.
         Box(
             modifier = Modifier.fillMaxSize().padding(inner).drawBehind {
-                // A restrained photo-derived wash remains visible across the
-                // discography and at the end of the profile. Keep charcoal as
-                // the dominant surface; no repeated photograph or hard panels.
-                val ambientTint = lerp(ArtistNeutralAtmosphere, smoothAtmosphere, .45f)
+                // V2: spatial pools of photo-derived light, not a flat tint.
+                drawRect(ArtistNeutralAtmosphere)
+                val glow = lerp(smoothAtmosphere, smoothBridge, .86f)
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(glow.copy(alpha = .91f), Color.Transparent),
+                        center = Offset(size.width * .12f, size.height * .03f),
+                        radius = size.width * 1.50f,
+                    ),
+                )
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(glow.copy(alpha = .60f), Color.Transparent),
+                        center = Offset(size.width * .94f, size.height * .78f),
+                        radius = size.width * 1.17f,
+                    ),
+                )
                 drawRect(
                     brush = Brush.verticalGradient(
-                        0f to ArtistNeutralAtmosphere,
-                        .6f to ambientTint,
-                        1f to lerp(ArtistNeutralAtmosphere, smoothAtmosphere, .58f),
+                        0f to Color.Transparent,
+                        1f to smoothAtmosphere.copy(alpha = .24f),
                     ),
                 )
                 val frameEnd = if (selectedArtistTab == 0) {
