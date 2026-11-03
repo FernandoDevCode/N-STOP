@@ -63,9 +63,10 @@ fun AboutSection(
     modifier: Modifier = Modifier,
 ) {
     val uriHandler = LocalUriHandler.current
-    var expanded by remember { mutableStateOf(false) }
-    var bioOverflows by remember { mutableStateOf(false) }
     val bio = about.bio?.takeIf { it.isNotBlank() }
+    // Reset expansion and overflow when navigating between artists.
+    var expanded by remember(bio) { mutableStateOf(false) }
+    var bioOverflows by remember(bio) { mutableStateOf(false) }
     val alternatePhoto = about.photoUrl?.takeIf { it != avatarUrl }
 
     Column(modifier = modifier.fillMaxWidth().padding(horizontal = 18.dp)) {
@@ -100,7 +101,7 @@ fun AboutSection(
                     if (bioOverflows || expanded) {
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            text = if (expanded) "Mostrar menos" else "Ler mais",
+                            text = if (expanded) "Ler menos" else "Ler mais",
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.clickable { expanded = !expanded },
@@ -111,7 +112,7 @@ fun AboutSection(
         }
 
         if (about.socials.isNotEmpty()) {
-            Spacer(Modifier.height(if (bio == null) 4.dp else 18.dp))
+            Spacer(Modifier.height(if (bio == null) 4.dp else 22.dp))
             Text("Redes e links", style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurface)
             Spacer(Modifier.height(8.dp))
