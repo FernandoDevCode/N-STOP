@@ -311,7 +311,8 @@ internal suspend fun artistPhotoContinuation(
                     // Start with actual lower-image pixels; gradually approach
                     // the bottom edge as detail diffuses away.
                     val sourceY = (76 + (35 * progress).toInt()).coerceIn(0, 111)
-                    val radius = 2 + (progress * 25).toInt()
+                    val radiusX = 2f + progress * 25f
+                    val radiusY = 1f + progress * 13f
                     // Smoothstep opacity gives one continuous dissolve without
                     // a horizontal boundary or repeated photographic objects.
                     val fade = (1f - progress * progress * (3f - 2f * progress))
@@ -321,13 +322,19 @@ internal suspend fun artistPhotoContinuation(
                         var g = 0
                         var b = 0
                         var n = 0
-                        for (dx in -radius..radius step 3) {
-                            val sx = (x + dx).coerceIn(0, outWidth - 1)
-                            val c = sampled.getPixel(sx, sourceY)
-                            r += (c ushr 16) and 255
-                            g += (c ushr 8) and 255
-                            b += c and 255
-                            n++
+                        // A small two-dimensional diffusion kernel avoids
+                        // the vertical colour stripes of a horizontal-only
+                        // average. Kernel radius increases smoothly by depth.
+                        for (oy in -2..2) {
+                            for (ox in -4..4) {
+                                val sx = (x + ox * radiusX / 4f).toInt().coerceIn(0, outWidth - 1)
+                                val sy = (sourceY + oy * radiusY / 2f).toInt().coerceIn(0, 111)
+                                val c = sampled.getPixel(sx, sy)
+                                r += (c ushr 16) and 255
+                                g += (c ushr 8) and 255
+                                b += c and 255
+                                n++
+                            }
                         }
                         // Slight neutral darkening keeps white costumes from
                         // washing out section titles; colour character remains.
