@@ -92,7 +92,15 @@ jobs:
           SHORT_SHA=${GITHUB_SHA:0:12}
           TAG="sonora-preview-v${VERSION_CODE}-${SHORT_SHA}"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "::error::Preview already published for this exact commit; not overwriting an existing APK"
+            # Repeated manual dispatches must not overwrite an immutable APK.
+            # Confirm the expected APK asset exists before reporting success.
+            EXPECTED_ASSET="Sonora-v${VERSION_CODE}-${SHORT_SHA}-debug.apk"
+            if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --json assets --jq '.assets[].name' | grep -Fxq "$EXPECTED_ASSET"; then
+              echo "::notice::Preview already published with expected APK: $TAG"
+              exit 0
+            fi
+            echo "::error::Preview tag exists but expected APK asset is missing: $EXPECTED_ASSET"
             exit 1
           fi
           APK="$RUNNER_TEMP/Sonora-v${VERSION_CODE}-${SHORT_SHA}-debug.apk"
