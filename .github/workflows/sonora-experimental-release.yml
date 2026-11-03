@@ -1,4 +1,4 @@
-name: Sonora - APK experimental (branches PR)
+name: Sonora - APK experimental (branches)
 
 on:
   workflow_dispatch:
