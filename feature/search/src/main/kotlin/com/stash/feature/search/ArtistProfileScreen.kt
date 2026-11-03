@@ -38,7 +38,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.draw.shadow
 import kotlinx.coroutines.flow.collect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
@@ -368,10 +367,18 @@ fun ArtistProfileScreen(
             Box(
                 modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
                     .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 9.dp)
-                    .shadow(8.dp)
-                    // Fully opaque reading surface: album artwork and text
-                    // must not bleed through the sticky chapter navigation.
-                    .background(smoothDeep),
+                    // The fixed selector needs readable tabs, but an opaque block
+                    // severs the photo-derived atmosphere during scroll.
+                    // Fade the scrim OUT below the text so no horizontal edge remains.
+                    .background(
+                        Brush.verticalGradient(
+                            0f to smoothDeep.copy(alpha = .82f),
+                            .50f to smoothDeep.copy(alpha = .64f),
+                            .76f to smoothDeep.copy(alpha = .35f),
+                            1f to Color.Transparent,
+                        ),
+                    )
+                    .padding(bottom = 18.dp),
             ) {
                 ArtistSectionTabs(
                     tabs = artistTabs,
