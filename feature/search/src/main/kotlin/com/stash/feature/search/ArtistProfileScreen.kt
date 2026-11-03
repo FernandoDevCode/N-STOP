@@ -362,7 +362,7 @@ fun ArtistProfileScreen(
                     .shadow(8.dp)
                     // Fully opaque reading surface: album artwork and text
                     // must not bleed through the sticky chapter navigation.
-                    .background(lerp(ArtistNeutralAtmosphere, smoothAtmosphere, .5f)),
+                    .background(smoothDeep),
             ) {
                 ArtistSectionTabs(
                     tabs = artistTabs,
