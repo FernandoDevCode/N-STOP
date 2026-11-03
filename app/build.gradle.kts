@@ -135,8 +135,8 @@ android {
         applicationId = "com.stash.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 184
-        versionName = "0.9.148-sonora-launcher-fix"
+        versionCode = 185
+        versionName = "0.9.149-sonora-artist-v3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // AppAuth redirect scheme removed -- Spotify now uses sp_dc cookie auth
         // Last.fm API credentials exposed via BuildConfig for the app-level
