@@ -192,12 +192,12 @@ fun ArtistProfileScreen(
             when (focus.shelf) {
                 AlbumShelf.ALBUMS -> {
                     selectedArtistTab = 1
-                    albumsListState.scrollToItem(2 + focus.index / 2)
+                    albumsListState.scrollToItem(3 + focus.index / 2)
                 }
                 AlbumShelf.SINGLES -> {
                     selectedArtistTab = 2
                     releaseFilter = 0
-                    singlesListState.scrollToItem(2 + focus.index / 2)
+                    singlesListState.scrollToItem(4 + focus.index / 2)
                 }
             }
         }
@@ -376,7 +376,8 @@ fun ArtistProfileScreen(
                         onRetry = vm::retry,
                     )
                 }
-                ArtistProfileStatus.Loading -> if (state.popular.isEmpty()) {
+                ArtistProfileStatus.Loading -> if (selectedArtistTab == 0 &&
+                    state.popular.isEmpty()) {
                     item { PopularListSkeleton() }
                     item { AlbumsRowSkeleton() }
                 } else {
