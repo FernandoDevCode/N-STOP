@@ -255,7 +255,9 @@ fun ArtistProfileScreen(
                         1f to lerp(ArtistNeutralAtmosphere, smoothAtmosphere, .58f),
                     ),
                 )
-                val frameEnd = absoluteScrollPx?.let { photoFrameHeightPx - it }
+                val frameEnd = if (selectedArtistTab == 0) {
+                    absoluteScrollPx?.let { photoFrameHeightPx - it }
+                } else null
                 if (continuation != null && frameEnd != null && photoFrameHeightPx > 0f) {
                     val bleed = photoFrameHeightPx * .36f
                     val startY = frameEnd - bleed
@@ -290,7 +292,7 @@ fun ArtistProfileScreen(
             contentPadding = PaddingValues(bottom = bottomChromePadding(96.dp)),
             modifier = Modifier.fillMaxSize(),
         ) {
-            item {
+            if (selectedArtistTab == 0) item {
                 ArtistHero(
                     hero = state.hero,
                     status = state.status,
@@ -306,14 +308,7 @@ fun ArtistProfileScreen(
                     onStartRadio = vm::startRadio,
                     streamingEnabled = streamingEnabled,
                     onStreamingClick = { showStreamingSheet = true },
-                    onOpenAbout = positions.about?.let { target ->
-                        {
-                            scrollScope.launch {
-                                listState.animateScrollToItem(target, scrollOffset = tabScrollOffsetPx)
-                            }
-                            Unit
-                        }
-                    },
+                    onOpenAbout = { selectedArtistTab = 3 },
                     featuredContent = featuredAlbum?.let { album ->
                         @Composable {
                             ArtistFeaturedAlbum(album = album, onOpen = onNavigateToAlbum)
@@ -321,9 +316,20 @@ fun ArtistProfileScreen(
                     },
                 )
             }
-            // The formerly empty reserved index is now the integrated
-            // chapter selector. This keeps existing section indices stable.
-            item(key = "artist-featured-release") {
+            // In-flow tabs switch content; they are no longer scroll anchors.
+            if (selectedArtistTab != 0) item {
+                Text(
+                    text = state.hero.name,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 12.dp)
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                )
+            }
+            item(key = "artist-profile-tabs") {
                 if (artistTabs.size > 1) {
                     Box(
                         modifier = Modifier.fillMaxWidth()
@@ -332,11 +338,7 @@ fun ArtistProfileScreen(
                         ArtistSectionTabs(
                             tabs = artistTabs,
                             selectedIndex = selectedArtistTab,
-                            onSelect = { target ->
-                                scrollScope.launch {
-                                    listState.animateScrollToItem(target, scrollOffset = tabScrollOffsetPx)
-                                }
-                            },
+                            onSelect = { selectedArtistTab = it },
                         )
                     }
                 }
@@ -355,6 +357,9 @@ fun ArtistProfileScreen(
                     item { AlbumsRowSkeleton() }
                 } else {
                     contentSections(
+                        selectedTab = selectedArtistTab,
+                        releaseFilter = releaseFilter,
+                        onReleaseFilterChange = { releaseFilter = it },
                         state = state,
                         previewState = previewState,
                         downloadingIds = downloadingIds,
@@ -377,6 +382,9 @@ fun ArtistProfileScreen(
                 }
                 ArtistProfileStatus.Fresh,
                 ArtistProfileStatus.Stale -> contentSections(
+                    selectedTab = selectedArtistTab,
+                    releaseFilter = releaseFilter,
+                    onReleaseFilterChange = { releaseFilter = it },
                     state = state,
                     previewState = previewState,
                     downloadingIds = downloadingIds,
@@ -420,16 +428,12 @@ fun ArtistProfileScreen(
                     .shadow(8.dp)
                     // Fully opaque reading surface: album artwork and text
                     // must not bleed through the sticky chapter navigation.
-                    .background(ArtistNeutralAtmosphere),
+                    .background(lerp(ArtistNeutralAtmosphere, smoothAtmosphere, .5f)),
             ) {
                 ArtistSectionTabs(
                     tabs = artistTabs,
                     selectedIndex = selectedArtistTab,
-                    onSelect = { target ->
-                        scrollScope.launch {
-                            listState.animateScrollToItem(target, scrollOffset = tabScrollOffsetPx)
-                        }
-                    },
+                    onSelect = { selectedArtistTab = it },
                 )
             }
         }
