@@ -208,3 +208,71 @@ jobs:
         with:
           name: stash-debug-apk
           path: ${{ steps.find_apk.outputs.apk_path }}
+
+  # One-time validation build for artist profile structural refactor.
+  # This step is removed from the feature branch before merging PR #43.
+  publish-experimental-pr43:
+    name: Publish experimental PR43 APK to Releases
+    needs: build-debug-apk
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/refactor/sonora-artist-sections' &&
+      contains(github.event.head_commit.message, '[publish sonora experimental]')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download APK built by the existing CI job
+        uses: actions/download-artifact@v6
+        with:
+          name: stash-debug-apk
+          path: apk
+
+      - name: Verify APK package and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=$(find apk -type f -name '*.apk' -print -quit)
+          test -n "$APK" && test -s "$APK"
+          AAPT=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name aapt | sort -V | tail -n1)
+          SIGNER=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -n1)
+          test -n "$AAPT" && test -n "$SIGNER"
+          BADGING=$("$AAPT" dump badging "$APK" | grep '^package:')
+          [[ "$BADGING" == *"name='com.stash.app.debug'"* ]] || { echo "::error::Unexpected package"; exit 1; }
+          "$SIGNER" verify "$APK"
+          echo "$BADGING"
+
+      - name: Publish immutable experimental prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          SHORT_SHA=${GITHUB_SHA:0:12}
+          TAG="sonora-exp-pr43-${SHORT_SHA}"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release already exists for exact commit"
+            exit 1
+          fi
+          APK=$(find apk -type f -name '*.apk' -print -quit)
+          DEST="Sonora-Experimental-PR43-${SHORT_SHA}-debug.apk"
+          cp "$APK" "$DEST"
+          SHA256=$(sha256sum "$DEST" | cut -d' ' -f1)
+          cat > notes.md <<EOF
+          Sonora EXPERIMENTAL - PR #43 (refatoracao do perfil). NAO E VERSAO OFICIAL.
+
+          - Commit: ${GITHUB_SHA}
+          - Branch: refactor/sonora-artist-sections
+          - SHA-256 APK: ${SHA256}
+          - Pacote: com.stash.app.debug
+          - Build e assinatura deste APK verificados no CI.
+          - Testes completos da refatoracao ja haviam passado no workflow #41616526424.
+          - Objetivo: comparar visual, gestos e funcionalidades com o APK atual no Redmi.
+          - Nao inclui PR #42 (fundo V3).
+          - Nao desinstale a versao atual se a assinatura Android nao for compativel.
+          - Publicacao experimental NAO representa merge ou aprovacao visual.
+          EOF
+          gh release create "$TAG" "$DEST" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Sonora EXPERIMENTAL PR43 - ${SHORT_SHA}" \
+            --notes-file notes.md --prerelease --latest=false
