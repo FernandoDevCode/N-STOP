@@ -97,7 +97,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
             }
         }
         1 -> {
-            item { ArtistEditorialHeading("Álbuns") }
+            item { ArtistEditorialHeading("Álbuns", destination = true) }
             if (state.albums.isEmpty()) {
                 item { ArtistEmptyDestination("Nenhum álbum disponível") }
             } else {
@@ -106,7 +106,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
             }
         }
         2 -> {
-            item { ArtistEditorialHeading("Singles e EPs") }
+            item { ArtistEditorialHeading("Singles e EPs", destination = true) }
             item { ArtistReleaseFilters(releaseFilter, onReleaseFilterChange) }
             val releases = state.singles.filter {
                 releaseFilter == 0 ||
@@ -123,7 +123,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
             }
         }
         3 -> {
-            item { ArtistEditorialHeading("Sobre") }
+            item { ArtistEditorialHeading("Sobre", destination = true) }
             val about = state.about
             if (about != null && (about.bio?.isNotBlank() == true ||
                     about.socials.isNotEmpty())) {
@@ -150,7 +150,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.artistReleaseGridRows
         item(key = "artist-grid-${rowIndex}-${row.first().id}") {
             val cardSize = (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp - 52.dp) / 2
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 11.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 row.forEachIndexed { colIndex, album ->
@@ -185,7 +185,7 @@ private fun AlbumSummary.artistReleaseKind(): String? {
 @Composable
 private fun ArtistReleaseFilters(selected: Int, onSelect: (Int) -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+        modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 2.dp, bottom = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         listOf("Todos", "Singles", "EPs").forEachIndexed { index, label ->
@@ -217,7 +217,11 @@ private fun ArtistEmptyDestination(message: String) {
 }
 
 @Composable
-private fun ArtistEditorialHeading(label: String, compact: Boolean = false) {
+private fun ArtistEditorialHeading(
+    label: String,
+    compact: Boolean = false,
+    destination: Boolean = false,
+) {
     Text(
         text = label,
         color = MaterialTheme.colorScheme.onSurface,
@@ -228,8 +232,8 @@ private fun ArtistEditorialHeading(label: String, compact: Boolean = false) {
         modifier = Modifier.fillMaxWidth()
             .padding(
                 start = 20.dp, end = 20.dp,
-                top = if (compact) 24.dp else 32.dp,
-                bottom = if (compact) 10.dp else 14.dp,
+                top = if (destination) 12.dp else if (compact) 24.dp else 32.dp,
+                bottom = if (destination) 10.dp else if (compact) 10.dp else 14.dp,
             ),
     )
 }
