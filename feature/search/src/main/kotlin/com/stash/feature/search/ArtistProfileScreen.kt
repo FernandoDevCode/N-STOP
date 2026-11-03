@@ -354,37 +354,49 @@ fun ArtistProfileScreen(
             modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
                 .height(WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 12.dp)
                 .background(
-                    Brush.verticalGradient(
-                        0f to statusBarScrim,
-                        1f to statusBarScrim.copy(alpha = 0f),
-                    ),
+                    if (showArtistTabs) {
+                        // When navigation is pinned, tracks must not bleed behind
+                        // the Android clock or through the gap above the tabs.
+                        Brush.verticalGradient(
+                            0f to smoothDeep,
+                            1f to smoothDeep,
+                        )
+                    } else {
+                        Brush.verticalGradient(
+                            0f to statusBarScrim,
+                            1f to statusBarScrim.copy(alpha = 0f),
+                        )
+                    },
                 ),
         )
         // A quiet floating chapter selector appears only after the hero has
         // left the viewport. It retains the Android clock inset and does not
         // introduce another destination or affect the app's bottom navigation.
         if (showArtistTabs) {
-            Box(
+            // Pinned navigation: keep scrolling catalog artwork/text behind a
+            // fully readable tab row, not visible through translucent letters.
+            // Only the 24dp tail BELOW the row dissolves into the photo backdrop.
+            Column(
                 modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
-                    .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 9.dp)
-                    // The fixed selector needs readable tabs, but an opaque block
-                    // severs the photo-derived atmosphere during scroll.
-                    // Fade the scrim OUT below the text so no horizontal edge remains.
-                    .background(
-                        Brush.verticalGradient(
-                            0f to Color.Transparent,
-                            .16f to smoothDeep.copy(alpha = .72f),
-                            .50f to smoothDeep.copy(alpha = .64f),
-                            .76f to smoothDeep.copy(alpha = .35f),
-                            1f to Color.Transparent,
-                        ),
-                    )
-                    .padding(bottom = 18.dp),
+                    .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 9.dp),
             ) {
-                ArtistSectionTabs(
-                    tabs = artistTabs,
-                    selectedIndex = selectedArtistTab,
-                    onSelect = { selectedArtistTab = it },
+                Box(
+                    modifier = Modifier.fillMaxWidth().background(smoothDeep),
+                ) {
+                    ArtistSectionTabs(
+                        tabs = artistTabs,
+                        selectedIndex = selectedArtistTab,
+                        onSelect = { selectedArtistTab = it },
+                    )
+                }
+                Box(
+                    modifier = Modifier.fillMaxWidth().height(24.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                0f to smoothDeep,
+                                1f to Color.Transparent,
+                            ),
+                        ),
                 )
             }
         }
