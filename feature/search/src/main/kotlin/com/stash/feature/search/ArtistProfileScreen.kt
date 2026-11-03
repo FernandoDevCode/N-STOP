@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.flow.collect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
@@ -168,21 +169,28 @@ fun ArtistProfileScreen(
         "Singles e EPs" to 2,
         "Sobre" to 3,
     )
+    // The non-Music destinations reserve the same top area as their pinned
+    // identity and tabs. Focused rows must scroll BELOW that header too.
+    val systemTopPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val pinnedHeaderHeight = 52.dp + 48.dp
+    val secondaryContentTop = systemTopPadding + 8.dp + pinnedHeaderHeight + 16.dp
+    val secondaryContentTopPx = with(LocalDensity.current) { secondaryContentTop.roundToPx() }
+
     val focus = remember(state.focusAlbum, state.albums, state.singles) {
         findAlbumFocus(state.focusAlbum, state.albums, state.singles)
     }
-    LaunchedEffect(focus, state.status) {
+    LaunchedEffect(focus, state.status, secondaryContentTopPx) {
         if (focus != null && (state.status is ArtistProfileStatus.Fresh ||
             state.status is ArtistProfileStatus.Stale)) {
             when (focus.shelf) {
                 AlbumShelf.ALBUMS -> {
                     selectedArtistTab = 1
-                    albumsListState.scrollToItem(1 + focus.index / 2)
+                    albumsListState.scrollToItem(1 + focus.index / 2, -secondaryContentTopPx)
                 }
                 AlbumShelf.SINGLES -> {
                     selectedArtistTab = 2
                     releaseFilter = 0
-                    singlesListState.scrollToItem(2 + focus.index / 2)
+                    singlesListState.scrollToItem(2 + focus.index / 2, -secondaryContentTopPx)
                 }
             }
         }
@@ -211,9 +219,6 @@ fun ArtistProfileScreen(
             selectedArtistTab != 0 || listState.firstVisibleItemIndex > 1
         }
     }
-    val systemTopPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val pinnedHeaderHeight = 52.dp + 48.dp
-    val secondaryContentTop = systemTopPadding + 8.dp + pinnedHeaderHeight + 16.dp
     Scaffold(
         // The outer NavHost deliberately draws the hero behind the Android
         // clock. A nested Material3 Scaffold must NOT reserve a second top
