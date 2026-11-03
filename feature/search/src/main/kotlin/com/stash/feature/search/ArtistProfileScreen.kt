@@ -7,6 +7,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -165,40 +166,52 @@ fun ArtistProfileScreen(
         ).collect { message -> snackbar.showSnackbar(message) }
     }
 
-    // Tap-to-album focus: when the Now Playing screen navigated here with a
-    // focusAlbum, locate it in the Albums/Singles shelves and bring it into
-    // view. Two-axis: the outer LazyColumn scrolls to the section (below the
-    // hero + Popular, i.e. off-screen on landing) so the inner rail's own
-    // scroll + highlight (see AlbumsRow) is actually visible.
-    val listState = rememberLazyListState()
-    // Preserve absolute page position after the hero leaves LazyColumn's
-    // composition. Tracking actual item sizes avoids both index-based fade
-    // jumps and a photo backdrop that disappears as soon as item 0 is recycled.
-    val itemHeightPx = remember { mutableStateMapOf<Int, Int>() }
-    LaunchedEffect(listState) {
-        snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index to it.size } }
-            .collect { items ->
-                items.forEach { (index, height) ->
-                    if (height > 0) itemHeightPx[index] = height
-                }
-            }
+    // Each destination owns an independent scroll position.
+    val musicListState = rememberLazyListState()
+    val albumsListState = rememberLazyListState()
+    val singlesListState = rememberLazyListState()
+    val aboutListState = rememberLazyListState()
+    var selectedArtistTab by rememberSaveable(state.hero.name) {
+        androidx.compose.runtime.mutableIntStateOf(0)
     }
-    val absoluteScrollPx by remember(listState, itemHeightPx) {
-        derivedStateOf {
-            val index = listState.firstVisibleItemIndex
-            if (index == 0) listState.firstVisibleItemScrollOffset.toFloat()
-            else {
-                val measured = (0 until index).map { itemHeightPx[it] }
-                if (measured.any { it == null }) null
-                else measured.filterNotNull().sum().toFloat() +
-                    listState.firstVisibleItemScrollOffset
+    var releaseFilter by rememberSaveable(state.hero.name) {
+        androidx.compose.runtime.mutableIntStateOf(0)
+    }
+    val artistTabs = listOf(
+        "Músicas" to 0,
+        "Álbuns" to 1,
+        "Singles e EPs" to 2,
+        "Sobre" to 3,
+    )
+    val focus = remember(state.focusAlbum, state.albums, state.singles) {
+        findAlbumFocus(state.focusAlbum, state.albums, state.singles)
+    }
+    LaunchedEffect(focus, state.status) {
+        if (focus != null && (state.status is ArtistProfileStatus.Fresh ||
+            state.status is ArtistProfileStatus.Stale)) {
+            when (focus.shelf) {
+                AlbumShelf.ALBUMS -> {
+                    selectedArtistTab = 1
+                    albumsListState.scrollToItem(3 + focus.index / 2)
+                }
+                AlbumShelf.SINGLES -> {
+                    selectedArtistTab = 2
+                    releaseFilter = 0
+                    singlesListState.scrollToItem(4 + focus.index / 2)
+                }
             }
         }
     }
-
-    val statusBarNeedsContrast by remember(listState) {
+    val listState = when (selectedArtistTab) {
+        1 -> albumsListState
+        2 -> singlesListState
+        3 -> aboutListState
+        else -> musicListState
+    }
+    val statusBarNeedsContrast by remember(listState, selectedArtistTab) {
         derivedStateOf {
-            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 180
+            selectedArtistTab != 0 || listState.firstVisibleItemIndex > 0 ||
+                listState.firstVisibleItemScrollOffset > 180
         }
     }
     val statusBarScrim by animateColorAsState(
@@ -206,78 +219,26 @@ fun ArtistProfileScreen(
             else Color.Transparent,
         label = "artistStatusBarContrast",
     )
-    val focus = remember(state.focusAlbum, state.albums, state.singles) {
-        findAlbumFocus(state.focusAlbum, state.albums, state.singles)
+    val showArtistTabs by remember(listState) {
+        derivedStateOf { listState.firstVisibleItemIndex > 1 }
     }
-    // The hero (0) and featured-release slot (1) are fixed.
-    // Each shelf contributes two LazyColumn items; count the optional ones
-    // centrally so "open this album" lands at the right section.
-    val positions = remember(
-        state.popular.isNotEmpty(), state.albums.isNotEmpty(),
-        state.singles.isNotEmpty(), state.related.isNotEmpty(), state.about != null,
-    ) {
-        artistSectionPositions(
-            hasSongs = state.popular.isNotEmpty(),
-            hasAlbums = state.albums.isNotEmpty(),
-            hasSingles = state.singles.isNotEmpty(),
-            hasRelated = state.related.isNotEmpty(),
-            hasAbout = state.about != null,
-        )
-    }
-    // The editorial section navigator is an overlay, not another LazyColumn
-    // item: deep-link indices and existing shelf anchors remain unchanged.
-    val artistTabs = remember(positions) {
-        listOfNotNull(
-            positions.songs?.let { "Músicas" to it },
-            positions.albums?.let { "Álbuns" to it },
-            positions.singles?.let { "Singles e EPs" to it },
-            positions.about?.let { "Sobre" to it },
-        )
-    }
-    // A positive scroll offset positions the heading BELOW the floating tabs.
-    val tabScrollOffsetPx = with(LocalDensity.current) { 112.dp.roundToPx() }
-    val selectedArtistTab by remember(listState, artistTabs) {
-        derivedStateOf {
-            // Use the visible heading's actual pixel position: when a chapter
-            // approaches the overlay, selection advances before its first row
-            // becomes the LazyColumn's first visible item.
-            val chapterIndices = artistTabs.map { it.second }.toSet()
-            val visibleHeading = listState.layoutInfo.visibleItemsInfo
-                .filter { it.index in chapterIndices && it.offset <= tabScrollOffsetPx }
-                .maxByOrNull { it.index }
-            visibleHeading?.index
-                ?: artistTabs.lastOrNull { it.second < listState.firstVisibleItemIndex }?.second
-                ?: artistTabs.firstOrNull()?.second
-        }
-    }
-    // Switch to sticky only after the in-flow tab row has passed its
-    // resting position. A fixed first-visible-index check caused jumps.
-    val stickyTopPx = with(LocalDensity.current) { 90.dp.roundToPx() }
-    val showArtistTabs by remember(listState, artistTabs, stickyTopPx) {
-        derivedStateOf {
-            val inFlow = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == 1 }
-            artistTabs.size > 1 && when {
-                inFlow != null -> inFlow.offset + inFlow.size <= stickyTopPx
-                listState.firstVisibleItemIndex > 1 -> true
-                else -> false
+    // Photo continuation tracks only the original, image-led music destination.
+    val itemHeightPx = remember(state.hero.name) { mutableStateMapOf<Int, Int>() }
+    LaunchedEffect(musicListState) {
+        snapshotFlow { musicListState.layoutInfo.visibleItemsInfo.map { it.index to it.size } }
+            .collect { entries ->
+                entries.forEach { (index, height) ->
+                    if (height > 0) itemHeightPx[index] = height
+                }
             }
-        }
     }
-    val sectionOuterIndex = remember(focus, positions) {
-        when (focus?.shelf) {
-            AlbumShelf.ALBUMS -> positions.albums
-            AlbumShelf.SINGLES -> positions.singles
-            null -> null
-        }
-    }
-    val scrollScope = rememberCoroutineScope()
-    var focusHandled by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(sectionOuterIndex, state.status) {
-        val target = sectionOuterIndex ?: return@LaunchedEffect
-        if (focusHandled) return@LaunchedEffect
-        if (state.status is ArtistProfileStatus.Fresh || state.status is ArtistProfileStatus.Stale) {
-            focusHandled = true
-            listState.animateScrollToItem(target)
+    val absoluteScrollPx by remember(musicListState, itemHeightPx) {
+        derivedStateOf {
+            val index = musicListState.firstVisibleItemIndex
+            val preceding = (0 until index).map { itemHeightPx[it] }
+            if (preceding.any { it == null }) null else
+                preceding.filterNotNull().sum().toFloat() +
+                    musicListState.firstVisibleItemScrollOffset
         }
     }
 
@@ -295,18 +256,32 @@ fun ArtistProfileScreen(
         // dissolves to charcoal through alpha in the bitmap itself.
         Box(
             modifier = Modifier.fillMaxSize().padding(inner).drawBehind {
-                // A restrained photo-derived wash remains visible across the
-                // discography and at the end of the profile. Keep charcoal as
-                // the dominant surface; no repeated photograph or hard panels.
-                val ambientTint = lerp(ArtistNeutralAtmosphere, smoothAtmosphere, .45f)
+                // V2: spatial pools of photo-derived light, not a flat tint.
+                drawRect(ArtistNeutralAtmosphere)
+                val glow = lerp(smoothAtmosphere, smoothBridge, .86f)
                 drawRect(
-                    brush = Brush.verticalGradient(
-                        0f to ArtistNeutralAtmosphere,
-                        .6f to ambientTint,
-                        1f to lerp(ArtistNeutralAtmosphere, smoothAtmosphere, .58f),
+                    brush = Brush.radialGradient(
+                        colors = listOf(glow.copy(alpha = .91f), Color.Transparent),
+                        center = Offset(size.width * .12f, size.height * .03f),
+                        radius = size.width * 1.50f,
                     ),
                 )
-                val frameEnd = absoluteScrollPx?.let { photoFrameHeightPx - it }
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(glow.copy(alpha = .60f), Color.Transparent),
+                        center = Offset(size.width * .94f, size.height * .78f),
+                        radius = size.width * 1.17f,
+                    ),
+                )
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        0f to Color.Transparent,
+                        1f to smoothAtmosphere.copy(alpha = .24f),
+                    ),
+                )
+                val frameEnd = if (selectedArtistTab == 0) {
+                    absoluteScrollPx?.let { photoFrameHeightPx - it }
+                } else null
                 if (continuation != null && frameEnd != null && photoFrameHeightPx > 0f) {
                     val bleed = photoFrameHeightPx * .36f
                     val startY = frameEnd - bleed
@@ -341,7 +316,7 @@ fun ArtistProfileScreen(
             contentPadding = PaddingValues(bottom = bottomChromePadding(96.dp)),
             modifier = Modifier.fillMaxSize(),
         ) {
-            item {
+            if (selectedArtistTab == 0) item {
                 ArtistHero(
                     hero = state.hero,
                     status = state.status,
@@ -357,14 +332,7 @@ fun ArtistProfileScreen(
                     onStartRadio = vm::startRadio,
                     streamingEnabled = streamingEnabled,
                     onStreamingClick = { showStreamingSheet = true },
-                    onOpenAbout = positions.about?.let { target ->
-                        {
-                            scrollScope.launch {
-                                listState.animateScrollToItem(target, scrollOffset = tabScrollOffsetPx)
-                            }
-                            Unit
-                        }
-                    },
+                    onOpenAbout = { selectedArtistTab = 3 },
                     featuredContent = featuredAlbum?.let { album ->
                         @Composable {
                             ArtistFeaturedAlbum(album = album, onOpen = onNavigateToAlbum)
@@ -372,9 +340,26 @@ fun ArtistProfileScreen(
                     },
                 )
             }
-            // The formerly empty reserved index is now the integrated
-            // chapter selector. This keeps existing section indices stable.
-            item(key = "artist-featured-release") {
+            // In-flow tabs switch content; they are no longer scroll anchors.
+            if (selectedArtistTab != 0) item {
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 8.dp)
+                        .padding(start = 8.dp, end = 20.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = onBack) { Text("‹ Voltar") }
+                    Text(
+                        text = state.hero.name,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f).padding(start = 8.dp),
+                    )
+                }
+            }
+            item(key = "artist-profile-tabs") {
                 if (artistTabs.size > 1) {
                     Box(
                         modifier = Modifier.fillMaxWidth()
@@ -383,11 +368,7 @@ fun ArtistProfileScreen(
                         ArtistSectionTabs(
                             tabs = artistTabs,
                             selectedIndex = selectedArtistTab,
-                            onSelect = { target ->
-                                scrollScope.launch {
-                                    listState.animateScrollToItem(target, scrollOffset = tabScrollOffsetPx)
-                                }
-                            },
+                            onSelect = { selectedArtistTab = it },
                         )
                     }
                 }
@@ -401,11 +382,15 @@ fun ArtistProfileScreen(
                         onRetry = vm::retry,
                     )
                 }
-                ArtistProfileStatus.Loading -> if (state.popular.isEmpty()) {
+                ArtistProfileStatus.Loading -> if (selectedArtistTab == 0 &&
+                    state.popular.isEmpty()) {
                     item { PopularListSkeleton() }
                     item { AlbumsRowSkeleton() }
                 } else {
                     contentSections(
+                        selectedTab = selectedArtistTab,
+                        releaseFilter = releaseFilter,
+                        onReleaseFilterChange = { releaseFilter = it },
                         state = state,
                         previewState = previewState,
                         downloadingIds = downloadingIds,
@@ -428,6 +413,9 @@ fun ArtistProfileScreen(
                 }
                 ArtistProfileStatus.Fresh,
                 ArtistProfileStatus.Stale -> contentSections(
+                    selectedTab = selectedArtistTab,
+                    releaseFilter = releaseFilter,
+                    onReleaseFilterChange = { releaseFilter = it },
                     state = state,
                     previewState = previewState,
                     downloadingIds = downloadingIds,
@@ -471,16 +459,12 @@ fun ArtistProfileScreen(
                     .shadow(8.dp)
                     // Fully opaque reading surface: album artwork and text
                     // must not bleed through the sticky chapter navigation.
-                    .background(ArtistNeutralAtmosphere),
+                    .background(lerp(ArtistNeutralAtmosphere, smoothAtmosphere, .5f)),
             ) {
                 ArtistSectionTabs(
                     tabs = artistTabs,
                     selectedIndex = selectedArtistTab,
-                    onSelect = { target ->
-                        scrollScope.launch {
-                            listState.animateScrollToItem(target, scrollOffset = tabScrollOffsetPx)
-                        }
-                    },
+                    onSelect = { selectedArtistTab = it },
                 )
             }
         }
@@ -571,6 +555,9 @@ fun ArtistProfileScreen(
  * naturally inside `LazyColumn { ... }`.
  */
 private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
+    selectedTab: Int,
+    releaseFilter: Int,
+    onReleaseFilterChange: (Int) -> Unit,
     state: ArtistProfileUiState,
     previewState: com.stash.core.media.preview.PreviewState,
     downloadingIds: Set<String>,
@@ -590,67 +577,165 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
     wordmarkSource: String?,
     focus: AlbumFocusTarget?,
 ) {
-    if (state.popular.isNotEmpty()) {
-        item { ArtistEditorialHeading("Mais ouvidas", compact = true) }
-        item {
-            PopularTracksSection(
-                tracks = state.popular,
-                previewState = previewState,
-                downloadingIds = downloadingIds,
-                downloadedIds = downloadedIds,
-                previewLoadingId = previewLoadingId,
-                currentPlayingYoutubeId = currentPlayingYoutubeId,
-                losslessPrefetcher = losslessPrefetcher,
-                onPreview = onPreview,
-                onStopPreview = onStopPreview,
-                onDownload = onDownload,
-                onPlayNext = onPlayNext,
-                onAddToQueue = onAddToQueue,
-                onStartRadio = onStartRadio,
-                onRequestAddToPlaylist = onRequestAddToPlaylist,
-            )
+    when (selectedTab) {
+        0 -> {
+            if (state.popular.isNotEmpty()) {
+                item { ArtistEditorialHeading("Mais ouvidas", compact = true) }
+                item {
+                    PopularTracksSection(
+                        tracks = state.popular,
+                        previewState = previewState,
+                        downloadingIds = downloadingIds,
+                        downloadedIds = downloadedIds,
+                        previewLoadingId = previewLoadingId,
+                        currentPlayingYoutubeId = currentPlayingYoutubeId,
+                        losslessPrefetcher = losslessPrefetcher,
+                        onPreview = onPreview,
+                        onStopPreview = onStopPreview,
+                        onDownload = onDownload,
+                        onPlayNext = onPlayNext,
+                        onAddToQueue = onAddToQueue,
+                        onStartRadio = onStartRadio,
+                        onRequestAddToPlaylist = onRequestAddToPlaylist,
+                    )
+                }
+            }
+            if (state.albums.isNotEmpty()) {
+                item { ArtistEditorialHeading("Discografia · Álbuns") }
+                item { AlbumsRow(albums = state.albums.take(8), onClick = onNavigateToAlbum) }
+            }
+            if (state.singles.isNotEmpty()) {
+                item { ArtistEditorialHeading("Lançamentos") }
+                item { SinglesRow(singles = state.singles.take(8), onClick = onNavigateToAlbum) }
+            }
+            if (state.related.isNotEmpty()) {
+                item { ArtistEditorialHeading("Artistas relacionados") }
+                item {
+                    RelatedArtistsRow(
+                        artists = state.related,
+                        onClick = { onNavigateToArtist(it.id, it.name, it.avatarUrl) },
+                    )
+                }
+            }
+        }
+        1 -> {
+            item { ArtistEditorialHeading("Álbuns") }
+            if (state.albums.isEmpty()) {
+                item { ArtistEmptyDestination("Nenhum álbum disponível") }
+            } else {
+                artistReleaseGridRows(state.albums, onNavigateToAlbum,
+                    focus?.takeIf { it.shelf == AlbumShelf.ALBUMS }?.index)
+            }
+        }
+        2 -> {
+            item { ArtistEditorialHeading("Singles e EPs") }
+            item { ArtistReleaseFilters(releaseFilter, onReleaseFilterChange) }
+            val releases = state.singles.filter {
+                releaseFilter == 0 ||
+                    (releaseFilter == 1 && it.artistReleaseKind() == "single") ||
+                    (releaseFilter == 2 && it.artistReleaseKind() == "ep")
+            }
+            if (releases.isEmpty()) {
+                item { ArtistEmptyDestination("Nenhum lançamento nesta categoria") }
+            } else {
+                artistReleaseGridRows(releases, onNavigateToAlbum,
+                    if (releaseFilter == 0) focus?.takeIf {
+                        it.shelf == AlbumShelf.SINGLES
+                    }?.index else null)
+            }
+        }
+        3 -> {
+            item { ArtistEditorialHeading("Sobre") }
+            val about = state.about
+            if (about != null && (about.bio?.isNotBlank() == true ||
+                    about.socials.isNotEmpty())) {
+                item {
+                    AboutSection(
+                        about = about,
+                        avatarUrl = state.hero.avatarUrl,
+                        wordmarkSource = wordmarkSource,
+                    )
+                }
+            } else {
+                item { ArtistEmptyDestination("Informações do artista indisponíveis") }
+            }
         }
     }
-    if (state.albums.isNotEmpty()) {
-        item { ArtistEditorialHeading("Álbuns") }
-        item {
-            AlbumsRow(
-                albums = state.albums,
-                onClick = onNavigateToAlbum,
-                focusIndex = focus?.takeIf { it.shelf == AlbumShelf.ALBUMS }?.index,
-            )
+}
+
+private fun androidx.compose.foundation.lazy.LazyListScope.artistReleaseGridRows(
+    releases: List<AlbumSummary>,
+    onNavigateToAlbum: (AlbumSummary) -> Unit,
+    focusedIndex: Int?,
+) {
+    releases.chunked(2).forEachIndexed { rowIndex, row ->
+        item(key = "artist-grid-${rowIndex}-${row.first().id}") {
+            val cardSize = (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp - 52.dp) / 2
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 11.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                row.forEachIndexed { colIndex, album ->
+                    com.stash.core.ui.components.AlbumSquareCard(
+                        title = album.title,
+                        artist = album.artist,
+                        thumbnailUrl = album.thumbnailUrl,
+                        year = album.year,
+                        cardSize = cardSize,
+                        modifier = if (focusedIndex == rowIndex * 2 + colIndex)
+                            Modifier.border(1.dp, MaterialTheme.colorScheme.onSurface,
+                                RoundedCornerShape(12.dp)) else Modifier,
+                        onClick = { onNavigateToAlbum(album) },
+                    )
+                }
+            }
         }
     }
-    if (state.singles.isNotEmpty()) {
-        item { ArtistEditorialHeading("Singles e EPs") }
-        item {
-            SinglesRow(
-                singles = state.singles,
-                onClick = onNavigateToAlbum,
-                focusIndex = focus?.takeIf { it.shelf == AlbumShelf.SINGLES }?.index,
-            )
+}
+
+private fun AlbumSummary.artistReleaseKind(): String? {
+    val kind = releaseType?.trim()?.lowercase()
+    return when {
+        kind?.contains("single") == true -> "single"
+        kind == "ep" || kind?.contains("extended play") == true -> "ep"
+        kind == null && trackCount == 1 -> "single"
+        kind == null && trackCount != null && trackCount in 2..6 -> "ep"
+        else -> null
+    }
+}
+
+@Composable
+private fun ArtistReleaseFilters(selected: Int, onSelect: (Int) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        listOf("Todos", "Singles", "EPs").forEachIndexed { index, label ->
+            Surface(
+                onClick = { onSelect(index) },
+                color = if (selected == index)
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = .17f)
+                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .19f),
+                shape = RoundedCornerShape(22.dp),
+            ) {
+                Text(
+                    text = label,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(horizontal = 15.dp, vertical = 9.dp),
+                )
+            }
         }
     }
-    if (state.related.isNotEmpty()) {
-        item { ArtistEditorialHeading("Artistas relacionados") }
-        item {
-            RelatedArtistsRow(
-                artists = state.related,
-                onClick = { onNavigateToArtist(it.id, it.name, it.avatarUrl) },
-            )
-        }
-    }
-    val about = state.about
-    if (about != null) {
-        item { ArtistEditorialHeading("Sobre") }
-        item {
-            AboutSection(
-                about = about,
-                avatarUrl = state.hero.avatarUrl,
-                wordmarkSource = wordmarkSource,
-            )
-        }
-    }
+}
+
+@Composable
+private fun ArtistEmptyDestination(message: String) {
+    Text(
+        text = message,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 20.dp, vertical = 30.dp),
+    )
 }
 
 @Composable
