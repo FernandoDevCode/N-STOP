@@ -235,9 +235,8 @@ private fun ArtistEditorialHeading(label: String, compact: Boolean = false) {
 }
 
 /**
- * Small editorial chapter navigator. The page underneath still retains the
- * familiar Spotify-style popular songs, albums, singles, related artists and
- * about sections, so each label scrolls to real catalog content.
+ * Tabs select independent artist destinations. Navigation and scroll state live
+ * in ArtistProfileScreen; this composable only renders the selector.
  */
 @Composable
 internal fun ArtistSectionTabs(
