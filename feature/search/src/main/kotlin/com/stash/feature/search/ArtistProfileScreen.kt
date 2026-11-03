@@ -250,66 +250,14 @@ fun ArtistProfileScreen(
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
         snackbarHost = { SnackbarHost(snackbar, Modifier.padding(bottom = bottomChromePadding())) },
     ) { inner ->
-        // V4: a single photographed canvas under the hero AND content.
-        // Texture starts inside the image's fade region (measured in actual
-        // pixels), keeps the image's horizontal light/dark distribution, and
-        // dissolves to charcoal through alpha in the bitmap itself.
-        Box(
-            modifier = Modifier.fillMaxSize().padding(inner).drawBehind {
-                // V2: spatial pools of photo-derived light, not a flat tint.
-                drawRect(ArtistNeutralAtmosphere)
-                val glow = lerp(smoothAtmosphere, smoothBridge, .86f)
-                drawRect(
-                    brush = Brush.radialGradient(
-                        colors = listOf(glow.copy(alpha = .91f), Color.Transparent),
-                        center = Offset(size.width * .12f, size.height * .03f),
-                        radius = size.width * 1.50f,
-                    ),
-                )
-                drawRect(
-                    brush = Brush.radialGradient(
-                        colors = listOf(glow.copy(alpha = .60f), Color.Transparent),
-                        center = Offset(size.width * .94f, size.height * .78f),
-                        radius = size.width * 1.17f,
-                    ),
-                )
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        1f to smoothAtmosphere.copy(alpha = .24f),
-                    ),
-                )
-                val frameEnd = if (selectedArtistTab == 0) {
-                    absoluteScrollPx?.let { photoFrameHeightPx - it }
-                } else null
-                if (continuation != null && frameEnd != null && photoFrameHeightPx > 0f) {
-                    val bleed = photoFrameHeightPx * .36f
-                    val startY = frameEnd - bleed
-                    val heightPx = 740.dp.toPx()
-                    if (startY < size.height && startY + heightPx > 0f) {
-                        // Preserve photo alignment: lateral drift on a
-                        // source-derived backdrop produced visible seams and
-                        // giant moving columns in the actual Redmi capture.
-                        drawImage(
-                            image = continuation!!,
-                            dstOffset = IntOffset(0, startY.toInt()),
-                            dstSize = IntSize(size.width.toInt().coerceAtLeast(1), heightPx.toInt().coerceAtLeast(1)),
-                            alpha = 1f,
-                        )
-                        // Reading scrim joins the photo-derived material
-                        // rather than covering it with a second opaque panel.
-                        drawRect(
-                            brush = Brush.verticalGradient(
-                                0f to Color.Transparent,
-                                .58f to Color(0x3320252B),
-                                1f to ArtistNeutralAtmosphere,
-                                startY = frameEnd + 60.dp.toPx(),
-                                endY = startY + heightPx,
-                            ),
-                        )
-                    }
-                }
-            },
+        ArtistProfileBackdrop(
+            modifier = Modifier.padding(inner),
+            smoothAtmosphere = smoothAtmosphere,
+            smoothBridge = smoothBridge,
+            continuation = continuation,
+            absoluteScrollPx = absoluteScrollPx,
+            photoFrameHeightPx = photoFrameHeightPx,
+            showHeroContinuation = selectedArtistTab == 0,
         ) {
         LazyColumn(
             state = listState,
