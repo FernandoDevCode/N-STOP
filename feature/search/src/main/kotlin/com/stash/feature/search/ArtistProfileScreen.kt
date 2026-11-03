@@ -321,7 +321,7 @@ fun ArtistProfileScreen(
                 drawRect(ArtistNeutralAtmosphere)
                 val frameEnd = absoluteScrollPx?.let { photoFrameHeightPx - it }
                 if (continuation != null && frameEnd != null && photoFrameHeightPx > 0f) {
-                    val bleed = 160.dp.toPx()
+                    val bleed = photoFrameHeightPx * .36f
                     val startY = frameEnd - bleed
                     val heightPx = 1120.dp.toPx()
                     if (startY < size.height && startY + heightPx > 0f) {
