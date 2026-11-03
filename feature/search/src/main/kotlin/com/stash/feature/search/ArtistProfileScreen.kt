@@ -7,6 +7,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -524,6 +525,9 @@ fun ArtistProfileScreen(
  * naturally inside `LazyColumn { ... }`.
  */
 private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
+    selectedTab: Int,
+    releaseFilter: Int,
+    onReleaseFilterChange: (Int) -> Unit,
     state: ArtistProfileUiState,
     previewState: com.stash.core.media.preview.PreviewState,
     downloadingIds: Set<String>,
@@ -543,67 +547,165 @@ private fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
     wordmarkSource: String?,
     focus: AlbumFocusTarget?,
 ) {
-    if (state.popular.isNotEmpty()) {
-        item { ArtistEditorialHeading("Mais ouvidas", compact = true) }
-        item {
-            PopularTracksSection(
-                tracks = state.popular,
-                previewState = previewState,
-                downloadingIds = downloadingIds,
-                downloadedIds = downloadedIds,
-                previewLoadingId = previewLoadingId,
-                currentPlayingYoutubeId = currentPlayingYoutubeId,
-                losslessPrefetcher = losslessPrefetcher,
-                onPreview = onPreview,
-                onStopPreview = onStopPreview,
-                onDownload = onDownload,
-                onPlayNext = onPlayNext,
-                onAddToQueue = onAddToQueue,
-                onStartRadio = onStartRadio,
-                onRequestAddToPlaylist = onRequestAddToPlaylist,
-            )
+    when (selectedTab) {
+        0 -> {
+            if (state.popular.isNotEmpty()) {
+                item { ArtistEditorialHeading("Mais ouvidas", compact = true) }
+                item {
+                    PopularTracksSection(
+                        tracks = state.popular,
+                        previewState = previewState,
+                        downloadingIds = downloadingIds,
+                        downloadedIds = downloadedIds,
+                        previewLoadingId = previewLoadingId,
+                        currentPlayingYoutubeId = currentPlayingYoutubeId,
+                        losslessPrefetcher = losslessPrefetcher,
+                        onPreview = onPreview,
+                        onStopPreview = onStopPreview,
+                        onDownload = onDownload,
+                        onPlayNext = onPlayNext,
+                        onAddToQueue = onAddToQueue,
+                        onStartRadio = onStartRadio,
+                        onRequestAddToPlaylist = onRequestAddToPlaylist,
+                    )
+                }
+            }
+            if (state.albums.isNotEmpty()) {
+                item { ArtistEditorialHeading("Discografia · Álbuns") }
+                item { AlbumsRow(albums = state.albums.take(8), onClick = onNavigateToAlbum) }
+            }
+            if (state.singles.isNotEmpty()) {
+                item { ArtistEditorialHeading("Lançamentos") }
+                item { SinglesRow(singles = state.singles.take(8), onClick = onNavigateToAlbum) }
+            }
+            if (state.related.isNotEmpty()) {
+                item { ArtistEditorialHeading("Artistas relacionados") }
+                item {
+                    RelatedArtistsRow(
+                        artists = state.related,
+                        onClick = { onNavigateToArtist(it.id, it.name, it.avatarUrl) },
+                    )
+                }
+            }
+        }
+        1 -> {
+            item { ArtistEditorialHeading("Álbuns") }
+            if (state.albums.isEmpty()) {
+                item { ArtistEmptyDestination("Nenhum álbum disponível") }
+            } else {
+                artistReleaseGridRows(state.albums, onNavigateToAlbum,
+                    focus?.takeIf { it.shelf == AlbumShelf.ALBUMS }?.index)
+            }
+        }
+        2 -> {
+            item { ArtistEditorialHeading("Singles e EPs") }
+            item { ArtistReleaseFilters(releaseFilter, onReleaseFilterChange) }
+            val releases = state.singles.filter {
+                releaseFilter == 0 ||
+                    (releaseFilter == 1 && it.artistReleaseKind() == "single") ||
+                    (releaseFilter == 2 && it.artistReleaseKind() == "ep")
+            }
+            if (releases.isEmpty()) {
+                item { ArtistEmptyDestination("Nenhum lançamento nesta categoria") }
+            } else {
+                artistReleaseGridRows(releases, onNavigateToAlbum,
+                    if (releaseFilter == 0) focus?.takeIf {
+                        it.shelf == AlbumShelf.SINGLES
+                    }?.index else null)
+            }
+        }
+        3 -> {
+            item { ArtistEditorialHeading("Sobre") }
+            val about = state.about
+            if (about != null && (about.bio?.isNotBlank() == true ||
+                    about.socials.isNotEmpty())) {
+                item {
+                    AboutSection(
+                        about = about,
+                        avatarUrl = state.hero.avatarUrl,
+                        wordmarkSource = wordmarkSource,
+                    )
+                }
+            } else {
+                item { ArtistEmptyDestination("Informações do artista indisponíveis") }
+            }
         }
     }
-    if (state.albums.isNotEmpty()) {
-        item { ArtistEditorialHeading("Álbuns") }
-        item {
-            AlbumsRow(
-                albums = state.albums,
-                onClick = onNavigateToAlbum,
-                focusIndex = focus?.takeIf { it.shelf == AlbumShelf.ALBUMS }?.index,
-            )
+}
+
+private fun androidx.compose.foundation.lazy.LazyListScope.artistReleaseGridRows(
+    releases: List<AlbumSummary>,
+    onNavigateToAlbum: (AlbumSummary) -> Unit,
+    focusedIndex: Int?,
+) {
+    releases.chunked(2).forEachIndexed { rowIndex, row ->
+        item(key = "artist-grid-${rowIndex}-${row.first().id}") {
+            val cardSize = (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp - 52.dp) / 2
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 11.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                row.forEachIndexed { colIndex, album ->
+                    com.stash.core.ui.components.AlbumSquareCard(
+                        title = album.title,
+                        artist = album.artist,
+                        thumbnailUrl = album.thumbnailUrl,
+                        year = album.year,
+                        cardSize = cardSize,
+                        modifier = if (focusedIndex == rowIndex * 2 + colIndex)
+                            Modifier.border(1.dp, MaterialTheme.colorScheme.onSurface,
+                                RoundedCornerShape(12.dp)) else Modifier,
+                        onClick = { onNavigateToAlbum(album) },
+                    )
+                }
+            }
         }
     }
-    if (state.singles.isNotEmpty()) {
-        item { ArtistEditorialHeading("Singles e EPs") }
-        item {
-            SinglesRow(
-                singles = state.singles,
-                onClick = onNavigateToAlbum,
-                focusIndex = focus?.takeIf { it.shelf == AlbumShelf.SINGLES }?.index,
-            )
+}
+
+private fun AlbumSummary.artistReleaseKind(): String? {
+    val kind = releaseType?.trim()?.lowercase()
+    return when {
+        kind?.contains("single") == true -> "single"
+        kind == "ep" || kind?.contains("extended play") == true -> "ep"
+        kind == null && trackCount == 1 -> "single"
+        kind == null && trackCount != null && trackCount in 2..6 -> "ep"
+        else -> null
+    }
+}
+
+@Composable
+private fun ArtistReleaseFilters(selected: Int, onSelect: (Int) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        listOf("Todos", "Singles", "EPs").forEachIndexed { index, label ->
+            Surface(
+                onClick = { onSelect(index) },
+                color = if (selected == index)
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = .17f)
+                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .19f),
+                shape = RoundedCornerShape(22.dp),
+            ) {
+                Text(
+                    text = label,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(horizontal = 15.dp, vertical = 9.dp),
+                )
+            }
         }
     }
-    if (state.related.isNotEmpty()) {
-        item { ArtistEditorialHeading("Artistas relacionados") }
-        item {
-            RelatedArtistsRow(
-                artists = state.related,
-                onClick = { onNavigateToArtist(it.id, it.name, it.avatarUrl) },
-            )
-        }
-    }
-    val about = state.about
-    if (about != null) {
-        item { ArtistEditorialHeading("Sobre") }
-        item {
-            AboutSection(
-                about = about,
-                avatarUrl = state.hero.avatarUrl,
-                wordmarkSource = wordmarkSource,
-            )
-        }
-    }
+}
+
+@Composable
+private fun ArtistEmptyDestination(message: String) {
+    Text(
+        text = message,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 20.dp, vertical = 30.dp),
+    )
 }
 
 @Composable
