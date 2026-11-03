@@ -2,7 +2,6 @@ package com.stash.feature.search
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -32,7 +31,7 @@ internal fun ArtistProfileBackdrop(
     content: @Composable BoxScope.() -> Unit,
 ) {
     Box(
-        modifier = modifier.fillMaxSize().drawBehind {
+        modifier = modifier.drawBehind {
                 // V2: spatial pools of photo-derived light, not a flat tint.
                 drawRect(ArtistNeutralAtmosphere)
                 val glow = lerp(smoothAtmosphere, smoothBridge, .86f)
