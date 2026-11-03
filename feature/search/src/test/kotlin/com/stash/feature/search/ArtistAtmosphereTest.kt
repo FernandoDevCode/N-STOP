@@ -156,6 +156,30 @@ class ArtistAtmosphereTest {
         assertTrue("red no longer paints the full page burgundy", red.red - red.blue < .06f)
     }
 
+    @Test fun `artist mid and deep remain in the dominant colour family`() {
+        val blue = artistPaletteFromPixels(photo(0xFF287AC4.toInt() to 80,
+            0xFF17191D.toInt() to 20))
+        val red = artistPaletteFromPixels(photo(0xFFCC3928.toInt() to 80,
+            0xFF17191D.toInt() to 20))
+        assertTrue(blue.mid.blue > blue.mid.red)
+        assertTrue(blue.deep.blue > blue.deep.red)
+        assertTrue(red.mid.red > red.mid.blue)
+        assertTrue(red.deep.red > red.deep.blue)
+        assertTrue("deep must stay chromatic, not default graphite",
+            blue.deep != ArtistNeutralAtmosphere)
+        assertTrue("the deep layer should be darker than the mid layer",
+            blue.deep.blue < blue.mid.blue)
+    }
+
+    @Test fun `neutral photograph uses neutral canvas at every depth`() {
+        val palette = artistPaletteFromPixels(photo(
+            0xFF171717.toInt() to 55,
+            0xFF9B9B9B.toInt() to 45,
+        ))
+        assertEquals(ArtistNeutralAtmosphere, palette.mid)
+        assertEquals(ArtistNeutralAtmosphere, palette.deep)
+    }
+
     @Test fun `monochromatic artists keep the neutral surface unchanged`() {
         assertEquals(ArtistNeutralPalette, artistPaletteFromPixels(photo(
             0xFF181818.toInt() to 60,
