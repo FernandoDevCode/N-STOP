@@ -232,7 +232,7 @@ fun ArtistProfileScreen(
         snackbarHost = { SnackbarHost(snackbar, Modifier.padding(bottom = bottomChromePadding())) },
     ) { inner ->
         ArtistProfileBackdrop(
-            modifier = Modifier.padding(inner),
+            modifier = Modifier.fillMaxSize().padding(inner),
             smoothAtmosphere = smoothAtmosphere,
             smoothBridge = smoothBridge,
             continuation = continuation,
