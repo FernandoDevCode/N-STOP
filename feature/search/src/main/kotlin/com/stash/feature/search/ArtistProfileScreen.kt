@@ -295,7 +295,17 @@ fun ArtistProfileScreen(
         // dissolves to charcoal through alpha in the bitmap itself.
         Box(
             modifier = Modifier.fillMaxSize().padding(inner).drawBehind {
-                drawRect(ArtistNeutralAtmosphere)
+                // A restrained photo-derived wash remains visible across the
+                // discography and at the end of the profile. Keep charcoal as
+                // the dominant surface; no repeated photograph or hard panels.
+                val ambientTint = lerp(ArtistNeutralAtmosphere, smoothAtmosphere, .45f)
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        0f to ArtistNeutralAtmosphere,
+                        .6f to ambientTint,
+                        1f to lerp(ArtistNeutralAtmosphere, smoothAtmosphere, .58f),
+                    ),
+                )
                 val frameEnd = absoluteScrollPx?.let { photoFrameHeightPx - it }
                 if (continuation != null && frameEnd != null && photoFrameHeightPx > 0f) {
                     val bleed = photoFrameHeightPx * .36f
@@ -655,8 +665,8 @@ private fun ArtistEditorialHeading(label: String, compact: Boolean = false) {
         modifier = Modifier.fillMaxWidth()
             .padding(
                 start = 20.dp, end = 20.dp,
-                top = if (compact) 24.dp else 28.dp,
-                bottom = if (compact) 10.dp else 12.dp,
+                top = if (compact) 24.dp else 32.dp,
+                bottom = if (compact) 10.dp else 14.dp,
             ),
     )
 }
