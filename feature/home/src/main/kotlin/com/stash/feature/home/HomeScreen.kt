@@ -356,6 +356,38 @@ fun HomeScreen(
             SonoraWeeklySongRail("Fora do radar", weeklyDiscovery.forgotten,
                 viewModel::playWeeklyDiscovery)
         }
+        // Retain Daily Discover actions without a second competing full-size
+        // billboard once the weekly outdoor has content.
+        if (weeklyActive && uiState.hero != null && !heroMinimized) {
+            item(key = "home_daily_discover_compact") {
+                val daily = requireNotNull(uiState.hero)
+                Column(Modifier.fillMaxWidth().padding(top = 24.dp)) {
+                    SonoraSectionTitle("Sua descoberta diária")
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = VisualDesign.Gutter),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        SonoraContentCard(
+                            card = VisualCard("daily-discover", daily.title, daily.subtitle, daily.artUrl),
+                            onClick = { onNavigateToPlaylist(daily.playlistId) },
+                            onLongPress = { heroActionSheet = true },
+                        )
+                        Column {
+                            androidx.compose.material3.Button(onClick = viewModel::playHero) {
+                                Text("Ouvir mix")
+                            }
+                            androidx.compose.material3.TextButton(
+                                onClick = { onNavigateToMixBuilder(null) },
+                            ) {
+                                Text("Criar mix")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if (quickMixes.isNotEmpty()) {
             item(key = "home_quick_mixes") {
                 Spacer(Modifier.height(18.dp))
