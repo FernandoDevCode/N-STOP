@@ -114,7 +114,10 @@ class SonoraWeeklyDiscoveryEngine @Inject constructor(
         val last30 = System.currentTimeMillis() - 30L * 24 * 60 * 60 * 1000
         val recentPlays = attempt { events.getPlayCountsSince(last30) }.orEmpty()
             .associate { it.trackId to it.plays }
-        val tags = attempt { trackTagDao.getByTracks(tracks.map { it.id }) }.orEmpty()
+        val storedTags = attempt { trackTagDao.getByTracks(tracks.map { it.id }) }.orEmpty()
+        val tags = if (storedTags.map { it.trackId }.distinct().size < tracks.size / 2) {
+            storedTags + inferArtistTags(tracks, storedTags.map { it.trackId }.toSet(), recentPlays)
+        } else storedTags
         val taste = SonoraTasteScorer.rank(tracks, tags, recentPlays)
         val owned = tracks.map { identity(it.artist, it.title) }.toSet()
         val recentArtistPlays = tracks.asSequence()
@@ -156,6 +159,48 @@ class SonoraWeeklyDiscoveryEngine @Inject constructor(
             currentTag = taste.currentTags.firstOrNull(),
             forgottenTag = taste.forgottenTags.firstOrNull(),
         ).also(cache::write)
+    }
+
+    /**
+     * The existing tag worker mainly enriches downloaded songs. For a
+     * synchronized streaming library, infer genre tags from a bounded,
+     * stratified sample of actual library artists rather than silently
+     * declaring that the user has no historic preferences.
+     */
+    private suspend fun inferArtistTags(
+        tracks: List<Track>,
+        taggedIds: Set<Long>,
+        recentPlays: Map<Long, Int>,
+    ): List<TrackTagEntity> {
+        val groups = tracks.asSequence().filter { it.artist.isNotBlank() }
+            .groupBy { it.artist.trim().lowercase() }
+        if (groups.isEmpty()) return emptyList()
+        val played = groups.entries.sortedByDescending { entry ->
+            entry.value.sumOf { recentPlays[it.id] ?: 0 }
+        }.filter { entry -> entry.value.any { (recentPlays[it.id] ?: 0) > 0 } }
+            .take(4)
+        val saved = groups.entries.sortedByDescending { it.value.size }.take(5)
+        // Sample the full artist universe, not only today's dominant genre.
+        val sorted = groups.entries.sortedBy { it.key }
+        val evenlySpaced = (0 until min(7, sorted.size)).map { index ->
+            sorted[(index * sorted.size / min(7, sorted.size)).coerceIn(0, sorted.lastIndex)]
+        }
+        val chosen = (played + saved + evenlySpaced).distinctBy { it.key }.take(16)
+        val inferred = mutableListOf<TrackTagEntity>()
+        for (entry in chosen) {
+            val untagged = entry.value.filter { it.id !in taggedIds }
+            if (untagged.isEmpty()) continue
+            val artistTags = attempt {
+                lastfm.getArtistTopTags(entry.value.first().artist).getOrNull().orEmpty()
+            }.orEmpty().filter { it.name.isNotBlank() && it.weight > 0f }.take(4)
+            for (track in untagged) for (tag in artistTags) {
+                inferred += TrackTagEntity(
+                    track.id, tag.name.trim().lowercase(), tag.weight.coerceIn(0f, 1f),
+                    TrackTagEntity.SOURCE_ARTIST, 0L,
+                )
+            }
+        }
+        return inferred
     }
 
     private suspend fun discover(tags: List<String>, used: MutableSet<String>): List<TrackSummary> {
