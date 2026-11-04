@@ -85,7 +85,7 @@ class QobuzFollowedArtistReleases @Inject constructor(
             AlbumSummary(
                 id = release.id, title = release.title, artist = followed.name,
                 thumbnailUrl = release.image?.large ?: release.image?.small,
-                year = date.toString(), source = AlbumSource.QOBUZ,
+                year = date.year.toString(), source = AlbumSource.QOBUZ,
                 trackCount = release.tracks_count.takeIf { it > 0 },
             ) to date
         }
