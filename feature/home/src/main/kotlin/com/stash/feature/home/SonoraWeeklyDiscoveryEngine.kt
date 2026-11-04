@@ -115,7 +115,13 @@ class SonoraWeeklyDiscoveryEngine @Inject constructor(
         val tracks = attempt { music.getAllTracks().first() }.orEmpty()
         if (tracks.isEmpty()) return SonoraWeeklyDiscovery()
         val libraryFingerprint = fingerprint(tracks)
-        cache.read(libraryFingerprint)?.let { return it }
+        cache.read(libraryFingerprint)?.let { snapshot ->
+            val rejected = feedback.rejectedVideoIds()
+            return snapshot.copy(
+                current = snapshot.current.filterNot { it.videoId in rejected },
+                forgotten = snapshot.forgotten.filterNot { it.videoId in rejected },
+            )
+        }
         val last30 = System.currentTimeMillis() - 30L * 24 * 60 * 60 * 1000
         val recentPlays = attempt { events.getPlayCountsSince(last30) }.orEmpty()
             .associate { it.trackId to it.plays }
