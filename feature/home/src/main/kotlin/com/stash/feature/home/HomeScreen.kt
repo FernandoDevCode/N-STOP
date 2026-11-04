@@ -661,7 +661,7 @@ fun HomeScreen(
                 CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
                 Text(stringResource(R.string.sonora_home_loading), style = VisualDesign.Body)
             }
-        } else if (uiState.showColdStartCard) item(key = "home_personalize") {
+        } else if (uiState.showColdStartCard && rediscoveryTracks.isEmpty()) item(key = "home_personalize") {
             PersonalizeCard(
                 onConnect = onNavigateToSettings,
                 title = stringResource(R.string.sonora_home_personalize),
