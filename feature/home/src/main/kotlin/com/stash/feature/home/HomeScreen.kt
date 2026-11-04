@@ -257,6 +257,7 @@ fun HomeScreen(
                     label = when (featured.source) {
                         HomeFeaturedRelease.Source.SPOTIFY -> "LANÇAMENTO RECENTE"
                         HomeFeaturedRelease.Source.YOUTUBE_MUSIC -> "ÁLBUM PARA DESCOBRIR"
+                        HomeFeaturedRelease.Source.DISCOVERY_YOUTUBE_MUSIC -> "DESCUBRA UM ARTISTA"
                     },
                     title = featured.album.title,
                     artist = featured.album.artist,
@@ -393,11 +394,18 @@ fun HomeScreen(
                 SonoraQuickMixRow(mixes = quickMixes, onMixClick = { openMix(it.id) })
             }
         }
-        if (rediscoveryTracks.isNotEmpty()) {
+        // Avoid repeating the exact hero artist in the immediately following
+        // rediscovery rail; the remaining history retains its real ranking.
+        val editorialArtist = featuredRelease?.album?.artist
+            ?: if (showHistoryLead) rediscoveryTracks.firstOrNull()?.artist else null
+        val rediscoveryWithoutHero = rediscoveryTracks.filterNot {
+            editorialArtist != null && it.artist.trim().equals(editorialArtist.trim(), ignoreCase = true)
+        }
+        if (rediscoveryWithoutHero.isNotEmpty()) {
             item(key = "home_rediscovery_artists") {
                 Spacer(Modifier.height(18.dp))
                 SonoraRediscoveryRow(
-                    tracks = rediscoveryTracks,
+                    tracks = rediscoveryWithoutHero,
                     onArtistClick = onNavigateToArtist,
                 )
             }

@@ -15,7 +15,7 @@ data class HomeFeaturedRelease(
     val source: Source,
     val isFollowedArtist: Boolean,
 ) {
-    enum class Source { SPOTIFY, YOUTUBE_MUSIC }
+    enum class Source { SPOTIFY, YOUTUBE_MUSIC, DISCOVERY_YOUTUBE_MUSIC }
 }
 
 /**
@@ -82,6 +82,26 @@ class HomeFeaturedReleaseLookup @Inject constructor(
                 album, HomeFeaturedRelease.Source.YOUTUBE_MUSIC,
                 followed.any { sameArtist(it, artist) },
             )
+        }
+        // Editorial discovery when no verified release was available:
+        // suggest an actual related artist surfaced by YouTube Music,
+        // never a random chart or an already-listened artist.
+        // Limit profile requests and require a playable, image-backed album.
+        val known = (followed + listening + libraryArtists)
+            .map { it.trim().lowercase() }.toSet()
+        for (artist in seeds.take(2)) {
+            val identity = safeCall { youtube.resolveArtist(artist) } ?: continue
+            if (!sameArtist(identity.name, artist)) continue
+            val profile = safeCall { youtube.getArtist(identity.id) } ?: continue
+            for (related in profile.related.take(4)) {
+                if (related.name.isBlank() || related.name.trim().lowercase() in known) continue
+                val relatedProfile = safeCall { youtube.getArtist(related.id) } ?: continue
+                if (!sameArtist(relatedProfile.name, related.name)) continue
+                val album = (relatedProfile.albums + relatedProfile.singles)
+                    .firstOrNull { !it.thumbnailUrl.isNullOrBlank() && sameArtist(it.artist, related.name) }
+                    ?: continue
+                return HomeFeaturedRelease(album, HomeFeaturedRelease.Source.DISCOVERY_YOUTUBE_MUSIC, false)
+            }
         }
         return null
     }
