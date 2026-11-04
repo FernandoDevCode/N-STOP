@@ -194,6 +194,7 @@ fun HomeScreen(
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val rediscoveryTracks by viewModel.rediscoveryTracks.collectAsStateWithLifecycle()
+    val featuredRelease by viewModel.featuredRelease.collectAsStateWithLifecycle()
     val quickMixes = homeQuickMixes(uiState)
     var selectedMediaTab by rememberSaveable { mutableIntStateOf(0) }
     val podcastController = com.stash.feature.home.podcasts.LocalPodcastViewModel.current
@@ -351,21 +352,28 @@ fun HomeScreen(
         }
 
 
-        // Featured catalog release uses actual album data and opens the existing
-        // album route. It is intentionally NOT labeled "followed artists":
-        // the current repository has no reliable followed-artist feed.
-        if (HomeSection.NEW_RELEASES in uiState.sections && uiState.newReleases.isNotEmpty()) {
-            item(key = "home_v3_featured_release") {
-                Column(Modifier.fillMaxWidth().padding(top = 22.dp)) {
-                    SonoraSectionTitle("Novidade para ouvir")
-                    val release = uiState.newReleases.first()
-                    SonoraFeaturedRelease(
-                        title = release.title,
-                        artist = release.artist,
-                        artwork = release.thumbnailUrl,
-                        onOpen = { onNavigateToAlbum(release) },
-                        modifier = Modifier.padding(horizontal = VisualDesign.Gutter),
-                    )
+        // Source priority: Spotify recent release selection → YouTube Music
+        // fallback. No Qobuz release is promoted as a personal highlight.
+        if (HomeSection.NEW_RELEASES in uiState.sections) {
+            featuredRelease?.let { featured ->
+                item(key = "home_v3_featured_release") {
+                    Column(Modifier.fillMaxWidth().padding(top = 22.dp)) {
+                        SonoraSectionTitle(
+                            if (featured.isFollowedArtist) "De quem você segue"
+                            else "Dos artistas que você ouve",
+                        )
+                        SonoraFeaturedRelease(
+                            label = when (featured.source) {
+                                HomeFeaturedRelease.Source.SPOTIFY -> "LANÇAMENTO RECENTE"
+                                HomeFeaturedRelease.Source.YOUTUBE_MUSIC -> "ÁLBUM DO ARTISTA"
+                            },
+                            title = featured.album.title,
+                            artist = featured.album.artist,
+                            artwork = featured.album.thumbnailUrl,
+                            onOpen = { onNavigateToAlbum(featured.album) },
+                            modifier = Modifier.padding(horizontal = VisualDesign.Gutter),
+                        )
+                    }
                 }
             }
         }
