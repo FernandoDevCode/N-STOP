@@ -87,7 +87,8 @@ class HomeFeaturedReleaseLookup @Inject constructor(
         // suggest an actual related artist surfaced by YouTube Music,
         // never a random chart or an already-listened artist.
         // Limit profile requests and require a playable, image-backed album.
-        val known = seeds.map { it.trim().lowercase() }.toSet()
+        val known = (followed + listening + libraryArtists)
+            .map { it.trim().lowercase() }.toSet()
         for (artist in seeds.take(2)) {
             val identity = safeCall { youtube.resolveArtist(artist) } ?: continue
             if (!sameArtist(identity.name, artist)) continue
