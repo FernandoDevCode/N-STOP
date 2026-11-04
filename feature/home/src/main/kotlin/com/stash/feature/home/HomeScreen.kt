@@ -350,11 +350,11 @@ fun HomeScreen(
         }
         if (weeklyDiscovery.current.isNotEmpty()) item(key = "weekly_current") {
             SonoraWeeklySongRail("Na sua frequência", weeklyDiscovery.current,
-                viewModel::playWeeklyDiscovery)
+                viewModel::playWeeklyDiscovery, viewModel::rejectWeeklySong)
         }
         if (weeklyDiscovery.forgotten.isNotEmpty()) item(key = "weekly_forgotten") {
             SonoraWeeklySongRail("Fora do radar", weeklyDiscovery.forgotten,
-                viewModel::playWeeklyDiscovery)
+                viewModel::playWeeklyDiscovery, viewModel::rejectWeeklySong)
         }
         // Retain Daily Discover actions without a second competing full-size
         // billboard once the weekly outdoor has content.
