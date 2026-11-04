@@ -75,6 +75,17 @@ class SonoraHomeScreenTest {
         rediscovery.value = emptyList()
     }
 
+    @Test fun editorialArtistIsNotDuplicatedInRediscoveryRail() {
+        rediscovery.value = listOf(
+            com.stash.core.model.Track(id = 1L, title = "Song A", artist = "Featured Artist", playCount = 20),
+            com.stash.core.model.Track(id = 2L, title = "Song B", artist = "Another Artist", playCount = 10),
+        )
+        render()
+        compose.onNodeWithText("DO SEU HISTÓRICO").assertIsDisplayed()
+        compose.onAllNodesWithText("Featured Artist").assertCountEquals(1)
+        compose.onNodeWithText("Another Artist").assertExists()
+    }
+
     @Test fun emptyHomeUsesRealSetupAndNoDiscoveryPlaceholder() {
         render()
         compose.onNodeWithText("Personalize seu início").assertIsDisplayed()
