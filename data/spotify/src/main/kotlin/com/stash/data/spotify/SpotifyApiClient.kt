@@ -797,6 +797,67 @@ class SpotifyApiClient @Inject constructor(
         }
     }
 
+    /**
+     * Best-effort followed artist names. The web-player session may not carry
+     * user-follow-read; a denied request simply yields no names, never a fake list.
+     */
+    suspend fun getFollowedArtistNames(limit: Int = 12): List<String> = withContext(Dispatchers.IO) {
+        val token = tokenManager.getSpotifyAccessToken() ?: return@withContext emptyList()
+        val url = "$WEB_API_BASE/me/following?type=artist&limit=${limit.coerceIn(1, 20)}"
+        try {
+            executeSearchRequest(url, token).use { response ->
+                if (!response.isSuccessful) return@use emptyList()
+                val root = json.parseToJsonElement(response.body?.string().orEmpty()).jsonObject
+                root["artists"]?.jsonObject?.get("items")?.jsonArray.orEmpty()
+                    .mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull }
+                    .filter { it.isNotBlank() }.distinct()
+            }
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    /**
+     * Recent Spotify catalog releases by an exact artist credit. No release is
+     * called recent unless Spotify supplies a precise ISO day in the given window.
+     * The Home must resolve its selected album through the playable YT catalog.
+     */
+    suspend fun searchRecentArtistAlbums(
+        artistName: String,
+        sinceDate: String,
+    ): List<SpotifyRecentArtistAlbum> = withContext(Dispatchers.IO) {
+        val token = tokenManager.getSpotifyAccessToken() ?: return@withContext emptyList()
+        if (artistName.isBlank()) return@withContext emptyList()
+        val url = "$WEB_API_BASE/search?type=album&limit=20&q=" +
+            URLEncoder.encode("artist:\"${artistName.trim()}\"", "UTF-8")
+        try {
+            executeSearchRequest(url, token).use { response ->
+                if (!response.isSuccessful) return@use emptyList()
+                val root = json.parseToJsonElement(response.body?.string().orEmpty()).jsonObject
+                root["albums"]?.jsonObject?.get("items")?.jsonArray.orEmpty()
+                    .mapNotNull { value ->
+                        val album = value.jsonObject
+                        val name = album["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                        val date = album["release_date"]?.jsonPrimitive?.contentOrNull
+                            ?: return@mapNotNull null
+                        if (date.length != 10 || date < sinceDate) return@mapNotNull null
+                        val artistNames = album["artists"]?.jsonArray.orEmpty()
+                            .mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull }
+                        if (artistNames.none { it.equals(artistName, ignoreCase = true) }) return@mapNotNull null
+                        SpotifyRecentArtistAlbum(name, artistName, date)
+                    }
+                    .distinctBy { it.title.lowercase() to it.artist.lowercase() }
+                    .sortedByDescending { it.releaseDate }
+            }
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
     /** Builds and executes a single authenticated GET against the search endpoint. */
     private fun executeSearchRequest(url: String, token: String): okhttp3.Response {
         val request = Request.Builder()
@@ -1640,3 +1701,6 @@ class SpotifyApiClient @Inject constructor(
     )
 
 }
+
+/** Verified date and artist name from Spotify's album search. Not a playable album ID. */
+data class SpotifyRecentArtistAlbum(val title: String, val artist: String, val releaseDate: String)
