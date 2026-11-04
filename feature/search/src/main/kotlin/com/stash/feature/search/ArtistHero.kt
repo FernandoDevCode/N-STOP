@@ -281,14 +281,6 @@ fun ArtistHero(
                     onDismissRequest = { moreOpen = false },
                 ) {
                     DropdownMenuItem(
-                        text = { Text(if (isFollowing) "Deixar de seguir artista" else "Seguir artista") },
-                        leadingIcon = {
-                            Icon(if (isFollowing) Icons.Default.Star else Icons.Outlined.StarBorder,
-                                contentDescription = null)
-                        },
-                        onClick = { moreOpen = false; onToggleFollow() },
-                    )
-                    DropdownMenuItem(
                         text = {
                             Text(if (bookmarked) "Desmarcar artista neste aparelho"
                                 else "Marcar artista neste aparelho")
@@ -413,6 +405,25 @@ fun ArtistHero(
                         color = Color.White.copy(alpha = .76f),
                         fontSize = 13.sp,
                     )
+                }
+                Surface(
+                    onClick = onToggleFollow,
+                    color = Color.White.copy(alpha = if (isFollowing) .24f else .13f),
+                    shape = CircleShape,
+                    border = BorderStroke(.7.dp, Color.White.copy(alpha = .52f)),
+                    modifier = Modifier.height(48.dp),
+                ) {
+                    Box(
+                        Modifier.padding(horizontal = 13.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            if (isFollowing) "Seguindo" else "Seguir",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
                 }
                 Surface(
                     onClick = onPlayArtist,
