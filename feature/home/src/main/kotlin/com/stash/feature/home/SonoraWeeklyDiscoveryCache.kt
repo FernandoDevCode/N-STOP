@@ -19,11 +19,12 @@ class SonoraWeeklyDiscoveryCache @Inject constructor(
 ) {
     private val prefs = context.getSharedPreferences("sonora_weekly_discovery_v1", Context.MODE_PRIVATE)
 
-    fun read(): SonoraWeeklyDiscovery? {
+    fun read(libraryFingerprint: String): SonoraWeeklyDiscovery? {
         val raw = prefs.getString("snapshot", null) ?: return null
         return try {
             val json = JSONObject(raw)
-            if (json.optString("week") != currentWeek()) return null
+            if (json.optString("week") != currentWeek() ||
+                json.optString("library") != libraryFingerprint) return null
             val releases = json.optJSONArray("releases")?.let { arr ->
                 (0 until arr.length()).mapNotNull { index ->
                     val obj = arr.optJSONObject(index) ?: return@mapNotNull null
@@ -58,10 +59,11 @@ class SonoraWeeklyDiscoveryCache @Inject constructor(
         }
     }
 
-    fun write(data: SonoraWeeklyDiscovery) {
+    fun write(data: SonoraWeeklyDiscovery, libraryFingerprint: String) {
         if (data.releases.isEmpty() && data.current.isEmpty() && data.forgotten.isEmpty()) return
         try {
             val root = JSONObject().put("week", currentWeek())
+                .put("library", libraryFingerprint)
             val releases = JSONArray()
             data.releases.take(10).forEach {
                 releases.put(JSONObject().put("id", it.id).put("title", it.title)
