@@ -186,11 +186,11 @@ class ArtistProfileViewModel @Inject constructor(
             (customPhotoUrl != null && customPhotoUrl != failedCustomPhotoUrl)) return
         photoJob = viewModelScope.launch {
             deezerPhoto = deezerArtistPhotoLookup.find(name)
-            if (customPhotoUrl == null) updateHeroPhoto()
+            if (customPhotoUrl == null || customPhotoUrl == failedCustomPhotoUrl) updateHeroPhoto()
             // Retain Spotify as an image fallback when Deezer has no exact match.
             if (deezerPhoto == null) {
                 spotifyPhoto = spotifyArtistLookup.find(name)
-                if (customPhotoUrl == null) updateHeroPhoto()
+                if (customPhotoUrl == null || customPhotoUrl == failedCustomPhotoUrl) updateHeroPhoto()
             }
         }
     }
