@@ -11,6 +11,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.MarqueeSpacing
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
@@ -1420,9 +1421,38 @@ private fun DiscoveryPlaylistRow(
         LazyRow(contentPadding = PaddingValues(horizontal = VisualDesign.Gutter),
             horizontalArrangement = Arrangement.spacedBy(VisualDesign.Space.Rail)) {
             items(playlists, key = { it.id }) { playlist ->
-                SonoraContentCard(VisualCard(playlist.id, playlist.title,
-                    pluralize(playlist.trackCount, "track"), playlist.thumbnailUrl),
-                    onClick = { onOpen(playlist.toAlbumNav()) })
+                val shape = RoundedCornerShape(16.dp)
+                Row(
+                    modifier = Modifier.width(258.dp).height(106.dp)
+                        .clip(shape)
+                        .background(VisualDesign.Surface)
+                        .border(.5.dp, VisualDesign.Border, shape)
+                        .clickable { onOpen(playlist.toAlbumNav()) },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (!playlist.thumbnailUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = playlist.thumbnailUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.size(106.dp),
+                        )
+                    } else {
+                        Box(Modifier.size(106.dp).background(MaterialTheme.colorScheme.surfaceVariant),
+                            contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.MusicNote, null, tint = VisualDesign.Muted)
+                        }
+                    }
+                    Column(Modifier.weight(1f).padding(horizontal = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text(playlist.title, style = VisualDesign.CardTitle,
+                            color = VisualDesign.Ink, maxLines = 2,
+                            overflow = TextOverflow.Ellipsis)
+                        Text(playlist.curator.ifBlank { "Qobuz" },
+                            style = VisualDesign.Caption, color = VisualDesign.Muted,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
             }
         }
     }
