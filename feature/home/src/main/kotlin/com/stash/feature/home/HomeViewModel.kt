@@ -101,6 +101,7 @@ class HomeViewModel @Inject constructor(
     val listeningState: StateFlow<com.stash.core.model.PlayerState> = playerRepository.playerState
 
     /** Verified, dated releases only. An empty feed never creates a fake rail. */
+    @OptIn(ExperimentalCoroutinesApi::class)
     val followedReleases: StateFlow<List<AlbumSummary>> = followedArtistsStore.artists
         .flatMapLatest { artists ->
             flow { emit(if (artists.isEmpty()) emptyList() else followedReleasesRepository.recentReleases(artists)) }
