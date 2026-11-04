@@ -67,7 +67,7 @@ class SonoraHomeScreenTest {
         ))
         render()
         compose.onNodeWithText("DO SEU HISTÓRICO").assertIsDisplayed()
-        compose.onNodeWithText("Artist from history").assertExists()
+        compose.onAllNodesWithText("Artist from history").onFirst().assertExists()
         compose.onNodeWithText("Ver artista").performClick()
         compose.runOnIdle { check(artistOpened == "Artist from history") }
         compose.onNodeWithText("O que toca agora").assertDoesNotExist()
