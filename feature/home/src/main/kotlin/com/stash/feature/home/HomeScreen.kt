@@ -266,7 +266,6 @@ fun HomeScreen(
         // Only existing discovery data creates pages. Open/play/create and
         // long-press context actions stay wired to their Android callbacks.
         if (uiState.hasDiscoverySpotlight(heroMinimized)) item(key = "discovery_spotlight") {
-            Spacer(Modifier.height(20.dp))
             // Minimized (long-press → "Minimize for now") drops the hero page
             // for the session; the mix pages keep the pager alive. Distinct
             // from hero == null (not connected), which shows PersonalizeCard.
@@ -283,8 +282,32 @@ fun HomeScreen(
                     val pagerState = androidx.compose.foundation.pager.rememberPagerState(
                         pageCount = { pageCount },
                     )
-                    Column {
-                        androidx.compose.foundation.pager.HorizontalPager(
+                    // Atmosphere is sourced from the active real cover and remains
+                    // inside the spotlight. The rest of Home stays charcoal.
+                    val activeArt = if (pagerState.currentPage < heroPages) {
+                        hero?.artUrl
+                    } else {
+                        mixPages.getOrNull(pagerState.currentPage - heroPages)?.artUrl
+                    }
+                    Box(Modifier.fillMaxWidth()) {
+                        if (!activeArt.isNullOrBlank()) {
+                            AsyncImage(
+                                model = activeArt,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.matchParentSize().blur(44.dp).alpha(.25f),
+                            )
+                            Box(Modifier.matchParentSize().background(
+                                Brush.verticalGradient(
+                                    0f to MaterialTheme.colorScheme.background.copy(alpha = .45f),
+                                    .55f to MaterialTheme.colorScheme.background.copy(alpha = .72f),
+                                    1f to MaterialTheme.colorScheme.background,
+                                ),
+                            ))
+                        }
+                        Column {
+                            Spacer(Modifier.height(20.dp))
+                            androidx.compose.foundation.pager.HorizontalPager(
                             state = pagerState,
                             contentPadding = PaddingValues(horizontal = VisualDesign.Gutter),
                             pageSpacing = 10.dp,
@@ -342,6 +365,7 @@ fun HomeScreen(
                                     )
                                 }
                             }
+                        }
                         }
                     }
                 }
