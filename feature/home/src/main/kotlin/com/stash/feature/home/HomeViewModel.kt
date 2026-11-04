@@ -87,10 +87,20 @@ class HomeViewModel @Inject constructor(
     private val homeSectionsPreference: com.stash.core.data.prefs.HomeSectionsPreference,
     private val metadataBackfillState: MetadataBackfillState,
     private val homeDiscoveryRepository: HomeDiscoveryRepository,
+    private val featuredReleaseLookup: HomeFeaturedReleaseLookup,
     private val losslessSourceHealth: com.stash.core.media.streaming.LosslessSourceHealth,
     private val losslessAvailability: com.stash.data.download.lossless.LosslessAvailability,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
+
+    /**
+     * Spotify determines recent personal releases, YouTube Music is the
+     * fallback. Lazily evaluated once while this Home VM is alive.
+     */
+    val featuredRelease: StateFlow<HomeFeaturedRelease?> =
+        flow { emit(featuredReleaseLookup.find()) }
+            .flowOn(Dispatchers.IO)
+            .stateIn(viewModelScope, SharingStarted.Lazily, null)
 
     /** The real, shared music transport is the Home's listening anchor. */
     val listeningState: StateFlow<com.stash.core.model.PlayerState> = playerRepository.playerState
