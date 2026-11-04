@@ -194,6 +194,7 @@ fun HomeScreen(
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val rediscoveryTracks by viewModel.rediscoveryTracks.collectAsStateWithLifecycle()
+    val featuredRelease by viewModel.featuredRelease.collectAsStateWithLifecycle()
     val quickMixes = homeQuickMixes(uiState)
     var selectedMediaTab by rememberSaveable { mutableIntStateOf(0) }
     val podcastController = com.stash.feature.home.podcasts.LocalPodcastViewModel.current
@@ -246,6 +247,24 @@ fun HomeScreen(
             NonstopMediaFilters(selectedMediaTab, { selectedMediaTab = it })
         }
         if (selectedMediaTab == 0) {
+        // Editorial introduction scrolls with the music feed, never sticks to the top.
+        item(key = "home_v3_editorial_intro") {
+            Column(Modifier.fillMaxWidth().padding(
+                start = VisualDesign.Gutter, end = VisualDesign.Gutter, top = 18.dp,
+            )) {
+                Text(
+                    "SUA DESCOBERTA",
+                    style = VisualDesign.Caption,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "O que toca agora",
+                    style = VisualDesign.HeroTitle,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+            }
+        }
         // ── Discover hero pager (Daily Discover + your Stash mixes) ──
         // Only existing discovery data creates pages. Open/play/create and
         // long-press context actions stay wired to their Android callbacks.
@@ -333,15 +352,30 @@ fun HomeScreen(
         }
 
 
-        // Shortcuts and local-listening discovery supplement the existing
-        // editorial pager; never duplicate or replace its Daily Discover card.
-        item(key = "home_discovery_shortcuts") {
-            Spacer(Modifier.height(16.dp))
-            SonoraDiscoveryShortcuts(
-                onExplore = onNavigateToExplore,
-                onRadio = onNavigateToRadio,
-                onSearch = onNavigateToSearch,
-            )
+        // Source priority: Spotify recent release selection → YouTube Music
+        // fallback. No Qobuz release is promoted as a personal highlight.
+        if (HomeSection.NEW_RELEASES in uiState.sections) {
+            featuredRelease?.let { featured ->
+                item(key = "home_v3_featured_release") {
+                    Column(Modifier.fillMaxWidth().padding(top = 22.dp)) {
+                        SonoraSectionTitle(
+                            if (featured.isFollowedArtist) "De quem você segue"
+                            else "Dos artistas que você ouve",
+                        )
+                        SonoraFeaturedRelease(
+                            label = when (featured.source) {
+                                HomeFeaturedRelease.Source.SPOTIFY -> "LANÇAMENTO RECENTE"
+                                HomeFeaturedRelease.Source.YOUTUBE_MUSIC -> "ÁLBUM DO ARTISTA"
+                            },
+                            title = featured.album.title,
+                            artist = featured.album.artist,
+                            artwork = featured.album.thumbnailUrl,
+                            onOpen = { onNavigateToAlbum(featured.album) },
+                            modifier = Modifier.padding(horizontal = VisualDesign.Gutter),
+                        )
+                    }
+                }
+            }
         }
         if (quickMixes.isNotEmpty()) {
             item(key = "home_quick_mixes") {

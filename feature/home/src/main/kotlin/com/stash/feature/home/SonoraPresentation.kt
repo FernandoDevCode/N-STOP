@@ -214,6 +214,50 @@ internal fun SonoraHeroCard(label: String, title: String, subtitle: String, artU
     }
 }
 
+
+/**
+ * Home V3 featured release: a real catalog album, not a fabricated personalized pick.
+ * The only call to action opens the album; playback is controlled by the album screen.
+ */
+@Composable
+internal fun SonoraFeaturedRelease(
+    label: String,
+    title: String,
+    artist: String,
+    artwork: String?,
+    onOpen: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(VisualDesign.Radius.Hero)
+    Box(
+        modifier.fillMaxWidth().heightIn(min = 240.dp)
+            .clip(shape).background(VisualDesign.Surface)
+            .clickable(onClick = onOpen),
+    ) {
+        SonoraArtwork(artwork, Modifier.matchParentSize())
+        Box(
+            Modifier.matchParentSize().background(
+                Brush.verticalGradient(
+                    listOf(Color(0x10101115), Color(0x99101115), Color(0xF5101115)),
+                ),
+            ),
+        )
+        Column(
+            Modifier.fillMaxWidth().align(Alignment.BottomStart)
+                .padding(VisualDesign.Size.HeroPadding),
+        ) {
+            Text(label, style = VisualDesign.Caption, color = Color(0xFFD4D8E0))
+            Spacer(Modifier.height(12.dp))
+            Text(title, style = VisualDesign.HeroTitle, color = Color.White, maxLines = 2,
+                overflow = TextOverflow.Ellipsis)
+            Text(artist, Modifier.padding(top = 4.dp), style = VisualDesign.Body,
+                color = Color(0xFFD4D8E0), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text("Ver álbum", Modifier.padding(top = 12.dp),
+                style = VisualDesign.Body, color = Color.White)
+        }
+    }
+}
+
 /** Reuses the image pipeline for real covers; missing artwork stays neutral. */
 @Composable
 private fun SonoraArtwork(url: String?, modifier: Modifier = Modifier) {

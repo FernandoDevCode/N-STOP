@@ -41,6 +41,7 @@ dependencies {
     implementation(libs.compose.material.icons.extended)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
+    implementation(libs.okhttp)
     // media3-exoplayer transitively exposes `androidx.media3.common.PlaybackException`
     // which `SearchViewModel.onPreviewError` accepts as a parameter.
     implementation(libs.media3.exoplayer)

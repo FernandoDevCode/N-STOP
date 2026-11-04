@@ -462,6 +462,7 @@ class HomeViewModelTest {
             streamingPreference = streamingPreference,
             metadataBackfillState = metadataBackfill,
             homeDiscoveryRepository = discovery,
+            featuredReleaseLookup = mock(),
             // Discovery on + every section visible = rows fetch, matching the
             // pre-existing test expectations.
             homeDiscoveryPreference = mock {

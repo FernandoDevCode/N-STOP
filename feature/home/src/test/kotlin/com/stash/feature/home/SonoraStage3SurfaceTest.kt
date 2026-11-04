@@ -62,6 +62,7 @@ class SonoraStage3SurfaceTest(private val width: Int, private val height: Int, p
             on { uiState } doReturn state
             on { heroMinimized } doReturn MutableStateFlow(false)
             on { rediscoveryTracks } doReturn MutableStateFlow<List<Track>>(emptyList())
+            on { featuredRelease } doReturn MutableStateFlow<HomeFeaturedRelease?>(null)
             on { streamingEnabled } doReturn MutableStateFlow(false)
             on { showStreamingDisclosure } doReturn MutableSharedFlow<Unit>()
             on { userMessages } doReturn MutableSharedFlow<String>()
