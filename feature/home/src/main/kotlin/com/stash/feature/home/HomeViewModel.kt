@@ -105,7 +105,7 @@ class HomeViewModel @Inject constructor(
 
     /** Three honest weekly recommendation lists, built once per VM session. */
     val weeklyDiscovery: StateFlow<SonoraWeeklyDiscovery> =
-        flow { emit(weeklyDiscoveryEngine.generate()) }
+        flow { emit(weeklyDiscoveryEngine.generate { emit(it) }) }
             .flowOn(Dispatchers.IO)
             .stateIn(viewModelScope, SharingStarted.Lazily, SonoraWeeklyDiscovery())
 
