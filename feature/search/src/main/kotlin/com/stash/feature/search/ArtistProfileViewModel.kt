@@ -69,6 +69,7 @@ class ArtistProfileViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val artistCache: ArtistCache,
     private val spotifyArtistLookup: SpotifyArtistPhotoLookup,
+    private val deezerArtistPhotoLookup: DeezerArtistPhotoLookup,
     private val artistHeroPhotoStore: ArtistHeroPhotoStore,
     private val appleAlbumMetadata: AppleMusicAlbumMetadataLookup,
     private val albumCache: AlbumCache,
@@ -88,6 +89,7 @@ class ArtistProfileViewModel @Inject constructor(
     private val initialFocusAlbum: String? = savedStateHandle["focusAlbum"]
     private var customPhotoUrl: String? = artistHeroPhotoStore.get(artistId)
     private var failedCustomPhotoUrl: String? = null
+    private var deezerPhoto: String? = null
     private var spotifyPhoto: SpotifyArtistPhoto? = null
     private var nativeAvatarUrl: String? = initialAvatar
     private var photoJob: Job? = null
@@ -164,11 +166,13 @@ class ArtistProfileViewModel @Inject constructor(
 
     /** The user's manual choice wins over Spotify, including late asynchronous responses. */
     private fun chosenHeroPhoto(): String? =
-        customPhotoUrl?.takeUnless { it == failedCustomPhotoUrl } ?: spotifyPhoto?.imageUrl ?: nativeAvatarUrl
+        customPhotoUrl?.takeUnless { it == failedCustomPhotoUrl }
+            ?: deezerPhoto ?: spotifyPhoto?.imageUrl ?: nativeAvatarUrl
 
     private fun updateHeroPhoto() {
         _uiState.update { state ->
-            val spotifyActive = (customPhotoUrl == null || customPhotoUrl == failedCustomPhotoUrl) && spotifyPhoto != null
+            val spotifyActive = (customPhotoUrl == null || customPhotoUrl == failedCustomPhotoUrl) &&
+                deezerPhoto == null && spotifyPhoto != null
             state.copy(hero = state.hero.copy(
                 avatarUrl = chosenHeroPhoto(),
                 artworkKind = ArtistIdentityKind.PHOTO,
@@ -181,8 +185,13 @@ class ArtistProfileViewModel @Inject constructor(
         if (name.isBlank() || photoJob != null ||
             (customPhotoUrl != null && customPhotoUrl != failedCustomPhotoUrl)) return
         photoJob = viewModelScope.launch {
-            spotifyPhoto = spotifyArtistLookup.find(name)
+            deezerPhoto = deezerArtistPhotoLookup.find(name)
             if (customPhotoUrl == null) updateHeroPhoto()
+            // Retain Spotify as an image fallback when Deezer has no exact match.
+            if (deezerPhoto == null) {
+                spotifyPhoto = spotifyArtistLookup.find(name)
+                if (customPhotoUrl == null) updateHeroPhoto()
+            }
         }
     }
 
@@ -198,10 +207,26 @@ class ArtistProfileViewModel @Inject constructor(
                 _userMessages.tryEmit("Imagem indisponível no momento. Mostrando foto padrão.")
                 if (spotifyPhoto == null) maybeLoadPhoto(_uiState.value.hero.name)
             }
+            deezerPhoto == url -> {
+                deezerPhoto = null
+                updateHeroPhoto()
+                if (spotifyPhoto == null) {
+                    photoJob = null
+                    maybeLoadPhotoFallbackFromSpotify(_uiState.value.hero.name)
+                }
+            }
             spotifyPhoto?.imageUrl == url -> {
                 spotifyPhoto = null
                 updateHeroPhoto()
             }
+        }
+    }
+
+    private fun maybeLoadPhotoFallbackFromSpotify(name: String) {
+        if (name.isBlank() || photoJob != null) return
+        photoJob = viewModelScope.launch {
+            spotifyPhoto = spotifyArtistLookup.find(name)
+            updateHeroPhoto()
         }
     }
 
@@ -235,7 +260,7 @@ class ArtistProfileViewModel @Inject constructor(
         customPhotoUrl = null
         failedCustomPhotoUrl = null
         updateHeroPhoto()
-        if (spotifyPhoto == null) {
+        if (deezerPhoto == null && spotifyPhoto == null) {
             photoJob = null
             maybeLoadPhoto(_uiState.value.hero.name)
         }
