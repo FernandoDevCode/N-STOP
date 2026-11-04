@@ -31,6 +31,7 @@ dependencies {
     // Qobuz discovery rows: AlbumSummary/PlaylistSummary + AlbumSource for the
     // Home discovery feed (HomeDiscoveryRepository results + album/playlist taps).
     implementation(project(":data:ytmusic"))
+    implementation(project(":data:spotify"))
     implementation(libs.compose.material.icons.extended)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
