@@ -100,9 +100,11 @@ class HomeViewModel @Inject constructor(
     /** The real, shared music transport is the Home's listening anchor. */
     val listeningState: StateFlow<com.stash.core.model.PlayerState> = playerRepository.playerState
 
-    /** Verified, dated releases only. An empty feed never creates a fake rail. */
+    /** Dated releases only; respect the Home's global Qobuz discovery opt-out. */
     @OptIn(ExperimentalCoroutinesApi::class)
-    val followedReleases: StateFlow<List<AlbumSummary>> = followedArtistsStore.artists
+    val followedReleases: StateFlow<List<AlbumSummary>> = combine(
+        followedArtistsStore.artists, homeDiscoveryPreference.enabled,
+    ) { artists, enabled -> if (enabled) artists else emptyList() }
         .flatMapLatest { artists ->
             flow { emit(if (artists.isEmpty()) emptyList() else followedReleasesRepository.recentReleases(artists)) }
         }
