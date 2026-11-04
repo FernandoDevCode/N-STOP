@@ -13,6 +13,7 @@ import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.data.ytmusic.model.SearchResultSection
 import com.stash.data.ytmusic.model.TopResultItem
 import com.stash.data.ytmusic.model.TrackSummary
+import java.security.MessageDigest
 import java.time.LocalDate
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
@@ -108,9 +109,10 @@ class SonoraWeeklyDiscoveryEngine @Inject constructor(
     private val cache: SonoraWeeklyDiscoveryCache,
 ) {
     suspend fun generate(onPartial: suspend (SonoraWeeklyDiscovery) -> Unit = {}): SonoraWeeklyDiscovery {
-        cache.read()?.let { return it }
         val tracks = attempt { music.getAllTracks().first() }.orEmpty()
         if (tracks.isEmpty()) return SonoraWeeklyDiscovery()
+        val libraryFingerprint = fingerprint(tracks)
+        cache.read(libraryFingerprint)?.let { return it }
         val last30 = System.currentTimeMillis() - 30L * 24 * 60 * 60 * 1000
         val recentPlays = attempt { events.getPlayCountsSince(last30) }.orEmpty()
             .associate { it.trackId to it.plays }
@@ -162,7 +164,7 @@ class SonoraWeeklyDiscoveryEngine @Inject constructor(
             forgotten = forgotten,
             currentTag = taste.currentTags.firstOrNull(),
             forgottenTag = taste.forgottenTags.firstOrNull(),
-        ).also(cache::write)
+        ).also { cache.write(it, libraryFingerprint) }
     }
 
     /**
@@ -256,6 +258,19 @@ class SonoraWeeklyDiscoveryEngine @Inject constructor(
             artistCounts[artistKey] = (artistCounts[artistKey] ?: 0) + 1
         }
         return chosen
+    }
+
+    /** Stable across app restarts; changes with the synchronized library identity. */
+    private fun fingerprint(tracks: List<Track>): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        tracks.sortedBy { it.id }.forEach {
+            digest.update(("${it.id}|${it.artist}|${it.title}|${it.source}|" +
+                "${it.spotifyUri.orEmpty()}|${it.youtubeId.orEmpty()}\\n")
+                .toByteArray(Charsets.UTF_8))
+        }
+        return digest.digest().joinToString("") {
+            (it.toInt() and 0xff).toString(16).padStart(2, '0')
+        }
     }
 
     private fun same(a: String, b: String): Boolean = a.trim().equals(b.trim(), ignoreCase = true)
