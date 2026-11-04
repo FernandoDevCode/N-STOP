@@ -107,7 +107,10 @@ class SonoraWeeklyDiscoveryEngine @Inject constructor(
     private val lastfm: LastFmApiClient,
     private val youtube: YTMusicApiClient,
     private val cache: SonoraWeeklyDiscoveryCache,
+    private val feedback: SonoraDiscoveryFeedbackStore,
 ) {
+    fun reject(videoId: String) = feedback.reject(videoId)
+
     suspend fun generate(onPartial: suspend (SonoraWeeklyDiscovery) -> Unit = {}): SonoraWeeklyDiscovery {
         val tracks = attempt { music.getAllTracks().first() }.orEmpty()
         if (tracks.isEmpty()) return SonoraWeeklyDiscovery()
@@ -249,8 +252,10 @@ class SonoraWeeklyDiscoveryEngine @Inject constructor(
                         else -> emptyList()
                     }
                 }
+            val rejected = feedback.rejectedVideoIds()
             val verified = songs.firstOrNull {
-                it.videoId.isNotBlank() && same(it.artist, candidate.artist) &&
+                it.videoId.isNotBlank() && it.videoId !in rejected &&
+                    same(it.artist, candidate.artist) &&
                     same(it.title, candidate.title) && !it.thumbnailUrl.isNullOrBlank()
             } ?: continue
             chosen += verified
