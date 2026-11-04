@@ -382,12 +382,6 @@ fun HomeScreen(
                 SonoraFollowedReleasesRow(releases = followedReleases, onOpen = onNavigateToAlbum)
             }
         }
-        if (quickMixes.isNotEmpty()) {
-            item(key = "home_quick_mixes") {
-                Spacer(Modifier.height(18.dp))
-                SonoraQuickMixRow(mixes = quickMixes, onMixClick = { openMix(it.id) })
-            }
-        }
         if (rediscoveryTracks.isNotEmpty()) {
             item(key = "home_rediscovery_artists") {
                 Spacer(Modifier.height(18.dp))
@@ -395,6 +389,12 @@ fun HomeScreen(
                     tracks = rediscoveryTracks,
                     onArtistClick = onNavigateToArtist,
                 )
+            }
+        }
+        if (quickMixes.isNotEmpty()) {
+            item(key = "home_quick_mixes") {
+                Spacer(Modifier.height(18.dp))
+                SonoraQuickMixRow(mixes = quickMixes, onMixClick = { openMix(it.id) })
             }
         }
 
