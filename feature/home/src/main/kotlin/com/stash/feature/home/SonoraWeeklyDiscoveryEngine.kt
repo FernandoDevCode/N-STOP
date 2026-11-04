@@ -105,8 +105,10 @@ class SonoraWeeklyDiscoveryEngine @Inject constructor(
     private val spotify: SpotifyApiClient,
     private val lastfm: LastFmApiClient,
     private val youtube: YTMusicApiClient,
+    private val cache: SonoraWeeklyDiscoveryCache,
 ) {
     suspend fun generate(): SonoraWeeklyDiscovery {
+        cache.read()?.let { return it }
         val tracks = attempt { music.getAllTracks().first() }.orEmpty()
         if (tracks.isEmpty()) return SonoraWeeklyDiscovery()
         val last30 = System.currentTimeMillis() - 30L * 24 * 60 * 60 * 1000
@@ -153,7 +155,7 @@ class SonoraWeeklyDiscoveryEngine @Inject constructor(
             forgotten = forgotten,
             currentTag = taste.currentTags.firstOrNull(),
             forgottenTag = taste.forgottenTags.firstOrNull(),
-        )
+        ).also(cache::write)
     }
 
     private suspend fun discover(tags: List<String>, used: MutableSet<String>): List<TrackSummary> {
