@@ -33,11 +33,13 @@ class SonoraHomeScreenTest {
     private val rediscovery = MutableStateFlow<List<com.stash.core.model.Track>>(emptyList())
     private val state = MutableStateFlow(HomeUiState(isLoading = false))
     private val minimized = MutableStateFlow(false)
+    private val weekly = MutableStateFlow(SonoraWeeklyDiscovery())
     private val vm = mock<HomeViewModel> {
         on { uiState } doReturn state
         on { heroMinimized } doReturn minimized
         on { rediscoveryTracks } doReturn rediscovery
         on { featuredRelease } doReturn MutableStateFlow<HomeFeaturedRelease?>(null)
+        on { weeklyDiscovery } doReturn weekly
         on { streamingEnabled } doReturn MutableStateFlow(false)
         on { showStreamingDisclosure } doReturn MutableSharedFlow<Unit>()
         on { userMessages } doReturn MutableSharedFlow<String>()
@@ -59,31 +61,94 @@ class SonoraHomeScreenTest {
         compose.mainClock.advanceTimeBy(64)
     }
 
-    @Test fun historyCreatesRealEditorialLeadWhenRemoteReleaseIsUnavailable() {
+    @Test fun oldListeningHistoryNeverPretendsToBeDiscovery() {
         state.value = HomeUiState(isLoading = false)
         rediscovery.value = listOf(com.stash.core.model.Track(
-            id = 19L, title = "Song from library", artist = "Artist from history",
-            playCount = 5, albumArtUrl = "https://example.com/cover.jpg",
+            id = 19L, title = "Known song", artist = "Known artist", playCount = 5,
         ))
         render()
-        compose.onNodeWithText("DO SEU HISTÓRICO").assertIsDisplayed()
-        compose.onAllNodesWithText("Artist from history").onFirst().assertExists()
-        compose.onNodeWithText("Ver artista").performClick()
-        compose.runOnIdle { check(artistOpened == "Artist from history") }
-        compose.onNodeWithText("O que toca agora").assertDoesNotExist()
-        compose.onNodeWithText("Personalize seu início").assertDoesNotExist()
-        rediscovery.value = emptyList()
+        compose.onNodeWithText("DO SEU HISTÓRICO").assertDoesNotExist()
+        compose.onNodeWithText("Known artist").assertExists()
     }
 
-    @Test fun editorialArtistIsNotDuplicatedInRediscoveryRail() {
-        rediscovery.value = listOf(
-            com.stash.core.model.Track(id = 1L, title = "Song A", artist = "Featured Artist", playCount = 20),
-            com.stash.core.model.Track(id = 2L, title = "Song B", artist = "Another Artist", playCount = 10),
+    @Test fun weeklyHeroRendersWithoutHistoryBanner() {
+        weekly.value = SonoraWeeklyDiscovery(
+            releases = listOf(AlbumSummary("release", "Actual release", "New Artist", null, "2026")),
+            current = listOf(com.stash.data.ytmusic.model.TrackSummary(
+                "video1", "New tune", "Current Artist", null, 180.0, null,
+            )),
+            forgotten = listOf(com.stash.data.ytmusic.model.TrackSummary(
+                "video2", "Jazz find", "Jazz Artist", null, 180.0, null,
+            )),
         )
+        state.value = HomeUiState(isLoading = false)
         render()
-        compose.onNodeWithText("DO SEU HISTÓRICO").assertIsDisplayed()
-        compose.onAllNodesWithText("Featured Artist").assertCountEquals(1)
-        compose.onNodeWithText("Another Artist").assertExists()
+        compose.onNodeWithText("LANÇAMENTO PARA VOCÊ").assertIsDisplayed()
+        compose.onNodeWithText("DO SEU HISTÓRICO").assertDoesNotExist()
+        // Do not scan and scroll through the full Home composition in a single
+        // Robolectric test: that exhausts the JVM heap during semantics traversal.
+        // The individual rail composables are verified by focused tests below.
+    }
+
+    @Test fun weeklyAlbumRailRendersRealReleaseAndRoutesTap() {
+        var selected = ""
+        compose.setContent {
+            VisualTheme {
+                SonoraWeeklyAlbumRail(
+                    albums = listOf(AlbumSummary("album1", "New real album", "Artist One",
+                        null, "2026")),
+                    onAlbum = { selected = it.id },
+                )
+            }
+        }
+        compose.onNodeWithText("Novidades para você").assertExists()
+        compose.onNodeWithContentDescription("New real album, Artist One").performClick()
+        compose.runOnIdle { check(selected == "album1") }
+    }
+
+    @Test fun weeklySongRailsRenderSeparateRecommendationsAndPlay() {
+        var selected = ""
+        compose.setContent {
+            VisualTheme {
+                Column {
+                    SonoraWeeklySongRail(
+                        title = "Na sua frequência",
+                        tracks = listOf(com.stash.data.ytmusic.model.TrackSummary(
+                            "current1", "Current track", "Current Artist", null, 180.0, null,
+                        )),
+                        onSong = { selected = it.videoId },
+                        onReject = {},
+                    )
+                    SonoraWeeklySongRail(
+                        title = "Fora do radar",
+                        tracks = listOf(com.stash.data.ytmusic.model.TrackSummary(
+                            "forgotten1", "Hidden jazz track", "Jazz Artist", null, 180.0, null,
+                        )),
+                        onSong = { selected = it.videoId },
+                        onReject = {},
+                    )
+                }
+            }
+        }
+        compose.onNodeWithText("Na sua frequência").assertExists()
+        compose.onNodeWithText("Fora do radar").assertExists()
+        compose.onNodeWithContentDescription("Hidden jazz track, Jazz Artist").performClick()
+        compose.runOnIdle { check(selected == "forgotten1") }
+    }
+
+    @Test fun existingDailyDiscoverRemainsPlayableWithWeeklyHero() {
+        state.value = HomeUiState(
+            isLoading = false,
+            hero = DiscoverHeroState("Daily fixture", "24 faixas", null, 77L),
+        )
+        weekly.value = SonoraWeeklyDiscovery(releases = listOf(
+            AlbumSummary("r1", "Real release", "Real Artist", null, "2026"),
+        ))
+        render()
+        compose.onNodeWithTag("home").performScrollToNode(hasText("Sua descoberta diária"))
+        compose.onNodeWithText("Sua descoberta diária").assertExists()
+        compose.onNodeWithText("Ouvir mix").performClick()
+        verify(vm).playHero()
     }
 
     @Test fun emptyHomeUsesRealSetupAndNoDiscoveryPlaceholder() {

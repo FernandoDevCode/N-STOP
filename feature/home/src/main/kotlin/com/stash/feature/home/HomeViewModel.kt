@@ -88,6 +88,7 @@ class HomeViewModel @Inject constructor(
     private val metadataBackfillState: MetadataBackfillState,
     private val homeDiscoveryRepository: HomeDiscoveryRepository,
     private val featuredReleaseLookup: HomeFeaturedReleaseLookup,
+    private val weeklyDiscoveryEngine: SonoraWeeklyDiscoveryEngine,
     private val losslessSourceHealth: com.stash.core.media.streaming.LosslessSourceHealth,
     private val losslessAvailability: com.stash.data.download.lossless.LosslessAvailability,
     @ApplicationContext private val context: Context,
@@ -101,6 +102,43 @@ class HomeViewModel @Inject constructor(
         flow { emit(featuredReleaseLookup.find()) }
             .flowOn(Dispatchers.IO)
             .stateIn(viewModelScope, SharingStarted.Lazily, null)
+
+    /** Weekly catalog snapshots plus immediate local rejection feedback. */
+    private val hiddenWeeklyVideoIds = MutableStateFlow<Set<String>>(emptySet())
+    private val generatedWeeklyDiscovery: StateFlow<SonoraWeeklyDiscovery> =
+        flow { emit(weeklyDiscoveryEngine.generate { emit(it) }) }
+            .flowOn(Dispatchers.IO)
+            .stateIn(viewModelScope, SharingStarted.Lazily, SonoraWeeklyDiscovery())
+
+    val weeklyDiscovery: StateFlow<SonoraWeeklyDiscovery> =
+        combine(generatedWeeklyDiscovery, hiddenWeeklyVideoIds) { feed, hidden ->
+            feed.copy(
+                current = feed.current.filterNot { it.videoId in hidden },
+                forgotten = feed.forgotten.filterNot { it.videoId in hidden },
+            )
+        }.stateIn(viewModelScope, SharingStarted.Lazily, SonoraWeeklyDiscovery())
+
+    fun rejectWeeklySong(track: com.stash.data.ytmusic.model.TrackSummary) {
+        if (track.videoId.isBlank()) return
+        weeklyDiscoveryEngine.reject(track.videoId)
+        hiddenWeeklyVideoIds.value = hiddenWeeklyVideoIds.value + track.videoId
+    }
+
+    /** Plays a verified YouTube Music recommendation through the shared player. */
+    fun playWeeklyDiscovery(track: com.stash.data.ytmusic.model.TrackSummary) {
+        if (track.videoId.isBlank()) return
+        viewModelScope.launch {
+            playerRepository.setQueue(listOf(com.stash.core.model.Track(
+                title = track.title,
+                artist = track.artist,
+                album = track.album.orEmpty(),
+                durationMs = (track.durationSeconds * 1000).toLong(),
+                source = com.stash.core.model.MusicSource.YOUTUBE,
+                youtubeId = track.videoId,
+                albumArtUrl = track.thumbnailUrl,
+            )))
+        }
+    }
 
     /** The real, shared music transport is the Home's listening anchor. */
     val listeningState: StateFlow<com.stash.core.model.PlayerState> = playerRepository.playerState

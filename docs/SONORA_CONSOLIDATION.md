@@ -44,3 +44,14 @@
 2. Para checar implementação de uma funcionalidade, inspecionar **código de `nonstop`**, não apenas arquivos de releases, prints, tags ou PRs abertos.
 3. Verificar testes e revisar resultados antes de declarar entrega. Testes de interface não substituem validação no Redmi.
 4. Não apagar tags/releases/branches históricas apenas por limpeza visual; fechar PRs obsoletos com registro, mantendo rastreabilidade.
+
+## Proposta não integrada — descoberta semanal (PR #60, 2026-11-04)
+- **Branch de trabalho:** `feat/sonora-weekly-discovery-engine-20261104`, PR para `nonstop`. Não considerar esta seção prova de integração.
+- Três conjuntos: lançamentos Spotify verificados e resolvidos via YouTube Music; sugestões da fase recente; sugestões de estilos presentes historicamente, mas subexpostos nos últimos 30 dias.
+- Taste scorer usa biblioteca sincronizada de todas as fontes, `track_tags` persistidos e `listening_events` locais (sem confundir música salva com reprodução). Se faltarem tags, infere uma amostra limitada dos artistas via Last.fm.
+- Candidatos de faixa vêm do Last.fm por tag e são confirmados contra identidade de música do YouTube Music; excluir faixas já na biblioteca, duplicatas entre seções e rejeições explícitas. No máximo dez resultados por seção, dois por artista.
+- Home contém até três outdoors paginados e os trilhos equivalentes; Daily Discover mantém ações em cartão compacto. Feedback `Não foi pra mim` pode ser aplicado por gesto de pressão longa e persiste localmente.
+- Cache privado por semana inclui somente metadados de catálogo e fingerprint da biblioteca; não guarda histórico de reproduções.
+- **Qualidade:** ainda não validada com músicas reais do usuário; o peso artístico continua uma aproximação baseada em sinais públicos, sem modelo treinado de avaliação musical.
+- **CI:** executar compilação, suítes de testes e revisão do workflow mais recente antes de qualquer merge. Quando este registro foi criado, os jobs estavam na fila (não aprovados). O APK só pode sair do SHA integrado na `nonstop`.
+- **Teste no aparelho:** validar reprodução das músicas sugeridas, tempo de preenchimento no primeiro uso, variedade de gêneros e disponibilidade de dados de Spotify/Last.fm/YouTube Music antes de declarar a experiência concluída.

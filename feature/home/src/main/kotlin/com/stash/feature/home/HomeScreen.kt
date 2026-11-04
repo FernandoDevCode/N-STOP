@@ -194,7 +194,7 @@ fun HomeScreen(
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val rediscoveryTracks by viewModel.rediscoveryTracks.collectAsStateWithLifecycle()
-    val featuredRelease by viewModel.featuredRelease.collectAsStateWithLifecycle()
+    val weeklyDiscovery by viewModel.weeklyDiscovery.collectAsStateWithLifecycle()
     val quickMixes = homeQuickMixes(uiState)
     var selectedMediaTab by rememberSaveable { mutableIntStateOf(0) }
     val podcastController = com.stash.feature.home.podcasts.LocalPodcastViewModel.current
@@ -247,64 +247,19 @@ fun HomeScreen(
             NonstopMediaFilters(selectedMediaTab, { selectedMediaTab = it })
         }
         if (selectedMediaTab == 0) {
-        // A real, image-backed editorial lead. Nothing reserves an empty hero.
-        // Spotify/YouTube releases are the first choice; when neither can
-        // supply a release, listening history or an existing mix still creates
-        // a useful personalized opening without pretending to be a new release.
-        featuredRelease?.let { featured ->
-            item(key = "home_v3_editorial_lead") {
-                SonoraFeaturedRelease(
-                    label = when (featured.source) {
-                        HomeFeaturedRelease.Source.SPOTIFY -> "LANÇAMENTO RECENTE"
-                        HomeFeaturedRelease.Source.YOUTUBE_MUSIC -> "ÁLBUM PARA DESCOBRIR"
-                        HomeFeaturedRelease.Source.DISCOVERY_YOUTUBE_MUSIC -> "DESCUBRA UM ARTISTA"
-                    },
-                    title = featured.album.title,
-                    artist = featured.album.artist,
-                    artwork = featured.album.thumbnailUrl,
-                    onOpen = { onNavigateToAlbum(featured.album) },
-                    modifier = Modifier.padding(horizontal = VisualDesign.Gutter)
-                        .padding(top = 16.dp),
-                )
-            }
-        }
-        val showHistoryLead = featuredRelease == null &&
-            !uiState.hasDiscoverySpotlight(heroMinimized) && rediscoveryTracks.isNotEmpty()
-        if (showHistoryLead) {
-            item(key = "home_v3_editorial_history") {
-                val track = rediscoveryTracks.first()
-                SonoraFeaturedRelease(
-                    label = "DO SEU HISTÓRICO",
-                    title = track.artist,
-                    artist = "Volte a ouvir · ${track.title}",
-                    artwork = track.albumArtPath ?: track.albumArtUrl,
-                    actionLabel = "Ver artista",
-                    onOpen = { onNavigateToArtist(track.artist) },
-                    modifier = Modifier.padding(horizontal = VisualDesign.Gutter)
-                        .padding(top = 16.dp),
-                )
-            }
-        }
-        if (featuredRelease == null && !showHistoryLead &&
-            !uiState.hasDiscoverySpotlight(heroMinimized) && quickMixes.isNotEmpty()) {
-            item(key = "home_v3_editorial_mix") {
-                val mix = quickMixes.first()
-                SonoraFeaturedRelease(
-                    label = "SUA SELEÇÃO",
-                    title = mix.title,
-                    artist = "Um mix da sua biblioteca",
-                    artwork = mix.artUrl,
-                    actionLabel = "Abrir mix",
-                    onOpen = { openMix(mix.id) },
-                    modifier = Modifier.padding(horizontal = VisualDesign.Gutter)
-                        .padding(top = 16.dp),
-                )
-            }
+        val weeklyActive = weeklyDiscovery.releases.isNotEmpty() ||
+            weeklyDiscovery.current.isNotEmpty() || weeklyDiscovery.forgotten.isNotEmpty()
+        if (weeklyActive) item(key = "home_weekly_outdoors") {
+            SonoraWeeklyHero(
+                feed = weeklyDiscovery,
+                onAlbum = onNavigateToAlbum,
+                onSong = viewModel::playWeeklyDiscovery,
+            )
         }
         // ── Discover hero pager (Daily Discover + your Stash mixes) ──
         // Only existing discovery data creates pages. Open/play/create and
         // long-press context actions stay wired to their Android callbacks.
-        if (uiState.hasDiscoverySpotlight(heroMinimized)) item(key = "discovery_spotlight") {
+        if (!weeklyActive && uiState.hasDiscoverySpotlight(heroMinimized)) item(key = "discovery_spotlight") {
             Spacer(Modifier.height(20.dp))
             // Minimized (long-press → "Minimize for now") drops the hero page
             // for the session; the mix pages keep the pager alive. Distinct
@@ -388,6 +343,51 @@ fun HomeScreen(
         }
 
 
+        // The three weekly shelves use the exact same verified content as
+        // the carousel. Empty feeds are hidden rather than filled with mock data.
+        if (weeklyDiscovery.releases.isNotEmpty()) item(key = "weekly_releases") {
+            SonoraWeeklyAlbumRail(weeklyDiscovery.releases, onNavigateToAlbum)
+        }
+        if (weeklyDiscovery.current.isNotEmpty()) item(key = "weekly_current") {
+            SonoraWeeklySongRail("Na sua frequência", weeklyDiscovery.current,
+                viewModel::playWeeklyDiscovery, viewModel::rejectWeeklySong)
+        }
+        if (weeklyDiscovery.forgotten.isNotEmpty()) item(key = "weekly_forgotten") {
+            SonoraWeeklySongRail("Fora do radar", weeklyDiscovery.forgotten,
+                viewModel::playWeeklyDiscovery, viewModel::rejectWeeklySong)
+        }
+        // Retain Daily Discover actions without a second competing full-size
+        // billboard once the weekly outdoor has content.
+        if (weeklyActive && uiState.hero != null && !heroMinimized) {
+            item(key = "home_daily_discover_compact") {
+                val daily = requireNotNull(uiState.hero)
+                Column(Modifier.fillMaxWidth().padding(top = 24.dp)) {
+                    SonoraSectionTitle("Sua descoberta diária")
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = VisualDesign.Gutter),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        SonoraContentCard(
+                            card = VisualCard("daily-discover", daily.title, daily.subtitle, daily.artUrl),
+                            onClick = { onNavigateToPlaylist(daily.playlistId) },
+                            onLongPress = { heroActionSheet = true },
+                        )
+                        Column {
+                            androidx.compose.material3.Button(onClick = viewModel::playHero) {
+                                Text("Ouvir mix")
+                            }
+                            androidx.compose.material3.TextButton(
+                                onClick = { onNavigateToMixBuilder(null) },
+                            ) {
+                                Text("Criar mix")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if (quickMixes.isNotEmpty()) {
             item(key = "home_quick_mixes") {
                 Spacer(Modifier.height(18.dp))
@@ -396,8 +396,9 @@ fun HomeScreen(
         }
         // Avoid repeating the exact hero artist in the immediately following
         // rediscovery rail; the remaining history retains its real ranking.
-        val editorialArtist = featuredRelease?.album?.artist
-            ?: if (showHistoryLead) rediscoveryTracks.firstOrNull()?.artist else null
+        val editorialArtist = weeklyDiscovery.releases.firstOrNull()?.artist
+            ?: weeklyDiscovery.current.firstOrNull()?.artist
+            ?: weeklyDiscovery.forgotten.firstOrNull()?.artist
         val rediscoveryWithoutHero = rediscoveryTracks.filterNot {
             editorialArtist != null && it.artist.trim().equals(editorialArtist.trim(), ignoreCase = true)
         }
@@ -669,7 +670,7 @@ fun HomeScreen(
                 CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
                 Text(stringResource(R.string.sonora_home_loading), style = VisualDesign.Body)
             }
-        } else if (uiState.showColdStartCard && rediscoveryTracks.isEmpty()) item(key = "home_personalize") {
+        } else if (uiState.showColdStartCard && rediscoveryTracks.isEmpty() && !weeklyActive) item(key = "home_personalize") {
             PersonalizeCard(
                 onConnect = onNavigateToSettings,
                 title = stringResource(R.string.sonora_home_personalize),
