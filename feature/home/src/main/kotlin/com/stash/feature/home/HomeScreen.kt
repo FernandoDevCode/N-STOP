@@ -247,21 +247,56 @@ fun HomeScreen(
             NonstopMediaFilters(selectedMediaTab, { selectedMediaTab = it })
         }
         if (selectedMediaTab == 0) {
-        // Editorial introduction scrolls with the music feed, never sticks to the top.
-        item(key = "home_v3_editorial_intro") {
-            Column(Modifier.fillMaxWidth().padding(
-                start = VisualDesign.Gutter, end = VisualDesign.Gutter, top = 18.dp,
-            )) {
-                Text(
-                    "SUA DESCOBERTA",
-                    style = VisualDesign.Caption,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+        // A real, image-backed editorial lead. Nothing reserves an empty hero.
+        // Spotify/YouTube releases are the first choice; when neither can
+        // supply a release, listening history or an existing mix still creates
+        // a useful personalized opening without pretending to be a new release.
+        featuredRelease?.let { featured ->
+            item(key = "home_v3_editorial_lead") {
+                SonoraFeaturedRelease(
+                    label = when (featured.source) {
+                        HomeFeaturedRelease.Source.SPOTIFY -> "LANÇAMENTO RECENTE"
+                        HomeFeaturedRelease.Source.YOUTUBE_MUSIC -> "ÁLBUM PARA DESCOBRIR"
+                    },
+                    title = featured.album.title,
+                    artist = featured.album.artist,
+                    artwork = featured.album.thumbnailUrl,
+                    onOpen = { onNavigateToAlbum(featured.album) },
+                    modifier = Modifier.padding(horizontal = VisualDesign.Gutter)
+                        .padding(top = 16.dp),
                 )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "O que toca agora",
-                    style = VisualDesign.HeroTitle,
-                    color = MaterialTheme.colorScheme.onBackground,
+            }
+        }
+        val showHistoryLead = featuredRelease == null &&
+            !uiState.hasDiscoverySpotlight(heroMinimized) && rediscoveryTracks.isNotEmpty()
+        if (showHistoryLead) {
+            item(key = "home_v3_editorial_history") {
+                val track = rediscoveryTracks.first()
+                SonoraFeaturedRelease(
+                    label = "DO SEU HISTÓRICO",
+                    title = track.artist,
+                    artist = "Volte a ouvir · ${track.title}",
+                    artwork = track.albumArtPath ?: track.albumArtUrl,
+                    actionLabel = "Ver artista",
+                    onOpen = { onNavigateToArtist(track.artist) },
+                    modifier = Modifier.padding(horizontal = VisualDesign.Gutter)
+                        .padding(top = 16.dp),
+                )
+            }
+        }
+        if (featuredRelease == null && !showHistoryLead &&
+            !uiState.hasDiscoverySpotlight(heroMinimized) && quickMixes.isNotEmpty()) {
+            item(key = "home_v3_editorial_mix") {
+                val mix = quickMixes.first()
+                SonoraFeaturedRelease(
+                    label = "SUA SELEÇÃO",
+                    title = mix.title,
+                    artist = "Um mix da sua biblioteca",
+                    artwork = mix.artUrl,
+                    actionLabel = "Abrir mix",
+                    onOpen = { openMix(mix.id) },
+                    modifier = Modifier.padding(horizontal = VisualDesign.Gutter)
+                        .padding(top = 16.dp),
                 )
             }
         }
@@ -352,31 +387,6 @@ fun HomeScreen(
         }
 
 
-        // Source priority: Spotify recent release selection → YouTube Music
-        // fallback. No Qobuz release is promoted as a personal highlight.
-        if (HomeSection.NEW_RELEASES in uiState.sections) {
-            featuredRelease?.let { featured ->
-                item(key = "home_v3_featured_release") {
-                    Column(Modifier.fillMaxWidth().padding(top = 22.dp)) {
-                        SonoraSectionTitle(
-                            if (featured.isFollowedArtist) "De quem você segue"
-                            else "Dos artistas que você ouve",
-                        )
-                        SonoraFeaturedRelease(
-                            label = when (featured.source) {
-                                HomeFeaturedRelease.Source.SPOTIFY -> "LANÇAMENTO RECENTE"
-                                HomeFeaturedRelease.Source.YOUTUBE_MUSIC -> "ÁLBUM DO ARTISTA"
-                            },
-                            title = featured.album.title,
-                            artist = featured.album.artist,
-                            artwork = featured.album.thumbnailUrl,
-                            onOpen = { onNavigateToAlbum(featured.album) },
-                            modifier = Modifier.padding(horizontal = VisualDesign.Gutter),
-                        )
-                    }
-                }
-            }
-        }
         if (quickMixes.isNotEmpty()) {
             item(key = "home_quick_mixes") {
                 Spacer(Modifier.height(18.dp))
@@ -651,7 +661,7 @@ fun HomeScreen(
                 CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
                 Text(stringResource(R.string.sonora_home_loading), style = VisualDesign.Body)
             }
-        } else if (uiState.showColdStartCard) item(key = "home_personalize") {
+        } else if (uiState.showColdStartCard && rediscoveryTracks.isEmpty()) item(key = "home_personalize") {
             PersonalizeCard(
                 onConnect = onNavigateToSettings,
                 title = stringResource(R.string.sonora_home_personalize),

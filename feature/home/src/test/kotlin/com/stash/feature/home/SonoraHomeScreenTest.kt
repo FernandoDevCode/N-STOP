@@ -29,12 +29,14 @@ class SonoraHomeScreenTest {
     @get:Rule val compose = createComposeRule()
     private var opened = 0L
     private var settings = 0
+    private var artistOpened = ""
+    private val rediscovery = MutableStateFlow<List<com.stash.core.model.Track>>(emptyList())
     private val state = MutableStateFlow(HomeUiState(isLoading = false))
     private val minimized = MutableStateFlow(false)
     private val vm = mock<HomeViewModel> {
         on { uiState } doReturn state
         on { heroMinimized } doReturn minimized
-        on { rediscoveryTracks } doReturn MutableStateFlow<List<com.stash.core.model.Track>>(emptyList())
+        on { rediscoveryTracks } doReturn rediscovery
         on { featuredRelease } doReturn MutableStateFlow<HomeFeaturedRelease?>(null)
         on { streamingEnabled } doReturn MutableStateFlow(false)
         on { showStreamingDisclosure } doReturn MutableSharedFlow<Unit>()
@@ -49,11 +51,28 @@ class SonoraHomeScreenTest {
             VisualTheme {
                 CompositionLocalProvider(LocalBottomChromeInset provides 130.dp) {
                     HomeScreen(modifier = Modifier.fillMaxSize().testTag("home"), viewModel = vm,
-                        onNavigateToPlaylist = { opened = it }, onNavigateToSettings = { settings++ })
+                        onNavigateToPlaylist = { opened = it }, onNavigateToSettings = { settings++ },
+                        onNavigateToArtist = { artistOpened = it })
                 }
             }
         }
         compose.mainClock.advanceTimeBy(64)
+    }
+
+    @Test fun historyCreatesRealEditorialLeadWhenRemoteReleaseIsUnavailable() {
+        state.value = HomeUiState(isLoading = false)
+        rediscovery.value = listOf(com.stash.core.model.Track(
+            id = 19L, title = "Song from library", artist = "Artist from history",
+            playCount = 5, albumArtUrl = "https://example.com/cover.jpg",
+        ))
+        render()
+        compose.onNodeWithText("DO SEU HISTÓRICO").assertIsDisplayed()
+        compose.onAllNodesWithText("Artist from history").onFirst().assertExists()
+        compose.onNodeWithText("Ver artista").performClick()
+        compose.runOnIdle { check(artistOpened == "Artist from history") }
+        compose.onNodeWithText("O que toca agora").assertDoesNotExist()
+        compose.onNodeWithText("Personalize seu início").assertDoesNotExist()
+        rediscovery.value = emptyList()
     }
 
     @Test fun emptyHomeUsesRealSetupAndNoDiscoveryPlaceholder() {
