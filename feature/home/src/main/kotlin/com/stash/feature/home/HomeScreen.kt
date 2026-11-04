@@ -246,6 +246,24 @@ fun HomeScreen(
             NonstopMediaFilters(selectedMediaTab, { selectedMediaTab = it })
         }
         if (selectedMediaTab == 0) {
+        // Editorial introduction scrolls with the music feed, never sticks to the top.
+        item(key = "home_v3_editorial_intro") {
+            Column(Modifier.fillMaxWidth().padding(
+                start = VisualDesign.Gutter, end = VisualDesign.Gutter, top = 18.dp,
+            )) {
+                Text(
+                    "SUA DESCOBERTA",
+                    style = VisualDesign.Caption,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "O que toca agora",
+                    style = VisualDesign.HeroTitle,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+            }
+        }
         // ── Discover hero pager (Daily Discover + your Stash mixes) ──
         // Only existing discovery data creates pages. Open/play/create and
         // long-press context actions stay wired to their Android callbacks.
@@ -333,15 +351,23 @@ fun HomeScreen(
         }
 
 
-        // Shortcuts and local-listening discovery supplement the existing
-        // editorial pager; never duplicate or replace its Daily Discover card.
-        item(key = "home_discovery_shortcuts") {
-            Spacer(Modifier.height(16.dp))
-            SonoraDiscoveryShortcuts(
-                onExplore = onNavigateToExplore,
-                onRadio = onNavigateToRadio,
-                onSearch = onNavigateToSearch,
-            )
+        // Featured catalog release uses actual album data and opens the existing
+        // album route. It is intentionally NOT labeled "followed artists":
+        // the current repository has no reliable followed-artist feed.
+        if (HomeSection.NEW_RELEASES in uiState.sections && uiState.newReleases.isNotEmpty()) {
+            item(key = "home_v3_featured_release") {
+                Column(Modifier.fillMaxWidth().padding(top = 22.dp)) {
+                    SonoraSectionTitle("Novidade para ouvir")
+                    val release = uiState.newReleases.first()
+                    SonoraFeaturedRelease(
+                        title = release.title,
+                        artist = release.artist,
+                        artwork = release.thumbnailUrl,
+                        onOpen = { onNavigateToAlbum(release) },
+                        modifier = Modifier.padding(horizontal = VisualDesign.Gutter),
+                    )
+                }
+            }
         }
         if (quickMixes.isNotEmpty()) {
             item(key = "home_quick_mixes") {
