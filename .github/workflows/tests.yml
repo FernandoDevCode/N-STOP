@@ -100,37 +100,30 @@ jobs:
         working-directory: infra/lastfm-proxy
         run: node --no-warnings --test test/*.test.js
 
-  # Runs EVERY module's unit tests, not just :core:media.
-  #
-  # This job used to execute one module of fifteen — 345 of 1892 tests — so a
-  # break anywhere else (all of :core:data's DAO and sync-worker coverage
-  # included) reached a release unchallenged. It stayed that narrow because the
-  # rest of the suite was red: ~28 known failures nobody wanted to quarantine,
-  # plus a deadlocked :core:media test that hung the job until the 20-minute cap
-  # killed it, on every single push.
-  #
-  # Both are fixed (2026-07-25, e325103b + f03f46ba). The whole repo is green —
-  # 1892 tests, 15 modules — so there is nothing left to quarantine and no
-  # reason for the gate to keep ignoring 82% of it.
-  #
-  # `--continue` so one failing module still reports the others; without it the
-  # first failure masks everything behind it and you fix bugs one CI round-trip
-  # at a time.
+  # Keep the full Android test coverage, but shard independent Gradle tasks.
+  # A single cold runner repeatedly reached the 20-minute safety cap before
+  # Gradle finished the entire repository. Each shard retains that cap and
+  # reports failures independently; none of the 20 modules is skipped.
   unit-tests:
-    name: All module unit tests
+    name: All module unit tests (shard ${{ matrix.shard }})
     if: >-
       github.event_name != 'push' ||
       github.ref == 'refs/heads/master' ||
       contains(github.event.head_commit.message, '[do test]')
     runs-on: ubuntu-latest
-    # Job cap retained. It was added when a hung :core:media squatted a
-    # concurrency slot for the 6h default — 20 pushes in a day froze the whole
-    # account's Actions queue and blocked the v0.9.78 release build
-    # (2026-07-19). The hang is fixed, but the cap is the thing that bounds the
-    # damage if another test ever wedges, so it stays. Full sweep runs in ~3-4
-    # min; 20 leaves generous headroom.
     timeout-minutes: 20
-
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: foundations
+            tasks: ':core:art:testDebugUnitTest :core:common:testDebugUnitTest :core:model:testDebugUnitTest :core:auth:testDebugUnitTest :core:network:testDebugUnitTest :core:ui:testDebugUnitTest'
+          - shard: catalogs
+            tasks: ':data:spotify:testDebugUnitTest :data:ytmusic:testDebugUnitTest :data:lyrics:testDebugUnitTest :data:download:testDebugUnitTest'
+          - shard: engine
+            tasks: ':core:data:testDebugUnitTest :core:media:testDebugUnitTest :app:testDebugUnitTest'
+          - shard: features
+            tasks: ':feature:community:testDebugUnitTest :feature:home:testDebugUnitTest :feature:library:testDebugUnitTest :feature:nowplaying:testDebugUnitTest :feature:search:testDebugUnitTest :feature:settings:testDebugUnitTest :feature:sync:testDebugUnitTest'
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -147,14 +140,16 @@ jobs:
       - name: Fix gradlew permission
         run: chmod +x gradlew
 
-      - name: Run all unit tests
-        run: ./gradlew testDebugUnitTest --continue --no-daemon
+      - name: Run shard unit tests
+        env:
+          GRADLE_TEST_TASKS: ${{ matrix.tasks }}
+        run: ./gradlew $GRADLE_TEST_TASKS --continue --no-daemon
 
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: unit-test-results
+          name: unit-test-results-${{ matrix.shard }}
           path: |
             **/build/test-results/testDebugUnitTest/
             **/build/reports/tests/testDebugUnitTest/
