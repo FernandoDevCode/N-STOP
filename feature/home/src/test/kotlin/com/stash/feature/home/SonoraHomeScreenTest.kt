@@ -90,6 +90,52 @@ class SonoraHomeScreenTest {
         // The individual rail composables are verified by focused tests below.
     }
 
+    @Test fun weeklyAlbumRailRendersRealReleaseAndRoutesTap() {
+        var selected = ""
+        compose.setContent {
+            VisualTheme {
+                SonoraWeeklyAlbumRail(
+                    albums = listOf(AlbumSummary("album1", "New real album", "Artist One",
+                        null, "2026")),
+                    onAlbum = { selected = it.id },
+                )
+            }
+        }
+        compose.onNodeWithText("Novidades para você").assertExists()
+        compose.onNodeWithContentDescription("New real album, Artist One").performClick()
+        compose.runOnIdle { check(selected == "album1") }
+    }
+
+    @Test fun weeklySongRailsRenderSeparateRecommendationsAndPlay() {
+        var selected = ""
+        compose.setContent {
+            VisualTheme {
+                Column {
+                    SonoraWeeklySongRail(
+                        title = "Na sua frequência",
+                        tracks = listOf(com.stash.data.ytmusic.model.TrackSummary(
+                            "current1", "Current track", "Current Artist", null, 180.0, null,
+                        )),
+                        onSong = { selected = it.videoId },
+                        onReject = {},
+                    )
+                    SonoraWeeklySongRail(
+                        title = "Fora do radar",
+                        tracks = listOf(com.stash.data.ytmusic.model.TrackSummary(
+                            "forgotten1", "Hidden jazz track", "Jazz Artist", null, 180.0, null,
+                        )),
+                        onSong = { selected = it.videoId },
+                        onReject = {},
+                    )
+                }
+            }
+        }
+        compose.onNodeWithText("Na sua frequência").assertExists()
+        compose.onNodeWithText("Fora do radar").assertExists()
+        compose.onNodeWithContentDescription("Hidden jazz track, Jazz Artist").performClick()
+        compose.runOnIdle { check(selected == "forgotten1") }
+    }
+
     @Test fun existingDailyDiscoverRemainsPlayableWithWeeklyHero() {
         state.value = HomeUiState(
             isLoading = false,
