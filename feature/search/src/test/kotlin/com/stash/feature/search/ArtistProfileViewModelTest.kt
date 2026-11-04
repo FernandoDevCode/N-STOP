@@ -4,6 +4,8 @@ import androidx.lifecycle.SavedStateHandle
 import app.cash.turbine.test
 import com.stash.core.data.cache.AlbumCache
 import com.stash.core.data.cache.ArtistCache
+import com.stash.core.data.artists.FollowedArtist
+import com.stash.core.data.artists.FollowedArtistsStore
 import com.stash.core.data.artistphotos.ArtistIdentityKind
 import com.stash.data.spotify.SpotifyArtistPhoto
 import com.stash.core.data.cache.CachedProfile
@@ -82,6 +84,9 @@ class ArtistProfileViewModelTest {
         musicRepository: MusicRepository = mock(),
         spotify: SpotifyArtistPhotoLookup = mock(),
         store: ArtistHeroPhotoStore = mock(),
+        followed: FollowedArtistsStore = mock {
+            on { artists } doReturn MutableStateFlow<List<FollowedArtist>>(emptyList()).asStateFlow()
+        },
     ): ArtistProfileViewModel = ArtistProfileViewModel(
         savedStateHandle = SavedStateHandle(
             mapOf(
@@ -91,6 +96,7 @@ class ArtistProfileViewModelTest {
             ),
         ),
         artistCache = cache,
+        followedArtists = followed,
         spotifyArtistLookup = spotify,
         artistHeroPhotoStore = store,
         appleAlbumMetadata = mock<AppleMusicAlbumMetadataLookup>(),

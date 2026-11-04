@@ -11,6 +11,7 @@ import com.stash.core.data.artistphotos.ArtistIdentityKind
 import com.stash.core.common.perf.PerfLog
 import com.stash.core.data.cache.AlbumCache
 import com.stash.core.data.cache.ArtistCache
+import com.stash.core.data.artists.FollowedArtistsStore
 import com.stash.core.data.cache.CachedProfile
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
@@ -68,6 +69,7 @@ import javax.inject.Inject
 class ArtistProfileViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val artistCache: ArtistCache,
+    private val followedArtists: FollowedArtistsStore,
     private val spotifyArtistLookup: SpotifyArtistPhotoLookup,
     private val artistHeroPhotoStore: ArtistHeroPhotoStore,
     private val appleAlbumMetadata: AppleMusicAlbumMetadataLookup,
@@ -104,6 +106,13 @@ class ArtistProfileViewModel @Inject constructor(
         ),
     )
     val uiState: StateFlow<ArtistProfileUiState> = _uiState.asStateFlow()
+
+    /** Distinct from the legacy bookmark: the stable artist ID drives follows. */
+    val isFollowing: StateFlow<Boolean> = followedArtists.artists
+        .map { artists -> artists.any { it.id == artistId } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, followedArtists.isFollowing(artistId))
+
+    fun toggleFollow() = followedArtists.toggle(artistId, _uiState.value.hero.name)
 
     /**
      * One-shot user-facing messages (snackbars). Uses a [MutableSharedFlow]

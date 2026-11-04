@@ -82,6 +82,7 @@ fun ArtistProfileScreen(
     vm: ArtistProfileViewModel = hiltViewModel(),
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
+    val isFollowing by vm.isFollowing.collectAsStateWithLifecycle()
     // Optional image lookup is UI-owned, never part of catalog or playback VM.
     val wordmarkUrl by produceState<String?>(initialValue = null, key1 = state.hero.name) {
         value = ArtistWordmarkLookup.resolve(state.hero.name)
@@ -241,6 +242,8 @@ fun ArtistProfileScreen(
                     onPhotoFrameMeasured = {},
                     onBack = onBack,
                     onPlayArtist = vm::playArtist,
+                    isFollowing = isFollowing,
+                    onToggleFollow = vm::toggleFollow,
                     onStartRadio = vm::startRadio,
                     streamingEnabled = streamingEnabled,
                     onStreamingClick = { showStreamingSheet = true },
