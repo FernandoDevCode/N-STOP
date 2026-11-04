@@ -85,7 +85,9 @@ class SonoraHomeScreenTest {
         render()
         compose.onNodeWithText("LANÇAMENTO PARA VOCÊ").assertIsDisplayed()
         compose.onNodeWithText("Actual release").assertExists()
+        compose.onNodeWithTag("home").performScrollToNode(hasText("Na sua frequência"))
         compose.onNodeWithText("Na sua frequência").assertExists()
+        compose.onNodeWithTag("home").performScrollToNode(hasText("Fora do radar"))
         compose.onNodeWithText("Fora do radar").assertExists()
         compose.onNodeWithText("DO SEU HISTÓRICO").assertDoesNotExist()
     }
