@@ -43,10 +43,12 @@ class FollowedArtistsStoreTest {
     }
 
     @Test fun `corrupt preferences fail closed without overwriting bookmarks`() {
+        val bookmarks = context.getSharedPreferences("sonora_artist_bookmarks_v1",
+            Context.MODE_PRIVATE)
+        bookmarks.edit().putBoolean("artist:mothica", true).commit()
         context.getSharedPreferences("sonora_followed_artists_v1", Context.MODE_PRIVATE)
             .edit().putString("artists", "{garbage").commit()
         assertTrue(FollowedArtistsStore(context).artists.value.isEmpty())
-        assertFalse(context.getSharedPreferences("sonora_artist_bookmarks_v1",
-            Context.MODE_PRIVATE).contains("artist:Mothica"))
+        assertTrue(bookmarks.getBoolean("artist:mothica", false))
     }
 }
