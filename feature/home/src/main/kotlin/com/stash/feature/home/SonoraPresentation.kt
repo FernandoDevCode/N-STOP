@@ -221,6 +221,7 @@ internal fun SonoraHeroCard(label: String, title: String, subtitle: String, artU
  */
 @Composable
 internal fun SonoraFeaturedRelease(
+    label: String,
     title: String,
     artist: String,
     artwork: String?,
@@ -245,7 +246,7 @@ internal fun SonoraFeaturedRelease(
             Modifier.fillMaxWidth().align(Alignment.BottomStart)
                 .padding(VisualDesign.Size.HeroPadding),
         ) {
-            Text("LANÇAMENTO EM DESTAQUE", style = VisualDesign.Caption, color = Color(0xFFD4D8E0))
+            Text(label, style = VisualDesign.Caption, color = Color(0xFFD4D8E0))
             Spacer(Modifier.height(12.dp))
             Text(title, style = VisualDesign.HeroTitle, color = Color.White, maxLines = 2,
                 overflow = TextOverflow.Ellipsis)
