@@ -3,7 +3,9 @@ package com.stash.data.download.lossless.qbdlx.di
 import com.stash.core.data.discography.DiscographySupplement
 import com.stash.core.data.discography.QobuzAlbumFetcher
 import com.stash.core.data.discovery.HomeDiscoveryRepository
+import com.stash.core.data.artists.FollowedArtistReleasesRepository
 import com.stash.data.download.lossless.qbdlx.HomeDiscoveryRepositoryImpl
+import com.stash.data.download.lossless.qbdlx.QobuzFollowedArtistReleases
 import com.stash.data.download.lossless.LosslessSource
 import com.stash.data.download.lossless.qbdlx.QbdlxCredentialStore
 import com.stash.data.download.lossless.qbdlx.QbdlxQobuzSource
@@ -59,6 +61,10 @@ abstract class QbdlxModule {
     @Binds
     @Singleton
     abstract fun bindHomeDiscoveryRepository(impl: HomeDiscoveryRepositoryImpl): HomeDiscoveryRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindFollowedArtistReleases(impl: QobuzFollowedArtistReleases): FollowedArtistReleasesRepository
 
     /**
      * The credential store IS the signing authority — the connected account's

@@ -11,6 +11,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.MarqueeSpacing
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
@@ -64,6 +65,7 @@ import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Language
@@ -76,6 +78,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
@@ -101,6 +104,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
@@ -194,6 +198,7 @@ fun HomeScreen(
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val rediscoveryTracks by viewModel.rediscoveryTracks.collectAsStateWithLifecycle()
+    val followedReleases by viewModel.followedReleases.collectAsStateWithLifecycle()
     val quickMixes = homeQuickMixes(uiState)
     var selectedMediaTab by rememberSaveable { mutableIntStateOf(0) }
     val podcastController = com.stash.feature.home.podcasts.LocalPodcastViewModel.current
@@ -242,6 +247,19 @@ fun HomeScreen(
         // Edge to edge under the glass mini player + tab bar: they blur the feed as it scrolls by.
         contentPadding = PaddingValues(top = 0.dp, bottom = bottomChromePadding(24.dp)),
     ) {
+        item(key = "sonora_home_identity") {
+            Row(
+                Modifier.fillMaxWidth().padding(start = VisualDesign.Gutter, end = 12.dp, top = 8.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("Sonora", color = VisualDesign.Ink, fontSize = 27.sp,
+                    fontWeight = FontWeight.SemiBold, letterSpacing = (-0.9).sp)
+                IconButton(onClick = onNavigateToSettings) {
+                    Icon(Icons.Default.Settings, contentDescription = "Configurações", tint = VisualDesign.Muted)
+                }
+            }
+        }
         item(key = "nonstop_media_filters") {
             NonstopMediaFilters(selectedMediaTab, { selectedMediaTab = it })
         }
@@ -250,7 +268,6 @@ fun HomeScreen(
         // Only existing discovery data creates pages. Open/play/create and
         // long-press context actions stay wired to their Android callbacks.
         if (uiState.hasDiscoverySpotlight(heroMinimized)) item(key = "discovery_spotlight") {
-            Spacer(Modifier.height(20.dp))
             // Minimized (long-press → "Minimize for now") drops the hero page
             // for the session; the mix pages keep the pager alive. Distinct
             // from hero == null (not connected), which shows PersonalizeCard.
@@ -267,8 +284,32 @@ fun HomeScreen(
                     val pagerState = androidx.compose.foundation.pager.rememberPagerState(
                         pageCount = { pageCount },
                     )
-                    Column {
-                        androidx.compose.foundation.pager.HorizontalPager(
+                    // Atmosphere is sourced from the active real cover and remains
+                    // inside the spotlight. The rest of Home stays charcoal.
+                    val activeArt = if (pagerState.currentPage < heroPages) {
+                        hero?.artUrl
+                    } else {
+                        mixPages.getOrNull(pagerState.currentPage - heroPages)?.artUrl
+                    }
+                    Box(Modifier.fillMaxWidth()) {
+                        if (!activeArt.isNullOrBlank()) {
+                            AsyncImage(
+                                model = activeArt,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.matchParentSize().blur(44.dp).alpha(.25f),
+                            )
+                            Box(Modifier.matchParentSize().background(
+                                Brush.verticalGradient(
+                                    0f to MaterialTheme.colorScheme.background.copy(alpha = .45f),
+                                    .55f to MaterialTheme.colorScheme.background.copy(alpha = .72f),
+                                    1f to MaterialTheme.colorScheme.background,
+                                ),
+                            ))
+                        }
+                        Column {
+                            Spacer(Modifier.height(20.dp))
+                            androidx.compose.foundation.pager.HorizontalPager(
                             state = pagerState,
                             contentPadding = PaddingValues(horizontal = VisualDesign.Gutter),
                             pageSpacing = 10.dp,
@@ -327,26 +368,18 @@ fun HomeScreen(
                                 }
                             }
                         }
+                        }
                     }
                 }
             }
         }
 
 
-        // Shortcuts and local-listening discovery supplement the existing
-        // editorial pager; never duplicate or replace its Daily Discover card.
-        item(key = "home_discovery_shortcuts") {
-            Spacer(Modifier.height(16.dp))
-            SonoraDiscoveryShortcuts(
-                onExplore = onNavigateToExplore,
-                onRadio = onNavigateToRadio,
-                onSearch = onNavigateToSearch,
-            )
-        }
-        if (quickMixes.isNotEmpty()) {
-            item(key = "home_quick_mixes") {
+        // Explore, Radio and Search remain in the bottom navigation only.
+        if (followedReleases.isNotEmpty()) {
+            item(key = "home_followed_releases") {
                 Spacer(Modifier.height(18.dp))
-                SonoraQuickMixRow(mixes = quickMixes, onMixClick = { openMix(it.id) })
+                SonoraFollowedReleasesRow(releases = followedReleases, onOpen = onNavigateToAlbum)
             }
         }
         if (rediscoveryTracks.isNotEmpty()) {
@@ -356,6 +389,12 @@ fun HomeScreen(
                     tracks = rediscoveryTracks,
                     onArtistClick = onNavigateToArtist,
                 )
+            }
+        }
+        if (quickMixes.isNotEmpty()) {
+            item(key = "home_quick_mixes") {
+                Spacer(Modifier.height(18.dp))
+                SonoraQuickMixRow(mixes = quickMixes, onMixClick = { openMix(it.id) })
             }
         }
 
@@ -434,21 +473,6 @@ fun HomeScreen(
                 it == HomeSection.TOP_ALBUMS
         }
         val genreFallbackSection = firstPopulatedQobuzSection ?: firstConfiguredQobuzSection
-        val releasesIndex = uiState.sections.indexOf(HomeSection.NEW_RELEASES)
-        val qobuzPlaylistsFollowGenres = chipsAfterReleases && releasesIndex >= 0 &&
-            uiState.sections.drop(releasesIndex + 1).firstOrNull { candidate ->
-                when (candidate) {
-                    HomeSection.YOUR_PLAYLISTS ->
-                        uiState.yourPlaylists.isNotEmpty() || uiState.likedCard != null
-                    HomeSection.MOOD_DECADES -> uiState.moodDecades.isNotEmpty()
-                    HomeSection.MADE_FOR_YOU -> uiState.madeForYou.isNotEmpty()
-                    HomeSection.NEW_RELEASES -> uiState.newReleases.isNotEmpty()
-                    HomeSection.QOBUZ_PLAYLISTS -> uiState.playlists.isNotEmpty()
-                    HomeSection.TOP_ALBUMS -> uiState.topAlbums.isNotEmpty()
-                    HomeSection.RADIOS -> uiState.radios.isNotEmpty()
-                    HomeSection.COMMUNITY -> true
-                }
-            } == HomeSection.QOBUZ_PLAYLISTS
         uiState.sections.forEach { section ->
             val chipsLead = showGenreFilters && !chipsAfterReleases && section == genreFallbackSection
             if (chipsLead) {
@@ -493,18 +517,11 @@ fun HomeScreen(
                             title = stringResource(R.string.nostop_home_new_releases),
                             albums = uiState.newReleases,
                             onOpen = onNavigateToAlbum,
-                            topSpacing = if (chipsLead) 2.dp else 16.dp,
+                            filters = if (chipsAfterReleases) uiState.genres.map { it.label } else emptyList(),
+                            selectedGenre = uiState.selectedGenre,
+                            onGenreSelected = viewModel::onSelectGenre,
+                            topSpacing = if (chipsLead) 6.dp else 16.dp,
                         )
-                    }
-                    if (chipsAfterReleases) {
-                        item(key = "section_genre_chips") {
-                            Spacer(Modifier.height(12.dp))
-                            SonoraGenreFilters(
-                                filters = uiState.genres.map { it.label },
-                                selected = uiState.selectedGenre,
-                                onSelect = viewModel::onSelectGenre,
-                            )
-                        }
                     }
                 }
                 HomeSection.QOBUZ_PLAYLISTS -> if (uiState.playlists.isNotEmpty()) {
@@ -516,7 +533,6 @@ fun HomeScreen(
                             onSeeAll = { onSeeAllPlaylists(uiState.selectedGenre) },
                             topSpacing = when {
                                 chipsLead -> 2.dp
-                                qobuzPlaylistsFollowGenres -> 8.dp
                                 else -> 16.dp
                             },
                         )
@@ -1365,10 +1381,17 @@ private fun DiscoveryAlbumRow(
     albums: List<AlbumSummary>,
     onOpen: (AlbumSummary) -> Unit,
     topSpacing: androidx.compose.ui.unit.Dp = 16.dp,
+    filters: List<String> = emptyList(),
+    selectedGenre: String = "All",
+    onGenreSelected: ((String) -> Unit)? = null,
 ) {
     Column {
         Spacer(Modifier.height(topSpacing))
         SonoraSectionTitle(title)
+        if (filters.isNotEmpty() && onGenreSelected != null) {
+            SonoraGenreFilters(filters, selectedGenre, onGenreSelected)
+            Spacer(Modifier.height(8.dp))
+        }
         LazyRow(contentPadding = PaddingValues(horizontal = VisualDesign.Gutter),
             horizontalArrangement = Arrangement.spacedBy(VisualDesign.Space.Rail)) {
             items(albums, key = { it.id }) { album ->
@@ -1398,9 +1421,42 @@ private fun DiscoveryPlaylistRow(
         LazyRow(contentPadding = PaddingValues(horizontal = VisualDesign.Gutter),
             horizontalArrangement = Arrangement.spacedBy(VisualDesign.Space.Rail)) {
             items(playlists, key = { it.id }) { playlist ->
-                SonoraContentCard(VisualCard(playlist.id, playlist.title,
-                    pluralize(playlist.trackCount, "track"), playlist.thumbnailUrl),
-                    onClick = { onOpen(playlist.toAlbumNav()) })
+                val shape = RoundedCornerShape(16.dp)
+                Row(
+                    modifier = Modifier.width(258.dp).height(106.dp)
+                        .clip(shape)
+                        .background(VisualDesign.Surface)
+                        .border(.5.dp, VisualDesign.Border, shape)
+                        .clickable { onOpen(playlist.toAlbumNav()) },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (!playlist.thumbnailUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = playlist.thumbnailUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.size(106.dp),
+                        )
+                    } else {
+                        Box(Modifier.size(106.dp).background(MaterialTheme.colorScheme.surfaceVariant),
+                            contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.MusicNote, null, tint = VisualDesign.Muted)
+                        }
+                    }
+                    Column(Modifier.weight(1f).padding(horizontal = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text(playlist.title, style = VisualDesign.CardTitle,
+                            color = VisualDesign.Ink, maxLines = 2,
+                            overflow = TextOverflow.Ellipsis)
+                        Text(playlist.curator.ifBlank { "Qobuz" },
+                            style = VisualDesign.Caption, color = VisualDesign.Muted,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(pluralize(playlist.trackCount, "track"),
+                            style = VisualDesign.Caption,
+                            color = VisualDesign.Muted.copy(alpha = .75f),
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
             }
         }
     }

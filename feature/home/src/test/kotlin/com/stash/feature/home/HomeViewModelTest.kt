@@ -3,6 +3,9 @@ package com.stash.feature.home
 import com.stash.core.data.db.dao.StashMixRecipeDao
 import com.stash.core.data.db.entity.StashMixRecipeEntity
 import com.stash.core.data.discovery.HomeDiscoveryRepository
+import com.stash.core.data.artists.FollowedArtist
+import com.stash.core.data.artists.FollowedArtistsStore
+import com.stash.core.data.artists.FollowedArtistReleasesRepository
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.data.tipjar.TipJarRepository
@@ -462,6 +465,10 @@ class HomeViewModelTest {
             streamingPreference = streamingPreference,
             metadataBackfillState = metadataBackfill,
             homeDiscoveryRepository = discovery,
+            followedArtistsStore = mock<FollowedArtistsStore> {
+                on { artists } doReturn MutableStateFlow<List<FollowedArtist>>(emptyList())
+            },
+            followedReleasesRepository = mock<FollowedArtistReleasesRepository>(),
             // Discovery on + every section visible = rows fetch, matching the
             // pre-existing test expectations.
             homeDiscoveryPreference = mock {

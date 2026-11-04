@@ -16,6 +16,7 @@
     <string name="sonora_shortcut_radio">Radio</string>
     <string name="sonora_shortcut_search">Search</string>
     <string name="sonora_quick_mixes">Quick access</string>
+    <string name="sonora_followed_releases">New from artists you follow</string>
     <string name="sonora_rediscovery_artists">Listen again</string>
     <string name="nostop_home_discover">Discover</string>
     <string name="nostop_home_playlists">Your playlists</string>

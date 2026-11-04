@@ -40,6 +40,8 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.stash.core.data.mix.MixBuildState
 import com.stash.core.model.Track
+import com.stash.data.ytmusic.model.AlbumSummary
+import com.stash.core.ui.visual.VisualCard
 import com.stash.core.ui.ambient.LocalAlbumChrome
 import com.stash.core.ui.visual.VisualDesign
 
@@ -161,6 +163,29 @@ internal fun SonoraRediscoveryRow(
                 Text(track.artist, style = VisualDesign.Caption, color = VisualDesign.Ink,
                     maxLines = 2, overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center)
+            }
+        }
+    }
+}
+
+/** New, dated Qobuz releases of artists the user explicitly follows.
+ * Empty results are omitted at the Home call site (no placeholder content). */
+@Composable
+internal fun SonoraFollowedReleasesRow(
+    releases: List<AlbumSummary>,
+    onOpen: (AlbumSummary) -> Unit,
+) {
+    Column {
+        SonoraSectionTitle(stringResource(R.string.sonora_followed_releases))
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = VisualDesign.Gutter),
+            horizontalArrangement = Arrangement.spacedBy(VisualDesign.Space.Rail),
+        ) {
+            items(releases, key = { "${it.source}:${it.id}" }) { album ->
+                SonoraContentCard(
+                    VisualCard(album.id, album.title, album.artist, album.thumbnailUrl),
+                    onClick = { onOpen(album) },
+                )
             }
         }
     }
