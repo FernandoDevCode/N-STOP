@@ -197,6 +197,7 @@ fun HomeScreen(
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val rediscoveryTracks by viewModel.rediscoveryTracks.collectAsStateWithLifecycle()
+    val followedReleases by viewModel.followedReleases.collectAsStateWithLifecycle()
     val quickMixes = homeQuickMixes(uiState)
     var selectedMediaTab by rememberSaveable { mutableIntStateOf(0) }
     val podcastController = com.stash.feature.home.podcasts.LocalPodcastViewModel.current
@@ -374,6 +375,12 @@ fun HomeScreen(
 
 
         // Explore, Radio and Search remain in the bottom navigation only.
+        if (followedReleases.isNotEmpty()) {
+            item(key = "home_followed_releases") {
+                Spacer(Modifier.height(18.dp))
+                SonoraFollowedReleasesRow(releases = followedReleases, onOpen = onNavigateToAlbum)
+            }
+        }
         if (quickMixes.isNotEmpty()) {
             item(key = "home_quick_mixes") {
                 Spacer(Modifier.height(18.dp))
