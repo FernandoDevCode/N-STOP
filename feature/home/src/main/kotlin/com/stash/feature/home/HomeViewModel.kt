@@ -15,6 +15,8 @@ import com.stash.core.data.db.dao.DiscoveryQueueDao
 import com.stash.core.data.db.dao.StashMixRecipeDao
 import com.stash.core.data.discovery.GenreCatalog
 import com.stash.core.data.discovery.HomeDiscoveryRepository
+import com.stash.core.data.artists.FollowedArtistReleasesRepository
+import com.stash.core.data.artists.FollowedArtistsStore
 import com.stash.core.data.mix.MixBuildState
 import com.stash.core.data.mix.mixBuildState
 import com.stash.core.data.prefs.DownloadNetworkPreference
@@ -45,6 +47,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
@@ -87,6 +90,8 @@ class HomeViewModel @Inject constructor(
     private val homeSectionsPreference: com.stash.core.data.prefs.HomeSectionsPreference,
     private val metadataBackfillState: MetadataBackfillState,
     private val homeDiscoveryRepository: HomeDiscoveryRepository,
+    private val followedArtistsStore: FollowedArtistsStore,
+    private val followedReleasesRepository: FollowedArtistReleasesRepository,
     private val losslessSourceHealth: com.stash.core.media.streaming.LosslessSourceHealth,
     private val losslessAvailability: com.stash.data.download.lossless.LosslessAvailability,
     @ApplicationContext private val context: Context,
@@ -94,6 +99,15 @@ class HomeViewModel @Inject constructor(
 
     /** The real, shared music transport is the Home's listening anchor. */
     val listeningState: StateFlow<com.stash.core.model.PlayerState> = playerRepository.playerState
+
+    /** Verified, dated releases only. An empty feed never creates a fake rail. */
+    val followedReleases: StateFlow<List<AlbumSummary>> = followedArtistsStore.artists
+        .flatMapLatest { artists ->
+            flow { emit(if (artists.isEmpty()) emptyList() else followedReleasesRepository.recentReleases(artists)) }
+        }
+        .catch { emit(emptyList()) }
+        .flowOn(Dispatchers.IO)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Real play counters only; no demo artists or synthetic recommendations. */
     val rediscoveryTracks: StateFlow<List<com.stash.core.model.Track>> =
