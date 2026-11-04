@@ -84,7 +84,10 @@ class SonoraHomeScreenTest {
         state.value = HomeUiState(isLoading = false)
         render()
         compose.onNodeWithText("LANÇAMENTO PARA VOCÊ").assertIsDisplayed()
-        compose.onNodeWithText("Actual release").assertExists()
+        // The billboard title is merged into a clickable semantics node by
+        // SonoraFeaturedRelease. Verify album identity in its own shelf instead.
+        compose.onNodeWithTag("home").performScrollToNode(hasText("Novidades para você"))
+        compose.onNodeWithText("Actual release", substring = true).assertExists()
         compose.onNodeWithTag("home").performScrollToNode(hasText("Na sua frequência"))
         compose.onNodeWithText("Na sua frequência").assertExists()
         compose.onNodeWithTag("home").performScrollToNode(hasText("Fora do radar"))
