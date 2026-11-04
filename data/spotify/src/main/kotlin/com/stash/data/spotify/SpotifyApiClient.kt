@@ -802,11 +802,17 @@ class SpotifyApiClient @Inject constructor(
      * user-follow-read; a denied request simply yields no names, never a fake list.
      */
     suspend fun getFollowedArtistNames(limit: Int = 12): List<String> = withContext(Dispatchers.IO) {
-        val token = tokenManager.getSpotifyAccessToken() ?: return@withContext emptyList()
+        val token = tokenManager.getSpotifyAccessToken() ?: run {
+            Log.w(TAG, "Home followed-artist query unavailable: no Spotify access token")
+            return@withContext emptyList()
+        }
         val url = "$WEB_API_BASE/me/following?type=artist&limit=${limit.coerceIn(1, 20)}"
         try {
             executeSearchRequest(url, token).use { response ->
-                if (!response.isSuccessful) return@use emptyList()
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "Home Spotify REST request unavailable: HTTP ${response.code}")
+                    return@use emptyList()
+                }
                 val root = json.parseToJsonElement(response.body?.string().orEmpty()).jsonObject
                 root["artists"]?.jsonObject?.get("items")?.jsonArray.orEmpty()
                     .mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull }
@@ -828,13 +834,19 @@ class SpotifyApiClient @Inject constructor(
         artistName: String,
         sinceDate: String,
     ): List<SpotifyRecentArtistAlbum> = withContext(Dispatchers.IO) {
-        val token = tokenManager.getSpotifyAccessToken() ?: return@withContext emptyList()
+        val token = tokenManager.getSpotifyAccessToken() ?: run {
+            Log.w(TAG, "Home recent-album query unavailable: no Spotify access token")
+            return@withContext emptyList()
+        }
         if (artistName.isBlank()) return@withContext emptyList()
         val url = "$WEB_API_BASE/search?type=album&limit=20&q=" +
             URLEncoder.encode("artist:\"${artistName.trim()}\"", "UTF-8")
         try {
             executeSearchRequest(url, token).use { response ->
-                if (!response.isSuccessful) return@use emptyList()
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "Home Spotify REST request unavailable: HTTP ${response.code}")
+                    return@use emptyList()
+                }
                 val root = json.parseToJsonElement(response.body?.string().orEmpty()).jsonObject
                 root["albums"]?.jsonObject?.get("items")?.jsonArray.orEmpty()
                     .mapNotNull { value ->
