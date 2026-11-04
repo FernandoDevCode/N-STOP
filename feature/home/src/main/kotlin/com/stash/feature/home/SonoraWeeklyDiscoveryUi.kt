@@ -16,6 +16,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -127,10 +134,15 @@ internal fun SonoraWeeklySongRail(
     title: String,
     tracks: List<TrackSummary>,
     onSong: (TrackSummary) -> Unit,
+    onReject: (TrackSummary) -> Unit,
 ) {
+    var selected by remember { mutableStateOf<TrackSummary?>(null) }
     if (tracks.isEmpty()) return
     Column(Modifier.fillMaxWidth().padding(top = 24.dp)) {
         SonoraSectionTitle(title)
+        Text("Segure uma música para ajustar suas sugestões",
+            Modifier.padding(horizontal = VisualDesign.Gutter, vertical = 6.dp),
+            style = VisualDesign.Caption, color = VisualDesign.Muted)
         LazyRow(
             contentPadding = PaddingValues(horizontal = VisualDesign.Gutter),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -139,7 +151,22 @@ internal fun SonoraWeeklySongRail(
                 SonoraContentCard(
                     card = VisualCard("song", track.title, track.artist, track.thumbnailUrl),
                     onClick = { onSong(track) },
+                    onLongPress = { selected = track },
                 )
+            }
+        }
+    }
+    selected?.let { song ->
+        ModalBottomSheet(onDismissRequest = { selected = null }) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp)) {
+                Text(song.title, style = MaterialTheme.typography.titleLarge)
+                Text(song.artist, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick = {
+                    onReject(song)
+                    selected = null
+                }) {
+                    Text("Não foi pra mim")
+                }
             }
         }
     }
