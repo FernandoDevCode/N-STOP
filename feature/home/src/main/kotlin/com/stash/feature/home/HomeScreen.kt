@@ -1451,6 +1451,10 @@ private fun DiscoveryPlaylistRow(
                         Text(playlist.curator.ifBlank { "Qobuz" },
                             style = VisualDesign.Caption, color = VisualDesign.Muted,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(pluralize(playlist.trackCount, "track"),
+                            style = VisualDesign.Caption,
+                            color = VisualDesign.Muted.copy(alpha = .75f),
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }
