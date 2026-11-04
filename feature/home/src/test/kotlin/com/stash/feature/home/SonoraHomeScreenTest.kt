@@ -35,6 +35,7 @@ class SonoraHomeScreenTest {
         on { uiState } doReturn state
         on { heroMinimized } doReturn minimized
         on { rediscoveryTracks } doReturn MutableStateFlow<List<com.stash.core.model.Track>>(emptyList())
+        on { featuredRelease } doReturn MutableStateFlow<HomeFeaturedRelease?>(null)
         on { streamingEnabled } doReturn MutableStateFlow(false)
         on { showStreamingDisclosure } doReturn MutableSharedFlow<Unit>()
         on { userMessages } doReturn MutableSharedFlow<String>()
