@@ -92,6 +92,21 @@ class SonoraHomeScreenTest {
         compose.onNodeWithText("DO SEU HISTÓRICO").assertDoesNotExist()
     }
 
+    @Test fun existingDailyDiscoverRemainsPlayableWithWeeklyHero() {
+        state.value = HomeUiState(
+            isLoading = false,
+            hero = DiscoverHeroState("Daily fixture", "24 faixas", null, 77L),
+        )
+        weekly.value = SonoraWeeklyDiscovery(releases = listOf(
+            AlbumSummary("r1", "Real release", "Real Artist", null, "2026"),
+        ))
+        render()
+        compose.onNodeWithTag("home").performScrollToNode(hasText("Sua descoberta diária"))
+        compose.onNodeWithText("Sua descoberta diária").assertExists()
+        compose.onNodeWithText("Ouvir mix").performClick()
+        verify(vm).playHero()
+    }
+
     @Test fun emptyHomeUsesRealSetupAndNoDiscoveryPlaceholder() {
         render()
         compose.onNodeWithText("Personalize seu início").assertIsDisplayed()
