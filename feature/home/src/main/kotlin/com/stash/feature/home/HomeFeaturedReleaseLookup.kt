@@ -41,7 +41,14 @@ class HomeFeaturedReleaseLookup @Inject constructor(
                 .filter { it.artist.isNotBlank() && it.playCount > 0 }
                 .map { it.artist.trim() }
         }.orEmpty()
-        val seeds = (followed + listening).distinctBy { it.trim().lowercase() }.take(4)
+        val libraryArtists = if (followed.isEmpty() && listening.isEmpty()) {
+            safeCall {
+                music.getAllArtists().first().sortedByDescending { it.trackCount }
+                    .map { it.artist.trim() }.filter { it.isNotBlank() }
+            }.orEmpty()
+        } else emptyList()
+        val seeds = (followed + listening + libraryArtists)
+            .distinctBy { it.trim().lowercase() }.take(4)
         if (seeds.isEmpty()) return null
 
         val currentYear = LocalDate.now().year.toString()
