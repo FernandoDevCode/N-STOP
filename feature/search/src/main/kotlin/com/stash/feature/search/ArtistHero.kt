@@ -104,6 +104,8 @@ fun ArtistHero(
     onPhotoFrameMeasured: (Int) -> Unit = {},
     onBack: () -> Unit,
     onPlayArtist: () -> Unit,
+    isFollowing: Boolean = false,
+    onToggleFollow: () -> Unit = {},
     onStartRadio: () -> Unit,
     streamingEnabled: Boolean,
     onStreamingClick: () -> Unit,
@@ -278,6 +280,14 @@ fun ArtistHero(
                     expanded = moreOpen,
                     onDismissRequest = { moreOpen = false },
                 ) {
+                    DropdownMenuItem(
+                        text = { Text(if (isFollowing) "Deixar de seguir artista" else "Seguir artista") },
+                        leadingIcon = {
+                            Icon(if (isFollowing) Icons.Default.Star else Icons.Outlined.StarBorder,
+                                contentDescription = null)
+                        },
+                        onClick = { moreOpen = false; onToggleFollow() },
+                    )
                     DropdownMenuItem(
                         text = {
                             Text(if (bookmarked) "Desmarcar artista neste aparelho"
