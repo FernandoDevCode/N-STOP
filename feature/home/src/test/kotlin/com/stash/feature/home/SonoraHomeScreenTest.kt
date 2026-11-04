@@ -71,6 +71,7 @@ class SonoraHomeScreenTest {
         compose.onNodeWithText("Ver artista").performClick()
         compose.runOnIdle { check(artistOpened == "Artist from history") }
         compose.onNodeWithText("O que toca agora").assertDoesNotExist()
+        compose.onNodeWithText("Personalize seu início").assertDoesNotExist()
         rediscovery.value = emptyList()
     }
 
