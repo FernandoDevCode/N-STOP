@@ -103,11 +103,26 @@ class HomeViewModel @Inject constructor(
             .flowOn(Dispatchers.IO)
             .stateIn(viewModelScope, SharingStarted.Lazily, null)
 
-    /** Three honest weekly recommendation lists, built once per VM session. */
-    val weeklyDiscovery: StateFlow<SonoraWeeklyDiscovery> =
+    /** Weekly catalog snapshots plus immediate local rejection feedback. */
+    private val hiddenWeeklyVideoIds = MutableStateFlow<Set<String>>(emptySet())
+    private val generatedWeeklyDiscovery: StateFlow<SonoraWeeklyDiscovery> =
         flow { emit(weeklyDiscoveryEngine.generate { emit(it) }) }
             .flowOn(Dispatchers.IO)
             .stateIn(viewModelScope, SharingStarted.Lazily, SonoraWeeklyDiscovery())
+
+    val weeklyDiscovery: StateFlow<SonoraWeeklyDiscovery> =
+        combine(generatedWeeklyDiscovery, hiddenWeeklyVideoIds) { feed, hidden ->
+            feed.copy(
+                current = feed.current.filterNot { it.videoId in hidden },
+                forgotten = feed.forgotten.filterNot { it.videoId in hidden },
+            )
+        }.stateIn(viewModelScope, SharingStarted.Lazily, SonoraWeeklyDiscovery())
+
+    fun rejectWeeklySong(track: com.stash.data.ytmusic.model.TrackSummary) {
+        if (track.videoId.isBlank()) return
+        weeklyDiscoveryEngine.reject(track.videoId)
+        hiddenWeeklyVideoIds.value = hiddenWeeklyVideoIds.value + track.videoId
+    }
 
     /** Plays a verified YouTube Music recommendation through the shared player. */
     fun playWeeklyDiscovery(track: com.stash.data.ytmusic.model.TrackSummary) {
