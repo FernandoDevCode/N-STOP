@@ -480,22 +480,15 @@ fun HomeScreen(
                         }
                     }
                 HomeSection.NEW_RELEASES -> if (uiState.newReleases.isNotEmpty()) {
-                    if (chipsAfterReleases) {
-                        item(key = "section_genre_chips") {
-                            Spacer(Modifier.height(10.dp))
-                            SonoraGenreFilters(
-                                filters = uiState.genres.map { it.label },
-                                selected = uiState.selectedGenre,
-                                onSelect = viewModel::onSelectGenre,
-                            )
-                        }
-                    }
                     item(key = "section_new_releases") {
                         DiscoveryAlbumRow(
                             title = stringResource(R.string.nostop_home_new_releases),
                             albums = uiState.newReleases,
                             onOpen = onNavigateToAlbum,
-                            topSpacing = if (chipsLead || chipsAfterReleases) 6.dp else 16.dp,
+                            filters = if (chipsAfterReleases) uiState.genres.map { it.label } else emptyList(),
+                            selectedGenre = uiState.selectedGenre,
+                            onGenreSelected = viewModel::onSelectGenre,
+                            topSpacing = if (chipsLead) 6.dp else 16.dp,
                         )
                     }
                 }
@@ -1356,10 +1349,17 @@ private fun DiscoveryAlbumRow(
     albums: List<AlbumSummary>,
     onOpen: (AlbumSummary) -> Unit,
     topSpacing: androidx.compose.ui.unit.Dp = 16.dp,
+    filters: List<String> = emptyList(),
+    selectedGenre: String = "All",
+    onGenreSelected: ((String) -> Unit)? = null,
 ) {
     Column {
         Spacer(Modifier.height(topSpacing))
         SonoraSectionTitle(title)
+        if (filters.isNotEmpty() && onGenreSelected != null) {
+            SonoraGenreFilters(filters, selectedGenre, onGenreSelected)
+            Spacer(Modifier.height(8.dp))
+        }
         LazyRow(contentPadding = PaddingValues(horizontal = VisualDesign.Gutter),
             horizontalArrangement = Arrangement.spacedBy(VisualDesign.Space.Rail)) {
             items(albums, key = { it.id }) { album ->
