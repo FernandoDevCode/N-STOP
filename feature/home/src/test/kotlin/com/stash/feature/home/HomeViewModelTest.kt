@@ -463,6 +463,7 @@ class HomeViewModelTest {
             metadataBackfillState = metadataBackfill,
             homeDiscoveryRepository = discovery,
             featuredReleaseLookup = mock(),
+            weeklyDiscoveryEngine = mock(),
             // Discovery on + every section visible = rows fetch, matching the
             // pre-existing test expectations.
             homeDiscoveryPreference = mock {
