@@ -227,10 +227,11 @@ internal fun SonoraFeaturedRelease(
     artwork: String?,
     onOpen: () -> Unit,
     modifier: Modifier = Modifier,
+    actionLabel: String = "Ver álbum",
 ) {
     val shape = RoundedCornerShape(VisualDesign.Radius.Hero)
     Box(
-        modifier.fillMaxWidth().heightIn(min = 240.dp)
+        modifier.fillMaxWidth().heightIn(min = 256.dp)
             .clip(shape).background(VisualDesign.Surface)
             .clickable(onClick = onOpen),
     ) {
@@ -252,7 +253,7 @@ internal fun SonoraFeaturedRelease(
                 overflow = TextOverflow.Ellipsis)
             Text(artist, Modifier.padding(top = 4.dp), style = VisualDesign.Body,
                 color = Color(0xFFD4D8E0), maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text("Ver álbum", Modifier.padding(top = 12.dp),
+            Text(actionLabel, Modifier.padding(top = 12.dp),
                 style = VisualDesign.Body, color = Color.White)
         }
     }
