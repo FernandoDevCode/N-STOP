@@ -17,7 +17,7 @@ class SonoraDiscoveryFeedbackStore @Inject constructor(
 
     fun reject(videoId: String) {
         if (videoId.isBlank()) return
-        val updated = (rejectedVideoIds() + videoId).take(250).toSet()
+        val updated = (rejectedVideoIds().toList().takeLast(249) + videoId).toSet()
         prefs.edit().putStringSet("rejected", updated).apply()
     }
 }
