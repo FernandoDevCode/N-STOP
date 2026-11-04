@@ -107,7 +107,7 @@ class SonoraWeeklyDiscoveryEngine @Inject constructor(
     private val youtube: YTMusicApiClient,
     private val cache: SonoraWeeklyDiscoveryCache,
 ) {
-    suspend fun generate(): SonoraWeeklyDiscovery {
+    suspend fun generate(onPartial: suspend (SonoraWeeklyDiscovery) -> Unit = {}): SonoraWeeklyDiscovery {
         cache.read()?.let { return it }
         val tracks = attempt { music.getAllTracks().first() }.orEmpty()
         if (tracks.isEmpty()) return SonoraWeeklyDiscovery()
@@ -149,8 +149,12 @@ class SonoraWeeklyDiscoveryEngine @Inject constructor(
             if (releases.size == 10) break
         }
 
+        if (releases.isNotEmpty()) onPartial(SonoraWeeklyDiscovery(releases = releases.toList()))
         val used = owned.toMutableSet()
         val current = discover(taste.currentTags, used)
+        if (current.isNotEmpty()) onPartial(SonoraWeeklyDiscovery(
+            releases = releases.toList(), current = current, currentTag = taste.currentTags.firstOrNull(),
+        ))
         val forgotten = discover(taste.forgottenTags, used)
         return SonoraWeeklyDiscovery(
             releases = releases,
@@ -229,7 +233,7 @@ class SonoraWeeklyDiscoveryEngine @Inject constructor(
             compareByDescending<Map.Entry<String, Pair<LastFmTopTrack, Int>>> { it.value.second }
                 .thenByDescending { min(it.value.first.playcount, 10000) },
         )) {
-            if (attempts >= 24 || chosen.size >= 10) break
+            if (attempts >= 16 || chosen.size >= 10) break
             val candidate = scored.first
             val artistKey = candidate.artist.trim().lowercase()
             if ((artistCounts[artistKey] ?: 0) >= 2 || key in used) continue
