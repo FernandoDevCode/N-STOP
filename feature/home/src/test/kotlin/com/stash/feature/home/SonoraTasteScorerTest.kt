@@ -50,7 +50,8 @@ class SonoraTasteScorerTest {
             TrackTagEntity(it, "jazz", 1f, TrackTagEntity.SOURCE_TRACK, 0L)
         } + TrackTagEntity(5L, "rare arbitrary label", 1f, TrackTagEntity.SOURCE_TRACK, 0L)
         val result = SonoraTasteScorer.rank(tracks, tags, emptyMap())
-        assertTrue("jazz" in result.forgottenTags)
-        assertFalse("rare arbitrary label" in result.forgottenTags)
+        assertTrue("jazz" in result.currentTags)
+        assertFalse("rare arbitrary label" in result.currentTags)
+        assertTrue(result.forgottenTags.isEmpty())
     }
 }
