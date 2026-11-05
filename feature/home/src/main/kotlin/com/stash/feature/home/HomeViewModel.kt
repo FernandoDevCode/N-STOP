@@ -475,68 +475,17 @@ class HomeViewModel @Inject constructor(
             com.stash.core.data.prefs.DEFAULT_HOME_SECTIONS,
     )
 
-    /**
-     * The three Qobuz discovery rows, re-fetched whenever the genre chip
-     * changes ([flatMapLatest] cancels the previous fetch). The previous
-     * genre's rows STAY on screen while the new fetch runs (the scan keeps
-     * the last loaded state) — the rows sit directly under the hero, so
-     * clearing them eagerly made the mix rails jump up for the fetch
-     * duration on every chip tap. The chip highlight still updates
-     * instantly via the loading emission (null rows = keep previous), and
-     * the loaded emission replaces wholesale — even when empty — so stale
-     * content never survives a completed fetch. Fail-soft as before.
-     */
-    @OptIn(ExperimentalCoroutinesApi::class)
+    // Qobuz recommendations are no longer part of the Sonora Home.
+    // Preserve saved section preferences but avoid all network catalog fetches.
     private val discoveryFlow: Flow<DiscoveryUi> = combine(
         homeDiscoveryPreference.enabled,
         homeSectionsPreference.visibleSections,
-    ) { enabled, sections -> enabled to sections }
-        .distinctUntilChanged()
-        .flatMapLatest { (qobuzEnabled, sections) ->
-            // Each Qobuz row fetches only when its section is actually on
-            // Home — hiding a section in Settings > Home layout (or the
-            // global Qobuz opt-out) costs zero catalog requests.
-            val wantReleases = qobuzEnabled && com.stash.core.data.prefs.HomeSection.NEW_RELEASES in sections
-            val wantPlaylists = qobuzEnabled && com.stash.core.data.prefs.HomeSection.QOBUZ_PLAYLISTS in sections
-            val wantTop = qobuzEnabled && com.stash.core.data.prefs.HomeSection.TOP_ALBUMS in sections
-            if (!wantReleases && !wantPlaylists && !wantTop) {
-                kotlinx.coroutines.flow.flowOf(
-                    DiscoveryUi(
-                        "All", emptyList(), emptyList(), emptyList(),
-                        enabled = qobuzEnabled, sections = sections,
-                    ),
-                )
-            } else {
-                genreFilter
-                    .flatMapLatest { label ->
-                        flow<Pair<String, DiscoveryUi?>> {
-                            val genreId = GenreCatalog.idFor(label)
-                            emit(label to null) // loading: re-label, keep previous rows
-                            coroutineScope {
-                                val newReleases = if (wantReleases) async { homeDiscoveryRepository.newReleases(genreId) } else null
-                                val playlists = if (wantPlaylists) async { homeDiscoveryRepository.communityPlaylists(genreId) } else null
-                                val topAlbums = if (wantTop) async { homeDiscoveryRepository.topAlbums(genreId) } else null
-                                emit(
-                                    label to DiscoveryUi(
-                                        label,
-                                        newReleases?.await() ?: emptyList(),
-                                        topAlbums?.await() ?: emptyList(),
-                                        playlists?.await() ?: emptyList(),
-                                        sections = sections,
-                                    ),
-                                )
-                            }
-                        }
-                    }
-                    .scan(
-                        DiscoveryUi("All", emptyList(), emptyList(), emptyList(), sections = sections),
-                    ) { prev, (label, loaded) ->
-                        loaded ?: prev.copy(selectedGenre = label)
-                    }
-            }
-        }
+    ) { _, sections ->
+        DiscoveryUi("All", emptyList(), emptyList(), emptyList(),
+            enabled = false, sections = sections)
+    }
 
-    /** Select a genre chip; re-derives all three discovery rows. */
+    // Kept for API compatibility with existing genre settings; no Home Qobuz requests.
     fun onSelectGenre(label: String) { genreFilter.value = label }
 
     val uiState: StateFlow<HomeUiState> = combine(

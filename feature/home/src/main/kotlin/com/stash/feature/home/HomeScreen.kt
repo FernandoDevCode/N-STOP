@@ -256,6 +256,27 @@ fun HomeScreen(
                 onSong = viewModel::playWeeklyDiscovery,
             )
         }
+        // Keep discovery visible while loading or when real providers cannot
+        // resolve candidates; never disguise the old Home as new discovery.
+        if (!weeklyActive) item(key = "home_weekly_discovery_status") {
+            val message = when (weeklyDiscovery.status) {
+                SonoraDiscoveryStatus.LOADING -> "Preparando suas descobertas musicais…"
+                SonoraDiscoveryStatus.NO_LIBRARY ->
+                    "Conecte ou sincronize sua biblioteca para receber descobertas."
+                SonoraDiscoveryStatus.NO_GENRES ->
+                    "Ainda não identificamos estilos suficientes na sua biblioteca."
+                SonoraDiscoveryStatus.NO_MATCHES ->
+                    "Nenhuma sugestão verificada agora. Sua biblioteca continua disponível."
+                SonoraDiscoveryStatus.READY ->
+                    "Sem novas sugestões disponíveis neste momento."
+            }
+            Column(Modifier.fillMaxWidth().padding(horizontal = VisualDesign.Gutter, vertical = 20.dp)) {
+                SonoraSectionTitle("Descobertas para você")
+                Spacer(Modifier.height(8.dp))
+                Text(message, color = VisualDesign.Muted, style = VisualDesign.Body)
+            }
+        }
+
         // ── Discover hero pager (Daily Discover + your Stash mixes) ──
         // Only existing discovery data creates pages. Open/play/create and
         // long-press context actions stay wired to their Android callbacks.
@@ -467,53 +488,9 @@ fun HomeScreen(
             }
         }
 
-        // ── User-arranged sections (Settings > Appearance > Home layout) ──
-        // Order + visibility still come from uiState.sections. Genre chips sit
-        // after a populated New Releases rail; when it is hidden or empty they
-        // attach to the first populated Qobuz row, without changing filter IDs.
-        val showGenreFilters = uiState.qobuzDiscoveryEnabled && uiState.genres.isNotEmpty()
-        val chipsAfterReleases = showGenreFilters && uiState.newReleases.isNotEmpty() &&
-            HomeSection.NEW_RELEASES in uiState.sections
-        val firstPopulatedQobuzSection = uiState.sections.firstOrNull { section ->
-            when (section) {
-                HomeSection.NEW_RELEASES -> uiState.newReleases.isNotEmpty()
-                HomeSection.QOBUZ_PLAYLISTS -> uiState.playlists.isNotEmpty()
-                HomeSection.TOP_ALBUMS -> uiState.topAlbums.isNotEmpty()
-                else -> false
-            }
-        }
-        val firstConfiguredQobuzSection = uiState.sections.firstOrNull {
-            it == HomeSection.NEW_RELEASES || it == HomeSection.QOBUZ_PLAYLISTS ||
-                it == HomeSection.TOP_ALBUMS
-        }
-        val genreFallbackSection = firstPopulatedQobuzSection ?: firstConfiguredQobuzSection
-        val releasesIndex = uiState.sections.indexOf(HomeSection.NEW_RELEASES)
-        val qobuzPlaylistsFollowGenres = chipsAfterReleases && releasesIndex >= 0 &&
-            uiState.sections.drop(releasesIndex + 1).firstOrNull { candidate ->
-                when (candidate) {
-                    HomeSection.YOUR_PLAYLISTS ->
-                        uiState.yourPlaylists.isNotEmpty() || uiState.likedCard != null
-                    HomeSection.MOOD_DECADES -> uiState.moodDecades.isNotEmpty()
-                    HomeSection.MADE_FOR_YOU -> uiState.madeForYou.isNotEmpty()
-                    HomeSection.NEW_RELEASES -> uiState.newReleases.isNotEmpty()
-                    HomeSection.QOBUZ_PLAYLISTS -> uiState.playlists.isNotEmpty()
-                    HomeSection.TOP_ALBUMS -> uiState.topAlbums.isNotEmpty()
-                    HomeSection.RADIOS -> uiState.radios.isNotEmpty()
-                    HomeSection.COMMUNITY -> true
-                }
-            } == HomeSection.QOBUZ_PLAYLISTS
+        // User-arranged personal rails remain; Qobuz storefront rows and
+        // genre chips are not part of the Sonora Home anymore.
         uiState.sections.forEach { section ->
-            val chipsLead = showGenreFilters && !chipsAfterReleases && section == genreFallbackSection
-            if (chipsLead) {
-                item(key = "section_genre_chips") {
-                    Spacer(Modifier.height(14.dp))
-                    SonoraGenreFilters(
-                        filters = uiState.genres.map { it.label },
-                        selected = uiState.selectedGenre,
-                        onSelect = viewModel::onSelectGenre,
-                    )
-                }
-            }
             when (section) {
                 HomeSection.YOUR_PLAYLISTS ->
                     if (uiState.yourPlaylists.isNotEmpty() || uiState.likedCard != null) {
@@ -540,75 +517,9 @@ fun HomeScreen(
                             }
                         }
                     }
-                HomeSection.NEW_RELEASES -> if (uiState.newReleases.isNotEmpty()) {
-                    item(key = "section_new_releases") {
-                        DiscoveryAlbumRow(
-                            title = stringResource(R.string.nostop_home_new_releases),
-                            albums = uiState.newReleases,
-                            onOpen = onNavigateToAlbum,
-                            topSpacing = if (chipsLead) 2.dp else 16.dp,
-                        )
-                    }
-                    if (chipsAfterReleases) {
-                        item(key = "section_genre_chips") {
-                            Spacer(Modifier.height(12.dp))
-                            SonoraGenreFilters(
-                                filters = uiState.genres.map { it.label },
-                                selected = uiState.selectedGenre,
-                                onSelect = viewModel::onSelectGenre,
-                            )
-                        }
-                    }
-                }
-                HomeSection.QOBUZ_PLAYLISTS -> if (uiState.playlists.isNotEmpty()) {
-                    item(key = "section_qobuz_playlists") {
-                        DiscoveryPlaylistRow(
-                            title = stringResource(R.string.nostop_home_qobuz),
-                            playlists = uiState.playlists,
-                            onOpen = onNavigateToAlbum,
-                            onSeeAll = { onSeeAllPlaylists(uiState.selectedGenre) },
-                            topSpacing = when {
-                                chipsLead -> 2.dp
-                                qobuzPlaylistsFollowGenres -> 8.dp
-                                else -> 16.dp
-                            },
-                        )
-                    }
-                }
-                HomeSection.TOP_ALBUMS -> if (uiState.topAlbums.isNotEmpty()) {
-                    item(key = "section_top_albums") {
-                        // Collapsed to the top 5 by default; "Show all N" expands the
-                        // full best-sellers chart in place. Saveable so the choice
-                        // survives the item scrolling out of composition.
-                        var topAlbumsExpanded by rememberSaveable { mutableStateOf(false) }
-                        val visibleTop =
-                            if (topAlbumsExpanded) uiState.topAlbums else uiState.topAlbums.take(5)
-                        Column {
-                            Spacer(Modifier.height(if (chipsLead) 2.dp else 16.dp))
-                            SonoraSectionTitle(
-                                title = stringResource(R.string.nostop_home_top_albums),
-                                actionText = when {
-                                    uiState.topAlbums.size <= 5 -> null
-                                    topAlbumsExpanded -> stringResource(R.string.nostop_home_show_less)
-                                    else -> stringResource(R.string.nostop_home_show_all_count, uiState.topAlbums.size)
-                                },
-                                onActionClick = { topAlbumsExpanded = !topAlbumsExpanded },
-                            )
-                            RankedAlbumList(
-                                items = visibleTop.mapIndexed { i, a ->
-                                    RankedAlbumUi(
-                                        rank = i + 1,
-                                        title = a.title,
-                                        artist = a.artist,
-                                        artUrl = a.thumbnailUrl,
-                                        movement = null,   // Qobuz best-sellers carries no chart delta
-                                    )
-                                },
-                                onClick = { ranked -> onNavigateToAlbum(uiState.topAlbums[ranked.rank - 1]) },
-                            )
-                        }
-                    }
-                }
+                HomeSection.NEW_RELEASES,
+                HomeSection.QOBUZ_PLAYLISTS,
+                HomeSection.TOP_ALBUMS -> Unit // removed from the Home only
                 HomeSection.MADE_FOR_YOU -> if (uiState.madeForYou.isNotEmpty()) {
                     item(key = "section_made_for_you") {
                         SonoraCardRail(

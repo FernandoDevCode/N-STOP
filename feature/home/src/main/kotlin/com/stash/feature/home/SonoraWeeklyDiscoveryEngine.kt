@@ -1,5 +1,6 @@
 package com.stash.feature.home
 
+import android.util.Log
 import com.stash.core.data.db.dao.ListeningEventDao
 import com.stash.core.data.db.dao.TrackTagDao
 import com.stash.core.data.db.entity.TrackTagEntity
@@ -20,6 +21,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlin.math.min
 
+/** A visible and diagnosable loading/empty state. */
+enum class SonoraDiscoveryStatus { LOADING, READY, NO_LIBRARY, NO_GENRES, NO_MATCHES }
+
 /** Only real catalog identities appear here, never invented songs or artists. */
 data class SonoraWeeklyDiscovery(
     val releases: List<AlbumSummary> = emptyList(),
@@ -27,6 +31,7 @@ data class SonoraWeeklyDiscovery(
     val forgotten: List<TrackSummary> = emptyList(),
     val currentTag: String? = null,
     val forgottenTag: String? = null,
+    val status: SonoraDiscoveryStatus = SonoraDiscoveryStatus.LOADING,
 )
 
 /**
@@ -68,8 +73,14 @@ internal object SonoraTasteScorer {
         }
         val totalHistorical = historical.values.sum().coerceAtLeast(1.0)
         val totalRecent = recent.values.sum().coerceAtLeast(1.0)
-        val current = recent.entries.sortedByDescending { it.value }
+        val currentFromPlays = recent.entries.sortedByDescending { it.value }
             .map { it.key }.filter { (support[it] ?: 0) >= 2 }.take(3)
+        // Sparse local listening should use synced library preferences, not
+        // pretend historic saves were played in the past 30 days.
+        val current = currentFromPlays.ifEmpty {
+            historical.entries.sortedByDescending { it.value }
+                .map { it.key }.filter { (support[it] ?: 0) >= 2 }.take(3)
+        }
         // Distinguish genuinely under-heard genres from tiny one-off tags.
         // Relative exposure matters: rock should not dominate simply because
         // it occupies a big share of both the whole library and last month.
@@ -80,7 +91,7 @@ internal object SonoraTasteScorer {
                 val recentShare = (recent[tag] ?: 0.0) / totalRecent
                 tag to (historicalShare - recentShare)
             }
-            .filter { it.second > 0.008 }
+            .filter { recent.isNotEmpty() && it.second > 0.008 }
             .sortedByDescending { it.second }
             .map { it.first }
             .filter { it !in current }
@@ -113,11 +124,15 @@ class SonoraWeeklyDiscoveryEngine @Inject constructor(
 
     suspend fun generate(onPartial: suspend (SonoraWeeklyDiscovery) -> Unit = {}): SonoraWeeklyDiscovery {
         val tracks = attempt { music.getAllTracks().first() }.orEmpty()
-        if (tracks.isEmpty()) return SonoraWeeklyDiscovery()
+        if (tracks.isEmpty()) {
+            Log.i("SonoraDiscovery", "No synchronized library tracks; discovery cannot start")
+            return SonoraWeeklyDiscovery(status = SonoraDiscoveryStatus.NO_LIBRARY)
+        }
         val libraryFingerprint = fingerprint(tracks)
         cache.read(libraryFingerprint)?.let { snapshot ->
             val rejected = feedback.rejectedVideoIds()
             return snapshot.copy(
+                status = SonoraDiscoveryStatus.READY,
                 current = snapshot.current.filterNot { it.videoId in rejected },
                 forgotten = snapshot.forgotten.filterNot { it.videoId in rejected },
             )
@@ -130,6 +145,7 @@ class SonoraWeeklyDiscoveryEngine @Inject constructor(
             storedTags + inferArtistTags(tracks, storedTags.map { it.trackId }.toSet(), recentPlays)
         } else storedTags
         val taste = SonoraTasteScorer.rank(tracks, tags, recentPlays)
+        Log.i("SonoraDiscovery", "Profile: library=${tracks.size}, tagged=${tags.map { it.trackId }.distinct().size}, recentTracks=${recentPlays.size}, currentTags=${taste.currentTags.size}, dormantTags=${taste.forgottenTags.size}")
         val owned = tracks.map { identity(it.artist, it.title) }.toSet()
         val recentArtistPlays = tracks.asSequence()
             .map { it.artist.trim() to (recentPlays[it.id] ?: 0) }
@@ -167,12 +183,20 @@ class SonoraWeeklyDiscoveryEngine @Inject constructor(
             releases = releases.toList(), current = current, currentTag = taste.currentTags.firstOrNull(),
         ))
         val forgotten = discover(taste.forgottenTags, used)
+        val available = releases.isNotEmpty() || current.isNotEmpty() || forgotten.isNotEmpty()
+        val status = when {
+            available -> SonoraDiscoveryStatus.READY
+            taste.currentTags.isEmpty() && taste.forgottenTags.isEmpty() -> SonoraDiscoveryStatus.NO_GENRES
+            else -> SonoraDiscoveryStatus.NO_MATCHES
+        }
+        Log.i("SonoraDiscovery", "Result: releases=${releases.size}, current=${current.size}, forgotten=${forgotten.size}, status=$status")
         return SonoraWeeklyDiscovery(
             releases = releases,
             current = current,
             forgotten = forgotten,
             currentTag = taste.currentTags.firstOrNull(),
             forgottenTag = taste.forgottenTags.firstOrNull(),
+            status = status,
         ).also { cache.write(it, libraryFingerprint) }
     }
 
@@ -290,5 +314,8 @@ class SonoraWeeklyDiscoveryEngine @Inject constructor(
 
     private suspend fun <T> attempt(block: suspend () -> T): T? =
         try { block() } catch (cancel: CancellationException) { throw cancel }
-        catch (_: Exception) { null }
+        catch (failure: Exception) {
+            Log.w("SonoraDiscovery", "Catalog request failed: ${failure.javaClass.simpleName}")
+            null
+        }
 }
