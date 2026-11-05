@@ -214,57 +214,30 @@ class SonoraHomeScreenTest {
         compose.onNodeWithText("Ouvir agora").assertDoesNotExist()
     }
 
-    @Test fun genresFollowNewReleasesAndKeepOriginalFilterIdentifiers() {
+    @Test fun qobuzStorefrontAndGenreFiltersAreRemovedFromHome() {
         state.value = HomeUiState(
             isLoading = false,
-            sections = listOf(HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS),
-            newReleases = listOf(AlbumSummary("release", "Álbum fixture", "Artista", null, "2026")),
-            playlists = listOf(PlaylistSummary("playlist", "Playlist fixture", "Qobuz", null, 12)),
+            sections = listOf(HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS,
+                HomeSection.TOP_ALBUMS),
+            newReleases = listOf(AlbumSummary("r", "Qobuz album", "Artist", null, "2026")),
+            playlists = listOf(PlaylistSummary("p", "Qobuz playlist", "Qobuz", null, 12)),
         )
+        weekly.value = SonoraWeeklyDiscovery(status = SonoraDiscoveryStatus.NO_MATCHES)
         render()
-        val releases = compose.onNodeWithText("Novos lançamentos").fetchSemanticsNode().boundsInRoot
-        val genres = compose.onNodeWithText("Todos").fetchSemanticsNode().boundsInRoot
-        val playlists = compose.onNodeWithText("Playlists do Qobuz").fetchSemanticsNode().boundsInRoot
-        check(releases.top < genres.top && genres.top < playlists.top)
-        // The filters remain comfortably separated from New Releases, while the
-        // following Qobuz heading no longer inherits a full section gap.
-        check(playlists.top - genres.bottom in 12f..40f)
-        compose.onNodeWithText("Eletrônica").performClick()
-        compose.runOnIdle { verify(vm).onSelectGenre("Electronic") }
+        compose.onNodeWithText("Playlists do Qobuz").assertDoesNotExist()
+        compose.onNodeWithText("Qobuz album").assertDoesNotExist()
+        compose.onNodeWithText("Todos").assertDoesNotExist()
+        compose.onNodeWithText("Descobertas para você").assertIsDisplayed()
+        compose.onNodeWithText("Nenhuma sugestão verificada agora. Sua biblioteca continua disponível.")
+            .assertExists()
     }
 
-    @Test fun genresMoveToFirstPopulatedQobuzSectionWhenReleasesAreEmpty() {
-        state.value = HomeUiState(
-            isLoading = false,
-            sections = listOf(HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS),
-            newReleases = emptyList(),
-            playlists = listOf(PlaylistSummary("playlist", "Playlist fixture", "Qobuz", null, 12)),
-        )
+    @Test fun discoveryLoadingIsVisibleInsteadOfSilentlyDisappearing() {
+        state.value = HomeUiState(isLoading = false)
+        weekly.value = SonoraWeeklyDiscovery(status = SonoraDiscoveryStatus.LOADING)
         render()
-        compose.onNodeWithText("Novos lançamentos").assertDoesNotExist()
-        val genres = compose.onNodeWithText("Todos").fetchSemanticsNode().boundsInRoot
-        val playlists = compose.onNodeWithText("Playlists do Qobuz").fetchSemanticsNode().boundsInRoot
-        check(genres.top < playlists.top)
-        check(playlists.top - genres.bottom in 6f..36f)
+        compose.onNodeWithText("Descobertas para você").assertIsDisplayed()
+        compose.onNodeWithText("Preparando suas descobertas musicais…").assertExists()
     }
 
-    @Test fun emptyCustomSectionsDoNotBreakGenreToQobuzContinuity() {
-        state.value = HomeUiState(
-            isLoading = false,
-            sections = listOf(
-                HomeSection.NEW_RELEASES,
-                HomeSection.MADE_FOR_YOU,
-                HomeSection.RADIOS,
-                HomeSection.QOBUZ_PLAYLISTS,
-            ),
-            newReleases = listOf(AlbumSummary("release", "Álbum fixture", "Artista", null, "2026")),
-            madeForYou = emptyList(),
-            radios = emptyList(),
-            playlists = listOf(PlaylistSummary("playlist", "Playlist fixture", "Qobuz", null, 12)),
-        )
-        render()
-        val genres = compose.onNodeWithText("Todos").fetchSemanticsNode().boundsInRoot
-        val playlists = compose.onNodeWithText("Playlists do Qobuz").fetchSemanticsNode().boundsInRoot
-        check(playlists.top - genres.bottom in 12f..40f)
-    }
 }
