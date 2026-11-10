@@ -5,6 +5,8 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
@@ -39,7 +41,7 @@ class YouTubeWebSearchClient(
     private val http = client.newBuilder().callTimeout(timeoutMs, TimeUnit.MILLISECONDS).build()
     private val userAgent = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36"
 
-    suspend fun search(query: String, continuation: String? = null, rankOffset: Int = 0): YouTubeWebSearchPage {
+    suspend fun search(query: String, continuation: String? = null, rankOffset: Int = 0): YouTubeWebSearchPage = withContext(Dispatchers.Default) {
         require(query.isNotBlank())
         require(rankOffset >= 0)
         // Discover the actual WEB build instead of synthesizing a Music client version.
@@ -61,7 +63,7 @@ class YouTubeWebSearchClient(
             .header("Origin", origin).header("Referer", "$origin/")
             .header("X-YouTube-Client-Name", "1").header("X-YouTube-Client-Version", version)
             .post(body.toString().toRequestBody("application/json".toMediaType())).build())
-        return parse(response, rankOffset)
+        parse(response, rankOffset)
     }
 
     private fun String.toHttpUrlBuilder(key: String): String =
@@ -94,37 +96,50 @@ class YouTubeWebSearchClient(
         val videos = mutableListOf<YouTubeWebVideo>()
         var rank = rankOffset
         var token: String? = null
-        fun walk(node: JsonElement) {
-            when (node) {
-                is JsonObject -> {
-                    val video = node["videoRenderer"] as? JsonObject
-                    if (video != null) {
-                        val position = rank++
-                        val id = video.string("videoId")
-                        val title = video["title"].text()
-                        if (id != null && id.matches(Regex("[A-Za-z0-9_-]{11}")) && title != null) {
-                            val thumbnail = ((video["thumbnail"] as? JsonObject)?.get("thumbnails") as? JsonArray)
-                                ?.mapNotNull { it as? JsonObject }?.lastOrNull()?.string("url")
-                            videos += YouTubeWebVideo(id, title,
-                                video["ownerText"].text() ?: video["longBylineText"].text() ?: video["shortBylineText"].text(),
-                                thumbnail, duration(video["lengthText"].text()), position)
-                        }
-                        return
-                    }
-                    (node["continuationCommand"] as? JsonObject)?.string("token")?.let { token = it }
-                    node.values.forEach(::walk)
+        fun readItems(items: JsonArray) {
+            for (item in items) {
+                val node = item as? JsonObject ?: continue
+                // Only explicit item sections and direct video/token entries are accepted.
+                node.obj("itemSectionRenderer")?.get("contents")?.let {
+                    (it as? JsonArray)?.let(::readItems)
                 }
-                is JsonArray -> node.forEach(::walk)
-                else -> Unit
+                val video = node["videoRenderer"] as? JsonObject
+                if (video != null) {
+                    val position = rank++
+                    val id = video.string("videoId")
+                    val title = video["title"].text()
+                    if (id != null && id.matches(Regex("[A-Za-z0-9_-]{11}")) && title != null) {
+                        val thumbnail = ((video["thumbnail"] as? JsonObject)?.get("thumbnails") as? JsonArray)
+                            ?.mapNotNull { it as? JsonObject }?.lastOrNull()?.string("url")
+                        videos += YouTubeWebVideo(id, title,
+                            video["ownerText"].text() ?: video["longBylineText"].text() ?: video["shortBylineText"].text(),
+                            thumbnail, duration(video["lengthText"].text()), position)
+                    }
+                    continue
+                }
+                if (token == null) token = node.obj("continuationItemRenderer")
+                    ?.obj("continuationEndpoint")?.obj("continuationCommand")?.string("token")
             }
         }
-        // Only result containers: exclude sidebars, logging payloads and recommendations.
-        listOf("contents", "onResponseReceivedCommands", "onResponseReceivedActions")
-            .mapNotNull { root[it] }.forEach(::walk)
+        val primary = root.obj("contents")?.obj("twoColumnSearchResultsRenderer")
+            ?.obj("primaryContents")?.obj("sectionListRenderer")?.get("contents") as? JsonArray
+        if (primary != null) {
+            readItems(primary)
+        } else {
+            // Continuations for other targets must not contribute items or tokens.
+            val actions = listOf("onResponseReceivedCommands", "onResponseReceivedActions")
+                .flatMap { (root[it] as? JsonArray).orEmpty() }
+            val searchList = actions.firstNotNullOfOrNull {
+                (it as? JsonObject)?.obj("appendContinuationItemsAction")
+                    ?.takeIf { action -> action.string("targetId") == "search-feed" }
+            }
+            (searchList?.get("continuationItems") as? JsonArray)?.let(::readItems)
+        }
         return YouTubeWebSearchPage(videos, token, rank)
     }
 
     private fun JsonObject.string(key: String) = (get(key) as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+    private fun JsonObject.obj(key: String) = get(key) as? JsonObject
     private fun JsonElement?.text(): String? {
         val obj = this as? JsonObject ?: return null
         return obj.string("simpleText") ?: (obj["runs"] as? JsonArray)?.joinToString("") {
