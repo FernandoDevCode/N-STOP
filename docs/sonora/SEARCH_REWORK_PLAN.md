@@ -48,7 +48,7 @@ Este trabalho documental só pode alterar `AGENTS.md` e este arquivo. Não cria 
 9. A seleção de fontes visíveis na Busca não controla nem descreve, por si só, a infraestrutura interna usada posteriormente para resolver áudio. Fonte de catálogo e fonte/ID de áudio são identidades diferentes.
 10. Mini-player, bottom navigation, perfis de artista e identidade visual Sonora são preservados. Este rework não redesenha chrome global nem perfis.
 11. O mecanismo de reprodução, Media3, downloads, fila e resolução de stream não mudam nesta tarefa. A Busca apenas entrega identidades separadas e aciona as fronteiras existentes.
-12. A integração do YouTube convencional depende de investigação técnica anterior à implementação. O contrato o inclui como fonte de produto, mas não presume que API, autenticação, quota, cobertura de tipos ou reprodução já estejam resolvidas.
+12. A busca do YouTube convencional usará InnerTube WEB independente, sem YouTube Data API v3, NewPipeExtractor ou yt-dlp na pesquisa. O cliente e o adaptador são isolados; integração com a UI e reprodução continuam pendentes.
 13. Uma sessão temporária da Busca dura enquanto a mesma instância de navegação da Busca existir. A seleção não fixada é conservada ao abrir artista/álbum e voltar para essa instância; é descartada ao iniciar uma nova instância/sessão da Busca. A seleção fixada é restaurada em qualquer sessão futura.
 
 ## 3. Escopo e não escopo
@@ -416,7 +416,7 @@ Não encadear PR B sobre branch A. Ambos os PRs têm base `nonstop`; B é atuali
 
 ## 9. Pendências técnicas ainda não comprovadas
 
-1. **YouTube convencional:** escolher uma integração permitida e sustentável; provar autenticação/chave, quotas, termos, disponibilidade regional, SafeSearch, paginação, suporte a vídeo/canal/playlist ou apenas aos tipos deste contrato e estabilidade dos IDs.
+1. **YouTube convencional:** InnerTube WEB aprovado; validar disponibilidade regional, SafeSearch, manutenção e comportamento Android antes da integração. Apenas vídeos são expostos nesta versão.
 2. **Reprodução de item YouTube:** confirmar, sem mudar o player nesta tarefa, quais IDs a fronteira atual aceita e quais limitações existem. Catálogo disponível não significa áudio reproduzível.
 3. **Spotify:** confirmar comportamento real sem sessão, refresh de 401, 429/`Retry-After`, artwork e cobertura de tipos além de faixa antes de prometer esses tipos.
 4. **YouTube Music:** confirmar se a implementação atual distingue com segurança faixa e vídeo e quais IDs de artista/álbum abrem as rotas preservadas.
@@ -533,4 +533,32 @@ Status final do bootstrap:
 ```
 
 Durante o bootstrap, somente este plano e os quatro arquivos novos de contrato/teste foram editados. `AGENTS.md`, `gradle.properties`, `SearchScreen.kt`, `SearchViewModel.kt` e os scripts do emulador conservaram o estado preexistente. Nenhum worktree, commit, push ou merge foi criado.
+
+## 14. Spike de busca no YouTube convencional sem Data API v3
+
+Em 2026-11-10 foram executadas, com rede real, duas amostras para cada uma de seis consultas iguais (comum, demo, apresentação ao vivo, upload raro, cover e consulta artificial sem correspondência), limite de 15 s e sem baixar mídia. Os tempos abaixo são do ambiente de desenvolvimento, não medições em Android:
+
+| Candidato | Sucesso | Média | Mediana | p95 | Observação |
+| --- | ---: | ---: | ---: | ---: | --- |
+| InnerTube WEB em `youtube.com/youtubei/v1/search` | 12/12 | 840 ms | 868 ms | 936 ms | Sem chave de projeto; paginação real, 18 itens na segunda página e zero IDs repetidos. |
+| NewPipeExtractor 0.26.5 | 12/12 | 974 ms | 729 ms | 3.777 ms | O primeiro acesso foi o cold start; nas 11 amostras seguintes, média de 720 ms e p95 de 842 ms. |
+| yt-dlp 2026.08.19 com `ytsearch20:` | 12/12 | 3.144 ms | 3.029 ms | 3.820 ms | Retornou 20 vídeos nas consultas úteis; `ytsearch` não expôs token estável de continuação. |
+
+Os três preservaram o `videoId` original e encontraram a demo `JOvAJJI2Ui8`, a apresentação `JQ2pTamaqQ4`, o upload raro `9Vz-MkbnSg4` e o cover `MoL0u4fxUW4`, com título, canal, thumbnail e duração. InnerTube e NewPipe também distinguiram vídeos, canais e playlists. A consulta artificial ainda recebeu aproximações do YouTube em InnerTube e NewPipe; somente yt-dlp retornou zero, portanto consulta sem correspondência não pode ser inferida por texto aleatório.
+
+Recomendação para revisão: usar InnerTube WEB convencional como candidato primário, reaproveitando OkHttp, kotlinx.serialization e o transporte existente, mas com parser próprio de `videoRenderer` e cancelamento que encerre o `Call`. NewPipe é a alternativa pura para Android com parser e paginação maduros, porém acrescentou seis artefatos de runtime e 3.702.880 bytes em JARs brutos antes de compressão/empacotamento; isso não é medição do delta do APK. yt-dlp já existe no aplicativo e seu `execute` pode ser interrompido, mas depende do runtime Python, é serializado no processo e foi substancialmente mais lento, sendo inadequado como caminho primário a cada digitação.
+
+As três opções usam acesso automatizado não oficial. Os [Termos do YouTube](https://www.youtube.com/t/terms) restringem meios automatizados salvo as exceções neles descritas; a natureza pessoal do aplicativo não elimina esse risco. A aprovação humana deve tratar conformidade e tolerância a bloqueios antes da integração.
+
+Antes da implementação faltam aprovação da alternativa e de seus termos, política de atualização contra mudanças do YouTube, regra aprovada para converter ordem do provedor em `rankingScore` sem inventar relevância, desenho de timeout/cancelamento e teste Android de memória, APK e reprodução. Estruturalmente, um vídeo cabe como `CatalogIdentity(CatalogSource.YOUTUBE, videoId)` e `SearchResultType.VIDEO`; isso não prova que todo resultado possa ser reproduzido e não autoriza substituir demo, cover ou live por outra versão.
+
+### Implementação isolada aprovada — 2026-11-10
+
+`YouTubeWebSearchClient` usa o OkHttpClient recebido e kotlinx.serialization existentes, descobre a configuração WEB pública na página inicial e consulta `/youtubei/v1/search`. Cada operação HTTP tem timeout de 15 s por padrão; cancelamento da coroutine chama `Call.cancel()`. Erros HTTP e respostas inválidas propagam falha, sem virar lista vazia. Metadados opcionais permanecem nulos; itens sem ID válido ou título são descartados. Duplicatas são preservadas para a deduplicação por identidade do engine existente.
+
+A página retorna continuation e `nextRank`; o chamador deve fornecer esse valor como `rankOffset` na próxima página da mesma consulta. Posições de `videoRenderer` incompletos são preservadas como lacunas. O adaptador retorna somente `YOUTUBE`/`VIDEO`, sem áudio ou ações executáveis. O score `1.0 / (providerRank + 1.0)` é uma convenção ordinal provisória aprovada, não relevância medida.
+
+Testes locais usam fixture JSON e MockWebServer para metadados, campos ausentes, vazio, IDs duplicados, paginação, 429, timeout e cancelamento efetivo (evento OkHttp `canceled` e `Call.isCanceled()`). O adaptador testa demos, lives e covers sem substituir IDs. Não há conexão com SearchScreen/SearchViewModel nem alteração em InnerTubeClient, resolvedores ou dependências.
+
+Validação: `:data:ytmusic:testDebugUnitTest`, `:feature:search:testDebugUnitTest`, `:data:ytmusic:compileDebugKotlin` e `:feature:search:compileDebugKotlin` concluíram com `BUILD SUCCESSFUL`. Os cinco testes novos do cliente passaram. Esta implementação foi validada com rede local simulada; a evidência de rede externa continua sendo o spike acima. Limitações: a configuração WEB é descoberta a cada página (uma requisição adicional), o timeout é por chamada HTTP e a continuidade da consulta/offset é responsabilidade do chamador. Memória, latência e reprodução em Android permanecem sem validação nesta etapa.
 
