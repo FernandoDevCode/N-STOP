@@ -117,39 +117,26 @@ object PlaybackVisualEnergy {
 
         queued.set(Packet(mono, sampleRate, generation.get(), now))
         if (draining.compareAndSet(false, true)) {
-            executor.execute {
-                try {
-                    while (true) {
-                        val packet = queued.getAndSet(null) ?: break
-                        if (packet.epoch != generation.get() || subscribers.get() == 0) continue
-                        val newFeatures = synchronized(analyzer) {
-                            analyzer.analyze(packet.mono, packet.sampleRate)
-                        }
-                        if (packet.epoch == generation.get()) latestMotion = newFeatures
-                    }
-                } finally {
-                    draining.set(false)
-                    if (queued.get() != null && draining.compareAndSet(false, true)) {
-                        executor.execute { drainPending() }
-                    }
-                }
-            }
+            executor.execute { drainPending() }
         }
     }
 
     private fun drainPending() {
-        try {
-            while (true) {
-                val packet = queued.getAndSet(null) ?: break
-                if (packet.epoch != generation.get() || subscribers.get() == 0) continue
-                val computed = synchronized(analyzer) {
-                    analyzer.analyze(packet.mono, packet.sampleRate)
+        do {
+            try {
+                while (true) {
+                    val packet = queued.getAndSet(null) ?: break
+                    if (packet.epoch != generation.get() || subscribers.get() == 0) continue
+                    val computed = synchronized(analyzer) {
+                        analyzer.analyze(packet.mono, packet.sampleRate)
+                    }
+                    if (packet.epoch == generation.get()) latestMotion = computed
                 }
-                if (packet.epoch == generation.get()) latestMotion = computed
+            } finally {
+                draining.set(false)
             }
-        } finally {
-            draining.set(false)
-        }
+            // A write racing with the last queue read must not become stranded.
+        } while (queued.get() != null && draining.compareAndSet(false, true))
     }
 }
 
