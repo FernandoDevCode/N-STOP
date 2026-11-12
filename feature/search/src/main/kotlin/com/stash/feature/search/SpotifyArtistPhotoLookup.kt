@@ -30,8 +30,8 @@ class SpotifyArtistPhotoLookup @Inject constructor(
         val cached = if (lastUrl?.startsWith("https://i.scdn.co/image/") == true &&
             lastArtist?.startsWith("https://open.spotify.com/artist/") == true
         ) SpotifyArtistPhoto(lastUrl, lastArtist) else null
-        val age = System.currentTimeMillis() - prefs.getLong("$key.updated", 0L)
-        if (cached != null && age in 0 until CACHE_MS) return@withContext cached
+        // Revalidate only on profile open (the only caller). Search never calls
+        // Spotify. A failure retains the last valid reference without clearing it.
         val found = try {
             spotifyApi.searchArtistPhoto(name)
         } catch (cancel: CancellationException) {
@@ -48,7 +48,4 @@ class SpotifyArtistPhotoLookup @Inject constructor(
         found ?: cached
     }
 
-    private companion object {
-        const val CACHE_MS = 7L * 24 * 60 * 60 * 1000
-    }
 }
