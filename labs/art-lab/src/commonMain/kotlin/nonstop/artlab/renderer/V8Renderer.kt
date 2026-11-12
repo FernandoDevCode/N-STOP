@@ -61,6 +61,7 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
     state: PlayerState, onState: (PlayerState) -> Unit, previous: () -> Unit, next: () -> Unit,
     onClose: () -> Unit, onMenu: () -> Unit, font: FontFamily, debug: DebugView = DebugView.FINAL,
     fontScale: Float = 1f, modifier: Modifier = Modifier,
+    titleFont: FontFamily = font,
     microOptions:MicroOptions=MicroOptions(),microState:PlayerMicroState?=null,
     production: Boolean = false, seekEnabled: Boolean = true, repeatOne: Boolean = false,
     onInfo: () -> Unit = {}, coverContent: (@Composable (Modifier) -> Unit)? = null,
@@ -77,33 +78,41 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
         val w = maxWidth.value
         val h = maxHeight.value
         val u = w / 432f
-        val inset = w * MasterGeometry.inset
-        val contentWidth = w * MasterGeometry.coverWidth
-        // Make room for accessible typography before allowing lower controls to leave the viewport.
-        val artSize = contentWidth * (1f-.36f*(fontScale-1f).coerceIn(0f,.5f))
-        val artHeight = min(contentWidth,h*MasterGeometry.coverHeight)*(1f-.36f*(fontScale-1f).coerceIn(0f,.5f))
-        val artY = h * MasterGeometry.coverTop
-        val seekY = h*MasterGeometry.progressCenter-(contentWidth-artSize)
-        val titleY = seekY + 43f*u
+        val inset = w * (if(production) .065f else MasterGeometry.inset)
+        val contentWidth = w-2f*inset
         val title=album.track ?: "Faixa não fornecida"
         val measurer=rememberTextMeasurer()
         val density=LocalDensity.current
-        val baseTitleSize=27f
-        val intrinsic=with(density) { measurer.measure(title,TextStyle(fontFamily=font,fontWeight=FontWeight.SemiBold,
+        val baseTitleSize=if(production) 26f else 27f
+        val titleFamily=if(production) titleFont else font
+        val intrinsic=with(density) { measurer.measure(title,TextStyle(fontFamily=titleFamily,fontWeight=FontWeight.SemiBold,
             fontSize=(baseTitleSize*u).sp),maxLines=1).size.width.toDp().value }
-        val titleSize=if(fontScale>1.05f)baseTitleSize else (baseTitleSize*(contentWidth-33*u)/intrinsic.coerceAtLeast(1f)).coerceIn(18f,baseTitleSize)
+        val titleSize=if(fontScale>1.05f)baseTitleSize else
+            (baseTitleSize*(contentWidth-60*u)/intrinsic.coerceAtLeast(1f)).coerceIn(18f,baseTitleSize)
         val titleHeight=with(density) { measurer.measure(title,
-            TextStyle(fontFamily=font,fontWeight=FontWeight.SemiBold,fontSize=(titleSize*u).sp,lineHeight=(titleSize*1.16f*u).sp),
-            maxLines=2,constraints=Constraints(maxWidth=(contentWidth-33*u).dp.roundToPx())).size.height.toDp().value }
+            TextStyle(fontFamily=titleFamily,fontWeight=FontWeight.SemiBold,
+                fontSize=(titleSize*u).sp,lineHeight=(titleSize*1.13f*u).sp),
+            maxLines=2,constraints=Constraints(maxWidth=(contentWidth-64*u).dp.roundToPx())).size.height.toDp().value }
         val metadata="${album.artist}  •  ${album.album}"
-        val metadataY=titleY+titleHeight+4*u
-        val metadataHeight=with(density) { measurer.measure(metadata,
-            TextStyle(fontFamily=font,fontSize=(16*u).sp,lineHeight=(20*u).sp),maxLines=2,
-            constraints=Constraints(maxWidth=(contentWidth-20*u).dp.roundToPx())).size.height.toDp().value }
-        // Typography-dependent optical spacing, shared for any title. Compact fitted headlines
-        // leave more breathing room before transport; no catalog identity enters geometry.
-        val controlsY = max(h*MasterGeometry.transportCenter+(baseTitleSize-titleSize)*2.8f*u, metadataY+metadataHeight+48*u)
-        val lyricsY = max(h*MasterGeometry.lyricsTop, controlsY+70*u)
+        val hasAlbum=album.album.isNotBlank()
+        val metadataHeight=if(production) (if(hasAlbum) 41f else 21f)*u else
+            with(density) { measurer.measure(metadata,
+                TextStyle(fontFamily=font,fontSize=(16*u).sp,lineHeight=(20*u).sp),maxLines=2,
+                constraints=Constraints(maxWidth=(contentWidth-20*u).dp.roundToPx())).size.height.toDp().value }
+        val lyricsY=if(production) h-63*u else h*MasterGeometry.lyricsTop
+        val controlsY=if(production) lyricsY-101*u else h*MasterGeometry.transportCenter
+        // The preview references put track details ABOVE the timeline in production.
+        // Reserve the lyrics handle and transport first; fit the art into what remains.
+        val seekY=if(production) controlsY-83*u else
+            h*MasterGeometry.progressCenter
+        val titleY=if(production) seekY-titleHeight-metadataHeight-32*u else seekY+43*u
+        val metadataY=titleY+titleHeight+(if(production) 2f else 4f)*u
+        val albumY=metadataY+21*u
+        val artY=if(production) max(62*u,h*.068f) else h*MasterGeometry.coverTop
+        val availableArtHeight=if(production) (titleY-artY+13*u).coerceAtLeast(92*u) else h*MasterGeometry.coverHeight
+        val artSize=min(contentWidth,availableArtHeight)*
+            (1f-.36f*(fontScale-1f).coerceIn(0f,.5f))
+        val artHeight=artSize
         val text = Color(0xfffafbff)
         val muted = Color(0xff9296a6)
         // Resolve each foreground against its own location in the atmospheric
@@ -119,6 +128,7 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
         val topRightInk=ink(1f-inset/w,.055f)
         val titleInk=ink(.29f,(titleY+titleHeight*.4f)/h)
         val metadataInk=secondary(.29f,(metadataY+metadataHeight*.4f)/h)
+        val albumInk=secondary(.29f,(albumY+9*u)/h)
         val leftTimeInk=secondary(inset/w,(seekY+14f*u)/h)
         val rightTimeInk=secondary(1f-inset/w,(seekY+14f*u)/h)
         val showArt = debug in listOf(DebugView.FINAL,DebugView.ART_BASE)
@@ -204,13 +214,22 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
                 Text(total?.let(::time) ?: "—:—",color=rightTimeInk,fontSize=(11*u).sp,fontFamily=font)
             }
             Text(title,Modifier.offset(inset.dp,titleY.dp).width((contentWidth-33*u).dp).clickable(onClick=onInfo),color=titleInk,
-                fontSize=(titleSize*u).sp,fontFamily=font,fontWeight=FontWeight.SemiBold,
-                maxLines=2,overflow=TextOverflow.Ellipsis,lineHeight=(titleSize*1.16f*u).sp,letterSpacing=0.sp)
-            Text(metadata,Modifier.offset(inset.dp,metadataY.dp).width((contentWidth-20*u).dp).clickable(onClick=onInfo),
+                fontSize=(titleSize*u).sp,fontFamily=titleFamily,fontWeight=FontWeight.SemiBold,
+                maxLines=2,overflow=TextOverflow.Ellipsis,lineHeight=(titleSize*1.13f*u).sp,letterSpacing=if(production) (-.35f*u).sp else 0.sp)
+            if (production) {
+                Text(album.artist,Modifier.offset(inset.dp,metadataY.dp).width((contentWidth-60*u).dp)
+                    .clickable(onClick=onInfo),color=metadataInk,fontSize=(15.5f*u).sp,
+                    lineHeight=(20*u).sp,fontFamily=font,fontWeight=FontWeight.Medium,
+                    maxLines=1,overflow=TextOverflow.Ellipsis,letterSpacing=0.sp)
+                if(hasAlbum) Text(album.album,Modifier.offset(inset.dp,albumY.dp).width((contentWidth-60*u).dp)
+                    .clickable(onClick=onInfo),color=albumInk.copy(alpha=.73f),fontSize=(12.5f*u).sp,
+                    lineHeight=(17*u).sp,fontFamily=font,maxLines=1,
+                    overflow=TextOverflow.Ellipsis,letterSpacing=.1.sp)
+            } else Text(metadata,Modifier.offset(inset.dp,metadataY.dp).width((contentWidth-20*u).dp).clickable(onClick=onInfo),
                 color=metadataInk,fontSize=(16*u).sp,lineHeight=(20*u).sp,fontFamily=font,maxLines=2,overflow=TextOverflow.Ellipsis,letterSpacing=0.sp)
             RoundControl(if(state.liked) "Remover favorito" else "Favoritar","heart",
-                Modifier.offset((w-inset-34*u).dp,(titleY-2*u).dp).size((48*u).dp),
-                { onState(state.copy(liked=!state.liked)) },if (production) ink(1f-inset/w,(titleY+12f*u)/h).copy(alpha=if(state.liked) 1f else .84f) else if(state.liked) Color(r.favoriteColor) else muted,heartFilled=state.liked)
+                Modifier.offset((w-inset-34*u).dp,(metadataY-2*u).dp).size((48*u).dp),
+                { onState(state.copy(liked=!state.liked)) },if (production) ink(1f-inset/w,(metadataY+12f*u)/h).copy(alpha=if(state.liked) 1f else .84f) else if(state.liked) Color(r.favoriteColor) else muted,heartFilled=state.liked)
             val buttonSize=w*r.controlSurface.diameterRatio/.85f
             val small=48*u
             listOf(.135f,.315f,.685f,.865f).forEachIndexed { i,x ->
@@ -232,12 +251,15 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
                 Modifier.offset((w/2-buttonSize/2).dp,(controlsY-buttonSize/2).dp).size(buttonSize.dp)) {
                 onState(state.copy(playing=!state.playing))
             }
-            Box(Modifier.offset((8*u).dp,lyricsY.dp).width((w-16*u).dp).height((h-lyricsY).coerceAtLeast(60*u).dp)
-                .clip(RoundedCornerShape(topStart=(36*u).dp,topEnd=(36*u).dp))
-                .border((.6f*u).dp,Color(0x446b7488),RoundedCornerShape(topStart=(36*u).dp,topEnd=(36*u).dp))
-                .background(Color(r.lyrics.surface)).clickable { onState(state.copy(lyrics=true)) },contentAlignment=Alignment.TopCenter) {
+            Box(Modifier.offset((8*u).dp,lyricsY.dp).width((w-16*u).dp)
+                .height((h-lyricsY).coerceAtLeast(56*u).dp)
+                .then(if(production) Modifier else Modifier
+                    .clip(RoundedCornerShape(topStart=(36*u).dp,topEnd=(36*u).dp))
+                    .border((.6f*u).dp,Color(0x446b7488),RoundedCornerShape(topStart=(36*u).dp,topEnd=(36*u).dp))
+                    .background(Color(r.lyrics.surface)))
+                .clickable { onState(state.copy(lyrics=true)) },contentAlignment=Alignment.TopCenter) {
                 Column(horizontalAlignment=Alignment.CenterHorizontally,modifier=Modifier.padding(top=(6*u).dp)) {
-                    Glyph("up",ink(.5f,lyricsY/h),Modifier.size((24*u).dp))
+                    Glyph("up",ink(.5f,lyricsY/h),Modifier.size((20*u).dp))
                     Text("LETRAS",color=secondary(.5f,(lyricsY+33*u)/h),fontSize=(10*u).sp,letterSpacing=(2.5*u).sp,fontFamily=font)
                 }
             }
