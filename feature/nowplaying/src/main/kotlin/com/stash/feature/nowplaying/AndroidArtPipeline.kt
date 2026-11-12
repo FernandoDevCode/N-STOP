@@ -43,7 +43,7 @@ internal object AndroidArtPipeline {
         val bytes = ByteBuffer.allocate(pixels.size * 4 + 8).putInt(reduced.width).putInt(reduced.height)
         pixels.forEach(bytes::putInt)
         val hash = sha(bytes.array())
-        val key = sha((hash + ClassicalDirector.VERSION + recipeJson.encodeToString(FeaturePolicy())).toByteArray())
+        val key = sha((hash + ClassicalDirector.VERSION + ArtworkAtmosphereV2.CACHE_VERSION + recipeJson.encodeToString(FeaturePolicy())).toByteArray())
         mutex.withLock {
             currentCoroutineContext().ensureActive()
             memory[key]?.let { return@withLock it.copy(cover = cover.asImageBitmap()) }
@@ -52,13 +52,13 @@ internal object AndroidArtPipeline {
             val cached = runCatching {
                 require(file.length() in 1..1_000_000)
                 DataInputStream(file.inputStream().buffered()).use { input ->
-                    require(input.readInt() == 1)
+                    require(input.readInt() == ArtworkAtmosphereV2.CACHE_VERSION)
                     val encodedRecipe = input.readUTF()
                     val recipe = recipeJson.decodeFromString<ArtRecipe>(encodedRecipe)
                     require(recipe.isValid() && recipe.sourceImageHash == hash && recipe.modelVersion == "none")
                     val expected = input.readUTF()
                     val w = input.readInt(); val h = input.readInt()
-                    require(w == 192 && h == 342)
+                    require(w == ArtworkAtmosphereV2.WIDTH && h == ArtworkAtmosphereV2.HEIGHT)
                     val raw = ByteArray(w * h * 4); input.readFully(raw)
                     require(sha(encodedRecipe.toByteArray() + raw) == expected && input.read() == -1)
                     val buffer = ByteBuffer.wrap(raw)
@@ -69,8 +69,7 @@ internal object AndroidArtPipeline {
                 val features = ClassicalFeatureExtractor().analyze(PixelImage(reduced.width, reduced.height, pixels))
                 currentCoroutineContext().ensureActive()
                 val r = ClassicalDirector.direct(features, hash)
-                val worker = currentCoroutineContext()
-                val composite = compositeAtmosphere(AtmospherePrecomputer.render(r, checkCancelled = { worker.ensureActive() }))
+                val composite = ArtworkAtmosphereV2.render(cover)
                 currentCoroutineContext().ensureActive()
                 r to composite
             }
@@ -81,7 +80,7 @@ internal object AndroidArtPipeline {
                 val temp = File(directory, "$key.tmp")
                 DataOutputStream(temp.outputStream().buffered()).use { output ->
                     val encodedRecipe = recipeJson.encodeToString(recipe)
-                    output.writeInt(1); output.writeUTF(encodedRecipe); output.writeUTF(sha(encodedRecipe.toByteArray() + raw.array()))
+                    output.writeInt(ArtworkAtmosphereV2.CACHE_VERSION); output.writeUTF(encodedRecipe); output.writeUTF(sha(encodedRecipe.toByteArray() + raw.array()))
                     output.writeInt(atmosphere.width); output.writeInt(atmosphere.height); output.write(raw.array())
                 }
                 java.nio.file.Files.move(temp.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
