@@ -71,6 +71,7 @@ internal fun V8PlayerSurface(ui: NowPlayingUiState, position: State<Long>, viewM
             album = Album(track?.artist.orEmpty(), track?.album.orEmpty(), track?.title,
                 durationSeconds = (ui.durationMs / 1000).toInt().takeIf { it > 0 }, status = ArtworkStatus.OFFICIAL_COVER),
             cover = art.cover, atmosphere = art.atmosphere, recipe = art.recipe, state = state,
+            visualContrast = art.contrast,
             onState = { changed ->
                 when {
                     changed.playing != state.playing -> viewModel.onPlayPauseClick()
