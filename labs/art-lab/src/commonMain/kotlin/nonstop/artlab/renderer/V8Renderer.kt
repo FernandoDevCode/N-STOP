@@ -174,28 +174,40 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
                     // Organic U: retain the original artwork in the upper field, then
                     // release its alpha into the already-rendered atmospheric canvas.
                     // This mask has no colored border, extra glow or album-specific rule.
+                    // The lower edge is a gentle, center-raised U alpha mask.
+                    // Instead of a dark oval/black fog over the cover, let the
+                    // original pixels dissolve directly into their own derived
+                    // background. This is a single compositing pass.
+                    val mask = Path().apply {
+                        moveTo(0f, size.height * .80f)
+                        cubicTo(
+                            size.width * .25f, size.height * .58f,
+                            size.width * .75f, size.height * .58f,
+                            size.width, size.height * .80f,
+                        )
+                        lineTo(size.width, size.height)
+                        lineTo(0f, size.height)
+                        close()
+                    }
                     drawRect(
                         Brush.verticalGradient(
                             0f to Color.White,
-                            .52f to Color.White,
-                            .70f to Color.White.copy(alpha=.96f),
-                            .86f to Color.White.copy(alpha=.56f),
+                            .56f to Color.White,
+                            .73f to Color.White.copy(alpha=.94f),
+                            .89f to Color.White.copy(alpha=.42f),
                             1f to Color.Transparent,
                         ),
                         blendMode=BlendMode.DstIn,
                     )
-                    // A soft center evacuation makes the fade descend further at
-                    // the edges than in the middle, without cutting a hard curve.
-                    drawOval(
-                        Brush.radialGradient(
-                            0f to Color.White.copy(alpha=.48f),
-                            .58f to Color.White.copy(alpha=.20f),
-                            1f to Color.Transparent,
-                            center=Offset(size.width*.5f,size.height*.98f),
-                            radius=size.width*.59f,
+                    // Suppress a little opacity in the center of the lower
+                    // artwork; no extra light, noise, color or oval boundary.
+                    drawPath(
+                        mask,
+                        Brush.verticalGradient(
+                            .60f to Color.Transparent,
+                            .87f to Color.Black.copy(alpha=.075f),
+                            1f to Color.Black.copy(alpha=.13f),
                         ),
-                        topLeft=Offset(-size.width*.11f,size.height*.61f),
-                        size=Size(size.width*1.22f,size.height*.88f),
                         blendMode=BlendMode.DstOut,
                     )
                 } else Modifier)) {
