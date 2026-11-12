@@ -798,6 +798,37 @@ class SpotifyApiClient @Inject constructor(
     }
 
     /**
+     * Refresh an already pinned Spotify artist, without searching by name
+     * again and accidentally switching to another artist with the same name.
+     */
+    suspend fun getArtistPhotoById(id: String, expectedName: String): SpotifyArtistPhoto? =
+        withContext(Dispatchers.IO) {
+            if (!id.matches(Regex("[A-Za-z0-9]{22}"))) return@withContext null
+            val token = tokenManager.getSpotifyAccessToken() ?: return@withContext null
+            val url = "$WEB_API_BASE/artists/$id"
+            try {
+                fun read(bearer: String): Pair<Int, String?> =
+                    executeSearchRequest(url, bearer).use { response ->
+                        response.code to if (response.isSuccessful) response.body?.string() else null
+                    }
+                var (code, payload) = read(token)
+                if (code == 401) {
+                    val refreshed = tokenManager.forceRefreshSpotifyAccessToken()
+                        ?: return@withContext null
+                    val retry = read(refreshed)
+                    code = retry.first
+                    payload = retry.second
+                }
+                if (code !in 200..299 || payload == null) return@withContext null
+                parseSpotifyArtistDetail(payload, id, expectedName)
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                null
+            }
+        }
+
+    /**
      * Best-effort followed artist names. The web-player session may not carry
      * user-follow-read; a denied request simply yields no names, never a fake list.
      */

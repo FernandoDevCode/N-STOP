@@ -16,6 +16,8 @@ interface MusicBrainzClient {
     /** Name search that resolves an MBID (score+type gated) then fetches its
      *  url-rels; null if no confident match. */
     suspend fun searchByName(name: String): JsonObject?
+    /** Exact unambiguous match for cross-provider artist-photo identity. */
+    suspend fun searchUniqueByName(name: String): JsonObject?
 }
 
 private val HOST_KIND = linkedMapOf(
