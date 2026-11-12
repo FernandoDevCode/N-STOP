@@ -10,10 +10,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.GraphicsMode
 
 /** Ensures the native optical View, rather than an obscured Compose overlay,
  *  draws the material while retaining a neutral future rail. */
 @RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class NativeOpticalReliefTest {
     @Test fun `native renderer draws played material but no relief ahead of thumb`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
@@ -26,6 +28,7 @@ class NativeOpticalReliefTest {
         )
         view.layout(0, 0, 600, 96)
         view.setFraction(.5f)
+        view.setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, null)
         val bitmap = Bitmap.createBitmap(600, 96, Bitmap.Config.ARGB_8888)
         try {
             view.draw(Canvas(bitmap))
