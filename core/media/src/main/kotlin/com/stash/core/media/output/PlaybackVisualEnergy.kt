@@ -49,7 +49,13 @@ object PlaybackVisualEnergy {
     fun subscribe() { subscribers.incrementAndGet() }
 
     fun unsubscribe() {
-        if (subscribers.updateAndGet { (it - 1).coerceAtLeast(0) } == 0) reset()
+        if (subscribers.updateAndGet { (it - 1).coerceAtLeast(0) } == 0) {
+            // Stop sampling immediately, but retain the last mature profile
+            // briefly so the closing screen can persist it.
+            queued.set(null)
+            latestLevel = 0f
+            latestAt = 0L
+        }
     }
 
     /** Call on track identity changes; old packets cannot affect the next track. */
@@ -72,6 +78,9 @@ object PlaybackVisualEnergy {
         if (subscribers.get() == 0 || SystemClock.elapsedRealtime() - latestAt > 400L)
             MusicMotionFeatures.EMPTY else latestMotion
 
+    /** Snapshot for persistence; never use this as a live audio sample. */
+    fun profileForCache(): MusicMotionFeatures = latestMotion
+
     /** Restore prior analysis as a *prior*, never as a fake live audio event. */
     fun seed(profile: MusicMotionFeatures) {
         if (!profile.valid) return
@@ -89,33 +98,46 @@ object PlaybackVisualEnergy {
 
         val view = buffer.duplicate().order(ByteOrder.nativeOrder())
         val start = view.position()
-        val count = min(WINDOW, frames)
+        val stride = max(1, frames / WINDOW)
+        val count = min(WINDOW, (frames + stride - 1) / stride)
         val mono = FloatArray(count)
+        val second = if (channels >= 2) FloatArray(count) else null
         var power = 0.0
+        var otherPower = 0.0
         // Read only one channel in each frame; other channels are left untouched.
         // This is not downmix DSP and cannot affect samples sent to AudioTrack.
         for (i in 0 until count) {
-            val offset = start + i * frameSize
-            val raw = when (format) {
-                SampleFormat.FLOAT -> view.getFloat(offset)
-                SampleFormat.INT16 -> view.getShort(offset) / 32768f
+            val offset = start + i * stride * frameSize
+            fun decoded(at: Int): Float = when (format) {
+                SampleFormat.FLOAT -> view.getFloat(at)
+                SampleFormat.INT16 -> view.getShort(at) / 32768f
                 SampleFormat.INT24 -> {
-                    val x = (view.get(offset).toInt() and 255) or
-                        ((view.get(offset + 1).toInt() and 255) shl 8) or
-                        (view.get(offset + 2).toInt() shl 16)
+                    val x = (view.get(at).toInt() and 255) or
+                        ((view.get(at + 1).toInt() and 255) shl 8) or
+                        (view.get(at + 2).toInt() shl 16)
                     x / 8388608f
                 }
-                SampleFormat.INT32 -> (view.getInt(offset).toDouble() / 2147483648.0).toFloat()
+                SampleFormat.INT32 -> (view.getInt(at).toDouble() / 2147483648.0).toFloat()
             }
-            val v = if (raw.isFinite()) raw.coerceIn(-1f, 1f) else 0f
+            val a = decoded(offset)
+            val v = if (a.isFinite()) a.coerceIn(-1f, 1f) else 0f
             mono[i] = v
             power += v.toDouble() * v
+            if (second != null) {
+                val b = decoded(offset + format.bytesPerSample)
+                val w = if (b.isFinite()) b.coerceIn(-1f, 1f) else 0f
+                second[i] = w
+                otherPower += w.toDouble() * w
+            }
         }
-        val rms = sqrt(power / count).toFloat()
+        // Analyze the stronger coherent channel: opposing stereo phases never
+        // cancel, and mono/silent-left stereo still produces real features.
+        if (second != null && otherPower > power) second.copyInto(mono)
+        val rms = sqrt(max(power, otherPower) / count).toFloat()
         latestLevel = (sqrt(rms) * 2.1f).coerceIn(0f, 1f)
         latestAt = now
 
-        queued.set(Packet(mono, sampleRate, generation.get(), now))
+        queued.set(Packet(mono, max(1000, sampleRate / stride), generation.get(), now))
         if (draining.compareAndSet(false, true)) {
             executor.execute { drainPending() }
         }
@@ -203,6 +225,9 @@ internal class MusicFeatureAnalyzer {
         // Six coarse log-spaced spectral probes, Hann window, no per-frame FFT.
         val frequencies = floatArrayOf(180f, 350f, 700f, 1400f, 2800f, 5600f)
         val bands = FloatArray(frequencies.size)
+        val hann = FloatArray(n) { j ->
+            (.5 - .5 * cos(2.0 * PI * j / (n - 1))).toFloat()
+        }
         for (k in frequencies.indices) {
             val frequency = min(frequencies[k], sampleRate * .43f)
             val omega = 2.0 * PI * frequency / sampleRate
@@ -210,8 +235,7 @@ internal class MusicFeatureAnalyzer {
             var a = 0.0
             var b = 0.0
             for (j in pcm.indices) {
-                val window = .5 - .5 * cos(2.0 * PI * j / (n - 1))
-                val next = pcm[j] * window + coeff * a - b
+                val next = pcm[j] * hann[j] + coeff * a - b
                 b = a
                 a = next
             }
