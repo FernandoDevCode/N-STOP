@@ -65,7 +65,8 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
     production: Boolean = false, seekEnabled: Boolean = true, repeatOne: Boolean = false,
     onInfo: () -> Unit = {}, coverContent: (@Composable (Modifier) -> Unit)? = null,
     lyricsContent: (@Composable (Modifier, Float) -> Unit)? = null,
-    opticalProgress: (@Composable (Modifier, Float, (Float) -> Unit) -> Unit)? = null) {
+    opticalProgress: (@Composable (Modifier, Float, (Float) -> Unit) -> Unit)? = null,
+    visualContrast: VisualInkContrast? = null) {
     val r = remember(recipe) { safeRecipe(recipe) }
     val micro=microState ?: remember(r.sourceImageHash) { PlayerMicroState() }
     val profile=remember(r.familyWeights) { MicroProfile.from(r) }
@@ -105,6 +106,21 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
         val lyricsY = max(h*MasterGeometry.lyricsTop, controlsY+70*u)
         val text = Color(0xfffafbff)
         val muted = Color(0xff9296a6)
+        // Resolve each foreground against its own location in the atmospheric
+        // composite. Null contrast and Desktop Lab retain their prior styling.
+        fun ink(x: Float,y: Float): Color = when {
+            !production || visualContrast == null -> text
+            visualContrast.darkInkAt(x,y,r.scrimTop,r.scrimBottom) -> Color(0xff17191c)
+            else -> Color.White
+        }
+        fun secondary(x:Float,y:Float):Color =
+            if (production && visualContrast!=null) ink(x,y).copy(alpha=.84f) else muted
+        val topLeftInk=ink(inset/w,.055f)
+        val topRightInk=ink(1f-inset/w,.055f)
+        val titleInk=ink(.29f,(titleY+titleHeight*.4f)/h)
+        val metadataInk=secondary(.29f,(metadataY+metadataHeight*.4f)/h)
+        val leftTimeInk=secondary(inset/w,(seekY+14f*u)/h)
+        val rightTimeInk=secondary(1f-inset/w,(seekY+14f*u)/h)
         val showArt = debug in listOf(DebugView.FINAL,DebugView.ART_BASE)
         if (showArt && atmosphere != null) Image(if(debug==DebugView.FINAL)atmosphere.composite else atmosphere.deep, null, Modifier.fillMaxSize(),contentScale=ContentScale.FillBounds)
         if (debug==DebugView.LIGHTS && atmosphere!=null) {
@@ -126,8 +142,10 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
         if (debug in listOf(DebugView.FINAL,DebugView.SCRIM)) Box(Modifier.fillMaxSize().background(
             Brush.verticalGradient(0f to Color.Black.copy(alpha=r.scrimTop),.5f to Color.Transparent,1f to Color.Black.copy(alpha=r.scrimBottom))))
         if (debug == DebugView.FINAL) {
-            RoundControl("Recolher player", "down", Modifier.offset((inset-24*u).dp,(h*.027f-4*u).dp).size((48*u).dp),onClose,outlined=!production)
-            RoundControl(if (production) "Opções da faixa" else "Diagnóstico", "menu", Modifier.offset((w-inset-24*u).dp,(h*.027f-4*u).dp).size((48*u).dp),onMenu,outlined=!production)
+            RoundControl("Recolher player", "down", Modifier.offset((inset-24*u).dp,(h*.027f-4*u).dp).size((48*u).dp),onClose,
+                color=topLeftInk,outlined=!production)
+            RoundControl(if (production) "Opções da faixa" else "Diagnóstico", "menu", Modifier.offset((w-inset-24*u).dp,(h*.027f-4*u).dp).size((48*u).dp),onMenu,
+                color=topRightInk,outlined=!production)
         }
         if (showArt && !state.lyrics) {
             Box(Modifier.offset(((w-artSize)/2).dp,artY.dp).size(artSize.dp,artHeight.dp)
@@ -182,17 +200,17 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
             }
             Row(Modifier.offset(inset.dp,(seekY+11*u).dp).width(contentWidth.dp),horizontalArrangement=Arrangement.SpaceBetween) {
                 val total=album.durationSeconds
-                Text(if(total!=null) time((total*state.progress).roundToInt()) else "—:—",color=muted,fontSize=(11*u).sp,fontFamily=font)
-                Text(total?.let(::time) ?: "—:—",color=muted,fontSize=(11*u).sp,fontFamily=font)
+                Text(if(total!=null) time((total*state.progress).roundToInt()) else "—:—",color=leftTimeInk,fontSize=(11*u).sp,fontFamily=font)
+                Text(total?.let(::time) ?: "—:—",color=rightTimeInk,fontSize=(11*u).sp,fontFamily=font)
             }
-            Text(title,Modifier.offset(inset.dp,titleY.dp).width((contentWidth-33*u).dp).clickable(onClick=onInfo),color=text,
+            Text(title,Modifier.offset(inset.dp,titleY.dp).width((contentWidth-33*u).dp).clickable(onClick=onInfo),color=titleInk,
                 fontSize=(titleSize*u).sp,fontFamily=font,fontWeight=FontWeight.SemiBold,
                 maxLines=2,overflow=TextOverflow.Ellipsis,lineHeight=(titleSize*1.16f*u).sp,letterSpacing=0.sp)
             Text(metadata,Modifier.offset(inset.dp,metadataY.dp).width((contentWidth-20*u).dp).clickable(onClick=onInfo),
-                color=muted,fontSize=(16*u).sp,lineHeight=(20*u).sp,fontFamily=font,maxLines=2,overflow=TextOverflow.Ellipsis,letterSpacing=0.sp)
+                color=metadataInk,fontSize=(16*u).sp,lineHeight=(20*u).sp,fontFamily=font,maxLines=2,overflow=TextOverflow.Ellipsis,letterSpacing=0.sp)
             RoundControl(if(state.liked) "Remover favorito" else "Favoritar","heart",
                 Modifier.offset((w-inset-34*u).dp,(titleY-2*u).dp).size((48*u).dp),
-                { onState(state.copy(liked=!state.liked)) },if (production) Color.White.copy(alpha=if(state.liked) 1f else .8f) else if(state.liked) Color(r.favoriteColor) else muted,heartFilled=state.liked)
+                { onState(state.copy(liked=!state.liked)) },if (production) ink(1f-inset/w,(titleY+12f*u)/h).copy(alpha=if(state.liked) 1f else .84f) else if(state.liked) Color(r.favoriteColor) else muted,heartFilled=state.liked)
             val buttonSize=w*r.controlSurface.diameterRatio/.85f
             val small=48*u
             listOf(.135f,.315f,.685f,.865f).forEachIndexed { i,x ->
@@ -200,13 +218,13 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
                 val icons=listOf("shuffle","previous","next","repeat")
                 RoundControl(labels[i],icons[i],Modifier.offset((w*x-small/2).dp,(controlsY-small/2).dp).size(small.dp),{
                     when(i) { 0 -> onState(state.copy(shuffle=!state.shuffle)); 1 -> previous(); 2 -> next(); 3 -> onState(state.copy(repeat=!state.repeat)) }
-                },if (production) Color.White.copy(alpha=if ((i==0 && !state.shuffle)||(i==3 && !state.repeat)) .68f else 1f)
+                },if (production) ink(x,controlsY/h).copy(alpha=if ((i==0 && !state.shuffle)||(i==3 && !state.repeat)) .84f else 1f)
                    else if((i==0 && state.shuffle)||(i==3 && state.repeat)) Color(r.progress.thumb) else if(i==3) muted else text)
             }
             if (production && repeatOne) Text("1", Modifier.offset((w*.865f+9*u).dp,(controlsY-19*u).dp),
-                color=if(production) Color.White else Color(r.progress.thumb),fontFamily=font,fontSize=(10*u).sp)
+                color=if(production) ink(.865f,controlsY/h) else Color(r.progress.thumb),fontFamily=font,fontSize=(10*u).sp)
             if (production) {
-                MinimalPlayControl(state.playing,
+                MinimalPlayControl(state.playing, ink(.5f,controlsY/h),
                     Modifier.offset((w/2-buttonSize/2).dp,(controlsY-buttonSize/2).dp).size(buttonSize.dp)) {
                     onState(state.copy(playing=!state.playing))
                 }
@@ -219,8 +237,8 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
                 .border((.6f*u).dp,Color(0x446b7488),RoundedCornerShape(topStart=(36*u).dp,topEnd=(36*u).dp))
                 .background(Color(r.lyrics.surface)).clickable { onState(state.copy(lyrics=true)) },contentAlignment=Alignment.TopCenter) {
                 Column(horizontalAlignment=Alignment.CenterHorizontally,modifier=Modifier.padding(top=(6*u).dp)) {
-                    Glyph("up",text,Modifier.size((24*u).dp))
-                    Text("LETRAS",color=muted,fontSize=(10*u).sp,letterSpacing=(2.5*u).sp,fontFamily=font)
+                    Glyph("up",ink(.5f,lyricsY/h),Modifier.size((24*u).dp))
+                    Text("LETRAS",color=secondary(.5f,(lyricsY+33*u)/h),fontSize=(10*u).sp,letterSpacing=(2.5*u).sp,fontFamily=font)
                 }
             }
         }
@@ -318,13 +336,13 @@ private fun time(seconds:Int) = "${seconds/60}:${(seconds%60).toString().padStar
 }
 
 /** Production controls: no filled disc, border or decorative halo. Accessible 48+ dp hit region. */
-@Composable private fun MinimalPlayControl(playing:Boolean,modifier:Modifier,onClick:()->Unit) {
+@Composable private fun MinimalPlayControl(playing:Boolean,color:Color,modifier:Modifier,onClick:()->Unit) {
     Box(modifier.clickable(
         role=Role.Button,
         onClickLabel=if(playing) "Pausar" else "Reproduzir",
         onClick=onClick,
     ),contentAlignment=Alignment.Center) {
-        Glyph(if(playing) "pause" else "play",Color.White,Modifier.fillMaxSize(.56f))
+        Glyph(if(playing) "pause" else "play",color,Modifier.fillMaxSize(.56f))
     }
 }
 
