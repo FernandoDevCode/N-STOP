@@ -22,6 +22,7 @@ import com.stash.core.model.RepeatMode
 import com.stash.core.ui.ambient.rememberReducedMotion
 import com.stash.core.ui.theme.Inter
 import com.stash.feature.nowplaying.ui.SonoraOpticalTimeline
+import com.stash.core.media.output.PlaybackVisualEnergy
 import kotlinx.coroutines.*
 import nonstop.artlab.catalog.Album
 import nonstop.artlab.catalog.ArtworkStatus
@@ -51,6 +52,17 @@ internal fun V8PlayerSurface(ui: NowPlayingUiState, position: State<Long>, viewM
     }
     val reduced = rememberReducedMotion()
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    val audioActive = lifecycle.isAtLeast(Lifecycle.State.RESUMED)
+    DisposableEffect(audioActive) {
+        if (audioActive) PlaybackVisualEnergy.subscribe()
+        onDispose { if (audioActive) PlaybackVisualEnergy.unsubscribe() }
+    }
+    val livePcm = remember {
+        object : AudioEnergySource {
+            override val durationMillis: Double = 1.0e12
+            override fun energyAt(positionMillis: Double): Float = PlaybackVisualEnergy.level()
+        }
+    }
     val fontScale = LocalDensity.current.fontScale
     GuardedPlayerSurface(onFailure, Modifier.fillMaxSize()) {
         val track = ui.currentTrack
@@ -79,7 +91,7 @@ internal fun V8PlayerSurface(ui: NowPlayingUiState, position: State<Long>, viewM
                 if (bitmap != null) Image(bitmap, "Capa de ${track?.album.orEmpty()}", Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
                 else com.stash.core.ui.visual.VisualCover(null, Modifier.fillMaxSize())
             } }, modifier = Modifier.fillMaxSize(),
-            microOptions = MicroOptions(reducedMotion = reduced, active = lifecycle.isAtLeast(Lifecycle.State.RESUMED)),
+            microOptions = MicroOptions(reducedMotion = reduced, active = audioActive, audio = livePcm),
             opticalProgress = { modifier, progress, onSeek ->
                 SonoraOpticalTimeline(
                     progress = progress,
