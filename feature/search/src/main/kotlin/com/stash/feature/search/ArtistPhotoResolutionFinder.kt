@@ -72,6 +72,11 @@ class ArtistPhotoResolutionFinder @Inject constructor(
                         )
                     }
                 }
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                // Temporary provider errors leave the photo and check state
+                // intact; the next profile opening may retry.
             } finally {
                 synchronized(active) { active.remove(artistBrowseId) }
             }
