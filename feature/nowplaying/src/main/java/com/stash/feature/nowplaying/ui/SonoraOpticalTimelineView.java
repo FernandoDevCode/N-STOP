@@ -339,7 +339,8 @@ public final class SonoraOpticalTimelineView extends View {
             reset();
             canvas.drawBitmap(texture, 0f, 0f, paint);
         }
-        if (motionEnabled) drawRaisedTrail(canvas);
+        // Reduced motion freezes the ridge, but does not erase its material.
+        drawRaisedTrail(canvas);
         drawThumb(canvas);
     }
 
