@@ -21,6 +21,7 @@ import androidx.lifecycle.compose.currentStateAsState
 import com.stash.core.model.RepeatMode
 import com.stash.core.ui.ambient.rememberReducedMotion
 import com.stash.core.ui.theme.Inter
+import com.stash.core.ui.theme.SpaceGrotesk
 import com.stash.feature.nowplaying.ui.SonoraOpticalTimeline
 import com.stash.core.media.output.PlaybackVisualEnergy
 import kotlinx.coroutines.*
@@ -84,7 +85,7 @@ internal fun V8PlayerSurface(ui: NowPlayingUiState, position: State<Long>, viewM
                 }
             },
             previous = viewModel::onSkipPrevious, next = viewModel::onSkipNext,
-            onClose = onDismiss, onMenu = onMenu, font = Inter, fontScale = fontScale,
+            onClose = onDismiss, onMenu = onMenu, font = Inter, titleFont = SpaceGrotesk, fontScale = fontScale,
             production = true, seekEnabled = ui.isSeekable && ui.durationMs > 0,
             repeatOne = ui.repeatMode == RepeatMode.ONE, onInfo = viewModel::onTrackInfoTapped,
             coverContent = { modifier -> cover(modifier) {
