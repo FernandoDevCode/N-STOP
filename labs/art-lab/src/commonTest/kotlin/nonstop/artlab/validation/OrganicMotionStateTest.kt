@@ -30,4 +30,27 @@ class OrganicMotionStateTest {
         assertTrue(state.agitation < peak)
         assertTrue(state.ethereal > state.tense)
     }
+    @Test fun playedReliefRetainsMusicalAccentsInAbsolutePositions() {
+        val state = OrganicMotionState()
+        val strong = MotionInfluence(.22f, .35f, .43f, .95f, .8f, true)
+        repeat(40) { state.step(32f, strong, .25f) }
+        assertTrue(state.reliefAt(.25f) > .25f)
+        assertEquals(0f, state.reliefAt(.70f))
+        val preserved = state.reliefAt(.25f)
+        repeat(40) { state.step(32f, strong, .72f) }
+        assertTrue(state.reliefAt(.72f) > .25f)
+        assertEquals(preserved, state.reliefAt(.25f), .0001f)
+    }
+
+    @Test fun absentPcmDoesNotFabricateOrOverwriteRelief() {
+        val state = OrganicMotionState()
+        repeat(20) { state.step(32f, MotionInfluence.CALM, .5f) }
+        assertEquals(0f, state.reliefAt(.5f))
+        val live = MotionInfluence(.3f, .3f, .4f, .6f, .4f, true)
+        repeat(30) { state.step(32f, live, .5f) }
+        val prior = state.reliefAt(.5f)
+        repeat(30) { state.step(32f, MotionInfluence.CALM, .5f) }
+        assertEquals(prior, state.reliefAt(.5f), .0001f)
+    }
+
 }
