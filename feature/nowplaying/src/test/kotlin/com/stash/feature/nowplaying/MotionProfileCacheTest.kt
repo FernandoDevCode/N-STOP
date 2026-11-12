@@ -2,7 +2,9 @@ package com.stash.feature.nowplaying
 
 import androidx.test.core.app.ApplicationProvider
 import android.content.Context
-import com.google.common.truth.Truth.assertThat
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import com.stash.core.media.output.MusicMotionFeatures
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -17,10 +19,10 @@ class MotionProfileCacheTest {
         val profile = MusicMotionFeatures(.60f,.25f,.15f,.75f,.2f,.3f,true,160)
         cache.write(key,profile)
         val restored = cache.read(key)
-        assertThat(restored).isNotNull()
-        assertThat(restored!!.flow).isWithin(.0001f).of(profile.flow)
-        assertThat(restored.tension).isWithin(.0001f).of(profile.tension)
-        assertThat(restored.attack).isEqualTo(0f)
+        assertNotNull(restored)
+        assertEquals(profile.flow, restored!!.flow, .0001f)
+        assertEquals(profile.tension, restored.tension, .0001f)
+        assertEquals(0f, restored.attack, 0f)
         context.getSharedPreferences("sonora_motion_v1",Context.MODE_PRIVATE)
             .edit().remove(key).commit()
     }
@@ -30,6 +32,6 @@ class MotionProfileCacheTest {
         val cache = MotionProfileCache(context)
         val key = "sonora_test_immature"
         cache.write(key,MusicMotionFeatures(.6f,.2f,.2f,.4f,.2f,.3f,true,12))
-        assertThat(cache.read(key)).isNull()
+        assertNull(cache.read(key))
     }
 }
