@@ -2,6 +2,13 @@ package com.stash.feature.search
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import com.stash.core.data.artistphotos.SelectedArtistPhotoRepository
+import com.stash.core.data.artistphotos.ArtistPhotoOrigin
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -27,6 +34,7 @@ import javax.inject.Singleton
 class ArtistPhotoResolutionFinder @Inject constructor(
     okHttpClient: OkHttpClient,
     private val deezer: DeezerArtistPhotoLookup,
+    private val selections: SelectedArtistPhotoRepository,
 ) {
     private val http = okHttpClient.newBuilder()
         .followRedirects(false)
@@ -36,6 +44,39 @@ class ArtistPhotoResolutionFinder @Inject constructor(
 
     /** null = network unavailable, Result(null) = completed with no identical larger image. */
     data class SearchResult(val betterUrl: String?)
+
+    // The operation STARTS only when the user opens a profile, but may finish
+    // after navigating back to Search. Do not tie network resolution to a
+    // screen ViewModel, otherwise a fast Back cancels the permanent choice.
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val active = HashSet<String>()
+    private val concurrency = Semaphore(2)
+
+    fun refreshIfNeeded(artistBrowseId: String, artistName: String, spotifyPhotoUrl: String) {
+        val saved = selections.get(artistBrowseId) ?: return
+        if (saved.origin != ArtistPhotoOrigin.SPOTIFY ||
+            saved.spotifyPhotoUrl != spotifyPhotoUrl ||
+            saved.resolutionCheckedFor == spotifyPhotoUrl) return
+        synchronized(active) {
+            if (!active.add(artistBrowseId)) return
+        }
+        scope.launch {
+            try {
+                concurrency.withPermit {
+                    val result = findBetter(artistName, spotifyPhotoUrl)
+                    if (result != null) {
+                        // Repository checks identity/source again, so a
+                        // late result cannot beat a new Spotify photo/manual.
+                        selections.markResolutionChecked(
+                            artistBrowseId, spotifyPhotoUrl, result.betterUrl,
+                        )
+                    }
+                }
+            } finally {
+                synchronized(active) { active.remove(artistBrowseId) }
+            }
+        }
+    }
 
     suspend fun findBetter(artistName: String, spotifyPhotoUrl: String): SearchResult? =
         withContext(Dispatchers.IO) {
