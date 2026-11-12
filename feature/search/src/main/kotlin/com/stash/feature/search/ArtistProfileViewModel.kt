@@ -182,7 +182,7 @@ class ArtistProfileViewModel @Inject constructor(
             val spotifyActive = (customPhotoUrl == null || customPhotoUrl == failedCustomPhotoUrl) &&
                 (selection?.origin == ArtistPhotoOrigin.SPOTIFY ||
                     (selection == null && spotifyPhoto != null)) &&
-                selection?.photoUrl != failedSavedPhotoUrl
+                (selection == null || selection.photoUrl != failedSavedPhotoUrl)
             state.copy(hero = state.hero.copy(
                 avatarUrl = chosenHeroPhoto(),
                 artworkKind = ArtistIdentityKind.PHOTO,
@@ -558,7 +558,7 @@ class ArtistProfileViewModel @Inject constructor(
                 avatarUrl = chosenHeroPhoto(),
                 subscribersText = profile.subscribersText,
                 artworkKind = ArtistIdentityKind.PHOTO,
-                spotifyArtistUrl = if (spotifyActive) selection?.spotifyArtistUrl else null,
+                spotifyArtistUrl = if (spotifyActive) selection?.spotifyArtistUrl ?: spotifyPhoto?.artistUrl else null,
             ),
             popular = profile.popular,
             albums = AppleMusicAlbumMetadataLookup.enrich(profile.albums, appleMetadata),
