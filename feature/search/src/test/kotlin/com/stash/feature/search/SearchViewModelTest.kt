@@ -387,7 +387,7 @@ class SearchViewModelTest {
             on { recent } doReturn kotlinx.coroutines.flow.flowOf(emptyList())
         },
         savedStateHandle: SavedStateHandle = SavedStateHandle(),
-        photos: SelectedArtistPhotoRepository = mock {
+        imageRepository: SelectedArtistPhotoRepository = mock {
             on { photos } doReturn MutableStateFlow<Map<String, SelectedArtistPhoto>>(emptyMap()).asStateFlow()
         },
     ): SearchViewModel = SearchViewModel(
@@ -398,7 +398,7 @@ class SearchViewModelTest {
         playerRepository = playerRepository,
         streamingPreference = streamingPreference,
         recentSearchesStore = recentSearchesStore,
-        selectedArtistPhotos = photos,
+        selectedArtistPhotos = imageRepository,
         savedStateHandle = savedStateHandle,
     )
 
