@@ -21,6 +21,9 @@ import androidx.lifecycle.compose.currentStateAsState
 import com.stash.core.model.RepeatMode
 import com.stash.core.ui.ambient.rememberReducedMotion
 import com.stash.core.ui.theme.Inter
+import com.stash.core.ui.theme.SpaceGrotesk
+import com.stash.feature.nowplaying.ui.SonoraOpticalTimeline
+import com.stash.core.media.output.PlaybackVisualEnergy
 import kotlinx.coroutines.*
 import nonstop.artlab.catalog.Album
 import nonstop.artlab.catalog.ArtworkStatus
@@ -50,6 +53,39 @@ internal fun V8PlayerSurface(ui: NowPlayingUiState, position: State<Long>, viewM
     }
     val reduced = rememberReducedMotion()
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    val audioActive = lifecycle.isAtLeast(Lifecycle.State.RESUMED)
+    DisposableEffect(audioActive) {
+        if (audioActive) PlaybackVisualEnergy.subscribe()
+        onDispose { if (audioActive) PlaybackVisualEnergy.unsubscribe() }
+    }
+    val trackKey = ui.currentTrack?.let { track ->
+        val recording = track.youtubeId?.takeIf { it.isNotBlank() }
+            ?: track.id.takeIf { it > 0L }?.toString()
+        recording?.let { "motion_v1_${it}_${track.durationMs}" }
+    }
+    val motionCache = remember(context) { MotionProfileCache(context) }
+    DisposableEffect(trackKey) {
+        PlaybackVisualEnergy.reset()
+        if (trackKey != null) motionCache.read(trackKey)?.let(PlaybackVisualEnergy::seed)
+        onDispose {
+            if (trackKey != null) motionCache.write(trackKey, PlaybackVisualEnergy.profileForCache())
+            PlaybackVisualEnergy.reset()
+        }
+    }
+    LaunchedEffect(trackKey, audioActive) {
+        if (trackKey == null || !audioActive) return@LaunchedEffect
+        while (true) {
+            delay(20_000)
+            motionCache.write(trackKey, PlaybackVisualEnergy.profileForCache())
+        }
+    }
+    val liveMotion = remember(trackKey) {
+        MusicalMotionSource {
+            val sample = PlaybackVisualEnergy.motion()
+            MotionInfluence(sample.flow, sample.elasticity, sample.tension,
+                sample.attack, sample.evolution, sample.valid)
+        }
+    }
     val fontScale = LocalDensity.current.fontScale
     GuardedPlayerSurface(onFailure, Modifier.fillMaxSize()) {
         val track = ui.currentTrack
@@ -58,6 +94,7 @@ internal fun V8PlayerSurface(ui: NowPlayingUiState, position: State<Long>, viewM
             album = Album(track?.artist.orEmpty(), track?.album.orEmpty(), track?.title,
                 durationSeconds = (ui.durationMs / 1000).toInt().takeIf { it > 0 }, status = ArtworkStatus.OFFICIAL_COVER),
             cover = art.cover, atmosphere = art.atmosphere, recipe = art.recipe, state = state,
+            visualContrast = art.contrast,
             onState = { changed ->
                 when {
                     changed.playing != state.playing -> viewModel.onPlayPauseClick()
@@ -70,15 +107,25 @@ internal fun V8PlayerSurface(ui: NowPlayingUiState, position: State<Long>, viewM
                 }
             },
             previous = viewModel::onSkipPrevious, next = viewModel::onSkipNext,
-            onClose = onDismiss, onMenu = onMenu, font = Inter, fontScale = fontScale,
+            onClose = onDismiss, onMenu = onMenu, font = Inter, titleFont = SpaceGrotesk, fontScale = fontScale,
             production = true, seekEnabled = ui.isSeekable && ui.durationMs > 0,
             repeatOne = ui.repeatMode == RepeatMode.ONE, onInfo = viewModel::onTrackInfoTapped,
             coverContent = { modifier -> cover(modifier) {
                 val bitmap = art.cover
-                if (bitmap != null) Image(bitmap, "Capa de ${track?.album.orEmpty()}", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                if (bitmap != null) Image(bitmap, "Capa de ${track?.album.orEmpty()}", Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
                 else com.stash.core.ui.visual.VisualCover(null, Modifier.fillMaxSize())
             } }, modifier = Modifier.fillMaxSize(),
-            microOptions = MicroOptions(reducedMotion = reduced, active = lifecycle.isAtLeast(Lifecycle.State.RESUMED)),
+            microOptions = MicroOptions(reducedMotion = reduced, active = audioActive,
+                motion = liveMotion),
+            opticalProgress = { modifier, progress, onSeek ->
+                SonoraOpticalTimeline(
+                    progress = progress,
+                    recipe = art.recipe,
+                    enabled = ui.isSeekable && ui.durationMs > 0L,
+                    onSeek = onSeek,
+                    modifier = modifier,
+                )
+            },
         )
         if (ui.isBuffering) Box(Modifier.fillMaxWidth().padding(top = 12.dp), contentAlignment = Alignment.TopCenter) {
             CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)

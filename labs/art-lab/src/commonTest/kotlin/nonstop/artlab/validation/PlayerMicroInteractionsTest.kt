@@ -69,6 +69,28 @@ class PlayerMicroInteractionsTest {
         repeat(10) { m.advance(16f,0f,profile) }
         assertEquals(revision,m.revision,"Settled/silent frames must not invalidate drawing")
     }
+    @Test fun audioParticlesRequireRealSourceAndAnActualTransient() {
+        val m=PlayerMicroState()
+        m.setSoundContext(.62f,0xffaabbcc)
+        m.advance(16f,.9f,profile) // No source: no artificial beat.
+        assertEquals(0,m.trail.count)
+        val source=object:AudioEnergySource {
+            override val durationMillis=1000.0
+            override fun energyAt(positionMillis:Double)=.8f
+        }
+        val options=MicroOptions(audio=source)
+        m.advance(16f,.9f,profile,options) // The first measurement is not a fake clock beat.
+        assertEquals(0,m.trail.count)
+        m.advance(16f,.1f,profile,options)
+        m.advance(16f,.8f,profile,options)
+        assertEquals(8,m.trail.count)
+        assertEquals(.62f,m.trail.x[0],.0001f)
+        assertEquals(0xffaabbcc,m.trail.color[0])
+        m.advance(16f,.9f,profile,options) // No duplicate on sustained amplitude.
+        assertEquals(8,m.trail.count)
+        m.settle(options.copy(active=false))
+        assertEquals(0,m.trail.count)
+    }
     @Test fun everyFamilyIsSubtleAndTheTimelineUsesFixedGradientCoordinates() {
         for(f in ArtFamily.entries) {
             val r=baselineRecipe("micro-profile").copy(family=f,familyWeights=mapOf(f to 1f))

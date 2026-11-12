@@ -22,6 +22,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawscope.*
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.key.*
@@ -60,48 +61,76 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
     state: PlayerState, onState: (PlayerState) -> Unit, previous: () -> Unit, next: () -> Unit,
     onClose: () -> Unit, onMenu: () -> Unit, font: FontFamily, debug: DebugView = DebugView.FINAL,
     fontScale: Float = 1f, modifier: Modifier = Modifier,
+    titleFont: FontFamily = font,
     microOptions:MicroOptions=MicroOptions(),microState:PlayerMicroState?=null,
     production: Boolean = false, seekEnabled: Boolean = true, repeatOne: Boolean = false,
     onInfo: () -> Unit = {}, coverContent: (@Composable (Modifier) -> Unit)? = null,
-    lyricsContent: (@Composable (Modifier, Float) -> Unit)? = null) {
+    lyricsContent: (@Composable (Modifier, Float) -> Unit)? = null,
+    opticalProgress: (@Composable (Modifier, Float, (Float) -> Unit) -> Unit)? = null,
+    visualContrast: VisualInkContrast? = null) {
     val r = remember(recipe) { safeRecipe(recipe) }
     val micro=microState ?: remember(r.sourceImageHash) { PlayerMicroState() }
     val profile=remember(r.familyWeights) { MicroProfile.from(r) }
+    SideEffect { micro.setSoundContext(state.progress,progressColorAt(r,state.progress)) }
     val controlsVisible=debug==DebugView.BUTTON || (debug==DebugView.FINAL && !state.lyrics)
     MicroAnimationDriver(micro,microOptions.copy(active=microOptions.active && controlsVisible),state.playing,state.progress,profile)
     BoxWithConstraints(modifier.background(Color(r.canvasColor))) {
         val w = maxWidth.value
         val h = maxHeight.value
         val u = w / 432f
-        val inset = w * MasterGeometry.inset
-        val contentWidth = w * MasterGeometry.coverWidth
-        // Make room for accessible typography before allowing lower controls to leave the viewport.
-        val artSize = contentWidth * (1f-.36f*(fontScale-1f).coerceIn(0f,.5f))
-        val artHeight = min(contentWidth,h*MasterGeometry.coverHeight)*(1f-.36f*(fontScale-1f).coerceIn(0f,.5f))
-        val artY = h * MasterGeometry.coverTop
-        val seekY = h*MasterGeometry.progressCenter-(contentWidth-artSize)
-        val titleY = seekY + 43f*u
+        val inset = w * (if(production) .065f else MasterGeometry.inset)
+        val contentWidth = w-2f*inset
         val title=album.track ?: "Faixa não fornecida"
         val measurer=rememberTextMeasurer()
         val density=LocalDensity.current
-        val baseTitleSize=27f
-        val intrinsic=with(density) { measurer.measure(title,TextStyle(fontFamily=font,fontWeight=FontWeight.SemiBold,
+        val baseTitleSize=if(production) 26f else 27f
+        val titleFamily=if(production) titleFont else font
+        val intrinsic=with(density) { measurer.measure(title,TextStyle(fontFamily=titleFamily,fontWeight=FontWeight.SemiBold,
             fontSize=(baseTitleSize*u).sp),maxLines=1).size.width.toDp().value }
-        val titleSize=if(fontScale>1.05f)baseTitleSize else (baseTitleSize*(contentWidth-33*u)/intrinsic.coerceAtLeast(1f)).coerceIn(18f,baseTitleSize)
+        val titleSize=if(fontScale>1.05f)baseTitleSize else
+            (baseTitleSize*(contentWidth-60*u)/intrinsic.coerceAtLeast(1f)).coerceIn(18f,baseTitleSize)
         val titleHeight=with(density) { measurer.measure(title,
-            TextStyle(fontFamily=font,fontWeight=FontWeight.SemiBold,fontSize=(titleSize*u).sp,lineHeight=(titleSize*1.16f*u).sp),
-            maxLines=2,constraints=Constraints(maxWidth=(contentWidth-33*u).dp.roundToPx())).size.height.toDp().value }
+            TextStyle(fontFamily=titleFamily,fontWeight=FontWeight.SemiBold,
+                fontSize=(titleSize*u).sp,lineHeight=(titleSize*1.13f*u).sp),
+            maxLines=2,constraints=Constraints(maxWidth=(contentWidth-64*u).dp.roundToPx())).size.height.toDp().value }
         val metadata="${album.artist}  •  ${album.album}"
-        val metadataY=titleY+titleHeight+4*u
-        val metadataHeight=with(density) { measurer.measure(metadata,
-            TextStyle(fontFamily=font,fontSize=(16*u).sp,lineHeight=(20*u).sp),maxLines=2,
-            constraints=Constraints(maxWidth=(contentWidth-20*u).dp.roundToPx())).size.height.toDp().value }
-        // Typography-dependent optical spacing, shared for any title. Compact fitted headlines
-        // leave more breathing room before transport; no catalog identity enters geometry.
-        val controlsY = max(h*MasterGeometry.transportCenter+(baseTitleSize-titleSize)*2.8f*u, metadataY+metadataHeight+48*u)
-        val lyricsY = max(h*MasterGeometry.lyricsTop, controlsY+70*u)
+        val hasAlbum=album.album.isNotBlank()
+        val metadataHeight=if(production) (if(hasAlbum) 41f else 21f)*u else
+            with(density) { measurer.measure(metadata,
+                TextStyle(fontFamily=font,fontSize=(16*u).sp,lineHeight=(20*u).sp),maxLines=2,
+                constraints=Constraints(maxWidth=(contentWidth-20*u).dp.roundToPx())).size.height.toDp().value }
+        val lyricsY=if(production) h-63*u else h*MasterGeometry.lyricsTop
+        val controlsY=if(production) lyricsY-101*u else h*MasterGeometry.transportCenter
+        // The preview references put track details ABOVE the timeline in production.
+        // Reserve the lyrics handle and transport first; fit the art into what remains.
+        val seekY=if(production) controlsY-83*u else
+            h*MasterGeometry.progressCenter
+        val titleY=if(production) seekY-titleHeight-metadataHeight-32*u else seekY+43*u
+        val metadataY=titleY+titleHeight+(if(production) 2f else 4f)*u
+        val albumY=metadataY+21*u
+        val artY=if(production) max(62*u,h*.068f) else h*MasterGeometry.coverTop
+        val availableArtHeight=if(production) (titleY-artY-9*u).coerceAtLeast(92*u) else h*MasterGeometry.coverHeight
+        val artSize=min(contentWidth,availableArtHeight)*
+            (1f-.36f*(fontScale-1f).coerceIn(0f,.5f))
+        val artHeight=artSize
         val text = Color(0xfffafbff)
         val muted = Color(0xff9296a6)
+        // Resolve each foreground against its own location in the atmospheric
+        // composite. Null contrast and Desktop Lab retain their prior styling.
+        fun ink(x: Float,y: Float): Color = when {
+            !production || visualContrast == null -> text
+            visualContrast.darkInkAt(x,y,r.scrimTop,r.scrimBottom) -> Color(0xff17191c)
+            else -> Color.White
+        }
+        fun secondary(x:Float,y:Float):Color =
+            if (production && visualContrast!=null) ink(x,y).copy(alpha=.84f) else muted
+        val topLeftInk=ink(inset/w,.055f)
+        val topRightInk=ink(1f-inset/w,.055f)
+        val titleInk=ink(.29f,(titleY+titleHeight*.4f)/h)
+        val metadataInk=secondary(.29f,(metadataY+metadataHeight*.4f)/h)
+        val albumInk=secondary(.29f,(albumY+9*u)/h)
+        val leftTimeInk=secondary(inset/w,(seekY+14f*u)/h)
+        val rightTimeInk=secondary(1f-inset/w,(seekY+14f*u)/h)
         val showArt = debug in listOf(DebugView.FINAL,DebugView.ART_BASE)
         if (showArt && atmosphere != null) Image(if(debug==DebugView.FINAL)atmosphere.composite else atmosphere.deep, null, Modifier.fillMaxSize(),contentScale=ContentScale.FillBounds)
         if (debug==DebugView.LIGHTS && atmosphere!=null) {
@@ -122,14 +151,56 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
         }
         if (debug in listOf(DebugView.FINAL,DebugView.SCRIM)) Box(Modifier.fillMaxSize().background(
             Brush.verticalGradient(0f to Color.Black.copy(alpha=r.scrimTop),.5f to Color.Transparent,1f to Color.Black.copy(alpha=r.scrimBottom))))
+        if (debug == DebugView.FINAL && production) {
+            Text("Sonora",Modifier.offset((w*.24f).dp,(h*.027f).dp).width((w*.52f).dp),
+                textAlign=androidx.compose.ui.text.style.TextAlign.Center,
+                color=ink(.5f,.055f),fontFamily=font,fontWeight=FontWeight.Medium,
+                fontSize=(18*u).sp,maxLines=1,letterSpacing=(-.25f*u).sp)
+        }
         if (debug == DebugView.FINAL) {
-            RoundControl("Recolher player", "down", Modifier.offset((inset-24*u).dp,(h*.027f-4*u).dp).size((48*u).dp),onClose,outlined=true)
-            RoundControl(if (production) "Opções da faixa" else "Diagnóstico", "menu", Modifier.offset((w-inset-24*u).dp,(h*.027f-4*u).dp).size((48*u).dp),onMenu,outlined=true)
+            RoundControl("Recolher player", "down", Modifier.offset((inset-24*u).dp,(h*.027f-4*u).dp).size((48*u).dp),onClose,
+                color=topLeftInk,outlined=!production)
+            RoundControl(if (production) "Opções da faixa" else "Diagnóstico", "menu", Modifier.offset((w-inset-24*u).dp,(h*.027f-4*u).dp).size((48*u).dp),onMenu,
+                color=topRightInk,outlined=!production)
         }
         if (showArt && !state.lyrics) {
-            Box(Modifier.offset(((w-artSize)/2).dp,artY.dp).size(artSize.dp,artHeight.dp).clip(RoundedCornerShape((15*u).dp))) {
+            Box(Modifier.offset(((w-artSize)/2).dp,artY.dp).size(artSize.dp,artHeight.dp)
+                .clip(if (production) RoundedCornerShape(topStart=(10*u).dp,topEnd=(10*u).dp)
+                    else RoundedCornerShape((15*u).dp))
+                .then(if (production) Modifier.graphicsLayer {
+                    compositingStrategy = CompositingStrategy.Offscreen
+                }.drawWithContent {
+                    drawContent()
+                    // Organic U: retain the original artwork in the upper field, then
+                    // release its alpha into the already-rendered atmospheric canvas.
+                    // This mask has no colored border, extra glow or album-specific rule.
+                    drawRect(
+                        Brush.verticalGradient(
+                            0f to Color.White,
+                            .52f to Color.White,
+                            .70f to Color.White.copy(alpha=.96f),
+                            .86f to Color.White.copy(alpha=.56f),
+                            1f to Color.Transparent,
+                        ),
+                        blendMode=BlendMode.DstIn,
+                    )
+                    // A soft center evacuation makes the fade descend further at
+                    // the edges than in the middle, without cutting a hard curve.
+                    drawOval(
+                        Brush.radialGradient(
+                            0f to Color.White.copy(alpha=.48f),
+                            .58f to Color.White.copy(alpha=.20f),
+                            1f to Color.Transparent,
+                            center=Offset(size.width*.5f,size.height*.98f),
+                            radius=size.width*.59f,
+                        ),
+                        topLeft=Offset(-size.width*.11f,size.height*.61f),
+                        size=Size(size.width*1.22f,size.height*.88f),
+                        blendMode=BlendMode.DstOut,
+                    )
+                } else Modifier)) {
                 if (coverContent != null) coverContent(Modifier.fillMaxSize())
-                else if (cover != null) Image(cover,"${album.artist} — ${album.album}; ${album.status}",Modifier.fillMaxSize(),contentScale=ContentScale.Crop)
+                else if (cover != null) Image(cover,"${album.artist} — ${album.album}; ${album.status}",Modifier.fillMaxSize(),contentScale=if(production) ContentScale.Fit else ContentScale.Crop)
                 else Box(Modifier.fillMaxSize().background(Color(0xff131b29)),contentAlignment=Alignment.Center) {
                     Text("CAPA INDISPONÍVEL\n${album.album}", color=muted, fontFamily=font,
                         fontSize=(17*u).sp,lineHeight=(24*u).sp,modifier=Modifier.padding((24*u).dp))
@@ -137,22 +208,51 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
             }
         }
         if (debug == DebugView.FINAL && !state.lyrics) {
-            ProgressBar(state.progress,r,micro,microOptions,u,Modifier.offset(inset.dp,(seekY-24*u).dp).size(contentWidth.dp,(48*u).dp), enabled=seekEnabled) {
-                if (seekEnabled) onState(state.copy(progress=it))
+            val seekModifier = Modifier.offset(inset.dp,(seekY-24*u).dp).size(contentWidth.dp,(48*u).dp)
+            if (opticalProgress != null) {
+                opticalProgress(seekModifier, state.progress) { fraction ->
+                    if (seekEnabled) onState(state.copy(progress = fraction.coerceIn(0f, 1f)))
+                }
+                if (production && microOptions.motion != null) {
+                    OrganicMotionField(
+                        modifier = seekModifier,
+                        progress = state.progress,
+                        localColor = progressColorAt(r, state.progress),
+                        playing = state.playing,
+                        enabled = microOptions.active && microOptions.enabled && !microOptions.reducedMotion,
+                        source = microOptions.motion,
+                    )
+                } else if (production && microOptions.audio != null &&
+                    microOptions.enabled && !microOptions.reducedMotion) {
+                    AudioTransientParticles(micro,u,seekModifier)
+                }
+            } else {
+                ProgressBar(state.progress,r,micro,microOptions,u,seekModifier, enabled=seekEnabled) {
+                    if (seekEnabled) onState(state.copy(progress=it))
+                }
             }
             Row(Modifier.offset(inset.dp,(seekY+11*u).dp).width(contentWidth.dp),horizontalArrangement=Arrangement.SpaceBetween) {
                 val total=album.durationSeconds
-                Text(if(total!=null) time((total*state.progress).roundToInt()) else "—:—",color=muted,fontSize=(11*u).sp,fontFamily=font)
-                Text(total?.let(::time) ?: "—:—",color=muted,fontSize=(11*u).sp,fontFamily=font)
+                Text(if(total!=null) time((total*state.progress).roundToInt()) else "—:—",color=leftTimeInk,fontSize=(11*u).sp,fontFamily=font)
+                Text(total?.let(::time) ?: "—:—",color=rightTimeInk,fontSize=(11*u).sp,fontFamily=font)
             }
-            Text(title,Modifier.offset(inset.dp,titleY.dp).width((contentWidth-33*u).dp).clickable(onClick=onInfo),color=text,
-                fontSize=(titleSize*u).sp,fontFamily=font,fontWeight=FontWeight.SemiBold,
-                maxLines=2,overflow=TextOverflow.Ellipsis,lineHeight=(titleSize*1.16f*u).sp,letterSpacing=0.sp)
-            Text(metadata,Modifier.offset(inset.dp,metadataY.dp).width((contentWidth-20*u).dp).clickable(onClick=onInfo),
-                color=muted,fontSize=(16*u).sp,lineHeight=(20*u).sp,fontFamily=font,maxLines=2,overflow=TextOverflow.Ellipsis,letterSpacing=0.sp)
+            Text(title,Modifier.offset(inset.dp,titleY.dp).width((contentWidth-33*u).dp).clickable(onClick=onInfo),color=titleInk,
+                fontSize=(titleSize*u).sp,fontFamily=titleFamily,fontWeight=FontWeight.SemiBold,
+                maxLines=2,overflow=TextOverflow.Ellipsis,lineHeight=(titleSize*1.13f*u).sp,letterSpacing=if(production) (-.35f*u).sp else 0.sp)
+            if (production) {
+                Text(album.artist,Modifier.offset(inset.dp,metadataY.dp).width((contentWidth-60*u).dp)
+                    .clickable(onClick=onInfo),color=metadataInk,fontSize=(15.5f*u).sp,
+                    lineHeight=(20*u).sp,fontFamily=font,fontWeight=FontWeight.Medium,
+                    maxLines=1,overflow=TextOverflow.Ellipsis,letterSpacing=0.sp)
+                if(hasAlbum) Text(album.album,Modifier.offset(inset.dp,albumY.dp).width((contentWidth-60*u).dp)
+                    .clickable(onClick=onInfo),color=albumInk.copy(alpha=.73f),fontSize=(12.5f*u).sp,
+                    lineHeight=(17*u).sp,fontFamily=font,maxLines=1,
+                    overflow=TextOverflow.Ellipsis,letterSpacing=.1.sp)
+            } else Text(metadata,Modifier.offset(inset.dp,metadataY.dp).width((contentWidth-20*u).dp).clickable(onClick=onInfo),
+                color=metadataInk,fontSize=(16*u).sp,lineHeight=(20*u).sp,fontFamily=font,maxLines=2,overflow=TextOverflow.Ellipsis,letterSpacing=0.sp)
             RoundControl(if(state.liked) "Remover favorito" else "Favoritar","heart",
-                Modifier.offset((w-inset-34*u).dp,(titleY-2*u).dp).size((48*u).dp),
-                { onState(state.copy(liked=!state.liked)) },if(state.liked) Color(r.favoriteColor) else muted,heartFilled=state.liked)
+                Modifier.offset((w-inset-34*u).dp,(metadataY-2*u).dp).size((48*u).dp),
+                { onState(state.copy(liked=!state.liked)) },if (production) ink(1f-inset/w,(metadataY+12f*u)/h).copy(alpha=if(state.liked) 1f else .84f) else if(state.liked) Color(r.favoriteColor) else muted,heartFilled=state.liked)
             val buttonSize=w*r.controlSurface.diameterRatio/.85f
             val small=48*u
             listOf(.135f,.315f,.685f,.865f).forEachIndexed { i,x ->
@@ -160,20 +260,30 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
                 val icons=listOf("shuffle","previous","next","repeat")
                 RoundControl(labels[i],icons[i],Modifier.offset((w*x-small/2).dp,(controlsY-small/2).dp).size(small.dp),{
                     when(i) { 0 -> onState(state.copy(shuffle=!state.shuffle)); 1 -> previous(); 2 -> next(); 3 -> onState(state.copy(repeat=!state.repeat)) }
-                },if((i==0 && state.shuffle)||(i==3 && state.repeat)) Color(r.progress.thumb) else if(i==3) muted else text)
+                },if (production) ink(x,controlsY/h).copy(alpha=if ((i==0 && !state.shuffle)||(i==3 && !state.repeat)) .84f else 1f)
+                   else if((i==0 && state.shuffle)||(i==3 && state.repeat)) Color(r.progress.thumb) else if(i==3) muted else text)
             }
             if (production && repeatOne) Text("1", Modifier.offset((w*.865f+9*u).dp,(controlsY-19*u).dp),
-                color=Color(r.progress.thumb),fontFamily=font,fontSize=(10*u).sp)
-            PlayControl(r,state.playing,w,micro,microOptions,profile,Modifier.offset((w/2-buttonSize/2).dp,(controlsY-buttonSize/2).dp).size(buttonSize.dp)) {
+                color=if(production) ink(.865f,controlsY/h) else Color(r.progress.thumb),fontFamily=font,fontSize=(10*u).sp)
+            if (production) {
+                MinimalPlayControl(state.playing, ink(.5f,controlsY/h),
+                    Modifier.offset((w/2-buttonSize/2).dp,(controlsY-buttonSize/2).dp).size(buttonSize.dp)) {
+                    onState(state.copy(playing=!state.playing))
+                }
+            } else PlayControl(r,state.playing,w,micro,microOptions,profile,
+                Modifier.offset((w/2-buttonSize/2).dp,(controlsY-buttonSize/2).dp).size(buttonSize.dp)) {
                 onState(state.copy(playing=!state.playing))
             }
-            Box(Modifier.offset((8*u).dp,lyricsY.dp).width((w-16*u).dp).height((h-lyricsY).coerceAtLeast(60*u).dp)
-                .clip(RoundedCornerShape(topStart=(36*u).dp,topEnd=(36*u).dp))
-                .border((.6f*u).dp,Color(0x446b7488),RoundedCornerShape(topStart=(36*u).dp,topEnd=(36*u).dp))
-                .background(Color(r.lyrics.surface)).clickable { onState(state.copy(lyrics=true)) },contentAlignment=Alignment.TopCenter) {
+            Box(Modifier.offset((8*u).dp,lyricsY.dp).width((w-16*u).dp)
+                .height((h-lyricsY).coerceAtLeast(56*u).dp)
+                .then(if(production) Modifier else Modifier
+                    .clip(RoundedCornerShape(topStart=(36*u).dp,topEnd=(36*u).dp))
+                    .border((.6f*u).dp,Color(0x446b7488),RoundedCornerShape(topStart=(36*u).dp,topEnd=(36*u).dp))
+                    .background(Color(r.lyrics.surface)))
+                .clickable { onState(state.copy(lyrics=true)) },contentAlignment=Alignment.TopCenter) {
                 Column(horizontalAlignment=Alignment.CenterHorizontally,modifier=Modifier.padding(top=(6*u).dp)) {
-                    Glyph("up",text,Modifier.size((24*u).dp))
-                    Text("LETRAS",color=muted,fontSize=(10*u).sp,letterSpacing=(2.5*u).sp,fontFamily=font)
+                    Glyph("up",ink(.5f,lyricsY/h),Modifier.size((20*u).dp))
+                    Text("LETRAS",color=secondary(.5f,(lyricsY+33*u)/h),fontSize=(10*u).sp,letterSpacing=(2.5*u).sp,fontFamily=font)
                 }
             }
         }
@@ -246,6 +356,41 @@ private fun time(seconds:Int) = "${seconds/60}:${(seconds%60).toString().padStar
         drawCircle(Color(r.progress.thumb),size.width*.014f*(if(options.enabled && !options.reducedMotion)1+.08f*micro.engagement else 1f),thumbCenter)
     }
 }
+/** Real PCM-driven transient dust, separately drawn so the Android seek View keeps touch ownership. */
+@Composable private fun AudioTransientParticles(micro:PlayerMicroState,unit:Float,modifier:Modifier) {
+    Canvas(modifier) {
+        micro.revision
+        val logicalDp=unit.dp.toPx()
+        val p=micro.trail
+        for(i in p.age.indices) if(p.age[i]<p.life[i]) {
+            val t=p.age[i]/p.life[i]
+            val fade=(1f-t)*(1f-t)
+            val center=Offset(
+                17.dp.toPx() + p.x[i]*(size.width-34.dp.toPx()).coerceAtLeast(1f) +
+                    p.drift[i]*(p.age[i]/1000f)*logicalDp,
+                size.height/2f+p.y[i]*(1f+t*.4f)*logicalDp,
+            )
+            val radius=(p.size[i]*.5f*logicalDp).coerceAtLeast(.5f)
+            val tint=Color(p.color[i])
+            drawCircle(tint.copy(alpha=(p.alpha[i]*fade*.25f).coerceIn(0f,1f)),
+                radius*2.1f,center)
+            drawCircle(tint.copy(alpha=(p.alpha[i]*fade*.85f).coerceIn(0f,1f)),
+                radius*.62f,center)
+        }
+    }
+}
+
+/** Production controls: no filled disc, border or decorative halo. Accessible 48+ dp hit region. */
+@Composable private fun MinimalPlayControl(playing:Boolean,color:Color,modifier:Modifier,onClick:()->Unit) {
+    Box(modifier.clickable(
+        role=Role.Button,
+        onClickLabel=if(playing) "Pausar" else "Reproduzir",
+        onClick=onClick,
+    ),contentAlignment=Alignment.Center) {
+        Glyph(if(playing) "pause" else "play",color,Modifier.fillMaxSize(.56f))
+    }
+}
+
 @Composable private fun PlayControl(r:ArtRecipe,playing:Boolean,viewportWidth:Float,micro:PlayerMicroState,options:MicroOptions,profile:MicroProfile,modifier:Modifier,onClick:()->Unit) {
     BoxWithConstraints(modifier) {
         val edge=maxWidth
