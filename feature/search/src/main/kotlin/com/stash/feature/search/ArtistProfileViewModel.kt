@@ -71,7 +71,7 @@ class ArtistProfileViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val artistCache: ArtistCache,
     private val spotifyArtistLookup: SpotifyArtistPhotoLookup,
-    private val deezerArtistPhotoLookup: DeezerArtistPhotoLookup,
+    private val artistPhotoResolutionFinder: ArtistPhotoResolutionFinder,
     private val artistHeroPhotoStore: ArtistHeroPhotoStore,
     private val selectedArtistPhotos: SelectedArtistPhotoRepository,
     private val appleAlbumMetadata: AppleMusicAlbumMetadataLookup,
@@ -93,7 +93,6 @@ class ArtistProfileViewModel @Inject constructor(
     private var customPhotoUrl: String? = artistHeroPhotoStore.get(artistId)
     private var failedCustomPhotoUrl: String? = null
     private var failedSavedPhotoUrl: String? = null
-    private var deezerPhoto: String? = null
     private var spotifyPhoto: SpotifyArtistPhoto? = null
     private var nativeAvatarUrl: String? = initialAvatar
     private var photoJob: Job? = null
@@ -168,11 +167,10 @@ class ArtistProfileViewModel @Inject constructor(
     private var appleMetadataJob: Job? = null
     private var appleMetadata: Map<String, AppleAlbumMetadata> = emptyMap()
 
-    /** Search and Profile read the same persisted photo selection, keyed by browse ID. */
+    /** Both screens read exactly one persistent photo selection by stable browse ID. */
     private fun chosenHeroPhoto(): String? =
         customPhotoUrl?.takeUnless { it == failedCustomPhotoUrl }
             ?: selectedArtistPhotos.get(artistId)?.photoUrl?.takeUnless { it == failedSavedPhotoUrl }
-            ?: deezerPhoto?.takeUnless { it == failedSavedPhotoUrl }
             ?: spotifyPhoto?.imageUrl?.takeUnless { it == failedSavedPhotoUrl }
             ?: nativeAvatarUrl
 
@@ -186,41 +184,58 @@ class ArtistProfileViewModel @Inject constructor(
             state.copy(hero = state.hero.copy(
                 avatarUrl = chosenHeroPhoto(),
                 artworkKind = ArtistIdentityKind.PHOTO,
-                spotifyArtistUrl = if (spotifyActive) selection?.spotifyArtistUrl ?: spotifyPhoto?.artistUrl else null,
+                spotifyArtistUrl = if (spotifyActive)
+                    selection?.spotifyArtistUrl ?: spotifyPhoto?.artistUrl else null,
             ))
         }
     }
 
-    /** Only an opened artist profile performs network resolution; Search never does. */
+    /** Only opening this profile performs Spotify revalidation and image search. */
     private fun maybeLoadPhoto(name: String) {
         if (name.isBlank() || photoJob != null ||
             (customPhotoUrl != null && customPhotoUrl != failedCustomPhotoUrl)) return
         photoJob = viewModelScope.launch {
-            val previousIdentity = selectedArtistPhotos.get(artistId)?.spotifyArtistUrl
-            val found = spotifyArtistLookup.find(name)
-            // An exact display name is not a stable Spotify identity (homonyms exist).
-            spotifyPhoto = found?.takeIf {
-                previousIdentity == null || it.artistUrl == previousIdentity
-            }
-            if (spotifyPhoto != null) {
-                selectedArtistPhotos.selectSpotify(
-                    artistId,
-                    spotifyPhoto!!.imageUrl,
-                    spotifyPhoto!!.artistUrl,
-                )
+            val pinned = selectedArtistPhotos.get(artistId)?.spotifyArtistUrl
+            val official = if (pinned == null) spotifyArtistLookup.find(name)
+                else spotifyArtistLookup.find(name, pinned)
+            if (official != null) {
+                spotifyPhoto = official
+                selectedArtistPhotos.selectSpotify(artistId, official.imageUrl, official.artistUrl)
                 failedSavedPhotoUrl = null
                 updateHeroPhoto()
-            } else if (selectedArtistPhotos.get(artistId) == null) {
-                // Only a first-time cold miss can use another catalog photograph.
-                // Never let Deezer replace a photo already selected from Spotify.
-                deezerPhoto = deezerArtistPhotoLookup.find(name)
-                deezerPhoto?.let { selectedArtistPhotos.selectFallbackIfAbsent(artistId, it) }
+
+                // Same Spotify image: reuse the previously validated high-res
+                // choice indefinitely. If the Spotify image changed, the repo
+                // resets the check and source before starting the new search.
+                val selection = selectedArtistPhotos.get(artistId)
+                if (selection?.origin == ArtistPhotoOrigin.SPOTIFY &&
+                    selection.resolutionCheckedFor != official.imageUrl
+                ) {
+                    val result = try {
+                        artistPhotoResolutionFinder.findBetter(name, official.imageUrl)
+                    } catch (cancel: kotlinx.coroutines.CancellationException) {
+                        throw cancel
+                    } catch (_: Exception) { null }
+                    // null means all candidate services are unreachable;
+                    // allow a future profile open to retry without losing
+                    // the Spotify photo. A completed empty search is cached.
+                    if (result != null) {
+                        selectedArtistPhotos.markResolutionChecked(
+                            artistId, official.imageUrl, result.betterUrl,
+                        )
+                        updateHeroPhoto()
+                    }
+                }
+            } else {
+                // Never replace Spotify with Deezer because a token/API failed.
+                // On first visit, the native catalog avatar is a neutral
+                // placeholder until official Spotify identity can be resolved.
                 updateHeroPhoto()
             }
         }
     }
 
-    /** A transient image failure must not erase the user's persisted selection. */
+    /** Revert a broken high-res candidate to the ORIGINAL Spotify photo. */
     fun onHeroArtworkLoadFailed(url: String) {
         if (chosenHeroPhoto() != url) return
         when {
@@ -229,16 +244,16 @@ class ArtistProfileViewModel @Inject constructor(
                 failedSavedPhotoUrl = url
                 updateHeroPhoto()
                 _userMessages.tryEmit("Imagem indisponível no momento. Mostrando foto padrão.")
-                if (spotifyPhoto == null) maybeLoadPhoto(_uiState.value.hero.name)
             }
-            selectedArtistPhotos.get(artistId)?.photoUrl == url ||
-                spotifyPhoto?.imageUrl == url -> {
-                failedSavedPhotoUrl = url
+            selectedArtistPhotos.get(artistId)?.photoUrl == url -> {
+                selectedArtistPhotos.rejectHighResIfSelected(artistId, url)
+                if (selectedArtistPhotos.get(artistId)?.photoUrl == url) {
+                    failedSavedPhotoUrl = url
+                }
                 updateHeroPhoto()
             }
-            deezerPhoto == url -> {
+            spotifyPhoto?.imageUrl == url -> {
                 failedSavedPhotoUrl = url
-                deezerPhoto = null
                 updateHeroPhoto()
             }
         }
@@ -280,10 +295,9 @@ class ArtistProfileViewModel @Inject constructor(
         failedSavedPhotoUrl = null
         selectedArtistPhotos.restoreAutomatic(artistId)
         updateHeroPhoto()
-        if (spotifyPhoto == null) {
-            photoJob = null
-            maybeLoadPhoto(_uiState.value.hero.name)
-        }
+        photoJob?.cancel()
+        photoJob = null
+        maybeLoadPhoto(_uiState.value.hero.name)
     }
 
     /** Apple is preferred for existing album artwork/year, never playback IDs. */
@@ -319,6 +333,9 @@ class ArtistProfileViewModel @Inject constructor(
         // Must happen before any delegate action — the delegate reads
         // `scope()` lazily and throws if invoked before binding.
         delegate.bindToScope(viewModelScope)
+        // v194 could permanently store Deezer as FALLBACK. Only a Spotify
+        // portrait or user-owned override may be the permanent selection.
+        selectedArtistPhotos.clearLegacyFallback(artistId)
         // One-time compatibility bridge for previously saved manual photo links
         // and imported files. Old preferences/files are not deleted or moved.
         if (customPhotoUrl != null) {
@@ -326,6 +343,7 @@ class ArtistProfileViewModel @Inject constructor(
         } else if (selectedArtistPhotos.get(artistId)?.origin == ArtistPhotoOrigin.USER) {
             selectedArtistPhotos.restoreAutomatic(artistId)
         }
+        updateHeroPhoto()
 
         // Nav-args hero already painted by the MutableStateFlow seed above —
         // this bookend marks the "first-frame" moment so latency verification
