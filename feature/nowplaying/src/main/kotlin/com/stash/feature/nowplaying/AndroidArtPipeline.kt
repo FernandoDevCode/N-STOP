@@ -20,7 +20,7 @@ import nonstop.artlab.direction.*
 import nonstop.artlab.features.*
 import nonstop.artlab.renderer.*
 
-internal data class AndroidArt(val recipe: ArtRecipe, val atmosphere: AtmosphereBitmaps?, val cover: ImageBitmap?)
+internal data class AndroidArt(val recipe: ArtRecipe, val atmosphere: AtmosphereBitmaps?, val cover: ImageBitmap?, val contrast: VisualInkContrast? = null)
 
 /** Bounded content cache. Artwork identity never enters the director. Coil owns source image IO. */
 internal object AndroidArtPipeline {
@@ -90,7 +90,7 @@ internal object AndroidArtPipeline {
             }
             val bitmap = Bitmap.createBitmap(atmosphere.argb, atmosphere.width, atmosphere.height, Bitmap.Config.ARGB_8888).asImageBitmap()
             // Android uses FINAL view only: retain one composite, not diagnostic masks.
-            AndroidArt(recipe, AtmosphereBitmaps(bitmap, bitmap, bitmap, bitmap, bitmap), cover.asImageBitmap())
+            AndroidArt(recipe, AtmosphereBitmaps(bitmap, bitmap, bitmap, bitmap, bitmap), cover.asImageBitmap(), VisualInkContrast.from(atmosphere))
                 .also { memory[key] = it.copy(cover = null) }
         }
     }
