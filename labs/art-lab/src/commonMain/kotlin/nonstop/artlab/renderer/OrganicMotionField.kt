@@ -102,54 +102,39 @@ fun OrganicMotionField(
         }
     }
     Canvas(modifier) {
-        state.revision // draw-phase observation, no layout/recomposition dependency
-        val density = 1.dp.toPx()
-        val fraction = progress.coerceIn(0f, 1f)
-        val centerX = 17f * density + (size.width - 34f * density).coerceAtLeast(1f) * fraction
-        val centerY = size.height / 2f
+        state.revision // draw-only invalidation: no per-frame layout or recomposition
+        if (!enabled || !playing) return@Canvas
+        val unit = 1.dp.toPx()
+        val left = 17f * unit
+        val playable = (size.width - 34f * unit).coerceAtLeast(1f)
+        val tip = left + playable * progress.coerceIn(0f, 1f)
+        // The sound never creates anything in front of the playhead. Keep the
+        // optical native V2 thumb untouched; apply a nearly imperceptible
+        // organic modulation across the ALREADY PLAYED material only.
+        val end = tip - 9f * unit
+        if (end - left < 3f * unit) return@Canvas
+        val centerY = size.height * .5f
         val color = Color(localColor)
-        val spread = (19f + 7f * state.ethereal + 4f * state.elastic) * density
-        val t = state.phase
-        val lowWave = sin(t * 1.17f) * .55f + sin(t * .49f + 1.4f) * .45f
-        val irregular = sin(t * 2.31f + sin(t * .65f)) * sin(t * .77f)
-        val deflection = (1.1f + 2.7f * state.ethereal + 1.5f * state.elastic +
-            1.2f * state.tense) * density
-        val tilt = (lowWave * state.ethereal + irregular * state.tense * 1.4f +
-            state.drift * .30f) * deflection
-        val pinch = (1f + state.elastic * .60f + state.agitation * .24f)
-        val y0 = centerY - tilt * .25f
-        val left = centerX - spread
-        val right = centerX + spread * .85f
-        val upper = Path().apply {
-            moveTo(left, centerY)
-            cubicTo(centerX - spread * .62f, centerY - deflection * (.12f + state.elastic * .18f),
-                centerX - spread * .18f, centerY - (deflection * pinch + tilt) * .82f,
-                centerX, y0 - deflection * .22f)
-            cubicTo(centerX + spread * .20f, centerY - (deflection + tilt) * .64f,
-                centerX + spread * .57f, centerY - deflection * state.tense * .22f,
-                right, centerY)
+        val p = Path()
+        val phase = state.phase
+        val amplitude = (.23f + state.elastic * .26f + state.tense * .18f) * unit
+        val slices = 50
+        for (i in 0..slices) {
+            val x = left + (end - left) * i / slices
+            // Absolute track coordinates prevent the wave from stretching or
+            // changing its spatial grammar as progress advances.
+            val trackX = (x - left) / playable
+            val edge = min(1f, min((x-left)/(12f*unit), (end-x)/(12f*unit))).coerceAtLeast(0f)
+            val slow = sin(trackX * 19f + phase * .73f)
+            val secondary = sin(trackX * 37f - phase * .49f + state.drift)
+            val irregular = sin(trackX * 63f + phase * 1.11f)
+            val wave = slow * state.ethereal * .60f +
+                secondary * state.elastic * .40f +
+                irregular * state.tense * .33f
+            val y = centerY + wave * amplitude * edge
+            if (i == 0) p.moveTo(x, y) else p.lineTo(x, y)
         }
-        val lower = Path().apply {
-            moveTo(left, centerY)
-            cubicTo(centerX - spread * .53f, centerY + deflection * .13f,
-                centerX - spread * .24f, centerY + (deflection * (.55f + state.elastic) - tilt) * .58f,
-                centerX, centerY + deflection * .30f)
-            cubicTo(centerX + spread * .21f, centerY + deflection * (.47f + state.tense * .18f),
-                centerX + spread * .63f, centerY + deflection * .12f,
-                right, centerY)
-        }
-        drawPath(upper, color.copy(alpha=.11f), style=Stroke(width=3.2f*density,cap=StrokeCap.Round))
-        drawPath(lower, color.copy(alpha=.08f), style=Stroke(width=3.1f*density,cap=StrokeCap.Round))
-        drawPath(upper, color.copy(alpha=.40f), style=Stroke(width=.85f*density,cap=StrokeCap.Round))
-        drawPath(lower, color.copy(alpha=.29f), style=Stroke(width=.65f*density,cap=StrokeCap.Round))
-        // Irregularity conveys tension without changing the user's seek indicator.
-        val small = state.tense * state.agitation
-        if (small > .10f) {
-            val sx = centerX + spread * .33f
-            val sy = centerY + irregular * deflection * .43f
-            drawLine(color.copy(alpha=(small*.26f).coerceIn(0f,.20f)),
-                Offset(sx - 3f*density, sy), Offset(sx + 2f*density, sy - 1.2f*density),
-                strokeWidth=.65f*density,cap=StrokeCap.Round)
-        }
+        drawPath(p, color.copy(alpha=.065f), style=Stroke(width=3.1f*unit, cap=StrokeCap.Round))
+        drawPath(p, color.copy(alpha=.11f), style=Stroke(width=.70f*unit, cap=StrokeCap.Round))
     }
 }
