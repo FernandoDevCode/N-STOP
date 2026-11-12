@@ -58,10 +58,32 @@ internal fun V8PlayerSurface(ui: NowPlayingUiState, position: State<Long>, viewM
         if (audioActive) PlaybackVisualEnergy.subscribe()
         onDispose { if (audioActive) PlaybackVisualEnergy.unsubscribe() }
     }
-    val livePcm = remember {
-        object : AudioEnergySource {
-            override val durationMillis: Double = 1.0e12
-            override fun energyAt(positionMillis: Double): Float = PlaybackVisualEnergy.level()
+    val trackKey = ui.currentTrack?.let { track ->
+        val recording = track.youtubeId?.takeIf { it.isNotBlank() }
+            ?: track.id.takeIf { it > 0L }?.toString()
+        recording?.let { "motion_v1_${it}_${track.durationMs}" }
+    }
+    val motionCache = remember(context) { MotionProfileCache(context) }
+    DisposableEffect(trackKey) {
+        PlaybackVisualEnergy.reset()
+        if (trackKey != null) motionCache.read(trackKey)?.let(PlaybackVisualEnergy::seed)
+        onDispose {
+            if (trackKey != null) motionCache.write(trackKey, PlaybackVisualEnergy.motion())
+            PlaybackVisualEnergy.reset()
+        }
+    }
+    LaunchedEffect(trackKey, audioActive) {
+        if (trackKey == null || !audioActive) return@LaunchedEffect
+        while (true) {
+            delay(20_000)
+            motionCache.write(trackKey, PlaybackVisualEnergy.motion())
+        }
+    }
+    val liveMotion = remember(trackKey) {
+        MusicalMotionSource {
+            val sample = PlaybackVisualEnergy.motion()
+            MotionInfluence(sample.flow, sample.elasticity, sample.tension,
+                sample.attack, sample.evolution, sample.valid)
         }
     }
     val fontScale = LocalDensity.current.fontScale
@@ -93,7 +115,8 @@ internal fun V8PlayerSurface(ui: NowPlayingUiState, position: State<Long>, viewM
                 if (bitmap != null) Image(bitmap, "Capa de ${track?.album.orEmpty()}", Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
                 else com.stash.core.ui.visual.VisualCover(null, Modifier.fillMaxSize())
             } }, modifier = Modifier.fillMaxSize(),
-            microOptions = MicroOptions(reducedMotion = reduced, active = audioActive, audio = livePcm),
+            microOptions = MicroOptions(reducedMotion = reduced, active = audioActive,
+                motion = liveMotion),
             opticalProgress = { modifier, progress, onSeek ->
                 SonoraOpticalTimeline(
                     progress = progress,
