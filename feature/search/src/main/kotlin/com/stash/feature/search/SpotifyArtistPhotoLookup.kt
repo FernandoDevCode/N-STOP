@@ -12,7 +12,6 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONObject
 import java.net.URI
 import java.net.URLEncoder
 import java.util.Locale
@@ -103,10 +102,11 @@ class SpotifyArtistPhotoLookup @Inject constructor(
 
     internal fun parseSpotifyArtistOEmbed(payload: String, name: String, id: String): SpotifyArtistPhoto? =
         runCatching {
-            val json = JSONObject(payload)
-            val title = json.optString("title")
-            val image = json.optString("thumbnail_url")
-            if (json.optString("provider_name") != "Spotify" || normalize(title) != normalize(name) ||
+            val json = kotlinx.serialization.json.Json.parseToJsonElement(payload).jsonObject
+            val title = json["title"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            val image = json["thumbnail_url"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            val provider = json["provider_name"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            if (provider != "Spotify" || normalize(title) != normalize(name) ||
                 !image.startsWith("https://i.scdn.co/image/") ||
                 !id.matches(Regex("[A-Za-z0-9]{22}"))
             ) return null
