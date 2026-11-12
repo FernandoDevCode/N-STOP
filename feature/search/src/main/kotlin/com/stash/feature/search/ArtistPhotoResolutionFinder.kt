@@ -56,8 +56,10 @@ class ArtistPhotoResolutionFinder @Inject constructor(
             } catch (cancel: CancellationException) { throw cancel }
             catch (_: Exception) { /* retry on a future opening if everything failed */ }
             var best: Photo? = null
+            var downloadedCandidates = 0
             for (url in candidates.asSequence().filter(::allowed).distinct().take(12)) {
                 val next = downloadPhoto(url) ?: continue
+                downloadedCandidates++
                 if (!ArtistPhotoPixelMatch.isHigherResolution(
                         original.width, original.height, next.width, next.height
                     ) || !ArtistPhotoPixelMatch.isSamePhoto(original.pixels, next.pixels)
@@ -66,7 +68,11 @@ class ArtistPhotoResolutionFinder @Inject constructor(
                     best = next.copy(url = url)
                 }
             }
-            if (commonsChecked || candidates.isNotEmpty()) SearchResult(best?.url) else null
+            when {
+                best != null -> SearchResult(best.url)
+                commonsChecked && (candidates.isEmpty() || downloadedCandidates > 0) -> SearchResult(null)
+                else -> null // all candidate providers failed: retry at next profile open
+            }
         }
 
     internal data class Photo(
