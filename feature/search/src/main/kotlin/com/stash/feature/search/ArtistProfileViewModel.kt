@@ -180,12 +180,13 @@ class ArtistProfileViewModel @Inject constructor(
         _uiState.update { state ->
             val selection = selectedArtistPhotos.get(artistId)
             val spotifyActive = (customPhotoUrl == null || customPhotoUrl == failedCustomPhotoUrl) &&
-                selection?.origin == ArtistPhotoOrigin.SPOTIFY &&
-                selection.photoUrl != failedSavedPhotoUrl
+                (selection?.origin == ArtistPhotoOrigin.SPOTIFY ||
+                    (selection == null && spotifyPhoto != null)) &&
+                selection?.photoUrl != failedSavedPhotoUrl
             state.copy(hero = state.hero.copy(
                 avatarUrl = chosenHeroPhoto(),
                 artworkKind = ArtistIdentityKind.PHOTO,
-                spotifyArtistUrl = if (spotifyActive) selection?.spotifyArtistUrl else null,
+                spotifyArtistUrl = if (spotifyActive) selection?.spotifyArtistUrl ?: spotifyPhoto?.artistUrl else null,
             ))
         }
     }
@@ -549,7 +550,8 @@ class ArtistProfileViewModel @Inject constructor(
         nativeAvatarUrl = profile.avatarUrl
         val selection = selectedArtistPhotos.get(artistId)
         val spotifyActive = (customPhotoUrl == null || customPhotoUrl == failedCustomPhotoUrl) &&
-            selection?.origin == ArtistPhotoOrigin.SPOTIFY && selection.photoUrl != failedSavedPhotoUrl
+            (selection?.origin == ArtistPhotoOrigin.SPOTIFY || (selection == null && spotifyPhoto != null)) &&
+            selection?.photoUrl != failedSavedPhotoUrl
         _uiState.value = _uiState.value.copy(
             hero = HeroState(
                 name = profile.name,
