@@ -27,30 +27,68 @@ data class SelectedArtistPhoto(
     val origin: ArtistPhotoOrigin,
     val spotifyPhotoUrl: String? = null,
     val spotifyArtistUrl: String? = null,
+    /** Avoid repeating image-matching unless Spotify's source portrait changed. */
+    val resolutionCheckedFor: String? = null,
+    /** Preserve the verified automatic choice while the user chooses a custom photo. */
+    val automaticPhotoUrl: String? = null,
 )
 
 internal object ArtistPhotoSelectionRules {
-    fun spotify(
-        previous: SelectedArtistPhoto?,
-        sourceUrl: String,
-        artistUrl: String,
-    ): SelectedArtistPhoto = when {
-        previous?.origin == ArtistPhotoOrigin.USER ->
-            previous.copy(spotifyPhotoUrl = sourceUrl, spotifyArtistUrl = artistUrl)
-        // Do not replace a previously verified higher-resolution *same* photo.
-        previous?.origin == ArtistPhotoOrigin.SPOTIFY &&
-            previous.spotifyPhotoUrl == sourceUrl ->
-            previous.copy(spotifyArtistUrl = artistUrl)
-        else -> SelectedArtistPhoto(sourceUrl, ArtistPhotoOrigin.SPOTIFY, sourceUrl, artistUrl)
+    fun spotify(previous: SelectedArtistPhoto?, sourceUrl: String, artistUrl: String): SelectedArtistPhoto {
+        val sameSource = previous?.spotifyPhotoUrl == sourceUrl
+        return when {
+            previous?.origin == ArtistPhotoOrigin.USER -> previous.copy(
+                spotifyPhotoUrl = sourceUrl,
+                spotifyArtistUrl = artistUrl,
+                resolutionCheckedFor = if (sameSource) previous.resolutionCheckedFor else null,
+                automaticPhotoUrl = if (sameSource)
+                    previous.automaticPhotoUrl ?: sourceUrl else sourceUrl,
+            )
+            previous?.origin == ArtistPhotoOrigin.SPOTIFY && sameSource ->
+                previous.copy(spotifyArtistUrl = artistUrl)
+            else -> SelectedArtistPhoto(
+                photoUrl = sourceUrl,
+                origin = ArtistPhotoOrigin.SPOTIFY,
+                spotifyPhotoUrl = sourceUrl,
+                spotifyArtistUrl = artistUrl,
+                automaticPhotoUrl = sourceUrl,
+            )
+        }
+    }
+
+    fun markChecked(
+        previous: SelectedArtistPhoto?, sourceUrl: String, verifiedBetterUrl: String?,
+    ): SelectedArtistPhoto? {
+        if (previous?.origin != ArtistPhotoOrigin.SPOTIFY ||
+            previous.spotifyPhotoUrl != sourceUrl) return previous
+        val selected = verifiedBetterUrl ?: sourceUrl
+        return previous.copy(
+            photoUrl = selected,
+            automaticPhotoUrl = selected,
+            resolutionCheckedFor = sourceUrl,
+        )
     }
 
     fun manual(previous: SelectedArtistPhoto?, url: String): SelectedArtistPhoto =
-        SelectedArtistPhoto(url, ArtistPhotoOrigin.USER, previous?.spotifyPhotoUrl, previous?.spotifyArtistUrl)
+        SelectedArtistPhoto(
+            photoUrl = url,
+            origin = ArtistPhotoOrigin.USER,
+            spotifyPhotoUrl = previous?.spotifyPhotoUrl,
+            spotifyArtistUrl = previous?.spotifyArtistUrl,
+            resolutionCheckedFor = previous?.resolutionCheckedFor,
+            automaticPhotoUrl = if (previous?.origin == ArtistPhotoOrigin.SPOTIFY)
+                previous.photoUrl else previous?.automaticPhotoUrl,
+        )
 
     fun restore(previous: SelectedArtistPhoto?): SelectedArtistPhoto? {
         if (previous?.origin != ArtistPhotoOrigin.USER) return previous
         return previous.spotifyPhotoUrl?.let { url ->
-            SelectedArtistPhoto(url, ArtistPhotoOrigin.SPOTIFY, url, previous.spotifyArtistUrl)
+            val chosen = previous.automaticPhotoUrl ?: url
+            previous.copy(
+                photoUrl = chosen,
+                origin = ArtistPhotoOrigin.SPOTIFY,
+                automaticPhotoUrl = chosen,
+            )
         }
     }
 
@@ -74,6 +112,45 @@ class SelectedArtistPhotoRepository @Inject constructor(
             !spotifyArtistUrl.startsWith("https://open.spotify.com/artist/")) return
         store(artistBrowseId, ArtistPhotoSelectionRules.spotify(get(artistBrowseId), spotifyPhotoUrl, spotifyArtistUrl))
     }
+
+    /** Called once per new Spotify photo, after candidate visual comparison. */
+    @Synchronized
+    fun markResolutionChecked(artistBrowseId: String, sourceUrl: String, verifiedBetterUrl: String?) {
+        if (!validId(artistBrowseId)) return
+        if (verifiedBetterUrl != null && !safeCandidateUrl(verifiedBetterUrl)) return
+        val old = get(artistBrowseId)
+        val updated = ArtistPhotoSelectionRules.markChecked(old, sourceUrl, verifiedBetterUrl)
+        if (updated != null) store(artistBrowseId, updated)
+    }
+
+    /** A failed high-res image falls back to Spotify's original, never to Deezer. */
+    @Synchronized
+    fun rejectHighResIfSelected(artistBrowseId: String, failedUrl: String) {
+        val p = get(artistBrowseId) ?: return
+        if (p.origin == ArtistPhotoOrigin.SPOTIFY && p.photoUrl == failedUrl &&
+            p.spotifyPhotoUrl != null && p.photoUrl != p.spotifyPhotoUrl
+        ) {
+            store(artistBrowseId, p.copy(
+                photoUrl = p.spotifyPhotoUrl,
+                automaticPhotoUrl = p.spotifyPhotoUrl,
+                resolutionCheckedFor = p.spotifyPhotoUrl,
+            ))
+        }
+    }
+
+    /** Drop old Deezer selections created by v194; catalog art is the neutral fallback. */
+    @Synchronized
+    fun clearLegacyFallback(artistBrowseId: String) {
+        if (get(artistBrowseId)?.origin == ArtistPhotoOrigin.FALLBACK) store(artistBrowseId, null)
+    }
+
+    private fun safeCandidateUrl(raw: String): Boolean = runCatching {
+        val uri = java.net.URI(raw)
+        uri.scheme == "https" && uri.userInfo == null && uri.port == -1 &&
+            uri.host?.lowercase() in setOf(
+                "upload.wikimedia.org", "cdn-images.dzcdn.net", "e-cdns-images.dzcdn.net",
+            )
+    }.getOrDefault(false)
 
     /** Apply a user selection immediately to Search, before the profile is closed. */
     @Synchronized
@@ -118,6 +195,8 @@ class SelectedArtistPhotoRepository @Inject constructor(
             .put("origin", p.origin.name)
             .put("spotifyPhoto", p.spotifyPhotoUrl)
             .put("spotifyArtist", p.spotifyArtistUrl)
+            .put("resolutionCheckedFor", p.resolutionCheckedFor)
+            .put("automaticPhoto", p.automaticPhotoUrl)
             .toString()
 
     private fun decode(raw: String): SelectedArtistPhoto? = runCatching {
@@ -130,6 +209,8 @@ class SelectedArtistPhotoRepository @Inject constructor(
             origin = origin,
             spotifyPhotoUrl = obj.optString("spotifyPhoto").takeIf { it.isNotBlank() && it != "null" },
             spotifyArtistUrl = obj.optString("spotifyArtist").takeIf { it.isNotBlank() && it != "null" },
+            resolutionCheckedFor = obj.optString("resolutionCheckedFor").takeIf { it.isNotBlank() && it != "null" },
+            automaticPhotoUrl = obj.optString("automaticPhoto").takeIf { it.isNotBlank() && it != "null" },
         )
     }.getOrNull()
 }
