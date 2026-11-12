@@ -63,7 +63,8 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
     microOptions:MicroOptions=MicroOptions(),microState:PlayerMicroState?=null,
     production: Boolean = false, seekEnabled: Boolean = true, repeatOne: Boolean = false,
     onInfo: () -> Unit = {}, coverContent: (@Composable (Modifier) -> Unit)? = null,
-    lyricsContent: (@Composable (Modifier, Float) -> Unit)? = null) {
+    lyricsContent: (@Composable (Modifier, Float) -> Unit)? = null,
+    opticalProgress: (@Composable (Modifier, Float, (Float) -> Unit) -> Unit)? = null) {
     val r = remember(recipe) { safeRecipe(recipe) }
     val micro=microState ?: remember(r.sourceImageHash) { PlayerMicroState() }
     val profile=remember(r.familyWeights) { MicroProfile.from(r) }
@@ -137,8 +138,15 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
             }
         }
         if (debug == DebugView.FINAL && !state.lyrics) {
-            ProgressBar(state.progress,r,micro,microOptions,u,Modifier.offset(inset.dp,(seekY-24*u).dp).size(contentWidth.dp,(48*u).dp), enabled=seekEnabled) {
-                if (seekEnabled) onState(state.copy(progress=it))
+            val seekModifier = Modifier.offset(inset.dp,(seekY-24*u).dp).size(contentWidth.dp,(48*u).dp)
+            if (opticalProgress != null) {
+                opticalProgress(seekModifier, state.progress) { fraction ->
+                    if (seekEnabled) onState(state.copy(progress = fraction.coerceIn(0f, 1f)))
+                }
+            } else {
+                ProgressBar(state.progress,r,micro,microOptions,u,seekModifier, enabled=seekEnabled) {
+                    if (seekEnabled) onState(state.copy(progress=it))
+                }
             }
             Row(Modifier.offset(inset.dp,(seekY+11*u).dp).width(contentWidth.dp),horizontalArrangement=Arrangement.SpaceBetween) {
                 val total=album.durationSeconds
