@@ -22,18 +22,21 @@ internal fun parseSpotifyArtistPhoto(body: String, requestedName: String): Spoti
     return runCatching {
         val items = Json.parseToJsonElement(body).jsonObject["artists"]
             ?.jsonObject?.get("items")?.jsonArray ?: return null
-        items.firstNotNullOfOrNull { node ->
+        val exact = items.mapNotNull { node ->
             val obj = node.jsonObject
             val name = obj["name"]?.jsonPrimitive?.contentOrNull.orEmpty()
-            if (normalizedArtistName(name) != normalizedArtistName(requestedName)) return@firstNotNullOfOrNull null
+            if (normalizedArtistName(name) != normalizedArtistName(requestedName)) return@mapNotNull null
             val id = obj["id"]?.jsonPrimitive?.contentOrNull.orEmpty()
-            if (!id.matches(Regex("[A-Za-z0-9]{22}"))) return@firstNotNullOfOrNull null
-            val images = obj["images"]?.jsonArray ?: return@firstNotNullOfOrNull null
+            if (!id.matches(Regex("[A-Za-z0-9]{22}"))) return@mapNotNull null
+            val images = obj["images"]?.jsonArray ?: return@mapNotNull null
             val imageUrl = images.firstNotNullOfOrNull { image ->
                 image.jsonObject["url"]?.jsonPrimitive?.contentOrNull
                     ?.takeIf { it.startsWith("https://i.scdn.co/image/") }
-            } ?: return@firstNotNullOfOrNull null
+            } ?: return@mapNotNull null
             SpotifyArtistPhoto(imageUrl, "https://open.spotify.com/artist/" + id)
-        }
+        }.distinctBy { it.artistUrl }
+        // Ambiguous same-name artists must not silently steal each other's
+        // portraits. Keep the stored selection instead until identity is certain.
+        exact.singleOrNull()
     }.getOrNull()
 }
