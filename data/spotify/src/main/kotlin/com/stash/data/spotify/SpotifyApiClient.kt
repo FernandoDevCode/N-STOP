@@ -773,8 +773,12 @@ class SpotifyApiClient @Inject constructor(
      */
     suspend fun searchArtistPhoto(name: String): SpotifyArtistPhoto? = withContext(Dispatchers.IO) {
         if (name.isBlank()) return@withContext null
-        val token = tokenManager.getSpotifyAccessToken() ?: return@withContext null
-        val url = WEB_API_BASE + "/search?type=artist&limit=5&q=" +
+        // Public client credentials are a best-effort alternative when Spotify
+        // is not connected. The API may refuse /search with 429; in that case
+        // caller falls back to the unique MusicBrainz -> official-ID route.
+        val userToken = tokenManager.getSpotifyAccessToken()
+        val token = userToken ?: getClientCredentialsToken() ?: return@withContext null
+        val url = WEB_API_BASE + "/search?type=artist&limit=10&q=" +
             URLEncoder.encode(name.trim(), "UTF-8")
         try {
             fun readWith(bearer: String): Pair<Int, String?> =
@@ -782,11 +786,23 @@ class SpotifyApiClient @Inject constructor(
                     response.code to (if (response.isSuccessful) response.body?.string() else null)
                 }
             var (status, body) = readWith(token)
-            if (status == 401) {
-                val refreshed = tokenManager.forceRefreshSpotifyAccessToken() ?: return@withContext null
-                val retry = readWith(refreshed)
-                status = retry.first
-                body = retry.second
+            if (status == 401 && userToken != null) {
+                val refreshed = tokenManager.forceRefreshSpotifyAccessToken()
+                if (refreshed != null) {
+                    val retry = readWith(refreshed)
+                    status = retry.first
+                    body = retry.second
+                }
+            }
+            // A user-session 429 does not prove Spotify's public artist search
+            // is unavailable. One bounded fallback; never repeat on 429.
+            if (status !in 200..299 && userToken != null) {
+                val public = getClientCredentialsToken()
+                if (public != null && public != token) {
+                    val retry = readWith(public)
+                    status = retry.first
+                    body = retry.second
+                }
             }
             if (status !in 200..299 || body == null) return@withContext null
             parseSpotifyArtistPhoto(body, name)
@@ -796,6 +812,53 @@ class SpotifyApiClient @Inject constructor(
             null
         }
     }
+
+    /**
+     * Refresh an already pinned Spotify artist, without searching by name
+     * again and accidentally switching to another artist with the same name.
+     */
+    suspend fun getArtistPhotoById(id: String, expectedName: String): SpotifyArtistPhoto? =
+        withContext(Dispatchers.IO) {
+            if (!id.matches(Regex("[A-Za-z0-9]{22}"))) return@withContext null
+            // Public artist metadata can use client credentials. Spotify user
+            // login is NOT required just to render an artist's official photo.
+            val userToken = tokenManager.getSpotifyAccessToken()
+            val token = userToken ?: getClientCredentialsToken()
+                ?: return@withContext null
+            val url = "$WEB_API_BASE/artists/$id"
+            try {
+                fun read(bearer: String): Pair<Int, String?> =
+                    executeSearchRequest(url, bearer).use { response ->
+                        response.code to if (response.isSuccessful) response.body?.string() else null
+                    }
+                var (code, payload) = read(token)
+                if (code == 401 && userToken != null) {
+                    val refreshed = tokenManager.forceRefreshSpotifyAccessToken()
+                    if (refreshed != null) {
+                        val retry = read(refreshed)
+                        code = retry.first
+                        payload = retry.second
+                    }
+                }
+                // Spotify user-session access can hit an independent 429/403
+                // even when public client-credentials artist metadata works.
+                // Retry at most once via the existing public token (no loops).
+                if (code !in 200..299 && userToken != null) {
+                    val publicToken = getClientCredentialsToken()
+                    if (publicToken != null && publicToken != token) {
+                        val retry = read(publicToken)
+                        code = retry.first
+                        payload = retry.second
+                    }
+                }
+                if (code !in 200..299 || payload == null) return@withContext null
+                parseSpotifyArtistDetail(payload, id, expectedName)
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                null
+            }
+        }
 
     /**
      * Best-effort followed artist names. The web-player session may not carry

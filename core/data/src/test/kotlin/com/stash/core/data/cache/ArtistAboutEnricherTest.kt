@@ -33,6 +33,7 @@ class ArtistAboutEnricherTest {
             override suspend fun lookupUrlRels(mbid: String) = mbLookup
             override suspend fun lookupMemberRelations(mbid: String): JsonObject? = null
             override suspend fun searchByName(name: String) = mbSearch
+            override suspend fun searchUniqueByName(name: String) = mbSearch
         }
         return RealArtistAboutEnricher(lastFm, mb)
     }
