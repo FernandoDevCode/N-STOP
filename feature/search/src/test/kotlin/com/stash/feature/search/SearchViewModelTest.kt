@@ -3,6 +3,8 @@ package com.stash.feature.search
 import androidx.lifecycle.SavedStateHandle
 import app.cash.turbine.test
 import com.stash.core.data.prefs.StreamingPreference
+import com.stash.core.data.artistphotos.SelectedArtistPhotoRepository
+import com.stash.core.data.artistphotos.SelectedArtistPhoto
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.StreamRoutingResult
 import com.stash.core.media.actions.TrackActionsDelegate
@@ -385,6 +387,9 @@ class SearchViewModelTest {
             on { recent } doReturn kotlinx.coroutines.flow.flowOf(emptyList())
         },
         savedStateHandle: SavedStateHandle = SavedStateHandle(),
+        imageRepository: SelectedArtistPhotoRepository = mock {
+            on { photos } doReturn MutableStateFlow<Map<String, SelectedArtistPhoto>>(emptyMap()).asStateFlow()
+        },
     ): SearchViewModel = SearchViewModel(
         api = api,
         prefetcher = prefetcher,
@@ -393,6 +398,7 @@ class SearchViewModelTest {
         playerRepository = playerRepository,
         streamingPreference = streamingPreference,
         recentSearchesStore = recentSearchesStore,
+        selectedArtistPhotos = imageRepository,
         savedStateHandle = savedStateHandle,
     )
 

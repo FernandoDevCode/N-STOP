@@ -5,6 +5,7 @@ import app.cash.turbine.test
 import com.stash.core.data.cache.AlbumCache
 import com.stash.core.data.cache.ArtistCache
 import com.stash.core.data.artistphotos.ArtistIdentityKind
+import com.stash.core.data.artistphotos.SelectedArtistPhotoRepository
 import com.stash.data.spotify.SpotifyArtistPhoto
 import com.stash.core.data.cache.CachedProfile
 import com.stash.core.data.repository.MusicRepository
@@ -82,6 +83,9 @@ class ArtistProfileViewModelTest {
         musicRepository: MusicRepository = mock(),
         spotify: SpotifyArtistPhotoLookup = mock(),
         store: ArtistHeroPhotoStore = mock(),
+        selectedPhotos: SelectedArtistPhotoRepository = mock {
+            on { photos } doReturn MutableStateFlow<Map<String, com.stash.core.data.artistphotos.SelectedArtistPhoto>>(emptyMap()).asStateFlow()
+        },
     ): ArtistProfileViewModel = ArtistProfileViewModel(
         savedStateHandle = SavedStateHandle(
             mapOf(
@@ -92,8 +96,9 @@ class ArtistProfileViewModelTest {
         ),
         artistCache = cache,
         spotifyArtistLookup = spotify,
-        deezerArtistPhotoLookup = mock(),
+        artistPhotoResolutionFinder = mock(),
         artistHeroPhotoStore = store,
+        selectedArtistPhotos = selectedPhotos,
         appleAlbumMetadata = mock<AppleMusicAlbumMetadataLookup>(),
         albumCache = albumCache,
         prefetcher = prefetcher,
@@ -406,8 +411,12 @@ class ArtistProfileViewModelTest {
         whenever(spotify.find("LocalName")).thenReturn(
             SpotifyArtistPhoto("https://i.scdn.co/image/official", "https://open.spotify.com/artist/artist")
         )
-        val vm = vmWith(cache, spotify = spotify)
+        val selected = mock<SelectedArtistPhotoRepository> {
+            on { photos } doReturn MutableStateFlow<Map<String, com.stash.core.data.artistphotos.SelectedArtistPhoto>>(emptyMap()).asStateFlow()
+        }
+        val vm = vmWith(cache, spotify = spotify, selectedPhotos = selected)
         advanceUntilIdle()
+        verify(selected).selectSpotify("UC1", "https://i.scdn.co/image/official", "https://open.spotify.com/artist/artist")
         assertEquals("https://i.scdn.co/image/official", vm.uiState.value.hero.avatarUrl)
         assertEquals("https://open.spotify.com/artist/artist", vm.uiState.value.hero.spotifyArtistUrl)
         assertEquals(ArtistIdentityKind.PHOTO, vm.uiState.value.hero.artworkKind)

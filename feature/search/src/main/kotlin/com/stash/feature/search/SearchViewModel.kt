@@ -7,6 +7,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stash.core.common.perf.PerfLog
 import com.stash.core.data.prefs.StreamingPreference
+import com.stash.core.data.artistphotos.SelectedArtistPhotoRepository
+import com.stash.core.data.artistphotos.SelectedArtistPhoto
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.StreamRoutingResult
 import com.stash.core.media.actions.TrackActionsDelegate
@@ -62,6 +64,7 @@ class SearchViewModel @Inject constructor(
     private val playerRepository: PlayerRepository,
     private val streamingPreference: StreamingPreference,
     private val recentSearchesStore: RecentSearchesStore,
+    private val selectedArtistPhotos: SelectedArtistPhotoRepository,
     /**
      * Holds the typed query across process death. The Search tab's ViewModel
      * already survives tab switches (its back-stack entry is saved, not
@@ -93,6 +96,9 @@ class SearchViewModel @Inject constructor(
         SearchUiState(query = savedStateHandle.get<String>(KEY_QUERY).orEmpty()),
     )
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
+
+    /** Local-only, live photos shared with artist profiles. Never triggers Spotify from Search. */
+    val artistPhotos: StateFlow<Map<String, SelectedArtistPhoto>> = selectedArtistPhotos.photos
 
     /**
      * Synthetic id of the track currently being resolved-on-tap. Set when

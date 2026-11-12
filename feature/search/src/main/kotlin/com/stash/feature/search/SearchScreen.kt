@@ -91,6 +91,7 @@ import com.stash.core.ui.components.ShimmerPlaceholder
 import com.stash.core.ui.theme.StashTheme
 import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.data.ytmusic.model.ArtistSummary
+import com.stash.core.data.artistphotos.SelectedArtistPhoto
 import com.stash.data.ytmusic.model.SearchResultSection
 import com.stash.data.ytmusic.model.TopResultItem
 import com.stash.data.ytmusic.model.TrackSummary
@@ -123,6 +124,7 @@ fun SearchScreen(
     val playlistSheetItem by viewModel.playlistSheetItem.collectAsStateWithLifecycle()
     val userPlaylists by viewModel.userPlaylists.collectAsStateWithLifecycle()
     val recentSearches by viewModel.recentSearches.collectAsStateWithLifecycle()
+    val selectedArtistPhotos by viewModel.artistPhotos.collectAsStateWithLifecycle()
     val currentPlayingYoutubeId by viewModel.currentPlayingYoutubeId.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -150,11 +152,16 @@ fun SearchScreen(
             when (val status = state.status) {
                 SearchStatus.Idle -> RecentSearches(
                     entries = recentSearches,
+                    selectedArtistPhotos = selectedArtistPhotos,
                     onTap = { entry ->
                         viewModel.onRecentSearchTapped(entry)
                         // ARTIST recents navigate straight back to the profile.
                         if (entry.type == RecentSearch.Type.ARTIST && entry.artistId != null) {
-                            onNavigateToArtist(entry.artistId, entry.text, entry.thumbnailUrl)
+                            onNavigateToArtist(
+                                entry.artistId,
+                                entry.text,
+                                selectedArtistPhotoUrl(entry.artistId, entry.thumbnailUrl, selectedArtistPhotos),
+                            )
                         }
                     },
                     onRemove = viewModel::removeRecentSearch,
@@ -163,6 +170,7 @@ fun SearchScreen(
                 SearchStatus.Loading -> LoadingSkeletons()
                 is SearchStatus.Results -> SectionedResultsList(
                     sections = status.sections,
+                    selectedArtistPhotos = selectedArtistPhotos,
                     downloadingIds = downloadingIds,
                     downloadedIds = downloadedIds,
                     waitingForLosslessIds = waitingForLosslessIds,
@@ -174,8 +182,9 @@ fun SearchScreen(
                     onArtistClick = { a ->
                         // Opening a profile IS the committed search — record the
                         // artist (with avatar) so backing out still saved it.
-                        viewModel.onArtistOpened(a.id, a.name, a.avatarUrl)
-                        onNavigateToArtist(a.id, a.name, a.avatarUrl)
+                        val selected = selectedArtistPhotoUrl(a.id, a.avatarUrl, selectedArtistPhotos)
+                        viewModel.onArtistOpened(a.id, a.name, selected)
+                        onNavigateToArtist(a.id, a.name, selected)
                     },
                     onAlbumClick = onNavigateToAlbum,
                     onTopTrackClick = { t -> viewModel.onResultTap(t.toTrackItem()) },
@@ -248,6 +257,7 @@ private fun SearchBar(
 @Composable
 private fun RecentSearches(
     entries: List<RecentSearch>,
+    selectedArtistPhotos: Map<String, SelectedArtistPhoto>,
     onTap: (RecentSearch) -> Unit,
     onRemove: (RecentSearch) -> Unit,
     onClearAll: () -> Unit,
@@ -285,7 +295,12 @@ private fun RecentSearches(
                     .padding(horizontal = 20.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                RecentSearchThumb(entry)
+                RecentSearchThumb(
+                    entry,
+                    if (entry.type == RecentSearch.Type.ARTIST)
+                        selectedArtistPhotoUrl(entry.artistId, entry.thumbnailUrl, selectedArtistPhotos)
+                    else entry.thumbnailUrl,
+                )
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
@@ -327,11 +342,11 @@ private fun RecentSearches(
  * fallback when an entry has no thumbnail URL).
  */
 @Composable
-private fun RecentSearchThumb(entry: RecentSearch) {
+private fun RecentSearchThumb(entry: RecentSearch, photoUrl: String?) {
     val size = 44.dp
-    if (entry.thumbnailUrl != null) {
+    if (photoUrl != null) {
         AsyncImage(
-            model = entry.thumbnailUrl,
+            model = photoUrl,
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier
@@ -369,6 +384,7 @@ private fun RecentSearchThumb(entry: RecentSearch) {
 @Composable
 private fun SectionedResultsList(
     sections: List<SearchResultSection>,
+    selectedArtistPhotos: Map<String, SelectedArtistPhoto>,
     downloadingIds: Set<String>,
     downloadedIds: Set<String>,
     waitingForLosslessIds: Set<String>,
@@ -450,6 +466,9 @@ private fun SectionedResultsList(
                             item = top,
                             onArtistClick = onArtistClick,
                             onTrackPlay = onTopTrackClick,
+                            artistPhotoUrl = (top as? TopResultItem.ArtistTop)?.artist?.let {
+                                selectedArtistPhotoUrl(it.id, it.avatarUrl, selectedArtistPhotos)
+                            },
                         )
                     }
                 }
@@ -494,7 +513,7 @@ private fun SectionedResultsList(
                             items(section.artists, key = { it.id }) { a ->
                                 ArtistAvatarCard(
                                     name = a.name,
-                                    avatarUrl = a.avatarUrl,
+                                    avatarUrl = selectedArtistPhotoUrl(a.id, a.avatarUrl, selectedArtistPhotos),
                                     onClick = { onArtistClick(a) },
                                 )
                             }
@@ -523,6 +542,14 @@ private fun SectionedResultsList(
 // Top-result card
 // ---------------------------------------------------------------------------
 
+/** One catalog browse ID selects one persistent image; names never join records. */
+internal fun selectedArtistPhotoUrl(
+    artistBrowseId: String?,
+    catalogAvatarUrl: String?,
+    selections: Map<String, SelectedArtistPhoto>,
+): String? = artistBrowseId?.let { selections[it]?.photoUrl } ?: catalogAvatarUrl
+
+
 /**
  * Tall "Top result" card — mirrors the InnerTube musicCardShelfRenderer.
  *
@@ -534,6 +561,7 @@ private fun SectionedResultsList(
 @Composable
 private fun TopResultCard(
     item: TopResultItem,
+    artistPhotoUrl: String? = null,
     onArtistClick: (ArtistSummary) -> Unit,
     onTrackPlay: (TrackSummary) -> Unit,
     // new — only consulted when item is TrackTop
@@ -581,7 +609,7 @@ private fun TopResultCard(
             contentAlignment = Alignment.Center,
         ) {
             val thumb = when (item) {
-                is TopResultItem.ArtistTop -> item.artist.avatarUrl
+                is TopResultItem.ArtistTop -> artistPhotoUrl ?: item.artist.avatarUrl
                 is TopResultItem.TrackTop -> item.track.thumbnailUrl
             }
             if (thumb != null) {
