@@ -125,8 +125,8 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
         if (debug in listOf(DebugView.FINAL,DebugView.SCRIM)) Box(Modifier.fillMaxSize().background(
             Brush.verticalGradient(0f to Color.Black.copy(alpha=r.scrimTop),.5f to Color.Transparent,1f to Color.Black.copy(alpha=r.scrimBottom))))
         if (debug == DebugView.FINAL) {
-            RoundControl("Recolher player", "down", Modifier.offset((inset-24*u).dp,(h*.027f-4*u).dp).size((48*u).dp),onClose,outlined=true)
-            RoundControl(if (production) "Opções da faixa" else "Diagnóstico", "menu", Modifier.offset((w-inset-24*u).dp,(h*.027f-4*u).dp).size((48*u).dp),onMenu,outlined=true)
+            RoundControl("Recolher player", "down", Modifier.offset((inset-24*u).dp,(h*.027f-4*u).dp).size((48*u).dp),onClose,outlined=!production)
+            RoundControl(if (production) "Opções da faixa" else "Diagnóstico", "menu", Modifier.offset((w-inset-24*u).dp,(h*.027f-4*u).dp).size((48*u).dp),onMenu,outlined=!production)
         }
         if (showArt && !state.lyrics) {
             Box(Modifier.offset(((w-artSize)/2).dp,artY.dp).size(artSize.dp,artHeight.dp)
@@ -158,7 +158,7 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
                     )
                 } else Modifier)) {
                 if (coverContent != null) coverContent(Modifier.fillMaxSize())
-                else if (cover != null) Image(cover,"${album.artist} — ${album.album}; ${album.status}",Modifier.fillMaxSize(),contentScale=ContentScale.Crop)
+                else if (cover != null) Image(cover,"${album.artist} — ${album.album}; ${album.status}",Modifier.fillMaxSize(),contentScale=if(production) ContentScale.Fit else ContentScale.Crop)
                 else Box(Modifier.fillMaxSize().background(Color(0xff131b29)),contentAlignment=Alignment.Center) {
                     Text("CAPA INDISPONÍVEL\n${album.album}", color=muted, fontFamily=font,
                         fontSize=(17*u).sp,lineHeight=(24*u).sp,modifier=Modifier.padding((24*u).dp))
@@ -188,7 +188,7 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
                 color=muted,fontSize=(16*u).sp,lineHeight=(20*u).sp,fontFamily=font,maxLines=2,overflow=TextOverflow.Ellipsis,letterSpacing=0.sp)
             RoundControl(if(state.liked) "Remover favorito" else "Favoritar","heart",
                 Modifier.offset((w-inset-34*u).dp,(titleY-2*u).dp).size((48*u).dp),
-                { onState(state.copy(liked=!state.liked)) },if(state.liked) Color(r.favoriteColor) else muted,heartFilled=state.liked)
+                { onState(state.copy(liked=!state.liked)) },if (production) Color.White.copy(alpha=if(state.liked) 1f else .8f) else if(state.liked) Color(r.favoriteColor) else muted,heartFilled=state.liked)
             val buttonSize=w*r.controlSurface.diameterRatio/.85f
             val small=48*u
             listOf(.135f,.315f,.685f,.865f).forEachIndexed { i,x ->
