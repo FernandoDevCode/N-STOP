@@ -806,7 +806,8 @@ class SpotifyApiClient @Inject constructor(
             if (!id.matches(Regex("[A-Za-z0-9]{22}"))) return@withContext null
             // Public artist metadata can use client credentials. Spotify user
             // login is NOT required just to render an artist's official photo.
-            val token = tokenManager.getSpotifyAccessToken() ?: getClientCredentialsToken()
+            val userToken = tokenManager.getSpotifyAccessToken()
+            val token = userToken ?: getClientCredentialsToken()
                 ?: return@withContext null
             val url = "$WEB_API_BASE/artists/$id"
             try {
@@ -815,12 +816,24 @@ class SpotifyApiClient @Inject constructor(
                         response.code to if (response.isSuccessful) response.body?.string() else null
                     }
                 var (code, payload) = read(token)
-                if (code == 401) {
+                if (code == 401 && userToken != null) {
                     val refreshed = tokenManager.forceRefreshSpotifyAccessToken()
-                        ?: getClientCredentialsToken() ?: return@withContext null
-                    val retry = read(refreshed)
-                    code = retry.first
-                    payload = retry.second
+                    if (refreshed != null) {
+                        val retry = read(refreshed)
+                        code = retry.first
+                        payload = retry.second
+                    }
+                }
+                // Spotify user-session access can hit an independent 429/403
+                // even when public client-credentials artist metadata works.
+                // Retry at most once via the existing public token (no loops).
+                if (code !in 200..299 && userToken != null) {
+                    val publicToken = getClientCredentialsToken()
+                    if (publicToken != null && publicToken != token) {
+                        val retry = read(publicToken)
+                        code = retry.first
+                        payload = retry.second
+                    }
                 }
                 if (code !in 200..299 || payload == null) return@withContext null
                 parseSpotifyArtistDetail(payload, id, expectedName)
