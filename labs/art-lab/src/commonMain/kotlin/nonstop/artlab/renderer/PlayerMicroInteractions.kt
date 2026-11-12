@@ -41,7 +41,8 @@ data class MicroProfile(val audioGain:Float,val trailGain:Float,val glowSpreadDp
 }
 
 data class MicroOptions(val enabled:Boolean=true,val reducedMotion:Boolean=false,val active:Boolean=true,
-    val audio:AudioEnergySource?=null,val automaticClock:Boolean=true)
+    val audio:AudioEnergySource?=null,val automaticClock:Boolean=true,
+    val motion:MusicalMotionSource?=null)
 
 /** PCM input port; no playback/Media3 dependency and no fabricated beat timer. */
 interface AudioEnergySource {
