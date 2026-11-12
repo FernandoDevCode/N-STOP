@@ -303,7 +303,8 @@ private fun time(seconds:Int) = "${seconds/60}:${(seconds%60).toString().padStar
             val t=p.age[i]/p.life[i]
             val fade=(1f-t)*(1f-t)
             val center=Offset(
-                p.x[i]*size.width+p.drift[i]*(p.age[i]/1000f)*logicalDp,
+                17.dp.toPx() + p.x[i]*(size.width-34.dp.toPx()).coerceAtLeast(1f) +
+                    p.drift[i]*(p.age[i]/1000f)*logicalDp,
                 size.height/2f+p.y[i]*(1f+t*.4f)*logicalDp,
             )
             val radius=(p.size[i]*.5f*logicalDp).coerceAtLeast(.5f)
