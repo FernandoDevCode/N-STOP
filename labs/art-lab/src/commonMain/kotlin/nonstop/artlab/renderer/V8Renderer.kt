@@ -69,6 +69,7 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
     val r = remember(recipe) { safeRecipe(recipe) }
     val micro=microState ?: remember(r.sourceImageHash) { PlayerMicroState() }
     val profile=remember(r.familyWeights) { MicroProfile.from(r) }
+    SideEffect { micro.setSoundContext(state.progress,progressColorAt(r,state.progress)) }
     val controlsVisible=debug==DebugView.BUTTON || (debug==DebugView.FINAL && !state.lyrics)
     MicroAnimationDriver(micro,microOptions.copy(active=microOptions.active && controlsVisible),state.playing,state.progress,profile)
     BoxWithConstraints(modifier.background(Color(r.canvasColor))) {
@@ -170,6 +171,9 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
             if (opticalProgress != null) {
                 opticalProgress(seekModifier, state.progress) { fraction ->
                     if (seekEnabled) onState(state.copy(progress = fraction.coerceIn(0f, 1f)))
+                }
+                if (production && microOptions.audio != null && microOptions.enabled && !microOptions.reducedMotion) {
+                    AudioTransientParticles(micro,u,seekModifier)
                 }
             } else {
                 ProgressBar(state.progress,r,micro,microOptions,u,seekModifier, enabled=seekEnabled) {
@@ -289,6 +293,29 @@ private fun time(seconds:Int) = "${seconds/60}:${(seconds%60).toString().padStar
         drawCircle(Color(r.progress.thumb),size.width*.014f*(if(options.enabled && !options.reducedMotion)1+.08f*micro.engagement else 1f),thumbCenter)
     }
 }
+/** Real PCM-driven transient dust, separately drawn so the Android seek View keeps touch ownership. */
+@Composable private fun AudioTransientParticles(micro:PlayerMicroState,unit:Float,modifier:Modifier) {
+    Canvas(modifier) {
+        micro.revision
+        val logicalDp=unit.dp.toPx()
+        val p=micro.trail
+        for(i in p.age.indices) if(p.age[i]<p.life[i]) {
+            val t=p.age[i]/p.life[i]
+            val fade=(1f-t)*(1f-t)
+            val center=Offset(
+                p.x[i]*size.width+p.drift[i]*(p.age[i]/1000f)*logicalDp,
+                size.height/2f+p.y[i]*(1f+t*.4f)*logicalDp,
+            )
+            val radius=(p.size[i]*.5f*logicalDp).coerceAtLeast(.5f)
+            val tint=Color(p.color[i])
+            drawCircle(tint.copy(alpha=(p.alpha[i]*fade*.25f).coerceIn(0f,1f)),
+                radius*2.1f,center)
+            drawCircle(tint.copy(alpha=(p.alpha[i]*fade*.85f).coerceIn(0f,1f)),
+                radius*.62f,center)
+        }
+    }
+}
+
 /** Production controls: no filled disc, border or decorative halo. Accessible 48+ dp hit region. */
 @Composable private fun MinimalPlayControl(playing:Boolean,modifier:Modifier,onClick:()->Unit) {
     Box(modifier.clickable(
