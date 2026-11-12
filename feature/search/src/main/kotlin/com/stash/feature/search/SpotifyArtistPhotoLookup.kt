@@ -64,7 +64,9 @@ class SpotifyArtistPhotoLookup @Inject constructor(
                                 "https://open.spotify.com/artist/$id"
                             }.distinct()
                         if (urls.size != 1) return@withContext null
-                        officialOEmbedPhoto(name, urls.single())
+                        val id = artistIdFromUrl(urls.single()) ?: return@withContext null
+                        spotifyApi.getArtistPhotoById(id, name)
+                            ?: officialOEmbedPhoto(name, urls.single())
                     }
                 }
             } catch (cancel: CancellationException) {

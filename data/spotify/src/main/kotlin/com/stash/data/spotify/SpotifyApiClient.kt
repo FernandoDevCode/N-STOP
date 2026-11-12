@@ -804,7 +804,10 @@ class SpotifyApiClient @Inject constructor(
     suspend fun getArtistPhotoById(id: String, expectedName: String): SpotifyArtistPhoto? =
         withContext(Dispatchers.IO) {
             if (!id.matches(Regex("[A-Za-z0-9]{22}"))) return@withContext null
-            val token = tokenManager.getSpotifyAccessToken() ?: return@withContext null
+            // Public artist metadata can use client credentials. Spotify user
+            // login is NOT required just to render an artist's official photo.
+            val token = tokenManager.getSpotifyAccessToken() ?: getClientCredentialsToken()
+                ?: return@withContext null
             val url = "$WEB_API_BASE/artists/$id"
             try {
                 fun read(bearer: String): Pair<Int, String?> =
@@ -814,7 +817,7 @@ class SpotifyApiClient @Inject constructor(
                 var (code, payload) = read(token)
                 if (code == 401) {
                     val refreshed = tokenManager.forceRefreshSpotifyAccessToken()
-                        ?: return@withContext null
+                        ?: getClientCredentialsToken() ?: return@withContext null
                     val retry = read(refreshed)
                     code = retry.first
                     payload = retry.second
