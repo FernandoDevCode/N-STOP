@@ -109,7 +109,7 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
         val metadataY=titleY+titleHeight+(if(production) 2f else 4f)*u
         val albumY=metadataY+21*u
         val artY=if(production) max(62*u,h*.068f) else h*MasterGeometry.coverTop
-        val availableArtHeight=if(production) (titleY-artY+13*u).coerceAtLeast(92*u) else h*MasterGeometry.coverHeight
+        val availableArtHeight=if(production) (titleY-artY-9*u).coerceAtLeast(92*u) else h*MasterGeometry.coverHeight
         val artSize=min(contentWidth,availableArtHeight)*
             (1f-.36f*(fontScale-1f).coerceIn(0f,.5f))
         val artHeight=artSize
@@ -159,30 +159,37 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
         }
         if (showArt && !state.lyrics) {
             Box(Modifier.offset(((w-artSize)/2).dp,artY.dp).size(artSize.dp,artHeight.dp)
-                .clip(RoundedCornerShape((15*u).dp))
+                .clip(if (production) RoundedCornerShape(topStart=(10*u).dp,topEnd=(10*u).dp)
+                    else RoundedCornerShape((15*u).dp))
                 .then(if (production) Modifier.graphicsLayer {
                     compositingStrategy = CompositingStrategy.Offscreen
                 }.drawWithContent {
                     drawContent()
-                    // Soft bottom mask, followed by a wider central evacuation for the U contour.
-                    // Underlying artwork atmosphere remains visible; never paint a new flat colour.
+                    // Organic U: retain the original artwork in the upper field, then
+                    // release its alpha into the already-rendered atmospheric canvas.
+                    // This mask has no colored border, extra glow or album-specific rule.
                     drawRect(
                         Brush.verticalGradient(
                             0f to Color.White,
-                            .72f to Color.White,
+                            .52f to Color.White,
+                            .70f to Color.White.copy(alpha=.96f),
+                            .86f to Color.White.copy(alpha=.56f),
                             1f to Color.Transparent,
                         ),
-                        blendMode = BlendMode.DstIn,
+                        blendMode=BlendMode.DstIn,
                     )
+                    // A soft center evacuation makes the fade descend further at
+                    // the edges than in the middle, without cutting a hard curve.
                     drawOval(
                         Brush.radialGradient(
-                            0f to Color.White.copy(alpha=.38f),
+                            0f to Color.White.copy(alpha=.48f),
+                            .58f to Color.White.copy(alpha=.20f),
                             1f to Color.Transparent,
-                            center=Offset(size.width*.50f,size.height*.98f),
-                            radius=size.width*.54f,
+                            center=Offset(size.width*.5f,size.height*.98f),
+                            radius=size.width*.59f,
                         ),
-                        topLeft=Offset(-size.width*.04f,size.height*.50f),
-                        size=Size(size.width*1.08f,size.height*.96f),
+                        topLeft=Offset(-size.width*.11f,size.height*.61f),
+                        size=Size(size.width*1.22f,size.height*.88f),
                         blendMode=BlendMode.DstOut,
                     )
                 } else Modifier)) {
