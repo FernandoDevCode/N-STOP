@@ -68,7 +68,7 @@ internal fun V8PlayerSurface(ui: NowPlayingUiState, position: State<Long>, viewM
         PlaybackVisualEnergy.reset()
         if (trackKey != null) motionCache.read(trackKey)?.let(PlaybackVisualEnergy::seed)
         onDispose {
-            if (trackKey != null) motionCache.write(trackKey, PlaybackVisualEnergy.motion())
+            if (trackKey != null) motionCache.write(trackKey, PlaybackVisualEnergy.profileForCache())
             PlaybackVisualEnergy.reset()
         }
     }
@@ -76,7 +76,7 @@ internal fun V8PlayerSurface(ui: NowPlayingUiState, position: State<Long>, viewM
         if (trackKey == null || !audioActive) return@LaunchedEffect
         while (true) {
             delay(20_000)
-            motionCache.write(trackKey, PlaybackVisualEnergy.motion())
+            motionCache.write(trackKey, PlaybackVisualEnergy.profileForCache())
         }
     }
     val liveMotion = remember(trackKey) {
