@@ -1,7 +1,9 @@
 package com.stash.feature.nowplaying.ui
 
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.*
+import kotlinx.coroutines.isActive
+import kotlin.coroutines.coroutineContext
+import nonstop.artlab.renderer.MusicalMotionSource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.disabled
@@ -20,13 +22,38 @@ internal fun SonoraOpticalTimeline(
     progress: Float,
     recipe: ArtRecipe,
     enabled: Boolean,
+    playing: Boolean,
+    reducedMotion: Boolean,
+    motionSource: MusicalMotionSource,
     onSeek: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val latestOnSeek = rememberUpdatedState(onSeek)
     val safeProgress = progress.coerceIn(0f, 1f)
     val palette = recipe.progress.fill
-    AndroidView(
+    var timelineView by remember(motionSource) { mutableStateOf<SonoraOpticalTimelineView?>(null) }
+    val latestProgress = rememberUpdatedState(safeProgress)
+    LaunchedEffect(timelineView, motionSource, playing, reducedMotion) {
+        val view = timelineView ?: return@LaunchedEffect
+        view.setMotionEnabled(!reducedMotion)
+        if (!playing || reducedMotion) return@LaunchedEffect
+        var previous = 0L
+        while (coroutineContext.isActive) {
+            withFrameNanos { frame ->
+                if (previous != 0L) {
+                    val dt = (frame - previous) / 1_000_000_000f
+                    val values = motionSource.read()
+                    view.setFraction(latestProgress.value)
+                    view.updateMotion(
+                        values.ethereal, values.elastic, values.tense,
+                        values.attack, values.evolution, values.valid, dt,
+                    )
+                }
+                previous = frame
+            }
+        }
+    }
+    key(motionSource) { AndroidView(
         modifier = modifier.semantics {
             progressBarRangeInfo = ProgressBarRangeInfo(safeProgress, 0f..1f)
             if (!enabled) disabled()
@@ -40,6 +67,7 @@ internal fun SonoraOpticalTimeline(
         factory = { context ->
             SonoraOpticalTimelineView(context).apply {
                 setOnSeek { fraction -> latestOnSeek.value(fraction) }
+                timelineView = this
             }
         },
         update = { view ->
@@ -49,7 +77,8 @@ internal fun SonoraOpticalTimeline(
                 recipe.progress.track.toInt(),
             )
             view.isEnabled = enabled
+            view.setMotionEnabled(!reducedMotion)
             view.setFraction(safeProgress)
         },
-    )
+    ) }
 }
