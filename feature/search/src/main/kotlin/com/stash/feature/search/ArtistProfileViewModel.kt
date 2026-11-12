@@ -204,28 +204,10 @@ class ArtistProfileViewModel @Inject constructor(
                 failedSavedPhotoUrl = null
                 updateHeroPhoto()
 
-                // Same Spotify image: reuse the previously validated high-res
-                // choice indefinitely. If the Spotify image changed, the repo
-                // resets the check and source before starting the new search.
-                val selection = selectedArtistPhotos.get(artistId)
-                if (selection?.origin == ArtistPhotoOrigin.SPOTIFY &&
-                    selection.resolutionCheckedFor != official.imageUrl
-                ) {
-                    val result = try {
-                        artistPhotoResolutionFinder.findBetter(name, official.imageUrl)
-                    } catch (cancel: kotlinx.coroutines.CancellationException) {
-                        throw cancel
-                    } catch (_: Exception) { null }
-                    // null means all candidate services are unreachable;
-                    // allow a future profile open to retry without losing
-                    // the Spotify photo. A completed empty search is cached.
-                    if (result != null) {
-                        selectedArtistPhotos.markResolutionChecked(
-                            artistId, official.imageUrl, result.betterUrl,
-                        )
-                        updateHeroPhoto()
-                    }
-                }
+                // Matching starts on opening, can finish after Back to Search.
+                artistPhotoResolutionFinder.refreshIfNeeded(
+                    artistId, name, official.imageUrl,
+                )
             } else {
                 // Never replace Spotify with Deezer because a token/API failed.
                 // On first visit, the native catalog avatar is a neutral
@@ -350,6 +332,14 @@ class ArtistProfileViewModel @Inject constructor(
         // can diff skeleton → paint against spec §4.1 <50ms hero target.
         PerfLog.d { "ArtistProfile hero first-frame nav-args (name=$initialName)" }
         cacheJob = viewModelScope.launch { observeCache() }
+        // High-res matching is owned by a singleton and can finish after
+        // the profile leaves foreground; both screens observe this selection.
+        viewModelScope.launch {
+            selectedArtistPhotos.photos
+                .map { it[artistId] }
+                .distinctUntilChanged()
+                .collect { updateHeroPhoto() }
+        }
     }
 
     /**
