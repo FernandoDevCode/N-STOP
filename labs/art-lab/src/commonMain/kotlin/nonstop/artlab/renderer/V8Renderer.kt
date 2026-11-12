@@ -22,6 +22,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawscope.*
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.key.*
@@ -128,7 +129,34 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
             RoundControl(if (production) "Opções da faixa" else "Diagnóstico", "menu", Modifier.offset((w-inset-24*u).dp,(h*.027f-4*u).dp).size((48*u).dp),onMenu,outlined=true)
         }
         if (showArt && !state.lyrics) {
-            Box(Modifier.offset(((w-artSize)/2).dp,artY.dp).size(artSize.dp,artHeight.dp).clip(RoundedCornerShape((15*u).dp))) {
+            Box(Modifier.offset(((w-artSize)/2).dp,artY.dp).size(artSize.dp,artHeight.dp)
+                .clip(RoundedCornerShape((15*u).dp))
+                .then(if (production) Modifier.graphicsLayer {
+                    compositingStrategy = CompositingStrategy.Offscreen
+                }.drawWithContent {
+                    drawContent()
+                    // Soft bottom mask, followed by a wider central evacuation for the U contour.
+                    // Underlying artwork atmosphere remains visible; never paint a new flat colour.
+                    drawRect(
+                        Brush.verticalGradient(
+                            0f to Color.White,
+                            .72f to Color.White,
+                            1f to Color.Transparent,
+                        ),
+                        blendMode = BlendMode.DstIn,
+                    )
+                    drawOval(
+                        Brush.radialGradient(
+                            0f to Color.White.copy(alpha=.38f),
+                            1f to Color.Transparent,
+                            center=Offset(size.width*.50f,size.height*.98f),
+                            radius=size.width*.54f,
+                        ),
+                        topLeft=Offset(-size.width*.04f,size.height*.50f),
+                        size=Size(size.width*1.08f,size.height*.96f),
+                        blendMode=BlendMode.DstOut,
+                    )
+                } else Modifier)) {
                 if (coverContent != null) coverContent(Modifier.fillMaxSize())
                 else if (cover != null) Image(cover,"${album.artist} — ${album.album}; ${album.status}",Modifier.fillMaxSize(),contentScale=ContentScale.Crop)
                 else Box(Modifier.fillMaxSize().background(Color(0xff131b29)),contentAlignment=Alignment.Center) {
@@ -168,11 +196,18 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
                 val icons=listOf("shuffle","previous","next","repeat")
                 RoundControl(labels[i],icons[i],Modifier.offset((w*x-small/2).dp,(controlsY-small/2).dp).size(small.dp),{
                     when(i) { 0 -> onState(state.copy(shuffle=!state.shuffle)); 1 -> previous(); 2 -> next(); 3 -> onState(state.copy(repeat=!state.repeat)) }
-                },if((i==0 && state.shuffle)||(i==3 && state.repeat)) Color(r.progress.thumb) else if(i==3) muted else text)
+                },if (production) Color.White.copy(alpha=if ((i==0 && !state.shuffle)||(i==3 && !state.repeat)) .68f else 1f)
+                   else if((i==0 && state.shuffle)||(i==3 && state.repeat)) Color(r.progress.thumb) else if(i==3) muted else text)
             }
             if (production && repeatOne) Text("1", Modifier.offset((w*.865f+9*u).dp,(controlsY-19*u).dp),
-                color=Color(r.progress.thumb),fontFamily=font,fontSize=(10*u).sp)
-            PlayControl(r,state.playing,w,micro,microOptions,profile,Modifier.offset((w/2-buttonSize/2).dp,(controlsY-buttonSize/2).dp).size(buttonSize.dp)) {
+                color=if(production) Color.White else Color(r.progress.thumb),fontFamily=font,fontSize=(10*u).sp)
+            if (production) {
+                MinimalPlayControl(state.playing,
+                    Modifier.offset((w/2-buttonSize/2).dp,(controlsY-buttonSize/2).dp).size(buttonSize.dp)) {
+                    onState(state.copy(playing=!state.playing))
+                }
+            } else PlayControl(r,state.playing,w,micro,microOptions,profile,
+                Modifier.offset((w/2-buttonSize/2).dp,(controlsY-buttonSize/2).dp).size(buttonSize.dp)) {
                 onState(state.copy(playing=!state.playing))
             }
             Box(Modifier.offset((8*u).dp,lyricsY.dp).width((w-16*u).dp).height((h-lyricsY).coerceAtLeast(60*u).dp)
@@ -254,6 +289,17 @@ private fun time(seconds:Int) = "${seconds/60}:${(seconds%60).toString().padStar
         drawCircle(Color(r.progress.thumb),size.width*.014f*(if(options.enabled && !options.reducedMotion)1+.08f*micro.engagement else 1f),thumbCenter)
     }
 }
+/** Production controls: no filled disc, border or decorative halo. Accessible 48+ dp hit region. */
+@Composable private fun MinimalPlayControl(playing:Boolean,modifier:Modifier,onClick:()->Unit) {
+    Box(modifier.clickable(
+        role=Role.Button,
+        onClickLabel=if(playing) "Pausar" else "Reproduzir",
+        onClick=onClick,
+    ),contentAlignment=Alignment.Center) {
+        Glyph(if(playing) "pause" else "play",Color.White,Modifier.fillMaxSize(.56f))
+    }
+}
+
 @Composable private fun PlayControl(r:ArtRecipe,playing:Boolean,viewportWidth:Float,micro:PlayerMicroState,options:MicroOptions,profile:MicroProfile,modifier:Modifier,onClick:()->Unit) {
     BoxWithConstraints(modifier) {
         val edge=maxWidth
