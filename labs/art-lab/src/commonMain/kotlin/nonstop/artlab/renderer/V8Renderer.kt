@@ -225,19 +225,11 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
                 opticalProgress(seekModifier, state.progress) { fraction ->
                     if (seekEnabled) onState(state.copy(progress = fraction.coerceIn(0f, 1f)))
                 }
-                if (production && microOptions.motion != null) {
-                    OrganicMotionField(
-                        modifier = seekModifier,
-                        progress = state.progress,
-                        localColor = progressColorAt(r, state.progress),
-                        playing = state.playing,
-                        enabled = microOptions.active && microOptions.enabled && !microOptions.reducedMotion,
-                        source = microOptions.motion,
-                    )
-                } else if (production && microOptions.audio != null &&
-                    microOptions.enabled && !microOptions.reducedMotion) {
-                    AudioTransientParticles(micro,u,seekModifier)
-                }
+                // The production Android optical View owns its entire z-order:
+                // rail -> raised musical contours -> thumb. Drawing a separate
+                // Compose field here put the ridge underneath the native View
+                // on device, leaving only the flat rail visible.
+                // The Android adapter receives motion data from V8PlayerSurface.
             } else {
                 ProgressBar(state.progress,r,micro,microOptions,u,seekModifier, enabled=seekEnabled) {
                     if (seekEnabled) onState(state.copy(progress=it))

@@ -7,6 +7,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.RadialGradient;
 import android.graphics.Shader;
 import android.view.MotionEvent;
@@ -31,6 +32,11 @@ public final class SonoraOpticalTimelineView extends View {
     private boolean dirty = true;
     private boolean dragging;
     private OnSeek onSeek;
+    private static final int RELIEF_CELLS = 192;
+    private final float[] relief = new float[RELIEF_CELLS];
+    private float phase, agitation, motionDrift;
+    private float motionFlow = .72f, motionElastic = .20f, motionTense = .08f;
+    private boolean motionEnabled = true;
 
     public SonoraOpticalTimelineView(Context context) {
         super(context);
@@ -63,6 +69,44 @@ public final class SonoraOpticalTimelineView extends View {
     }
 
     public void setOnSeek(OnSeek callback) { onSeek = callback; }
+
+    /** Visual state only: no touching the playback pipeline or PCM buffers. */
+    public void setMotionEnabled(boolean enabled) {
+        if (motionEnabled != enabled) { motionEnabled = enabled; invalidate(); }
+    }
+
+    public void updateMotion(float flow, float elastic, float tense, float attack,
+                             float evolution, boolean valid, float seconds) {
+        if (!motionEnabled || !isAttachedToWindow()) return;
+        float dt = Math.max(0f, Math.min(.05f, seconds));
+        if (dt <= 0f) return;
+        float response = 1f - (float)Math.exp(-dt / 1.8f);
+        motionFlow += ((valid ? flow : .72f) - motionFlow) * response;
+        motionElastic += ((valid ? elastic : .20f) - motionElastic) * response;
+        motionTense += ((valid ? tense : .08f) - motionTense) * response;
+        float target = valid ? Math.max(0f, Math.min(1f, attack * .58f + evolution * .42f)) : 0f;
+        agitation += (target - agitation) * (1f - (float)Math.exp(-dt / .36f));
+        phase += dt * (.47f + motionElastic * .24f + motionTense * .31f);
+        motionDrift = (float)Math.sin(phase * .43f + Math.sin(phase * .17f) * .9f) * .58f;
+        if (valid && fraction > 0f) {
+            int index = Math.max(0, Math.min(RELIEF_CELLS - 1, Math.round(fraction * (RELIEF_CELLS - 1))));
+            float value = Math.max(0f, Math.min(1f, attack * .75f + evolution * .35f));
+            float retention = 1f - (float)Math.exp(-dt / .24f);
+            for (int i = Math.max(0, index - 1); i <= Math.min(RELIEF_CELLS - 1, index + 1); i++) {
+                float influence = i == index ? 1f : .4f;
+                relief[i] += (value * influence - relief[i]) * retention;
+            }
+        }
+        // Repaint contours without regenerating the cached optical bitmap.
+        invalidate();
+    }
+
+    private float reliefAt(float position) {
+        float f = Math.max(0f, Math.min(RELIEF_CELLS - 1f, position * (RELIEF_CELLS - 1)));
+        int first = (int)f;
+        int second = Math.min(RELIEF_CELLS - 1, first + 1);
+        return relief[first] + (relief[second] - relief[first]) * (f - first);
+    }
 
     @Override protected void onSizeChanged(int w, int h, int oldW, int oldH) {
         super.onSizeChanged(w, h, oldW, oldH);
@@ -194,6 +238,100 @@ public final class SonoraOpticalTimelineView extends View {
         dirty = false;
     }
 
+    /**
+     * Draw raised optical contours in the SAME Android View as the rail.
+     * The future track is untouched and both contours terminate at the thumb.
+     */
+    private void drawRaisedTrail(Canvas canvas) {
+        float x0 = dp(17f), x1 = getWidth() - dp(17f), y = getHeight() * .5f;
+        float tip = x0 + (x1 - x0) * fraction;
+        if (tip - x0 < dp(3f)) return;
+        int steps = Math.max(8, Math.min(192, (int)((tip - x0) / dp(2f))));
+        Path upper = new Path(), lower = new Path(), body = new Path();
+        for (int i = 0; i <= steps; i++) {
+            float x = x0 + (tip - x0) * i / steps;
+            float t = (x - x0) / Math.max(1f, x1 - x0);
+            float vibration = (float)(Math.sin(t * 42f + phase * .40f) * .41f +
+                Math.sin(t * 91f - phase * .63f + motionDrift) * .20f);
+            float history = reliefAt(t);
+            float thick = Math.max(1.4f, Math.min(4.8f,
+                2.2f + history * 2f + motionElastic * .38f + motionTense * .25f));
+            float edge = Math.max(0f, Math.min(1f,
+                Math.min((x - x0) / dp(3f), (tip - x) / dp(3f))));
+            float top = y - (thick + vibration * (1f + history * .6f)) * dp(1f) * edge;
+            float bottom = y + (thick * .72f - vibration * .45f) * dp(1f) * edge;
+            if (i == 0) {
+                upper.moveTo(x, top);
+                lower.moveTo(x, bottom);
+                body.moveTo(x, top);
+            } else {
+                upper.lineTo(x, top);
+                lower.lineTo(x, bottom);
+                body.lineTo(x, top);
+            }
+        }
+        for (int i = steps; i >= 0; i--) {
+            float x = x0 + (tip - x0) * i / steps;
+            float t = (x - x0) / Math.max(1f, x1 - x0);
+            float vibration = (float)(Math.sin(t * 42f + phase * .40f) * .41f +
+                Math.sin(t * 91f - phase * .63f + motionDrift) * .20f);
+            float history = reliefAt(t);
+            float thick = Math.max(1.4f, Math.min(4.8f,
+                2.2f + history * 2f + motionElastic * .38f + motionTense * .25f));
+            float edge = Math.max(0f, Math.min(1f,
+                Math.min((x - x0) / dp(3f), (tip - x) / dp(3f))));
+            body.lineTo(x, y + (thick * .72f - vibration * .45f) * dp(1f) * edge);
+        }
+        body.close();
+        reset();
+        paint.setShader(new LinearGradient(0f, y - dp(5f), 0f, y + dp(5f),
+            new int[]{alpha(colorAt(fraction), 18), alpha(colorAt(fraction), 100),
+                alpha(colorAt(fraction), 56), alpha(colorAt(fraction), 5)},
+            new float[]{0f, .43f, .72f, 1f}, Shader.TileMode.CLAMP));
+        canvas.drawPath(body, paint);
+
+        reset();
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(dp(2.1f));
+        paint.setShader(activeGradient(x0, tip, y, .29f));
+        canvas.drawPath(lower, paint);
+
+        reset();
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(dp(1.35f));
+        paint.setShader(activeGradient(x0, tip, y, .77f));
+        canvas.drawPath(upper, paint);
+
+        reset();
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(dp(.55f));
+        paint.setColor(0x9affffff);
+        canvas.drawPath(upper, paint);
+
+        reset();
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeWidth(dp(.78f));
+        paint.setShader(activeGradient(x0, tip, y, .90f));
+        canvas.drawPath(lower, paint);
+    }
+
+    private void drawThumb(Canvas canvas) {
+        float x0 = dp(17f), x1 = getWidth() - dp(17f), y = getHeight() * .5f;
+        float x = x0 + (x1 - x0) * fraction;
+        int color = colorAt(fraction);
+        reset();
+        paint.setColor(alpha(color, 125));
+        paint.setMaskFilter(new BlurMaskFilter(dp(3f), BlurMaskFilter.Blur.NORMAL));
+        canvas.drawCircle(x, y, dp(6.8f), paint);
+        reset();
+        paint.setColor(color);
+        canvas.drawCircle(x, y, dp(5.8f), paint);
+    }
+
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         if (dirty || texture == null) rebuild();
@@ -201,6 +339,9 @@ public final class SonoraOpticalTimelineView extends View {
             reset();
             canvas.drawBitmap(texture, 0f, 0f, paint);
         }
+        // Reduced motion freezes the ridge, but does not erase its material.
+        drawRaisedTrail(canvas);
+        drawThumb(canvas);
     }
 
     @Override public boolean onTouchEvent(MotionEvent event) {

@@ -122,6 +122,9 @@ internal fun V8PlayerSurface(ui: NowPlayingUiState, position: State<Long>, viewM
                     progress = progress,
                     recipe = art.recipe,
                     enabled = ui.isSeekable && ui.durationMs > 0L,
+                    playing = state.playing && audioActive,
+                    reducedMotion = reduced,
+                    motionSource = liveMotion,
                     onSeek = onSeek,
                     modifier = modifier,
                 )
