@@ -178,6 +178,9 @@ jobs:
       - name: Fix gradlew permission
         run: chmod +x gradlew
 
+      - name: Verify V8 visual references
+        run: python3 tools/verify_player_v8_references.py
+
       - name: Verify Sonora launcher PNG integrity
         run: python3 tools/verify_sonora_launcher.py
 
