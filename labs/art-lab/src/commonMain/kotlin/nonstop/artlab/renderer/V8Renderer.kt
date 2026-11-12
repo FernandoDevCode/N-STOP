@@ -151,6 +151,12 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
         }
         if (debug in listOf(DebugView.FINAL,DebugView.SCRIM)) Box(Modifier.fillMaxSize().background(
             Brush.verticalGradient(0f to Color.Black.copy(alpha=r.scrimTop),.5f to Color.Transparent,1f to Color.Black.copy(alpha=r.scrimBottom))))
+        if (debug == DebugView.FINAL && production) {
+            Text("Sonora",Modifier.offset((w*.24f).dp,(h*.027f).dp).width((w*.52f).dp),
+                textAlign=androidx.compose.ui.text.style.TextAlign.Center,
+                color=ink(.5f,.055f),fontFamily=font,fontWeight=FontWeight.Medium,
+                fontSize=(18*u).sp,maxLines=1,letterSpacing=(-.25f*u).sp)
+        }
         if (debug == DebugView.FINAL) {
             RoundControl("Recolher player", "down", Modifier.offset((inset-24*u).dp,(h*.027f-4*u).dp).size((48*u).dp),onClose,
                 color=topLeftInk,outlined=!production)
