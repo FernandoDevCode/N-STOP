@@ -83,7 +83,9 @@ class ArtistProfileViewModelTest {
         musicRepository: MusicRepository = mock(),
         spotify: SpotifyArtistPhotoLookup = mock(),
         store: ArtistHeroPhotoStore = mock(),
-        selectedPhotos: SelectedArtistPhotoRepository = mock(),
+        selectedPhotos: SelectedArtistPhotoRepository = mock {
+            on { photos } doReturn MutableStateFlow<Map<String, com.stash.core.data.artistphotos.SelectedArtistPhoto>>(emptyMap()).asStateFlow()
+        },
     ): ArtistProfileViewModel = ArtistProfileViewModel(
         savedStateHandle = SavedStateHandle(
             mapOf(
@@ -409,7 +411,9 @@ class ArtistProfileViewModelTest {
         whenever(spotify.find("LocalName")).thenReturn(
             SpotifyArtistPhoto("https://i.scdn.co/image/official", "https://open.spotify.com/artist/artist")
         )
-        val selected = mock<SelectedArtistPhotoRepository>()
+        val selected = mock<SelectedArtistPhotoRepository> {
+            on { photos } doReturn MutableStateFlow<Map<String, com.stash.core.data.artistphotos.SelectedArtistPhoto>>(emptyMap()).asStateFlow()
+        }
         val vm = vmWith(cache, spotify = spotify, selectedPhotos = selected)
         advanceUntilIdle()
         verify(selected).selectSpotify("UC1", "https://i.scdn.co/image/official", "https://open.spotify.com/artist/artist")
