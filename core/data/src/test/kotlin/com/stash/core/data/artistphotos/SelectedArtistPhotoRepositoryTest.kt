@@ -63,4 +63,67 @@ class SelectedArtistPhotoRepositoryTest {
         repo.restoreAutomatic("UC1")
         assertNull(repo.get("UC1"))
     }
+
+    @Test fun highResSelectionIsRetainedUntilOfficialPhotoChanges() {
+        val repo = SelectedArtistPhotoRepository(context)
+        val better = "https://upload.wikimedia.org/wikipedia/commons/a/ab/portrait.jpg"
+        repo.selectSpotify("UC1", spotify1, artist)
+        repo.markResolutionChecked("UC1", spotify1, better)
+        assertEquals(better, repo.get("UC1")?.photoUrl)
+        assertEquals(spotify1, repo.get("UC1")?.resolutionCheckedFor)
+
+        repo.selectSpotify("UC1", spotify1, artist)
+        assertEquals(better, repo.get("UC1")?.photoUrl)
+        assertEquals(better, SelectedArtistPhotoRepository(context).get("UC1")?.photoUrl)
+
+        repo.selectSpotify("UC1", spotify2, artist)
+        assertEquals(spotify2, repo.get("UC1")?.photoUrl)
+        assertNull(repo.get("UC1")?.resolutionCheckedFor)
+    }
+
+    @Test fun lateImageSearchResultCannotOverwriteNewSpotifyPhotoOrManualOverride() {
+        val repo = SelectedArtistPhotoRepository(context)
+        val better = "https://upload.wikimedia.org/wikipedia/commons/a/ab/a.jpg"
+        repo.selectSpotify("UC1", spotify1, artist)
+        repo.selectSpotify("UC1", spotify2, artist)
+        repo.markResolutionChecked("UC1", spotify1, better)
+        assertEquals(spotify2, repo.get("UC1")?.photoUrl)
+        repo.selectManual("UC1", "file:///manual/portrait.jpg")
+        repo.markResolutionChecked("UC1", spotify2, better)
+        assertEquals("file:///manual/portrait.jpg", repo.get("UC1")?.photoUrl)
+    }
+
+    @Test fun rejectedHigherResolutionRevertsToSpotifyWithoutClearingIdentity() {
+        val repo = SelectedArtistPhotoRepository(context)
+        val better = "https://upload.wikimedia.org/wikipedia/commons/a/ab/a.jpg"
+        repo.selectSpotify("UC1", spotify1, artist)
+        repo.markResolutionChecked("UC1", spotify1, better)
+        repo.rejectHighResIfSelected("UC1", better)
+        assertEquals(spotify1, repo.get("UC1")?.photoUrl)
+        assertEquals(spotify1, repo.get("UC1")?.resolutionCheckedFor)
+    }
+
+    @Test fun manualSelectionRemembersHighResAutomaticPhotoOnRestore() {
+        val repo = SelectedArtistPhotoRepository(context)
+        val better = "https://cdn-images.dzcdn.net/images/artist/abc/1000x1000-000000.jpg"
+        repo.selectSpotify("UC1", spotify1, artist)
+        repo.markResolutionChecked("UC1", spotify1, better)
+        repo.selectManual("UC1", "file:///manual/portrait.jpg")
+        repo.restoreAutomatic("UC1")
+        assertEquals(better, repo.get("UC1")?.photoUrl)
+    }
+
+    @Test fun legacyDeezerFallbackIsDroppedButSpotifyAndManualArePreserved() {
+        val repo = SelectedArtistPhotoRepository(context)
+        repo.selectFallbackIfAbsent("UC1", "https://deezer.example/portrait.jpg")
+        repo.selectSpotify("UC2", spotify1, artist)
+        repo.selectManual("UC3", "file:///manual.jpg")
+        repo.clearLegacyFallback("UC1")
+        repo.clearLegacyFallback("UC2")
+        repo.clearLegacyFallback("UC3")
+        assertNull(repo.get("UC1"))
+        assertEquals(spotify1, repo.get("UC2")?.photoUrl)
+        assertEquals("file:///manual.jpg", repo.get("UC3")?.photoUrl)
+    }
+
 }

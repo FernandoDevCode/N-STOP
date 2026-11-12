@@ -94,7 +94,7 @@ class ArtistProfileViewModelTest {
         ),
         artistCache = cache,
         spotifyArtistLookup = spotify,
-        deezerArtistPhotoLookup = mock(),
+        artistPhotoResolutionFinder = mock(),
         artistHeroPhotoStore = store,
         selectedArtistPhotos = selectedPhotos,
         appleAlbumMetadata = mock<AppleMusicAlbumMetadataLookup>(),
