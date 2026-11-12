@@ -56,17 +56,11 @@ class SpotifyArtistPhotoLookup @Inject constructor(
                             ?: return@withContext null
                         val mbName = relations["name"]?.jsonPrimitive?.contentOrNull.orEmpty()
                         if (normalize(mbName) != normalize(name)) return@withContext null
-                        val urls = relations["relations"]?.jsonArray.orEmpty()
-                            .mapNotNull { rel ->
-                                val url = rel.jsonObject["url"]?.jsonObject
-                                    ?.get("resource")?.jsonPrimitive?.contentOrNull
-                                val id = url?.let(::artistIdFromUrl) ?: return@mapNotNull null
-                                "https://open.spotify.com/artist/$id"
-                            }.distinct()
-                        if (urls.size != 1) return@withContext null
-                        val id = artistIdFromUrl(urls.single()) ?: return@withContext null
+                        val linked = uniqueSpotifyLinkFromRelations(relations)
+                            ?: return@withContext null
+                        val id = artistIdFromUrl(linked) ?: return@withContext null
                         spotifyApi.getArtistPhotoById(id, name)
-                            ?: officialOEmbedPhoto(name, urls.single())
+                            ?: officialOEmbedPhoto(name, linked)
                     }
                 }
             } catch (cancel: CancellationException) {
@@ -83,13 +77,7 @@ class SpotifyArtistPhotoLookup @Inject constructor(
         val request = Request.Builder().url(url).header("Accept", "application/json").build()
         return http.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return@use null
-            val json = JSONObject(response.body?.string().orEmpty())
-            val provider = json.optString("provider_name")
-            val title = json.optString("title")
-            val image = json.optString("thumbnail_url")
-            if (provider != "Spotify" || normalize(title) != normalize(name) ||
-                !image.startsWith("https://i.scdn.co/image/")) return@use null
-            SpotifyArtistPhoto(image, "https://open.spotify.com/artist/$id")
+            parseSpotifyArtistOEmbed(response.body?.string().orEmpty(), name, id)
         }
     }
 
@@ -101,6 +89,29 @@ class SpotifyArtistPhotoLookup @Inject constructor(
             .takeIf { url.path.startsWith("/artist/") &&
                 it.matches(Regex("[a-zA-Z0-9]{22}")) }
     } catch (_: Exception) { null }
+
+    internal fun uniqueSpotifyLinkFromRelations(relations: kotlinx.serialization.json.JsonObject): String? {
+        val links = relations["relations"]?.jsonArray.orEmpty()
+            .mapNotNull { rel ->
+                val url = rel.jsonObject["url"]?.jsonObject
+                    ?.get("resource")?.jsonPrimitive?.contentOrNull
+                val id = url?.let(::artistIdFromUrl) ?: return@mapNotNull null
+                "https://open.spotify.com/artist/$id"
+            }.distinct()
+        return links.singleOrNull()
+    }
+
+    internal fun parseSpotifyArtistOEmbed(payload: String, name: String, id: String): SpotifyArtistPhoto? =
+        runCatching {
+            val json = JSONObject(payload)
+            val title = json.optString("title")
+            val image = json.optString("thumbnail_url")
+            if (json.optString("provider_name") != "Spotify" || normalize(title) != normalize(name) ||
+                !image.startsWith("https://i.scdn.co/image/") ||
+                !id.matches(Regex("[A-Za-z0-9]{22}"))
+            ) return null
+            SpotifyArtistPhoto(image, "https://open.spotify.com/artist/$id")
+        }.getOrNull()
 
     private fun normalize(name: String): String =
         name.trim().replace(Regex("\\s+"), " ").lowercase(Locale.ROOT)
