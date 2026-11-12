@@ -151,6 +151,10 @@ class TrailPool {
     private var emission=0f; private var position=.43f; private var direction=0f
     private var lastDrawEngagement=0f; private var lastDrawEnergy=0f
     private var tint=0xffffffffL; private var oldAudio:AudioEnergySource?=null; private var oldProgress=Float.NaN
+    private var previousRms=0f; private var transientCooldownMs=0f
+    fun setSoundContext(progress:Float, localColor:Long) {
+        if(!dragging) { position=progress.coerceIn(0f,1f); tint=localColor }
+    }
     private fun retarget() {
         val next=when { dragging -> 1f; pressed || keyPressed -> .85f; focused -> .65f; hovered -> .55f; else -> 0f }
         if(next!=target) { start=engagement; target=next; elapsed=0f; wake++ }
@@ -175,7 +179,7 @@ class TrailPool {
         if(!options.active || !options.enabled) {
             dragging=false; pressed=false; keyPressed=false; hovered=false; focused=false; target=0f; start=0f
         }
-        trail.clear(); energy=0f
+        trail.clear(); energy=0f; previousRms=0f; transientCooldownMs=0f
         engagement=if(options.active && options.enabled)target else 0f
         lastDrawEngagement=engagement; lastDrawEnergy=0f
         elapsed=MicroParameters.TRANSITION_MS; revision++
@@ -189,6 +193,15 @@ class TrailPool {
         val t=elapsed/MicroParameters.TRANSITION_MS
         engagement=start+(target-start)*t*t*(3-2*t)
         val raw=if(rawEnergy.isFinite())rawEnergy.coerceIn(0f,1f) else 0f
+        transientCooldownMs=(transientCooldownMs-dt).coerceAtLeast(0f)
+        // Only actual PCM transients emit music-responsive particles.
+        // No active source = no generated beats or fake activity.
+        if(options.audio!=null && raw>.46f && raw-previousRms>.16f &&
+            transientCooldownMs<=0f && !dragging) {
+            trail.emit(position,0f,tint,profile.trailGain)
+            transientCooldownMs=145f
+        }
+        previousRms=raw
         val tau=if(raw>energy)MicroParameters.ATTACK_MS else MicroParameters.RELEASE_MS
         energy+=(raw-energy)*(1-exp(-smoothDt/tau))
         if(energy<.0005f && raw==0f)energy=0f
