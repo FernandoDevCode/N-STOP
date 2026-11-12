@@ -213,7 +213,17 @@ fun V8Renderer(album: Album, cover: ImageBitmap?, atmosphere: AtmosphereBitmaps?
                 opticalProgress(seekModifier, state.progress) { fraction ->
                     if (seekEnabled) onState(state.copy(progress = fraction.coerceIn(0f, 1f)))
                 }
-                if (production && microOptions.audio != null && microOptions.enabled && !microOptions.reducedMotion) {
+                if (production && microOptions.motion != null) {
+                    OrganicMotionField(
+                        modifier = seekModifier,
+                        progress = state.progress,
+                        localColor = progressColorAt(r, state.progress),
+                        playing = state.playing,
+                        enabled = microOptions.active && microOptions.enabled && !microOptions.reducedMotion,
+                        source = microOptions.motion,
+                    )
+                } else if (production && microOptions.audio != null &&
+                    microOptions.enabled && !microOptions.reducedMotion) {
                     AudioTransientParticles(micro,u,seekModifier)
                 }
             } else {
