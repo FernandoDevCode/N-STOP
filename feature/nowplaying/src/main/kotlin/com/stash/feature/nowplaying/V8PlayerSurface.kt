@@ -76,7 +76,7 @@ internal fun V8PlayerSurface(ui: NowPlayingUiState, position: State<Long>, viewM
             repeatOne = ui.repeatMode == RepeatMode.ONE, onInfo = viewModel::onTrackInfoTapped,
             coverContent = { modifier -> cover(modifier) {
                 val bitmap = art.cover
-                if (bitmap != null) Image(bitmap, "Capa de ${track?.album.orEmpty()}", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                if (bitmap != null) Image(bitmap, "Capa de ${track?.album.orEmpty()}", Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
                 else com.stash.core.ui.visual.VisualCover(null, Modifier.fillMaxSize())
             } }, modifier = Modifier.fillMaxSize(),
             microOptions = MicroOptions(reducedMotion = reduced, active = lifecycle.isAtLeast(Lifecycle.State.RESUMED)),
