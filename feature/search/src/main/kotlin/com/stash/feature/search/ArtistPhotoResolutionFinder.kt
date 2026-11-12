@@ -34,7 +34,10 @@ class ArtistPhotoResolutionFinder @Inject constructor(
         .callTimeout(3500, TimeUnit.MILLISECONDS)
         .build()
 
-    suspend fun findBetter(artistName: String, spotifyPhotoUrl: String): String? =
+    /** null = network unavailable, Result(null) = completed with no identical larger image. */
+    data class SearchResult(val betterUrl: String?)
+
+    suspend fun findBetter(artistName: String, spotifyPhotoUrl: String): SearchResult? =
         withContext(Dispatchers.IO) {
             if (artistName.isBlank() || !allowed(spotifyPhotoUrl)) return@withContext null
             val original = downloadPhoto(spotifyPhotoUrl) ?: return@withContext null
@@ -43,10 +46,15 @@ class ArtistPhotoResolutionFinder @Inject constructor(
                 deezer.find(artistName)?.let(candidates::add)
             } catch (cancel: CancellationException) { throw cancel }
             catch (_: Exception) { /* Spotify still wins */ }
+            var commonsChecked = false
             try {
-                candidates += commonsCandidates(artistName)
+                val commons = commonsCandidates(artistName)
+                if (commons != null) {
+                    commonsChecked = true
+                    candidates += commons
+                }
             } catch (cancel: CancellationException) { throw cancel }
-            catch (_: Exception) { /* still test Deezer if it is reachable */ }
+            catch (_: Exception) { /* retry on a future opening if everything failed */ }
             var best: Photo? = null
             for (url in candidates.asSequence().filter(::allowed).distinct().take(12)) {
                 val next = downloadPhoto(url) ?: continue
@@ -58,7 +66,7 @@ class ArtistPhotoResolutionFinder @Inject constructor(
                     best = next.copy(url = url)
                 }
             }
-            best?.url
+            if (commonsChecked || candidates.isNotEmpty()) SearchResult(best?.url) else null
         }
 
     internal data class Photo(
@@ -119,7 +127,7 @@ class ArtistPhotoResolutionFinder @Inject constructor(
         catch (_: Exception) { null }
     }
 
-    private fun commonsCandidates(name: String): List<String> {
+    private fun commonsCandidates(name: String): List<String>? {
         val query = "https://commons.wikimedia.org/w/api.php" +
             "?action=query&format=json&formatversion=2&generator=search" +
             "&gsrnamespace=6&gsrlimit=12&gsrsearch=" +
@@ -128,7 +136,7 @@ class ArtistPhotoResolutionFinder @Inject constructor(
         val req = Request.Builder().url(query).header("User-Agent", "Sonora/1.0 (Android personal music player)")
             .build()
         return http.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) return@use emptyList()
+            if (!resp.isSuccessful) return@use null
             val pages = JSONObject(resp.body?.string().orEmpty())
                 .optJSONObject("query")?.optJSONArray("pages") ?: return@use emptyList()
             (0 until pages.length()).mapNotNull { i ->
