@@ -277,8 +277,10 @@ internal class MusicFeatureAnalyzer {
         val evolution = abs(energy - slowEnergy).coerceIn(0f, 1f)
         val irregularity = (1f - strongest).coerceIn(0f, 1f)
         val sustained = (1f - onset).coerceIn(0f, 1f)
-        val targetTension = (energy * .45f + onset * .28f + evolution * .20f +
-            irregularity * .07f).coerceIn(0f, 1f)
+        // Tension is chiefly a function of change and surprise, not loudness.
+        // A sustained loud note should not resemble a string of attacks.
+        val targetTension = (energy * .15f + onset * .40f + evolution * .30f +
+            irregularity * .15f).coerceIn(0f, 1f)
         val targetElastic = (strongest * .48f + energy * .20f +
             sustained * .32f).coerceIn(0f, 1f)
         val targetFlow = (sustained * .54f + (1f - evolution) * .28f +
