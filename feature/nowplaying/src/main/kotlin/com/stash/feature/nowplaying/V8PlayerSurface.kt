@@ -21,6 +21,7 @@ import androidx.lifecycle.compose.currentStateAsState
 import com.stash.core.model.RepeatMode
 import com.stash.core.ui.ambient.rememberReducedMotion
 import com.stash.core.ui.theme.Inter
+import com.stash.feature.nowplaying.ui.SonoraOpticalTimeline
 import kotlinx.coroutines.*
 import nonstop.artlab.catalog.Album
 import nonstop.artlab.catalog.ArtworkStatus
@@ -79,6 +80,15 @@ internal fun V8PlayerSurface(ui: NowPlayingUiState, position: State<Long>, viewM
                 else com.stash.core.ui.visual.VisualCover(null, Modifier.fillMaxSize())
             } }, modifier = Modifier.fillMaxSize(),
             microOptions = MicroOptions(reducedMotion = reduced, active = lifecycle.isAtLeast(Lifecycle.State.RESUMED)),
+            opticalProgress = { modifier, progress, onSeek ->
+                SonoraOpticalTimeline(
+                    progress = progress,
+                    recipe = art.recipe,
+                    enabled = ui.isSeekable && ui.durationMs > 0L,
+                    onSeek = onSeek,
+                    modifier = modifier,
+                )
+            },
         )
         if (ui.isBuffering) Box(Modifier.fillMaxWidth().padding(top = 12.dp), contentAlignment = Alignment.TopCenter) {
             CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
