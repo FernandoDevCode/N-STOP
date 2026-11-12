@@ -122,7 +122,7 @@ class StashAudioOutput(
         val softVolume = bitPerfect && (playerVolume != 1f || volume.isActive)
         val before = buffer.position()
         // Observe a bounded read-only duplicate for UI transients; never consume PCM.
-        if (session.mainPlayback) PlaybackVisualEnergy.sample(buffer, inFormat, channelCount)
+        if (session.mainPlayback) PlaybackVisualEnergy.sample(buffer, inFormat, channelCount, streamSampleRate)
         val handled = if (!writer.hasPending && !dspOn && !softVolume && inFormat == outFormat) {
             inner.write(buffer, encodedAccessUnitCount, presentationTimeUs)
         } else {
