@@ -327,29 +327,33 @@ private fun SearchTrackActionsSheet(
                 }
             }
             onAddToPlaylist?.let { callback ->
-                SheetOptionRow(Icons.Default.PlaylistAddCheck,
-                    stringResource(R.string.sonora_track_playlist)) {
-                    onDismiss(); callback()
-                }
+                SheetOptionRow(
+                    icon = Icons.Default.PlaylistAddCheck,
+                    label = stringResource(R.string.sonora_track_playlist),
+                    onClick = { onDismiss(); callback() },
+                )
             }
             onPlayNext?.let { callback ->
-                SheetOptionRow(Icons.Default.PlaylistPlay,
-                    playNextLabel(role, stringResource(R.string.sonora_track_play_next))) {
-                    onDismiss(); callback()
-                }
+                SheetOptionRow(
+                    icon = Icons.Default.PlaylistPlay,
+                    label = playNextLabel(role, stringResource(R.string.sonora_track_play_next)),
+                    onClick = { onDismiss(); callback() },
+                )
             }
             if (role == ListenTogetherRole.NONE) {
                 onAddToQueue?.let { callback ->
-                    SheetOptionRow(Icons.Default.PlaylistAdd,
-                        stringResource(R.string.sonora_track_queue)) {
-                        onDismiss(); callback()
-                    }
+                    SheetOptionRow(
+                        icon = Icons.Default.PlaylistAdd,
+                        label = stringResource(R.string.sonora_track_queue),
+                        onClick = { onDismiss(); callback() },
+                    )
                 }
                 onStartRadio?.let { callback ->
-                    SheetOptionRow(Icons.Default.Radio,
-                        stringResource(R.string.sonora_track_radio)) {
-                        onDismiss(); callback()
-                    }
+                    SheetOptionRow(
+                        icon = Icons.Default.Radio,
+                        label = stringResource(R.string.sonora_track_radio),
+                        onClick = { onDismiss(); callback() },
+                    )
                 }
             }
         }
