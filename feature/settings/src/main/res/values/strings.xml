@@ -85,8 +85,8 @@
     <string name="nostop_crossfade_desc">Fade out the current track and fade in the next. Manual skips still switch immediately.</string>
     <string name="nostop_lyrics">Lyrics</string>
     <string name="nostop_lrc_only">LRC only</string>
-    <string name="nostop_lyrics_lrc_description">Word-synced lyrics are off. To fetch them again, switch back to Apple Music and use Fetch lyrics in Library Health.</string>
-    <string name="nostop_lyrics_apple_description">Prefers Apple Music word-synced lyrics. Switching to LRC only removes stored word-synced lyrics; use Fetch lyrics in Library Health to fetch line-synced lyrics.</string>
+    <string name="nostop_lyrics_lrc_description">Word-synced lyrics are off. To fetch them again, switch back to synchronized lyrics and use Fetch lyrics in Library Health.</string>
+    <string name="nostop_lyrics_apple_description">Prefers synchronized lyrics word-synced lyrics. Switching to LRC only removes stored word-synced lyrics; use Fetch lyrics in Library Health to fetch line-synced lyrics.</string>
     <string name="nostop_duration">Duration</string>
     <string name="nostop_duration_seconds">%1$d sec</string>
     <string name="nostop_hub_playback_hint">Sleep timer, autoplay radio, crossfade, gapless</string>

@@ -51,7 +51,7 @@ fun LastFmSection(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "This build of Stash doesn't include a Last.fm API key. " +
+                    text = "This build of Sonora não oferece mais integração com esse serviço. " +
                         "A developer rebuilding with a key in local.properties unlocks this feature.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -74,7 +74,7 @@ fun LastFmSection(
                             contentColor = MaterialTheme.colorScheme.primary,
                         ),
                     ) {
-                        Text("Connect Last.fm")
+                        Text("Serviço não disponível")
                     }
                 }
             }
@@ -86,7 +86,7 @@ fun LastFmSection(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Your browser should be open on Last.fm. Tap \"Yes, allow access\" on their page, then come back and tap Finish below.",
+                    text = "A conexão antiga não está disponível. Tap \"Yes, allow access\" on their page, then come back and tap Finish below.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

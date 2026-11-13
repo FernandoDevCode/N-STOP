@@ -397,7 +397,7 @@ internal fun homeVisibilityLabel(hidden: Boolean, pinned: Boolean): String = whe
 /**
  * Manage surface for the Last.fm source. Last.fm has no public playlist
  * API, so there is nothing to import and nothing to list — the entire
- * source is the app-managed "Recommended by Last.fm" mix. This screen
+ * source is the app-managed "Coleção antiga indisponível" mix. This screen
  * hosts its toggle, an honest explainer of what the playlist is and where
  * it lands, and the connect hint when Last.fm isn't connected.
  */
@@ -430,7 +430,7 @@ private fun LastFmManageContent(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Recommended by Last.fm",
+                    text = "Coleção antiga indisponível",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
@@ -455,7 +455,7 @@ private fun LastFmManageContent(
         }
 
         Text(
-            text = "Builds a rotating playlist of tracks Last.fm recommends, " +
+            text = "Builds a rotating playlist of tracks A fonte anterior recomendava, " +
                 "seeded from what you play and scrobble most. Each refresh " +
                 "swaps in fresh picks; tracks are matched against YouTube " +
                 "Music / Spotify and downloaded like any other sync, " +
@@ -465,7 +465,7 @@ private fun LastFmManageContent(
             modifier = Modifier.padding(top = 4.dp),
         )
         Text(
-            text = "Find it as “Recommended by Last.fm” under Library → Mixes.",
+            text = "Find it as “Coleção antiga indisponível” under Library → Mixes.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.SemiBold,

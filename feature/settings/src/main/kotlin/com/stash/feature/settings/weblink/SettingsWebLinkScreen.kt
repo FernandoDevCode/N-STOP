@@ -55,7 +55,7 @@ import com.stash.feature.settings.components.SettingsScaffold
 import com.stash.feature.settings.components.SettingsSectionLabel
 
 /**
- * Settings › Library & Storage › Link Stash on the web (spec §2.2, §2.6): link a browser by scanning its code, see the linked
+ * Settings › Library & Storage › Conexão web indisponível no Sonora (spec §2.2, §2.6): link a browser by scanning its code, see the linked
  * devices, rename or remove one, unlink everything. Linking changes nothing in either library; nothing is mirrored yet.
  */
 @Composable
@@ -92,7 +92,7 @@ fun SettingsWebLinkScreen(
     }
 
     Box(Modifier.fillMaxSize()) {
-        SettingsScaffold(title = "Link Stash on the web", onBack = onBack) {
+        SettingsScaffold(title = "Conexão web indisponível no Sonora", onBack = onBack) {
             if (pairing != PairingState.Idle) {
                 PairingPanel(pairing, onLink = viewModel::confirm, onClose = viewModel::closePairing, onScanAgain = viewModel::startScan)
             }

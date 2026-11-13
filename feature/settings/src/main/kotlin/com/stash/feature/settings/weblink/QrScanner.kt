@@ -105,7 +105,7 @@ fun QrScannerScreen(onCode: (String) -> Unit, onClose: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Text(
-                    text = "Stash needs the camera to scan the code. You can also scan it with your camera app.",
+                    text = "O Sonora precisa da câmera to scan the code. You can also scan it with your camera app.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = Color.White,
                     textAlign = TextAlign.Center,

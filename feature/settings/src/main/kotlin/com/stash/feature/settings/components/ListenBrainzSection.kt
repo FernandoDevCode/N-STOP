@@ -54,7 +54,7 @@ fun ListenBrainzSection(
 ) {
     Column(modifier = modifier.padding(horizontal = 16.dp, vertical = 12.dp).fillMaxWidth()) {
         Text(
-            text = "ListenBrainz",
+            text = "Serviço não disponível",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface,
         )
@@ -78,7 +78,7 @@ fun ListenBrainzSection(
                     Spacer(modifier = Modifier.height(8.dp))
                 }
                 Text(
-                    text = "Paste your user token from listenbrainz.org/profile.",
+                    text = "Essa integração não está disponível no Sonora.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
