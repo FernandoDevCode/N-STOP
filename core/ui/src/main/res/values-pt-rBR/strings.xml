@@ -38,4 +38,6 @@
     <string name="remove_download_body">Os arquivos de áudio serão removidos deste celular. As músicas continuarão nas playlists e poderão ser ouvidas online, mas precisarão ser baixadas novamente para ouvir offline.</string>
     <string name="remove_download_confirm">Remover</string>
     <string name="remove_download_cancel">Cancelar</string>
+    <string name="sonora_track_options">Opções da música</string>
+    <string name="sonora_track_select_multiple">Selecionar várias músicas</string>
 </resources>

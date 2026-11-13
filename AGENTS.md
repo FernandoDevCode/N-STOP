@@ -25,3 +25,6 @@ Estas instruções de v8 não substituem as regras técnicas gerais do projeto n
 - Execute `python3 tools/check_sonora_identity.py` e revise `docs/sonora/IDENTITY_PROVIDERS_GATE.md` antes do merge; não permita nova referência Stash/NØNSTOP/Qobuz na experiência visível.
 - Não relacione fonte de catálogo ao provedor do áudio; preservar os contratos da Busca. Não chamar YouTube de FLAC nem substituir endpoints legados por domínios inventados.
 - Verificação estática não substitui inspeção visual em aparelho. Preservar licenças GPL e dados internos.
+
+## Sonora — regras de frontend
+- Em toda mudança de Compose/UX, ler `docs/sonora/UI_RULES.md`: semântica de toque/pressão longa, tokens compartilhados e validações por rota; o documento não altera contratos de busca nem Player v8.

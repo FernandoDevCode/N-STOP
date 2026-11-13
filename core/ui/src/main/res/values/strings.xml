@@ -38,4 +38,6 @@
     <string name="remove_download_body">The audio files will be deleted from this device. Songs remain in playlists and can still stream, but must be downloaded again for offline playback.</string>
     <string name="remove_download_confirm">Remove</string>
     <string name="remove_download_cancel">Cancel</string>
+    <string name="sonora_track_options">Track options</string>
+    <string name="sonora_track_select_multiple">Select multiple tracks</string>
 </resources>
