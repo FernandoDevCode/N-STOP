@@ -16,7 +16,7 @@ internal sealed interface TickerSegment {
  * per cycle regardless of supporter count.
  */
 internal val TICKER_ANNOUNCEMENTS = listOf(
-    "Stash is a community powered open-source project dedicated to the " +
+    "Sonora is an independent music experience dedicated to the " +
         "love and growth of music. Thank you to our supporters.",
     "Devs wanted — join the Discord to help build the future of music.",
     "Open source, open to PRs — contributors welcome on GitHub.",
