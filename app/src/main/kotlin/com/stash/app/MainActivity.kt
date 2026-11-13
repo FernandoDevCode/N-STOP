@@ -258,6 +258,9 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             var showCinematicIntro by remember { mutableStateOf(cinematicLaunch) }
+            // Defer expensive NavHost/Home composition until the moving logo settles.
+            // Its first layout runs under the motionless final logo, not while it moves.
+            var showMainContent by remember { mutableStateOf(!cinematicLaunch) }
             val themeMode by themeModeFlow.collectAsState(initial = initialThemeMode)
             val amoledDark by themePreference.amoledDark.collectAsState(initial = initialAmoledDark)
             LaunchedEffect(themeMode, amoledDark) {
@@ -313,19 +316,24 @@ class MainActivity : ComponentActivity() {
                     LocalCreateTrackLink provides createTrackLink,
                 ) {
                     Box(Modifier.fillMaxSize()) {
-                        StashScaffold(
-                            pendingDeepLink = pendingDeepLink.value,
-                            onDeepLinkConsumed = { pendingDeepLink.value = null },
-                            startTab = startTab,
-                            statusBarProbe = BuildConfig.DEBUG &&
-                                intent?.getBooleanExtra("sonora_status_probe", false) == true,
-                        )
+                        if (showMainContent) {
+                            StashScaffold(
+                                pendingDeepLink = pendingDeepLink.value,
+                                onDeepLinkConsumed = { pendingDeepLink.value = null },
+                                startTab = startTab,
+                                statusBarProbe = BuildConfig.DEBUG &&
+                                    intent?.getBooleanExtra("sonora_status_probe", false) == true,
+                            )
+                        }
                         if (showCinematicIntro) {
-                            SonoraColdStartIntro {
-                                showCinematicIntro = false
-                                WindowCompat.getInsetsController(window, window.decorView)
-                                    .show(WindowInsetsCompat.Type.systemBars())
-                            }
+                            SonoraColdStartIntro(
+                                onSettled = { showMainContent = true },
+                                onFinished = {
+                                    showCinematicIntro = false
+                                    WindowCompat.getInsetsController(window, window.decorView)
+                                        .show(WindowInsetsCompat.Type.systemBars())
+                                },
+                            )
                         }
                     }
                 }
