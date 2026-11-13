@@ -2,7 +2,7 @@
 <resources>
     <!-- Settings › Library & Storage: "Export for web player" (the web player's library file). -->
     <string name="web_library_export_title">Linked web player</string>
-    <string name="web_library_export_subtitle">Export your liked songs, playlists and recent plays to a compatible web player. Then import the file into that service's library.</string>
+    <string name="web_library_export_subtitle">Export your liked songs, playlists and recent plays to a compatible web player. Then import the file into the library of that service.</string>
     <string name="web_library_export_button">Export for web player</string>
     <string name="web_library_export_working_title">Exporting your library</string>
     <string name="web_library_export_done_title">Ready for the web</string>
