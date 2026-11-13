@@ -1,19 +1,14 @@
 package com.stash.feature.search
 
 import androidx.lifecycle.SavedStateHandle
-import app.cash.turbine.test
 import com.stash.core.data.cache.AlbumCache
-import com.stash.core.data.discography.QobuzAlbumUnavailableException
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.actions.TrackActionsDelegate
 import com.stash.core.media.preview.PreviewState
-import com.stash.core.model.MusicSource
 import com.stash.core.model.Playlist
-import com.stash.core.model.Track
 import com.stash.data.ytmusic.YTMusicApiClient
 import com.stash.data.ytmusic.model.AlbumDetail
-import com.stash.data.ytmusic.model.AlbumSearch
 import com.stash.data.ytmusic.model.AlbumSource
 import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.data.ytmusic.model.TrackSummary
@@ -23,9 +18,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -37,22 +30,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
-import org.mockito.kotlin.anyOrNull
-import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.doReturn
-import org.mockito.kotlin.doSuspendableAnswer
-import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
-import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
-import java.io.IOException
 
 /**
- * Covers the Qobuz branch of [AlbumDiscoveryViewModel] (Task 12): source
- * routing to the cache, persist-for-resume queue building, guarding the
- * videoId-keyed side-effects, and the YT regression.
+ * Verifies that retired album catalog identities fail closed without
+ * querying obsolete sources, while approved YouTube album playback retains
+ * its existing prefetch behavior. Pure album identity matching tests remain
+ * below to protect conservative distinction of editions/versions.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class AlbumDiscoveryViewModelQobuzTest {
@@ -61,18 +49,6 @@ class AlbumDiscoveryViewModelQobuzTest {
 
     @Before fun setup() { Dispatchers.setMain(dispatcher) }
     @After fun tear() { Dispatchers.resetMain() }
-
-    private fun qobuzTrack(title: String) = TrackSummary(
-        videoId = "", title = title, artist = "MBV", album = "Loveless",
-        durationSeconds = 200.0, thumbnailUrl = null,
-    )
-
-    private fun qobuzDetail() = AlbumDetail(
-        id = "123", title = "Loveless", artist = "MBV", artistId = null,
-        thumbnailUrl = null, year = "1991",
-        tracks = listOf(qobuzTrack("Only Shallow"), qobuzTrack("Loomer")),
-        moreByArtist = emptyList(),
-    )
 
     private fun ytDetail() = AlbumDetail(
         id = "MPRE1", title = "YT Album", artist = "A", artistId = null,
@@ -129,63 +105,53 @@ class AlbumDiscoveryViewModelQobuzTest {
         on { this.userPlaylists } doReturn MutableStateFlow(userPlaylists)
     }
 
-    @Test fun `qobuz album passes its source to AlbumCache`() = runTest {
+
+    @Test fun `retired album does not hit its old catalog or expose Retry`() = runTest {
         val cache = mock<AlbumCache>()
-        whenever(cache.get(eq("123"), eq(AlbumSource.QOBUZ))).thenReturn(qobuzDetail())
-        vm(AlbumSource.QOBUZ, cache); advanceUntilIdle()
-        verify(cache).get(eq("123"), eq(AlbumSource.QOBUZ))
+        val album = vm(AlbumSource.QOBUZ, cache)
+        advanceUntilIdle()
+        val unavailable = AlbumDiscoveryStatus.Error(
+            AlbumDiscoveryViewModel.RETIRED_SOURCE, canRetry = false,
+        )
+        assertEquals(unavailable, album.uiState.value.status)
+        verify(cache, never()).get(any(), any())
+
+        album.retry() // Permanent source removal is not a network failure.
+        advanceUntilIdle()
+        assertEquals(unavailable, album.uiState.value.status)
+        verify(cache, never()).get(any(), any())
     }
 
-    @Test fun `qobuz play persists tracks and queues real ids with null youtubeId`() = runTest {
+    @Test fun `retired playlist cannot fetch metadata or enqueue fake tracks`() = runTest {
         val cache = mock<AlbumCache>()
-        whenever(cache.get(any(), any())).thenReturn(qobuzDetail())
-        val musicRepo = mock<MusicRepository>()
-        whenever(musicRepo.ensureTrackPersisted(any())).thenReturn(1001L, 1002L)
         val player = mock<PlayerRepository>()
-        val vm = vm(AlbumSource.QOBUZ, cache, musicRepo = musicRepo, player = player)
+        val musicRepo = mock<MusicRepository>()
+        val album = vm(AlbumSource.QOBUZ_PLAYLIST, cache, player = player, musicRepo = musicRepo)
         advanceUntilIdle()
 
-        vm.playAlbum(0); advanceUntilIdle()
-
-        val cap = argumentCaptor<List<Track>>()
-        verify(player).setQueue(cap.capture(), eq(0), any())
-        assertEquals(listOf(1001L, 1002L), cap.firstValue.map { it.id })
-        assertTrue(cap.firstValue.all { it.youtubeId == null })
-    }
-
-    @Test fun `qobuz PLAYLIST play persists tracks with distinct real ids (regression)`() = runTest {
-        // Regression: a QOBUZ_PLAYLIST source used to fall through to the YouTube
-        // path, giving every track id = "".hashCode() = 0 and youtubeId = "" —
-        // so the queue collapsed to one row and playback refused to advance past
-        // the first track. It must take the native path (persist → distinct ids).
-        val cache = mock<AlbumCache>()
-        whenever(cache.get(any(), any())).thenReturn(qobuzDetail())
-        val musicRepo = mock<MusicRepository>()
-        whenever(musicRepo.ensureTrackPersisted(any())).thenReturn(2001L, 2002L)
-        val player = mock<PlayerRepository>()
-        val vm = vm(AlbumSource.QOBUZ_PLAYLIST, cache, musicRepo = musicRepo, player = player)
+        assertEquals(
+            AlbumDiscoveryStatus.Error(AlbumDiscoveryViewModel.RETIRED_SOURCE, canRetry = false),
+            album.uiState.value.status,
+        )
+        assertTrue(album.uiState.value.tracks.isEmpty())
+        album.playAlbum(0)
         advanceUntilIdle()
 
-        vm.playAlbum(0); advanceUntilIdle()
-
-        val cap = argumentCaptor<List<Track>>()
-        verify(player).setQueue(cap.capture(), eq(0), any())
-        assertEquals(listOf(2001L, 2002L), cap.firstValue.map { it.id })
-        assertTrue(cap.firstValue.all { it.youtubeId == null })
+        verify(cache, never()).get(any(), any())
+        verify(player, never()).setQueue(any(), any(), any())
+        verify(musicRepo, never()).ensureTrackPersisted(any())
     }
 
-    @Test fun `qobuz album does NOT run videoId-keyed side effects`() = runTest {
+    @Test fun `retired album does not prefetch using missing video ids`() = runTest {
         val cache = mock<AlbumCache>()
-        whenever(cache.get(any(), any())).thenReturn(qobuzDetail())
         val prefetcher = mock<PreviewPrefetcher>()
-        val musicRepo = mock<MusicRepository>()
         val delegate = stubDelegate()
-        vm(AlbumSource.QOBUZ, cache, prefetcher = prefetcher, musicRepo = musicRepo, delegate = delegate)
+        vm(AlbumSource.QOBUZ, cache, prefetcher = prefetcher, delegate = delegate)
         advanceUntilIdle()
 
+        verify(cache, never()).get(any(), any())
         verify(prefetcher, never()).prefetch(any())
         verify(delegate, never()).refreshDownloadedIds(any())
-        verify(musicRepo, never()).backfillAlbumForTracks(any(), any(), any())
     }
 
     @Test fun `youtube album still runs prefetch (regression)`() = runTest {
@@ -196,16 +162,7 @@ class AlbumDiscoveryViewModelQobuzTest {
         verify(prefetcher).prefetch(any())
     }
 
-    // ── #481: an album Qobuz doesn't sell in the user's country ─────────────
-    //
-    // Qobuz picks its store from the caller's IP. Where it doesn't sell, Home still
-    // lists its new releases, but album/get 404s for every one of them. Playback
-    // never needed Qobuz, only the track list did, so the screen opens the same
-    // album from YouTube Music, and says so plainly when there's no confident match.
-    // AlbumRegionFallbackWiringTest runs the same flow through the real cache, Qobuz
-    // fetcher and YouTube client.
-
-    /** The YouTube Music copy of [qobuzDetail]'s "Loveless". */
+    // Kept for conservative catalog identity matching compatibility tests.
     private fun ytCopy(
         id: String = "MPREb_yt",
         title: String = "Loveless",
@@ -215,305 +172,6 @@ class AlbumDiscoveryViewModelQobuzTest {
     ) = AlbumSummary(
         id = id, title = title, artist = artist, thumbnailUrl = "yt-art", year = year, releaseType = releaseType,
     )
-
-    private fun ytLoveless() = AlbumDetail(
-        id = "MPREb_yt", title = "Loveless", artist = "MBV", artistId = "UCmbv",
-        thumbnailUrl = "yt-art", year = "1991",
-        tracks = listOf(
-            TrackSummary("yv1", "Only Shallow", "MBV", "Loveless", 257.0, null),
-            TrackSummary("yv2", "Loomer", "MBV", "Loveless", 158.0, null),
-        ),
-        moreByArtist = emptyList(),
-    )
-
-    /** Qobuz has no album 123 for this caller; the YouTube copy loads. */
-    private suspend fun notSoldHereCache(): AlbumCache = mock<AlbumCache>().also {
-        whenever(it.get(eq("123"), eq(AlbumSource.QOBUZ)))
-            .doSuspendableAnswer { throw QobuzAlbumUnavailableException("123") }
-        whenever(it.get(eq("MPREb_yt"), eq(AlbumSource.YOUTUBE))).thenReturn(ytLoveless())
-    }
-
-    /** A YouTube client whose album search answers with [candidates], YouTube's best guess first. */
-    private suspend fun ytAnswering(vararg candidates: AlbumSummary): YTMusicApiClient = mock<YTMusicApiClient>().also {
-        whenever(it.searchAlbums(any(), any()))
-            .thenReturn(AlbumSearch.Answered(topAlbum = null, shelf = candidates.toList()))
-    }
-
-    private val notAvailable =
-        AlbumDiscoveryStatus.Error("This album isn't available in your country.", canRetry = false)
-    private val couldNotLoad =
-        AlbumDiscoveryStatus.Error("Check your connection and try again.", canRetry = true)
-
-    @Test fun `an album Qobuz doesn't sell here opens its YouTube Music copy`() = runTest {
-        val yt = ytAnswering(ytCopy())
-        val prefetcher = mock<PreviewPrefetcher>()
-        val vm = vm(AlbumSource.QOBUZ, notSoldHereCache(), prefetcher = prefetcher, yt = yt, title = "Loveless", artist = "MBV")
-        val statuses = mutableListOf<AlbumDiscoveryStatus>()
-        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
-            vm.uiState.collect { statuses += it.status }
-        }
-        advanceUntilIdle()
-
-        verify(yt).searchAlbums("Loveless", "MBV")
-        val state = vm.uiState.value
-        assertEquals(AlbumDiscoveryStatus.Fresh, state.status)
-        assertEquals(listOf("yv1", "yv2"), state.tracks.map { it.videoId })
-        // The 404 never reaches the screen: Loading straight to Fresh, no error flash.
-        assertEquals(listOf(AlbumDiscoveryStatus.Loading, AlbumDiscoveryStatus.Fresh), statuses.distinct())
-        // Everything keyed on the album's catalog follows the switch to YouTube.
-        assertTrue(vm.downloadSupported)
-        assertFalse(vm.isNativeAlbum)
-        verify(prefetcher).prefetch(eq(listOf("yv1", "yv2")))
-    }
-
-    @Test fun `the YouTube copy plays as YouTube tracks`() = runTest {
-        val player = mock<PlayerRepository>()
-        val musicRepo = mock<MusicRepository>()
-        val vm = vm(
-            AlbumSource.QOBUZ, notSoldHereCache(), player = player, musicRepo = musicRepo,
-            yt = ytAnswering(ytCopy()), title = "Loveless", artist = "MBV",
-        )
-        advanceUntilIdle()
-
-        vm.playAlbum(0); advanceUntilIdle()
-
-        val cap = argumentCaptor<List<Track>>()
-        verify(player).setQueue(cap.capture(), eq(0), any())
-        assertEquals(listOf("yv1", "yv2"), cap.firstValue.map { it.youtubeId })
-        // Not the Qobuz path, which persists rows to give videoId-less tracks real ids.
-        verify(musicRepo, never()).ensureTrackPersisted(any())
-    }
-
-    @Test fun `saving the YouTube copy files it under the YouTube album`() = runTest {
-        val musicRepo = mock<MusicRepository>()
-        whenever(musicRepo.ensureTrackPersisted(any())).thenReturn(11L, 12L)
-        whenever(musicRepo.ensureCustomPlaylist(any(), any(), anyOrNull())).thenReturn(77L)
-        val vm = vm(
-            AlbumSource.QOBUZ, notSoldHereCache(), musicRepo = musicRepo,
-            yt = ytAnswering(ytCopy()), title = "Loveless", artist = "MBV",
-        )
-        advanceUntilIdle()
-
-        vm.saveAlbum(); advanceUntilIdle()
-
-        verify(musicRepo).ensureCustomPlaylist(eq("Loveless"), eq("album:youtube:MPREb_yt"), anyOrNull())
-        verify(musicRepo).addTracksToPlaylist(listOf(11L, 12L), 77L)
-    }
-
-    @Test fun `a YouTube copy already in the library shows as saved after the switch`() = runTest {
-        val delegate = stubDelegate(
-            userPlaylists = listOf(
-                Playlist(id = 77L, name = "Loveless", source = MusicSource.BOTH, sourceId = "album:youtube:MPREb_yt"),
-            ),
-        )
-        val vm = vm(
-            AlbumSource.QOBUZ, notSoldHereCache(), delegate = delegate,
-            yt = ytAnswering(ytCopy()), title = "Loveless", artist = "MBV",
-        )
-        advanceUntilIdle()
-
-        assertTrue(vm.isSaved.value)
-    }
-
-    /** Saved from Qobuz earlier (another country, a VPN): still "Saved", and Save doesn't file it twice. */
-    @Test fun `an album saved from Qobuz still shows as saved after the switch, and isn't saved twice`() = runTest {
-        val musicRepo = mock<MusicRepository>()
-        val delegate = stubDelegate(
-            userPlaylists = listOf(
-                Playlist(id = 77L, name = "Loveless", source = MusicSource.BOTH, sourceId = "album:qobuz:123"),
-            ),
-        )
-        val vm = vm(
-            AlbumSource.QOBUZ, notSoldHereCache(), musicRepo = musicRepo, delegate = delegate,
-            yt = ytAnswering(ytCopy()), title = "Loveless", artist = "MBV",
-        )
-        advanceUntilIdle()
-
-        // The screen did switch: the YouTube copy is what's showing.
-        assertEquals(listOf("yv1", "yv2"), vm.uiState.value.tracks.map { it.videoId })
-        assertTrue(vm.isSaved.value)
-        vm.userMessages.test {
-            vm.saveAlbum()
-            advanceUntilIdle()
-            assertEquals("Already in your library", awaitItem())
-        }
-        verify(musicRepo, never()).ensureCustomPlaylist(any(), any(), anyOrNull())
-    }
-
-    @Test fun `with no YouTube copy it says the album isn't available here, without Retry`() = runTest {
-        val vm = vm(AlbumSource.QOBUZ, notSoldHereCache(), yt = ytAnswering(), title = "Loveless", artist = "MBV")
-
-        vm.userMessages.test {
-            advanceUntilIdle()
-            expectNoEvents() // no "tap Retry" snackbar for a failure Retry can't fix
-        }
-        assertEquals(notAvailable, vm.uiState.value.status)
-    }
-
-    /** "Didn't answer" is not "not available": a lookup that dropped can be retried. */
-    @Test fun `when YouTube doesn't answer the search it offers Retry, and Retry asks again`() = runTest {
-        val yt = mock<YTMusicApiClient>()
-        whenever(yt.searchAlbums(any(), any())).thenReturn(
-            AlbumSearch.Failed,
-            AlbumSearch.Answered(topAlbum = ytCopy(), shelf = emptyList()),
-        )
-        val vm = vm(AlbumSource.QOBUZ, notSoldHereCache(), yt = yt, title = "Loveless", artist = "MBV")
-
-        vm.userMessages.test {
-            advanceUntilIdle()
-            assertEquals("Couldn't load album — tap Retry.", awaitItem())
-        }
-        assertEquals(couldNotLoad, vm.uiState.value.status)
-
-        vm.retry(); advanceUntilIdle()
-
-        assertEquals(AlbumDiscoveryStatus.Fresh, vm.uiState.value.status)
-        verify(yt, times(2)).searchAlbums("Loveless", "MBV")
-    }
-
-    /**
-     * The search lists the artist's other albums, singles, live albums and albums whose
-     * artist merely contains the name, so only a strict match is taken: opening the
-     * wrong album is worse than saying this one isn't available.
-     */
-    @Test fun `a YouTube album that isn't this one is not taken`() = runTest {
-        val nearMisses = listOf(
-            ytCopy(id = "MPREb_other_album", title = "Isn't Anything"), // same artist, another album
-            ytCopy(id = "MPREb_tribute", artist = "MBV Tribute Band"), // same title, another artist
-            ytCopy(id = "MPREb_live", title = "Loveless (Live)"), // another recording
-            ytCopy(id = "MPREb_single", releaseType = "Single"), // the title track's single
-            ytCopy(id = "MPREb_2021", year = "2021"), // same name, another year
-        )
-        for (nearMiss in nearMisses) {
-            val cache = notSoldHereCache()
-            val yt = ytAnswering(nearMiss)
-            val vm = vm(
-                AlbumSource.QOBUZ, cache, yt = yt,
-                title = "Loveless", artist = "MBV", year = "1991",
-            )
-            advanceUntilIdle()
-
-            verify(yt).searchAlbums("Loveless", "MBV") // it was offered, and turned down
-            assertEquals("for $nearMiss", notAvailable, vm.uiState.value.status)
-            verify(cache, never()).get(eq(nearMiss.id), any())
-        }
-    }
-
-    @Test fun `it takes the first candidate that is this album, not the first by the artist`() = runTest {
-        val cache = notSoldHereCache()
-        val yt = ytAnswering(ytCopy(id = "MPREb_other_album", title = "Isn't Anything"), ytCopy())
-        val vm = vm(AlbumSource.QOBUZ, cache, yt = yt, title = "Loveless", artist = "MBV")
-        advanceUntilIdle()
-
-        assertEquals(AlbumDiscoveryStatus.Fresh, vm.uiState.value.status)
-        verify(cache).get(eq("MPREb_yt"), eq(AlbumSource.YOUTUBE))
-        verify(cache, never()).get(eq("MPREb_other_album"), any())
-    }
-
-    // ── A Qobuz single (Qobuz sends no release type: 1 to 3 tracks is a single) ──
-
-    @Test fun `a Qobuz single opens YouTube's single`() = runTest {
-        val cache = notSoldHereCache()
-        whenever(cache.get(eq("MPREb_single"), eq(AlbumSource.YOUTUBE))).thenReturn(ytLoveless())
-        val yt = ytAnswering(ytCopy(id = "MPREb_single", releaseType = "Single"))
-        val vm = vm(AlbumSource.QOBUZ, cache, yt = yt, title = "Loveless", artist = "MBV", qobuzTrackCount = 1)
-        advanceUntilIdle()
-
-        assertEquals(AlbumDiscoveryStatus.Fresh, vm.uiState.value.status)
-        verify(cache).get(eq("MPREb_single"), eq(AlbumSource.YOUTUBE))
-    }
-
-    @Test fun `a Qobuz album with only a same-titled YouTube single is still not available`() = runTest {
-        val yt = ytAnswering(ytCopy(id = "MPREb_single", releaseType = "Single"))
-        val vm = vm(AlbumSource.QOBUZ, notSoldHereCache(), yt = yt, title = "Loveless", artist = "MBV", qobuzTrackCount = 11)
-        advanceUntilIdle()
-
-        assertEquals(notAvailable, vm.uiState.value.status)
-    }
-
-    /** Unknown length: the title track's single is the likelier match, so nothing changes. */
-    @Test fun `without a track count a YouTube single is still not taken`() = runTest {
-        val yt = ytAnswering(ytCopy(id = "MPREb_single", releaseType = "Single"))
-        val vm = vm(AlbumSource.QOBUZ, notSoldHereCache(), yt = yt, title = "Loveless", artist = "MBV", qobuzTrackCount = null)
-        advanceUntilIdle()
-
-        assertEquals(notAvailable, vm.uiState.value.status)
-    }
-
-    /** YouTube lists the album the single comes from first; the single itself is the copy. */
-    @Test fun `a Qobuz single takes YouTube's single over the album it comes from`() = runTest {
-        val cache = notSoldHereCache()
-        whenever(cache.get(eq("MPREb_single"), eq(AlbumSource.YOUTUBE))).thenReturn(ytLoveless())
-        val yt = ytAnswering(
-            ytCopy(id = "MPREb_album", releaseType = "Album"),
-            ytCopy(id = "MPREb_single", releaseType = "Single"),
-        )
-        val vm = vm(AlbumSource.QOBUZ, cache, yt = yt, title = "Loveless", artist = "MBV", qobuzTrackCount = 2)
-        advanceUntilIdle()
-
-        assertEquals(AlbumDiscoveryStatus.Fresh, vm.uiState.value.status)
-        verify(cache).get(eq("MPREb_single"), eq(AlbumSource.YOUTUBE))
-        verify(cache, never()).get(eq("MPREb_album"), any())
-    }
-
-    /** A single's song is on its album too, so with no single on YouTube the album still opens (as before). */
-    @Test fun `a Qobuz single opens the album it is on when YouTube has no single`() = runTest {
-        val cache = notSoldHereCache()
-        val vm = vm(
-            AlbumSource.QOBUZ, cache, yt = ytAnswering(ytCopy(releaseType = "Album")),
-            title = "Loveless", artist = "MBV", qobuzTrackCount = 1,
-        )
-        advanceUntilIdle()
-
-        assertEquals(AlbumDiscoveryStatus.Fresh, vm.uiState.value.status)
-        verify(cache).get(eq("MPREb_yt"), eq(AlbumSource.YOUTUBE))
-    }
-
-    /** Only "not sold here" looks elsewhere; a dropped connection or a Qobuz hiccup can be retried. */
-    @Test fun `a network or server failure still offers Retry, in plain words`() = runTest {
-        val failures = listOf(
-            IOException("Unable to resolve host \"www.qobuz.com\""),
-            RuntimeException("""{"status":"error","code":500,"message":"Internal error"}"""),
-        )
-        for (failure in failures) {
-            val cache = mock<AlbumCache>()
-            whenever(cache.get(eq("123"), eq(AlbumSource.QOBUZ))).doSuspendableAnswer { throw failure }
-            val yt = mock<YTMusicApiClient>()
-            val vm = vm(AlbumSource.QOBUZ, cache, yt = yt, title = "Loveless", artist = "MBV")
-
-            vm.userMessages.test {
-                advanceUntilIdle()
-                assertEquals("Couldn't load album — tap Retry.", awaitItem())
-            }
-            assertEquals("for $failure", couldNotLoad, vm.uiState.value.status)
-            verify(yt, never()).searchAlbums(any(), any())
-        }
-    }
-
-    /**
-     * Once switched, the screen IS the YouTube album: Retry reloads that, not the doomed
-     * Qobuz call. The first load fails the way AlbumCache reports a YouTube page that
-     * didn't come back (an IOException).
-     */
-    @Test fun `Retry after the switch reloads the YouTube copy without asking Qobuz again`() = runTest {
-        val cache = mock<AlbumCache>()
-        whenever(cache.get(eq("123"), eq(AlbumSource.QOBUZ)))
-            .doSuspendableAnswer { throw QobuzAlbumUnavailableException("123") }
-        var ytLoads = 0
-        whenever(cache.get(eq("MPREb_yt"), eq(AlbumSource.YOUTUBE))).doSuspendableAnswer {
-            if (ytLoads++ == 0) throw IOException("YouTube Music didn't return album MPREb_yt") else ytLoveless()
-        }
-        val yt = ytAnswering(ytCopy())
-        val vm = vm(AlbumSource.QOBUZ, cache, yt = yt, title = "Loveless", artist = "MBV")
-        advanceUntilIdle()
-        assertEquals(couldNotLoad, vm.uiState.value.status)
-
-        vm.retry(); advanceUntilIdle()
-
-        assertEquals(AlbumDiscoveryStatus.Fresh, vm.uiState.value.status)
-        verify(cache, times(1)).get(eq("123"), eq(AlbumSource.QOBUZ))
-        verify(yt, times(1)).searchAlbums(any(), any())
-    }
 
     // ── isSameAlbum: what counts as "the same album" ────────────────────────
 
