@@ -6,33 +6,32 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ArtistFeaturedAlbumGlassTest {
-    @Test fun `glass preserves different artwork hues without becoming opaque`() {
-        val blue = artistFeaturedAlbumGlassFill(Color(0xFF264C65))
-        val red = artistFeaturedAlbumGlassFill(Color(0xFF65342C))
+    @Test fun `artwork hue remains obvious in the translucent card`() {
+        val red = artistFeaturedAlbumGlassFill(Color(0xFFB7212D))
+        val yellow = artistFeaturedAlbumGlassFill(Color(0xFFB79B21))
 
-        assertTrue("Blue artwork should yield blue tinted glass", blue.blue > blue.red)
-        assertTrue("Red artwork should yield warm tinted glass", red.red > red.blue)
-        assertEquals(.18f, blue.alpha, 1f / 255f)
-        assertEquals(.18f, red.alpha, 1f / 255f)
+        assertTrue("Mothica-like cover must produce red glass", red.red > red.green * 2f)
+        assertTrue("Linkin Park-like cover must produce golden glass", yellow.red > yellow.blue * 3f)
+        assertTrue("Golden glass should preserve green component", yellow.green > yellow.blue * 2f)
+        assertEquals(.42f, red.alpha, 1f / 255f)
+        assertEquals(.42f, yellow.alpha, 1f / 255f)
     }
 
-    @Test fun `unavailable artwork produces translucent neutral fallback`() {
-        val fill = artistFeaturedAlbumGlassFill(ArtistNeutralPalette.bridge)
-        val border = artistFeaturedAlbumGlassBorder(ArtistNeutralPalette.bridge)
+    @Test fun `transparent glass falls back to neutral when no artwork hue exists`() {
+        val fill = artistFeaturedAlbumGlassFill(null)
+        val border = artistFeaturedAlbumGlassBorder(null)
 
         assertTrue(kotlin.math.abs(fill.red - fill.blue) < .02f)
-        assertEquals(.18f, fill.alpha, 1f / 255f)
-        // Compose alpha uses 8-bit quantization.
-        assertEquals(.14f, border.alpha, 1f / 255f)
+        assertEquals(.085f, fill.alpha, 1f / 255f)
+        assertEquals(.12f, border.alpha, 1f / 255f)
     }
 
-    @Test fun `border follows the same artwork family as its fill`() {
-        val warmArtwork = Color(0xFF7D302A)
-        val fill = artistFeaturedAlbumGlassFill(warmArtwork)
-        val border = artistFeaturedAlbumGlassBorder(warmArtwork)
+    @Test fun `border follows artwork without excessive opacity`() {
+        val redArtwork = Color(0xFFB7212D)
+        val fill = artistFeaturedAlbumGlassFill(redArtwork)
+        val border = artistFeaturedAlbumGlassBorder(redArtwork)
 
-        assertTrue(fill.red > fill.blue)
-        assertTrue(border.red > border.blue)
+        assertTrue(border.red > border.green)
         assertTrue(border.alpha < fill.alpha)
     }
 }
