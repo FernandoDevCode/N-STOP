@@ -33,7 +33,7 @@
     <string name="nostop_sync_undo_card_hint">Restaura as %1$s alteradas pela sincronização ao estado anterior (%2$s)</string>
     <string name="nostop_sync_mode_refresh_hint">Os mixes recebem músicas novas a cada sincronização</string>
     <string name="nostop_sync_mode_accumulate_hint">Músicas novas são adicionadas às existentes</string>
-    <string name="nostop_sync_lastfm_on">Mantém uma playlist de recomendações do Last.fm atualizada</string>
+    <string name="nostop_sync_lastfm_on">Recurso legado indisponível no Sonora.</string>
     <string name="nostop_sync_lastfm_off">Desativado — não gera recomendações</string>
     <string name="nostop_sync_blocked_count">%1$d músicas bloqueadas não serão baixadas novamente</string>
     <string name="nostop_sync_undoing">Desfazendo…</string>

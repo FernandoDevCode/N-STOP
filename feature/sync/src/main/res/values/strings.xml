@@ -33,7 +33,7 @@
     <string name="nostop_sync_undo_card_hint">Restores the %1$s changed by the sync to how they were %2$s</string>
     <string name="nostop_sync_mode_refresh_hint">Mixes get new songs at every sync</string>
     <string name="nostop_sync_mode_accumulate_hint">New songs accumulate alongside existing ones</string>
-    <string name="nostop_sync_lastfm_on">Keeps a playlist of Last.fm recommendations up to date</string>
+    <string name="nostop_sync_lastfm_on">Legacy feature unavailable in Sonora.</string>
     <string name="nostop_sync_lastfm_off">Off — recommendations are not generated</string>
     <string name="nostop_sync_blocked_count">%1$d blocked songs will not download again</string>
     <string name="nostop_sync_undoing">Undoing…</string>

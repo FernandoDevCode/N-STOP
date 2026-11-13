@@ -74,9 +74,9 @@
     <string name="nostop_cellular">Stream on cellular</string>
     <string name="nostop_cellular_desc">Allow streaming over mobile data (5G / LTE). Off by default to avoid surprise data use.</string>
     <string name="nostop_via_youtube">Stream via YouTube</string>
-    <string name="nostop_via_youtube_desc">Skip Qobuz and stream everything via YouTube. Enable if lossless playback fails or only short clips play.</string>
-    <string name="nostop_force_qobuz">Force Qobuz only (debug)</string>
-    <string name="nostop_force_qobuz_desc">Debug only. Streams and downloads through Qobuz, without fallback to YouTube.</string>
+    <string name="nostop_via_youtube_desc">Use YouTube for audio playback.</string>
+    <string name="nostop_force_qobuz">Legacy feature unavailable in Sonora.</string>
+    <string name="nostop_force_qobuz_desc">Legacy feature unavailable in Sonora.</string>
     <string name="nostop_stream_unavailable">Streaming is unavailable in this build.</string>
     <string name="nostop_autoplay">Autoplay</string>
     <string name="nostop_autoplay_radio">Autoplay radio</string>
@@ -91,7 +91,7 @@
     <string name="nostop_duration_seconds">%1$d sec</string>
     <string name="nostop_hub_playback_hint">Sleep timer, autoplay radio, crossfade, gapless</string>
     <string name="nostop_hub_quality_hint">Streaming quality, lossless, download quality</string>
-    <string name="nostop_hub_accounts_hint">Spotify, YouTube Music, Last.fm</string>
+    <string name="nostop_hub_accounts_hint">Spotify and YouTube Music</string>
     <string name="nostop_hub_library_hint">Storage location, backups, downloads</string>
     <string name="nostop_hub_appearance_hint">Theme, AMOLED, Home layout</string>
     <string name="nostop_hub_about_hint">Version, diagnostics, crash reports</string>
@@ -123,10 +123,10 @@
     <string name="nostop_accounts_connect_anyway">Connect anyway</string>
     <string name="nostop_accounts_cancel">Cancel</string>
     <string name="nostop_accounts_finish_connect">Finish connecting</string>
-    <string name="nostop_accounts_lastfm_first">Connect Last.fm first.</string>
-    <string name="nostop_accounts_lastfm_offline">Couldn\'t reach Last.fm. Your plays remain queued and will be sent later.</string>
+    <string name="nostop_accounts_lastfm_first">Legacy feature unavailable in Sonora.</string>
+    <string name="nostop_accounts_lastfm_offline">Legacy feature unavailable in Sonora.</string>
     <string name="nostop_accounts_lastfm_no_scrobbles">No new scrobbles to send.</string>
-    <string name="nostop_accounts_lastfm_sent">Sent %1$d scrobbles to Last.fm.</string>
+    <string name="nostop_accounts_lastfm_sent">Legacy feature unavailable in Sonora.</string>
     <string name="nostop_hub_stream_only">Stream only</string>
     <string name="nostop_hub_cellular_on">Cellular on</string>
     <string name="nostop_hub_cellular_off">Cellular off</string>
@@ -144,13 +144,13 @@
     <string name="nostop_quality_lossless_off">Stream and download studio-quality FLAC. Off, playback uses YouTube. Files are roughly 10 times larger than MP3.</string>
     <string name="nostop_quality_lossless_missing">No lossless source configured — see below. Files are roughly 10 times larger than MP3.</string>
     <string name="nostop_quality_lossless_on">FLAC streaming and downloads. Files are roughly 10 times larger than MP3.</string>
-    <string name="nostop_quality_qobuz_missing">No lossless source configured — connect your Qobuz account below</string>
-    <string name="nostop_quality_qobuz_account">Your Qobuz account</string>
+    <string name="nostop_quality_qobuz_missing">Legacy feature unavailable in Sonora.</string>
+    <string name="nostop_quality_qobuz_account">Legacy feature unavailable in Sonora.</string>
     <string name="nostop_quality_connected_as">Connected as %1$s</string>
     <string name="nostop_quality_connected_token">Connected (token)</string>
     <string name="nostop_quality_disconnect">Disconnect</string>
-    <string name="nostop_quality_qobuz_hint">Sign in with your Qobuz subscription for lossless audio.</string>
-    <string name="nostop_quality_email">Qobuz email</string>
+    <string name="nostop_quality_qobuz_hint">Legacy feature unavailable in Sonora.</string>
+    <string name="nostop_quality_email">Legacy feature unavailable in Sonora.</string>
     <string name="nostop_quality_password">Password</string>
     <string name="nostop_quality_connecting">Connecting…</string>
     <string name="nostop_quality_connect">Connect</string>
@@ -170,7 +170,7 @@
     <string name="nostop_quality_testing">Testing…</string>
     <string name="nostop_quality_reachable">Reachable</string>
     <string name="nostop_quality_unreachable">Not reachable</string>
-    <string name="nostop_quality_captcha_hint">qobuz.squid.wtf captcha: paste the captcha_verified_at cookie value.</string>
+    <string name="nostop_quality_captcha_hint">Legacy feature unavailable in Sonora.</string>
     <string name="nostop_quality_captcha_value">captcha_verified_at value</string>
     <string name="nostop_quality_reset">Reset lossless attempts</string>
     <string name="nostop_quality_effects">Effects</string>
@@ -179,8 +179,8 @@
     <string name="nostop_storage_mixes">Automatic mixes (beta)</string>
     <string name="nostop_storage_mixes_on">Daily Discover, Deep Cuts, and First Listen mixes auto-refresh in the background.</string>
     <string name="nostop_storage_mixes_off">Auto-generated mix playlists are hidden. Background discovery downloads are off.</string>
-    <string name="nostop_storage_discover_qobuz">Qobuz discovery on Home</string>
-    <string name="nostop_storage_qobuz_on">New Releases, Qobuz Playlists, and Top Albums show on Home.</string>
+    <string name="nostop_storage_discover_qobuz">Legacy feature unavailable in Sonora.</string>
+    <string name="nostop_storage_qobuz_on">Legacy feature unavailable in Sonora.</string>
     <string name="nostop_storage_qobuz_off">Home keeps only your mixes and imported music.</string>
     <string name="nostop_storage_library">Library</string>
     <string name="nostop_storage_library_health">Library Health</string>
@@ -323,4 +323,6 @@
     <string name="sonora_settings_sound">Sound and playback</string>
     <string name="sonora_settings_collection">Accounts and library</string>
     <string name="sonora_settings_preferences">App</string>
+    <string name="sonora_audio_quality_note">Playback and downloads use YouTube or YouTube Music audio. Lossless quality is not available with this configuration.</string>
+    <string name="sonora_lyrics_lrc_note">Synchronized lyrics appear when available. Your songs and downloads are unchanged.</string>
 </resources>

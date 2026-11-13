@@ -70,9 +70,9 @@
     <string name="nostop_cellular">Ouvir usando dados móveis</string>
     <string name="nostop_cellular_desc">Permite ouvir usando dados móveis (5G/LTE). Desativado por padrão para evitar consumo inesperado.</string>
     <string name="nostop_via_youtube">Reproduzir pelo YouTube</string>
-    <string name="nostop_via_youtube_desc">Ignora o Qobuz e reproduz pelo YouTube. Ative se o áudio sem perdas falhar ou tocar apenas trechos curtos.</string>
-    <string name="nostop_force_qobuz">Usar somente Qobuz (depuração)</string>
-    <string name="nostop_force_qobuz_desc">Somente para depuração. Transmite e baixa pelo Qobuz, sem alternativa pelo YouTube.</string>
+    <string name="nostop_via_youtube_desc">Utiliza o YouTube para reprodução de áudio.</string>
+    <string name="nostop_force_qobuz">Recurso legado indisponível no Sonora.</string>
+    <string name="nostop_force_qobuz_desc">Recurso legado indisponível no Sonora.</string>
     <string name="nostop_stream_unavailable">Streaming indisponível nesta versão.</string>
     <string name="nostop_autoplay">Reprodução automática</string>
     <string name="nostop_autoplay_radio">Rádio automática</string>
@@ -87,7 +87,7 @@
     <string name="nostop_duration_seconds">%1$d s</string>
     <string name="nostop_hub_playback_hint">Temporizador, rádio automática, transição e reprodução sem intervalos</string>
     <string name="nostop_hub_quality_hint">Qualidade de streaming, áudio sem perdas e downloads</string>
-    <string name="nostop_hub_accounts_hint">Spotify, YouTube Music, Last.fm</string>
+    <string name="nostop_hub_accounts_hint">Spotify e YouTube Music</string>
     <string name="nostop_hub_library_hint">Local dos arquivos, backups e downloads</string>
     <string name="nostop_hub_appearance_hint">Tema, AMOLED, idioma e organização do Início</string>
     <string name="nostop_hub_about_hint">Versão, diagnósticos e relatórios de falhas</string>
@@ -119,10 +119,10 @@
     <string name="nostop_accounts_connect_anyway">Conectar mesmo assim</string>
     <string name="nostop_accounts_cancel">Cancelar</string>
     <string name="nostop_accounts_finish_connect">Concluir conexão</string>
-    <string name="nostop_accounts_lastfm_first">Conecte o Last.fm primeiro.</string>
-    <string name="nostop_accounts_lastfm_offline">Não foi possível acessar o Last.fm. Suas reproduções continuam na fila para envio posterior.</string>
+    <string name="nostop_accounts_lastfm_first">Recurso legado indisponível no Sonora.</string>
+    <string name="nostop_accounts_lastfm_offline">Recurso legado indisponível no Sonora.</string>
     <string name="nostop_accounts_lastfm_no_scrobbles">Nenhuma reprodução nova para enviar.</string>
-    <string name="nostop_accounts_lastfm_sent">%1$d reproduções enviadas ao Last.fm.</string>
+    <string name="nostop_accounts_lastfm_sent">Recurso legado indisponível no Sonora.</string>
     <string name="nostop_hub_stream_only">Somente streaming</string>
     <string name="nostop_hub_cellular_on">Dados móveis ativados</string>
     <string name="nostop_hub_cellular_off">Dados móveis desativados</string>
@@ -140,13 +140,13 @@
     <string name="nostop_quality_lossless_off">Reproduz e baixa FLAC com qualidade de estúdio. Desativado, usa o YouTube. Arquivos cerca de 10 vezes maiores que MP3.</string>
     <string name="nostop_quality_lossless_missing">Nenhuma fonte de áudio sem perdas configurada — veja abaixo. Arquivos cerca de 10 vezes maiores que MP3.</string>
     <string name="nostop_quality_lossless_on">Streaming e downloads em FLAC. Arquivos cerca de 10 vezes maiores que MP3.</string>
-    <string name="nostop_quality_qobuz_missing">Nenhuma fonte sem perdas configurada — conecte sua conta Qobuz abaixo</string>
-    <string name="nostop_quality_qobuz_account">Sua conta Qobuz</string>
+    <string name="nostop_quality_qobuz_missing">Recurso legado indisponível no Sonora.</string>
+    <string name="nostop_quality_qobuz_account">Recurso legado indisponível no Sonora.</string>
     <string name="nostop_quality_connected_as">Conectado como %1$s</string>
     <string name="nostop_quality_connected_token">Conectado (token)</string>
     <string name="nostop_quality_disconnect">Desconectar</string>
-    <string name="nostop_quality_qobuz_hint">Entre com sua assinatura Qobuz para ouvir áudio sem perdas.</string>
-    <string name="nostop_quality_email">E-mail do Qobuz</string>
+    <string name="nostop_quality_qobuz_hint">Recurso legado indisponível no Sonora.</string>
+    <string name="nostop_quality_email">Recurso legado indisponível no Sonora.</string>
     <string name="nostop_quality_password">Senha</string>
     <string name="nostop_quality_connecting">Conectando…</string>
     <string name="nostop_quality_connect">Conectar</string>
@@ -166,7 +166,7 @@
     <string name="nostop_quality_testing">Testando…</string>
     <string name="nostop_quality_reachable">Acessível</string>
     <string name="nostop_quality_unreachable">Inacessível</string>
-    <string name="nostop_quality_captcha_hint">Captcha do qobuz.squid.wtf: cole o valor do cookie captcha_verified_at.</string>
+    <string name="nostop_quality_captcha_hint">Recurso legado indisponível no Sonora.</string>
     <string name="nostop_quality_captcha_value">Valor do captcha_verified_at</string>
     <string name="nostop_quality_reset">Reiniciar tentativas de áudio sem perdas</string>
     <string name="nostop_quality_effects">Efeitos</string>
@@ -175,8 +175,8 @@
     <string name="nostop_storage_mixes">Mixes do Sonora (beta)</string>
     <string name="nostop_storage_mixes_on">Os mixes Daily Discover, Deep Cuts e First Listen são atualizados automaticamente em segundo plano.</string>
     <string name="nostop_storage_mixes_off">Playlists de mixes automáticos ficam ocultas. Downloads de descoberta em segundo plano ficam desativados.</string>
-    <string name="nostop_storage_discover_qobuz">Descobertas do Qobuz no Início</string>
-    <string name="nostop_storage_qobuz_on">Novos lançamentos, playlists do Qobuz e álbuns em destaque aparecem no Início.</string>
+    <string name="nostop_storage_discover_qobuz">Recurso legado indisponível no Sonora.</string>
+    <string name="nostop_storage_qobuz_on">Recurso legado indisponível no Sonora.</string>
     <string name="nostop_storage_qobuz_off">O Início mostra apenas seus mixes e músicas importadas.</string>
     <string name="nostop_storage_library">Biblioteca</string>
     <string name="nostop_storage_library_health">Saúde da biblioteca</string>
@@ -319,4 +319,6 @@
     <string name="sonora_settings_sound">Som e reprodução</string>
     <string name="sonora_settings_collection">Contas e biblioteca</string>
     <string name="sonora_settings_preferences">Aplicativo</string>
+    <string name="sonora_audio_quality_note">Reprodução e downloads usam áudio do YouTube ou YouTube Music. Qualidade sem perdas não está disponível nesta configuração.</string>
+    <string name="sonora_lyrics_lrc_note">Letras sincronizadas aparecem quando disponíveis, sem alterar suas músicas ou seus downloads.</string>
 </resources>
