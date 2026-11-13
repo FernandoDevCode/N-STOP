@@ -61,3 +61,11 @@ dependencies {
     testImplementation(libs.robolectric)
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
+
+// Native Robolectric/Compose screenshot tests run in a separate JVM. Keep the
+// test fork bounded and give it enough heap for Android bitmap allocations;
+// the CI home shard isolates it from other feature unit-test processes.
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    maxHeapSize = "1536m"
+    maxParallelForks = 1
+}
