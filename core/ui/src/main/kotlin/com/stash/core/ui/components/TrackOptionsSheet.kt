@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
@@ -81,6 +82,7 @@ fun TrackOptionsSheet(
     onDownload: ((Track) -> Unit)? = null,
     onRemoveDownload: ((Track) -> Unit)? = null,
     onDelete: ((Track) -> Unit)? = null,
+    onSelectMultiple: ((Track) -> Unit)? = null,
 ) {
     val extendedColors = StashTheme.extendedColors
     val role = LocalListenTogetherRole.current
@@ -148,6 +150,16 @@ fun TrackOptionsSheet(
         )
 
         Spacer(modifier = Modifier.height(8.dp))
+
+        // The primary long-press is now contextual actions, not a surprise
+        // selection-mode switch. Multi-select remains explicitly reachable.
+        if (onSelectMultiple != null) {
+            SheetOptionRow(
+                icon = Icons.Default.CheckBox,
+                label = stringResource(R.string.sonora_track_select_multiple),
+                onClick = { onSelectMultiple(track) },
+            )
+        }
 
         // -- Play Next option --
         SheetOptionRow(
