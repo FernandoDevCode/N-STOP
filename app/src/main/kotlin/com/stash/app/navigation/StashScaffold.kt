@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -108,6 +109,11 @@ fun StashScaffold(
     val onArtistProfile = navBackStackEntry?.destination?.hasRoute<SearchArtistRoute>() == true
     val onNowPlaying = onMusicNowPlaying ||
         currentRoute == PodcastNowPlayingRoute::class.qualifiedName
+    val onSearchTab = navBackStackEntry?.destination?.hasRoute<SearchRoute>() == true
+    // The IME used to resize the entire app scaffold on every animation frame.
+    // That remeasured the blurred mini-player and navigation chrome while the
+    // Search field gained focus, even on an empty Search screen.
+    val hideChromeForSearchIme = onSearchTab && WindowInsets.isImeVisible
 
     // Whether a detail screen is currently in multi-select mode. Detail screens
     // signal this via `onSelectionModeChanged`; while it is true we hide the
@@ -252,7 +258,9 @@ fun StashScaffold(
             com.stash.core.ui.visual.VisualBackground(Modifier.fillMaxSize()) {}
         }
     Scaffold(
-        modifier = Modifier.imePadding(),
+        // Search owns its IME inset locally: never animate the global chrome
+        // and NavHost height together with the keyboard.
+        modifier = if (onSearchTab) Modifier else Modifier.imePadding(),
         containerColor = Color.Transparent,
         // Use Scaffold's default safe-drawing insets so screens automatically
         // avoid the status bar (top) and gesture / 3-button nav (bottom).
@@ -265,7 +273,7 @@ fun StashScaffold(
             // screen's own selection action bar (which handles its own nav insets)
             // takes the bottom edge. This drops innerPadding.bottom to 0 so the
             // content extends full-height behind that action bar.
-            if (!selectionActive) {
+            if (!selectionActive && !hideChromeForSearchIme) {
                 val qobuzStatusViewModel: QobuzStatusViewModel = androidx.hilt.navigation.compose.hiltViewModel()
                 val qobuzStatus by qobuzStatusViewModel.bannerStatus.collectAsStateWithLifecycle()
 
