@@ -197,7 +197,7 @@ fun SettingsHubScreen(
     ) {
         Column(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
             Text(
-                text = "SONORA  /  PREFERÊNCIAS",
+                text = stringResource(R.string.sonora_settings_overline),
                 style = VisualDesign.Caption.copy(letterSpacing = 1.5.sp),
                 color = VisualDesign.Muted,
             )
