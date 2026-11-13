@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -83,6 +84,7 @@ import dev.chrisbanes.haze.rememberHazeState
  * Also publishes the app-wide album colour ([LocalAlbumChrome]) and hosts the queue
  * sheet the mini player opens.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun StashScaffold(
     pendingDeepLink: String? = null,
@@ -108,6 +110,8 @@ fun StashScaffold(
     val onArtistProfile = navBackStackEntry?.destination?.hasRoute<SearchArtistRoute>() == true
     val onNowPlaying = onMusicNowPlaying ||
         currentRoute == PodcastNowPlayingRoute::class.qualifiedName
+    val onSearchTab = navBackStackEntry?.destination?.hasRoute<SearchRoute>() == true
+    val hideChromeForSearchIme = onSearchTab && WindowInsets.isImeVisible
 
     // Whether a detail screen is currently in multi-select mode. Detail screens
     // signal this via `onSelectionModeChanged`; while it is true we hide the
@@ -252,7 +256,8 @@ fun StashScaffold(
             com.stash.core.ui.visual.VisualBackground(Modifier.fillMaxSize()) {}
         }
     Scaffold(
-        modifier = Modifier.imePadding(),
+        // Search consumes its own IME insets, keeping the global NavHost/chrome stable.
+        modifier = if (onSearchTab) Modifier else Modifier.imePadding(),
         containerColor = Color.Transparent,
         // Use Scaffold's default safe-drawing insets so screens automatically
         // avoid the status bar (top) and gesture / 3-button nav (bottom).
@@ -265,7 +270,7 @@ fun StashScaffold(
             // screen's own selection action bar (which handles its own nav insets)
             // takes the bottom edge. This drops innerPadding.bottom to 0 so the
             // content extends full-height behind that action bar.
-            if (!selectionActive) {
+            if (!selectionActive && !hideChromeForSearchIme) {
                 // No bottom navigation-bar padding here: the tab bar's glass runs down under
                 // the system bar and pads its own items (StashBottomBar), so content scrolling
                 // under it is frosted all the way to the screen's edge. The cards above it keep

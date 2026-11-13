@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -50,6 +51,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -135,7 +137,9 @@ fun SearchScreen(
         ).collect { msg -> snackbarHostState.showSnackbar(msg) }
     }
 
+    // Search owns the keyboard insets, while the app chrome stays fixed.
     Scaffold(
+        modifier = Modifier.imePadding(),
         snackbarHost = { SnackbarHost(snackbarHostState, Modifier.padding(bottom = bottomChromePadding())) },
         containerColor = Color.Transparent,
     ) { inner ->
@@ -243,7 +247,12 @@ private fun SearchBar(
     // keyboard over the very results the user came back to.
     var autoFocused by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        if (!autoFocused && query.isEmpty()) focusRequester.requestFocus()
+        if (!autoFocused && query.isEmpty()) {
+            // Wait for the initial layouts rather than animating the entire screen at once.
+            withFrameNanos { }
+            withFrameNanos { }
+            focusRequester.requestFocus()
+        }
         autoFocused = true
     }
 }
