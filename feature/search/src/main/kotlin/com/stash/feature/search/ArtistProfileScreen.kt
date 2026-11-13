@@ -247,7 +247,7 @@ fun ArtistProfileScreen(
                     onOpenAbout = { selectedArtistTab = 3 },
                     featuredContent = featuredAlbum?.let { album ->
                         @Composable {
-                            ArtistFeaturedAlbum(album = album, onOpen = onNavigateToAlbum)
+                            ArtistFeaturedAlbum(album = album, photoTone = smoothBridge, onOpen = onNavigateToAlbum)
                         }
                     },
                 )

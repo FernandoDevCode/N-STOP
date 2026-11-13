@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -45,6 +46,16 @@ internal fun selectArtistFeaturedAlbum(
         ?: singles.firstOrNull()
 
 /**
+ * A restrained transparent glass tint from the *artist photo*, not the album
+ * artwork. The hero/backdrop remains visible behind this surface.
+ */
+internal fun artistFeaturedAlbumGlassFill(photoTone: Color): Color =
+    lerp(Color.White, photoTone, .60f).copy(alpha = .16f)
+
+internal fun artistFeaturedAlbumGlassBorder(photoTone: Color): Color =
+    lerp(Color.White, photoTone, .24f).copy(alpha = .12f)
+
+/**
  * The reference's translucent release card. Chevron means "open album":
  * Sonora does not expose a save-album action from the artist VM, so we must not
  * show a deceptive + that actually navigates.
@@ -52,15 +63,16 @@ internal fun selectArtistFeaturedAlbum(
 @Composable
 internal fun ArtistFeaturedAlbum(
     album: AlbumSummary,
+    photoTone: Color,
     onOpen: (AlbumSummary) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(
         onClick = { onOpen(album) },
         modifier = modifier.fillMaxWidth(),
-        color = Color.White.copy(alpha = .085f),
+        color = artistFeaturedAlbumGlassFill(photoTone),
         shape = RoundedCornerShape(22.dp),
-        border = BorderStroke(0.6.dp, Color.White.copy(alpha = .12f)),
+        border = BorderStroke(0.6.dp, artistFeaturedAlbumGlassBorder(photoTone)),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 13.dp, vertical = 13.dp),
