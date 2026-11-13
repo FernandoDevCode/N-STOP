@@ -80,25 +80,25 @@ private val exportScopeOptions = listOf(
         scope = BackupExportScope.LIKES_ONLY,
         label = "Liked songs only",
         description = "Everything you liked, and nothing else. Small file.",
-        fileName = "stash-likes.zip",
+        fileName = "sonora-likes.zip",
     ),
     ExportScopeOption(
         scope = BackupExportScope.EVERYTHING,
         label = "Everything",
         description = "Library and settings. Logins can't be restored either way.",
-        fileName = "stash-backup.zip",
+        fileName = "sonora-backup.zip",
     ),
     ExportScopeOption(
         scope = BackupExportScope.LIBRARY_ONLY,
         label = "Library only",
         description = "Songs, playlists and history. Settings are left out.",
-        fileName = "stash-library.zip",
+        fileName = "sonora-library.zip",
     ),
     ExportScopeOption(
         scope = BackupExportScope.SETTINGS_ONLY,
         label = "Settings only",
         description = "Preferences with no library attached.",
-        fileName = "stash-settings.zip",
+        fileName = "sonora-settings.zip",
     ),
 )
 

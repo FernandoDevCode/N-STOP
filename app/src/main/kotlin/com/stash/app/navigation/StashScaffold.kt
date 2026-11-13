@@ -287,9 +287,7 @@ fun StashScaffold(
                     ) {
                       Column {
                         // "Continue from Chrome on Windows" (link-sync spec §2.5): above the mini player, never on Now Playing.
-                        com.stash.feature.nowplaying.handoff.HandoffCard()
                         // "Chrome on Windows sent you 3 playlists and 40 likes." (link-sync spec §2.3): a dialog, shown once per send.
-                        com.stash.feature.settings.weblink.InboxPrompt()
                         if (podcastUi.foreground && podcastUi.playingId != null) {
                             PodcastMiniPlayer(
                                 state = podcastUi,

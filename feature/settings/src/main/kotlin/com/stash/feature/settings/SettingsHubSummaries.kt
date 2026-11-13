@@ -34,12 +34,7 @@ fun settingsHubSummaries(
     val cellular = if (streamOnCellular) "Cellular on" else "Cellular off"
     val playback = "$mode · $cellular"
 
-    val audioQuality = if (state.losslessEnabled) {
-        val shortLossless = state.losslessQualityTier.displayLabel.substringBefore(" (")
-        "Lossless · $shortLossless"
-    } else {
-        state.audioQuality.label
-    }
+    val audioQuality = "YouTube · ${state.audioQuality.label}"
 
     val connectedServices = buildList {
         if (state.spotifyAuthState is AuthState.Connected) add("Spotify")

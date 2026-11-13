@@ -186,8 +186,8 @@ android {
     buildTypes {
         release {
             buildConfigField("String", "SYNC_BASE_URL", "\"$syncReleaseBaseUrl\"")
-            buildConfigField("Boolean", "WEB_LINK_ENABLED", "true")
-            manifestPlaceholders["webLinkEnabled"] = "true"
+            buildConfigField("Boolean", "WEB_LINK_ENABLED", "false")
+            manifestPlaceholders["webLinkEnabled"] = "false"
             // R8 minification is DISABLED because youtubedl-android embeds
             // Chaquopy (Python runtime) + Apache Commons Compress + native
             // binaries that use extensive reflection. R8 obfuscation renames
@@ -213,8 +213,8 @@ android {
         }
         debug {
             buildConfigField("String", "SYNC_BASE_URL", "\"$syncDebugBaseUrl\"")
-            buildConfigField("Boolean", "WEB_LINK_ENABLED", "true")
-            manifestPlaceholders["webLinkEnabled"] = "true"
+            buildConfigField("Boolean", "WEB_LINK_ENABLED", "false")
+            manifestPlaceholders["webLinkEnabled"] = "false"
             applicationIdSuffix = ".debug"
             isDebuggable = true
             signingConfig = signingConfigs.getByName("debug")

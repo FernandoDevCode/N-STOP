@@ -63,9 +63,6 @@ fun SettingsHubScreen(
     onOpenLibraryStorage: () -> Unit,
     onOpenAppearance: () -> Unit,
     onOpenAbout: () -> Unit,
-    onDonate: () -> Unit,
-    onDonateCoDev: () -> Unit,
-    onStar: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
@@ -125,7 +122,7 @@ fun SettingsHubScreen(
             SettingsSearchItem(
                 title = stringResource(R.string.nostop_nav_audio),
                 subtitle = stringResource(R.string.nostop_hub_quality_hint),
-                keywords = listOf("bitrate", "flac", "lossless", "quality", "streaming", "wifi", "cellular", "qualidade", "áudio", "dados móveis"),
+                keywords = listOf("bitrate", "quality", "streaming", "wifi", "cellular", "qualidade", "áudio", "dados móveis"),
                 icon = Icons.Rounded.GraphicEq,
                 onSelect = onOpenAudioQuality,
             ),

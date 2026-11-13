@@ -163,7 +163,7 @@ fun DiagnosticsPreviewScreen(
                                 putExtra(android.content.Intent.EXTRA_STREAM, uri)
                                 putExtra(
                                     android.content.Intent.EXTRA_SUBJECT,
-                                    "Stash diagnostics",
+                                    "Sonora diagnostics",
                                 )
                                 addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
@@ -210,4 +210,4 @@ fun DiagnosticsPreviewScreen(
 }
 
 /** Same page Home's "Report an issue" opened directly before the preview sat in front of it. */
-private const val ISSUE_TRACKER_URL = "https://github.com/rawnaldclark/Stash/issues/new"
+private const val ISSUE_TRACKER_URL = "https://github.com/FernandoDevCode/N-STOP/issues/new"

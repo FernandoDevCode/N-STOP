@@ -334,47 +334,6 @@ fun SyncScreen(
             }
         }
 
-        // -- Last.fm source dashboard (issue #255) ----------------------------
-        // Last.fm can't import playlists (no public playlist API), so its
-        // source card is the app-managed "Recommended by Last.fm" mix: a
-        // rotating playlist of tracks Last.fm recommends from the user's
-        // listening, matched + downloaded through the discovery pipeline.
-        // Rendered only while a Last.fm session exists — the scrobble
-        // connection IS the source connection.
-        if (lastFmState.connected) {
-            item {
-                val hasTracks = (lastFmState.trackCount ?: 0) > 0
-                com.stash.feature.sync.components.SourcePreferencesCard(
-                    name = "Last.fm",
-                    brandColor = StashTheme.extendedColors.lastfmRed,
-                    connected = true,
-                    stats = {
-                        if (hasTracks) {
-                            Row(modifier = Modifier.fillMaxWidth()) {
-                                SourceStatCell(
-                                    number = "${lastFmState.trackCount}",
-                                    label = stringResource(R.string.nostop_sync_recommended),
-                                )
-                            }
-                        } else {
-                            SourceEmptyHint(
-                                "A playlist of tracks Last.fm recommends — seeded from " +
-                                    "what you listen to — will be built on the next sync. " +
-                                    "Tap Sync Now to start it.",
-                            )
-                        }
-                    },
-                    modeChips = {
-                        LastFmRecommendationsToggleRow(
-                            enabled = lastFmState.enabled,
-                            onChange = viewModel::onLastFmRecommendationsToggled,
-                        )
-                    },
-                    onManage = { onManageSource(SyncSource.LASTFM) },
-                )
-            }
-        }
-
         // -- Schedule section -------------------------------------------------
         item { SyncSectionLabel(stringResource(R.string.nostop_sync_schedule)) }
         item {

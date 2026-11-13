@@ -113,22 +113,6 @@ fun ShareTrackSheet(
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-        ShareRow(
-            label = stringResource(R.string.nostop_share_nostop_link),
-            tint = MaterialTheme.colorScheme.primary,
-            busy = linking,
-            onClick = {
-                linking = true
-                // Closing the sheet mid-wait cancels this with it, and nothing is shared.
-                scope.launch {
-                    try {
-                        send("$artist — $title\n${stashSongLink(track, createLink)}")
-                    } finally {
-                        linking = false
-                    }
-                }
-            },
-        )
         if (spotifyUrl != null) {
             ShareRow(
                 label = stringResource(R.string.nostop_share_spotify_link),

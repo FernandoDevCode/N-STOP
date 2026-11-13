@@ -367,7 +367,6 @@ private fun StashNavGraph(
             }
         }
         composable<SettingsRoute> {
-            val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
             SettingsHubScreen(
                 onOpenPlayback = { navController.navigate(SettingsPlaybackRoute) },
                 onOpenAudioQuality = { navController.navigate(SettingsAudioQualityRoute) },
@@ -375,9 +374,6 @@ private fun StashNavGraph(
                 onOpenLibraryStorage = { navController.navigate(SettingsLibraryStorageRoute) },
                 onOpenAppearance = { navController.navigate(SettingsAppearanceRoute) },
                 onOpenAbout = { navController.navigate(SettingsAboutRoute) },
-                onDonate = { runCatching { uriHandler.openUri("https://ko-fi.com/rawnald") } },
-                onDonateCoDev = { runCatching { uriHandler.openUri("https://www.paypal.com/paypalme/Paraliyzedevo") } },
-                onStar = { runCatching { uriHandler.openUri("https://github.com/rawnaldclark/Stash") } },
             )
         }
 
