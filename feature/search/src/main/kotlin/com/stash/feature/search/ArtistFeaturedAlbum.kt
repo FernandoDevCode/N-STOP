@@ -46,14 +46,16 @@ internal fun selectArtistFeaturedAlbum(
         ?: singles.firstOrNull()
 
 /**
- * Subtle tinted glass from the featured release ARTWORK, not the artist photo.
- * The artist's atmospheric background remains visible through the card.
+ * A genuine coloured transparent pane: the cover owns the pigment while the
+ * artist atmosphere remains visible through 58% of the fill. The old photo
+ * palette was too dark/desaturated and its white blending neutralized the hue.
  */
-internal fun artistFeaturedAlbumGlassFill(artworkTone: Color): Color =
-    lerp(Color.White, artworkTone, .72f).copy(alpha = .18f)
+internal fun artistFeaturedAlbumGlassFill(artworkTint: Color?): Color =
+    artworkTint?.copy(alpha = .42f) ?: Color.White.copy(alpha = .085f)
 
-internal fun artistFeaturedAlbumGlassBorder(artworkTone: Color): Color =
-    lerp(Color.White, artworkTone, .38f).copy(alpha = .14f)
+internal fun artistFeaturedAlbumGlassBorder(artworkTint: Color?): Color =
+    artworkTint?.let { lerp(Color.White, it, .57f).copy(alpha = .30f) }
+        ?: Color.White.copy(alpha = .12f)
 
 /**
  * The reference's translucent release card. Chevron means "open album":
@@ -63,16 +65,16 @@ internal fun artistFeaturedAlbumGlassBorder(artworkTone: Color): Color =
 @Composable
 internal fun ArtistFeaturedAlbum(
     album: AlbumSummary,
-    artworkTone: Color,
+    artworkTint: Color?,
     onOpen: (AlbumSummary) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(
         onClick = { onOpen(album) },
         modifier = modifier.fillMaxWidth(),
-        color = artistFeaturedAlbumGlassFill(artworkTone),
+        color = artistFeaturedAlbumGlassFill(artworkTint),
         shape = RoundedCornerShape(22.dp),
-        border = BorderStroke(0.6.dp, artistFeaturedAlbumGlassBorder(artworkTone)),
+        border = BorderStroke(0.6.dp, artistFeaturedAlbumGlassBorder(artworkTint)),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 13.dp, vertical = 13.dp),
