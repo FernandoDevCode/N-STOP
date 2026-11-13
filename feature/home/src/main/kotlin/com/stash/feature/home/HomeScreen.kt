@@ -660,7 +660,7 @@ fun HomeScreen(
                         }
                     }
                 }
-                HomeSection.COMMUNITY -> item(key = "section_community") { communitySection() }
+                HomeSection.COMMUNITY -> Unit // Legacy Stash community is not presented as a Sonora feature.
             }
         }
 
