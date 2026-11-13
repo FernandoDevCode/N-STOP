@@ -70,33 +70,10 @@ class PlaylistBrowseViewModel @Inject constructor(
         queryFlow.value = query
     }
 
-    /** Load the next page. No-op while a load is in flight or the end is reached. */
+    /** Legacy Qobuz catalog route retained only for back-stack compatibility.
+     * No network requests to excluded providers are permitted. */
     fun loadMore() {
-        if (inFlight || _state.value.endReached) return
-        inFlight = true
-        val gen = generation
-        val query = queryFlow.value.trim()
-        _state.update { it.copy(isLoading = true) }
-        viewModelScope.launch {
-            val offset = _state.value.playlists.size
-            val page = if (query.isBlank()) {
-                repository.browsePlaylists(genreId = genreId, offset = offset, limit = PAGE_SIZE)
-            } else {
-                repository.searchPlaylists(query = query, offset = offset, limit = PAGE_SIZE)
-            }
-            if (gen == generation) {
-                _state.update {
-                    it.copy(
-                        playlists = it.playlists + page,
-                        isLoading = false,
-                        endReached = page.size < PAGE_SIZE,
-                    )
-                }
-                inFlight = false
-            }
-            // Stale generation: drop the page silently — the reset already
-            // cleared inFlight and kicked off the fresh load.
-        }
+        _state.update { it.copy(playlists = emptyList(), isLoading = false, endReached = true) }
     }
 
     companion object {

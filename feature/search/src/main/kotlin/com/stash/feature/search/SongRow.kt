@@ -1,15 +1,16 @@
 package com.stash.feature.search
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.ui.graphics.Color
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -18,7 +19,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.PlaylistAddCheck
@@ -27,11 +27,10 @@ import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -41,35 +40,36 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
-import com.stash.core.ui.theme.StashTheme
+import com.stash.core.ui.components.ListenTogetherRole
+import com.stash.core.ui.components.LocalListenTogetherRole
+import com.stash.core.ui.components.SheetOptionRow
+import com.stash.core.ui.components.playNextLabel
 
-/**
- * A row is the now-playing row iff it has a non-blank videoId equal to the player's
- * current youtubeId. Blank-videoId (Qobuz-native) rows never match — their videoId
- * is "", so they can't collide with a real playing id.
- */
+/** No blank catalog ID may be mistaken for a playing video. */
 fun isRowPlaying(rowVideoId: String, currentPlayingYoutubeId: String?): Boolean =
     rowVideoId.isNotBlank() && rowVideoId == currentPlayingYoutubeId
 
 /**
- * Canonical tap-to-play song row for Search results, artist "Popular", and album
- * tracklists — the SAME composable everywhere (no fork). The whole row is the play
- * affordance: tapping it plays the track (full stream when Online, 30s preview when
- * Offline), and tapping it again while a preview plays stops it (inheriting the old
- * ▶/⏹ toggle). Download stays a one-tap control on the row.
+ * Sonora's density-first track row. Search, artist Popular and online albums
+ * use the SAME row and the SAME long-press actions sheet.
  *
- * The download control cycles through three visual states:
- *  - Default: download arrow icon (tappable)
- *  - Downloading: circular progress indicator
- *  - Downloaded: green checkmark icon
- *
- * The outer Row is tagged `"SongRow"` so a Compose UI test can lock the non-fork.
+ * Tap plays; long press opens actions. Download is an action, not a permanent
+ * trailing button. Only passive status (downloaded/downloading/resolving)
+ * is shown inline. All existing playback and download callbacks are preserved.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SongRow(
     item: SearchResultItem,
@@ -81,322 +81,291 @@ fun SongRow(
     onStopPreview: () -> Unit,
     onDownload: () -> Unit,
     modifier: Modifier = Modifier,
-    /**
-     * v0.9.17: Track is queued under WAITING_FOR_LOSSLESS — lossless source
-     * was unavailable AND the user has yt-dlp fallback off. Renders an
-     * outlined-clock icon in the download slot to distinguish from a hard
-     * Failed state. Defaults to `false` so the param is backward compatible
-     * for callers (PopularTracksSection, AlbumDiscoveryScreen) that haven't
-     * threaded the new state yet.
-     */
     isWaitingForLossless: Boolean = false,
-    /**
-     * v0.9.x extract-coalescing: this row's track is currently being resolved
-     * for streaming (lossless URL fetch / YT fallback). Reuses the existing
-     * preview-button spinner branch so the user sees instant feedback the
-     * moment they tap. Defaults to `false` for back-compat with callers that
-     * don't thread the resolving state yet.
-     */
     isResolving: Boolean = false,
-    onPlayNext: () -> Unit = {},
-    onAddToQueue: () -> Unit = {},
-    onAddToPlaylist: () -> Unit = {},
-    onStartRadio: () -> Unit = {},
-    /** True when this row's track is the one currently playing — renders the
-     *  accent tint + equalizer glyph. See [isRowPlaying]. */
+    onPlayNext: (() -> Unit)? = null,
+    onAddToQueue: (() -> Unit)? = null,
+    onAddToPlaylist: (() -> Unit)? = null,
+    onStartRadio: (() -> Unit)? = null,
     isPlaying: Boolean = false,
-    /** Whether the one-tap download control shows. False for Qobuz-native album
-     *  tracks (no videoId → no download-by-id in Phase 1). */
     downloadSupported: Boolean = true,
-    /** Compact row styling is local to artist/album; Search keeps its existing cards. */
     editorial: Boolean = false,
-    /** Numbering is an artist/album detail property, never added to Search. */
     editorialIndex: Int? = null,
-    /** Album rows show track number rather than repeating their cover. */
     editorialAlbum: Boolean = false,
-    /** Real album subtitle for the artist Top Songs list only. */
     editorialSubtitle: String? = null,
-    /** Apple-like list proportions only for artist Top Songs. */
     artistEditorial: Boolean = false,
 ) {
-    val extendedColors = StashTheme.extendedColors
-    // Dim the art behind the loading spinner / stop glyph so it reads clearly.
-    val scrim = MaterialTheme.colorScheme.scrim.copy(alpha = 0.55f)
-    // Now-playing rows get a subtle primary wash so the active track stands out.
-    val rowBackground = if (isPlaying) {
-        MaterialTheme.colorScheme.primary.copy(alpha = if (artistEditorial) 0.04f else 0.14f)
-    } else {
-        extendedColors.glassBackground
+    var optionsOpen by remember(item.videoId, item.title, item.artist) { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
+    val actionLabel = stringResource(R.string.sonora_track_actions)
+    val action: () -> Unit = {
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        optionsOpen = true
     }
+    val artSize = if (artistEditorial) 44.dp else if (editorial) 46.dp else 52.dp
+    val activeColor = MaterialTheme.colorScheme.primary
+    val subtitle = editorialSubtitle ?: item.artist
+    val rowBackground = if (isPlaying) activeColor.copy(alpha = 0.055f) else Color.Transparent
 
     Row(
         modifier = modifier
             .fillMaxWidth()
             .testTag("SongRow")
-            .clip(RoundedCornerShape(if (editorial) 0.dp else 12.dp))
-            .background(if (editorial && !isPlaying) Color.Transparent else rowBackground)
-            // Whole row = play affordance. Tapping while a 30s preview plays stops it
-            // (inherits the old ▶/⏹ button toggle) so a running preview is never
-            // orphaned. The download button + ⋮ below consume their own taps.
-            .clickable { if (isPreviewPlaying) onStopPreview() else onPlay() }
-            .padding(horizontal = if (artistEditorial) 0.dp else 12.dp,
-                vertical = if (artistEditorial) 7.dp else if (editorial) 4.dp else 10.dp),
+            .clip(RoundedCornerShape(8.dp))
+            .background(rowBackground)
+            .combinedClickable(
+                onClick = { if (isPreviewPlaying) onStopPreview() else onPlay() },
+                onLongClickLabel = actionLabel,
+                onLongClick = action,
+            )
+            .semantics {
+                customActions = listOf(CustomAccessibilityAction(actionLabel) {
+                    optionsOpen = true
+                    true
+                })
+            }
+            .heightIn(min = if (editorial) 54.dp else 68.dp)
+            .padding(
+                horizontal = if (editorial) 4.dp else 6.dp,
+                vertical = if (editorial) 5.dp else 7.dp,
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (editorial && editorialIndex != null) {
             Text(
                 text = editorialIndex.toString(),
-                modifier = Modifier.width(if (artistEditorial) 20.dp else 22.dp),
+                modifier = Modifier.width(24.dp),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (isPlaying) activeColor else MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.width(5.dp))
-        }
-        // Album detail uses numbering with no repeated cover; Popular retains
-        // small artist thumbnails exactly as in the approved three-panel mock.
-        if (!editorialAlbum) Box(
-            modifier = Modifier
-                .size(if (artistEditorial) 42.dp else if (editorial) 44.dp else 48.dp)
-                .clip(RoundedCornerShape(if (editorial) 6.dp else 8.dp))
-                .background(extendedColors.elevatedSurface),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (item.thumbnailUrl != null) {
-                AsyncImage(
-                    model = item.thumbnailUrl,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                )
-            } else {
-                Icon(
-                    imageVector = Icons.Default.MusicNote,
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-            }
-            when {
-                isPreviewLoading || isResolving -> Box(
-                    modifier = Modifier.fillMaxSize().background(scrim),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                    )
-                }
-                isPreviewPlaying -> Box(
-                    modifier = Modifier.fillMaxSize().background(scrim),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Stop,
-                        contentDescription = "Stop preview",
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                    )
-                }
-            }
+            Spacer(Modifier.width(6.dp))
         }
 
-        Spacer(modifier = Modifier.width(12.dp))
+        // Albums show numbers and duration instead of repeating the same cover.
+        if (!editorialAlbum) {
+            Box(
+                modifier = Modifier
+                    .size(artSize)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (item.thumbnailUrl != null) {
+                    AsyncImage(
+                        model = item.thumbnailUrl,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
+                } else {
+                    Icon(Icons.Default.MusicNote, null, Modifier.size(22.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (isPreviewLoading || isResolving || isPreviewPlaying) {
+                    Box(
+                        Modifier.fillMaxSize().background(Color.Black.copy(alpha = .54f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (isPreviewLoading || isResolving) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp,
+                            )
+                        } else {
+                            Icon(Icons.Default.Stop, stringResource(R.string.sonora_track_stop),
+                                tint = Color.White, modifier = Modifier.size(19.dp))
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+        }
 
-        // Title and artist column -- takes up remaining space
         Column(
             modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (isPlaying) {
                     Icon(
-                        imageVector = Icons.Default.GraphicEq,
-                        contentDescription = "Now playing",
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.primary,
+                        Icons.Default.GraphicEq, null,
+                        modifier = Modifier.size(15.dp),
+                        tint = activeColor,
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(Modifier.width(5.dp))
                 }
                 Text(
                     text = item.title,
-                    style = if (artistEditorial) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
-                    color = if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (isPlaying) activeColor else MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = editorialSubtitle ?: item.artist,
-                style = if (artistEditorial) MaterialTheme.typography.labelSmall else MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-
-        Spacer(modifier = Modifier.width(8.dp))
-
-        // Duration label. Flat YouTube Music search rows carry no length, so an
-        // unknown (0) duration shows nothing rather than a false "0:00".
-        if (item.durationSeconds > 0 && !(editorial && !editorialAlbum)) {
-            Text(
-                text = formatDuration(item.durationSeconds),
-                style = MaterialTheme.typography.bodySmall,
-                color = extendedColors.textTertiary,
-            )
-
-            Spacer(modifier = Modifier.width(8.dp))
-        }
-
-        // In the editorial layout downloads move to ⋮, matching the reference;
-        // Search retains its existing one-tap download affordance.
-        if (downloadSupported && !editorial) {
-        Box(
-            modifier = Modifier.size(40.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            when {
-                isDownloaded -> {
-                    Icon(
-                        imageVector = Icons.Default.CheckCircle,
-                        contentDescription = "Downloaded",
-                        modifier = Modifier.size(24.dp),
-                        tint = extendedColors.success,
-                    )
-                }
-                isDownloading -> {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        strokeWidth = 2.5.dp,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-                isWaitingForLossless -> {
-                    // v0.9.17: deferred — lossless unavailable, fallback off.
-                    // Outlined clock signals "queued for retry," distinct from
-                    // the red Failed treatment. Tint with onSurfaceVariant so
-                    // it reads as informational rather than alerting.
-                    Icon(
-                        imageVector = Icons.Outlined.Schedule,
-                        contentDescription = "Waiting for lossless source",
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                else -> {
-                    IconButton(onClick = onDownload) {
-                        Icon(
-                            imageVector = Icons.Default.Download,
-                            contentDescription = "Download",
-                            modifier = Modifier.size(24.dp),
-                            tint = MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
-                }
+            if (!editorialAlbum && subtitle.isNotBlank()) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
-        }
 
-        // Overflow menu — shared with the Top-result card so both stay in sync.
-        SearchTrackMenu(
+        Spacer(Modifier.width(10.dp))
+        // The status is information, not a second action target.
+        when {
+            isDownloading -> CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                strokeWidth = 2.dp,
+            )
+            isDownloaded -> Icon(Icons.Default.CheckCircle,
+                stringResource(R.string.sonora_track_downloaded),
+                Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            isWaitingForLossless -> Icon(Icons.Outlined.Schedule,
+                stringResource(R.string.sonora_track_pending),
+                Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            item.durationSeconds > 0 -> Text(
+                text = formatDuration(item.durationSeconds),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+
+    if (optionsOpen) {
+        SearchTrackActionsSheet(
+            item = item,
+            isDownloading = isDownloading,
+            isDownloaded = isDownloaded,
+            isWaiting = isWaitingForLossless,
+            downloadSupported = downloadSupported,
+            onDownload = onDownload,
             onPlayNext = onPlayNext,
             onAddToQueue = onAddToQueue,
             onAddToPlaylist = onAddToPlaylist,
             onStartRadio = onStartRadio,
-            onDownload = if (editorial && downloadSupported && !isDownloaded &&
-                !isDownloading && !isWaitingForLossless) onDownload else null,
-            downloadStatus = if (!editorial || !downloadSupported) null
-                else when {
-                    isDownloaded -> "Baixado"
-                    isDownloading -> "Baixando"
-                    isWaitingForLossless -> "Aguardando fonte sem perdas"
-                    else -> null
-                },
+            onDismiss = { optionsOpen = false },
         )
     }
 }
 
-/**
- * The per-track ⋮ overflow menu shared by [SongRow] and the Top-result card, so
- * every search track surface offers the same actions (the promise was broken
- * when the Top-result card had no menu at all).
- */
+/** All actions appear in one consistent, contextual Sonora bottom sheet. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-fun SearchTrackMenu(
-    onPlayNext: () -> Unit,
-    onAddToQueue: () -> Unit,
-    onAddToPlaylist: () -> Unit,
-    onStartRadio: () -> Unit,
-    modifier: Modifier = Modifier,
-    onDownload: (() -> Unit)? = null,
-    downloadStatus: String? = null,
+private fun SearchTrackActionsSheet(
+    item: SearchResultItem,
+    isDownloading: Boolean,
+    isDownloaded: Boolean,
+    isWaiting: Boolean,
+    downloadSupported: Boolean,
+    onDownload: () -> Unit,
+    onPlayNext: (() -> Unit)?,
+    onAddToQueue: (() -> Unit)?,
+    onAddToPlaylist: (() -> Unit)?,
+    onStartRadio: (() -> Unit)?,
+    onDismiss: () -> Unit,
 ) {
-    Box(modifier) {
-        val role = com.stash.core.ui.components.LocalListenTogetherRole.current
-        var menuOpen by remember { mutableStateOf(false) }
-        IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(40.dp)) {
-            Icon(
-                imageVector = Icons.Default.MoreVert,
-                contentDescription = "More actions",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-            if (onDownload != null) {
-                DropdownMenuItem(
-                    text = { Text("Baixar") },
-                    leadingIcon = { Icon(Icons.Default.Download, contentDescription = null) },
-                    onClick = { menuOpen = false; onDownload() },
+    val role = LocalListenTogetherRole.current
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+    ) {
+        Column(Modifier.fillMaxWidth().padding(bottom = 22.dp)) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(54.dp).clip(RoundedCornerShape(7.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (item.thumbnailUrl != null) {
+                        AsyncImage(item.thumbnailUrl, null, Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop)
+                    } else {
+                        Icon(Icons.Default.MusicNote, null, Modifier.size(24.dp))
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(item.title, style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(item.artist, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            HorizontalDivider(Modifier.padding(horizontal = 20.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .45f))
+            if (downloadSupported && !isDownloaded && !isDownloading && !isWaiting) {
+                SheetOptionRow(
+                    icon = Icons.Default.Download,
+                    label = stringResource(R.string.sonora_track_download),
+                    onClick = { onDismiss(); onDownload() },
                 )
-            } else if (downloadStatus != null) {
-                DropdownMenuItem(
-                    text = { Text(downloadStatus) },
-                    enabled = false,
-                    onClick = { menuOpen = false },
+            } else if (downloadSupported) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 13.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Default.CheckCircle, null, Modifier.size(21.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.width(16.dp))
+                    Text(
+                        text = stringResource(when {
+                            isDownloaded -> R.string.sonora_track_downloaded
+                            isDownloading -> R.string.sonora_track_downloading
+                            else -> R.string.sonora_track_pending
+                        }),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+            onAddToPlaylist?.let { callback ->
+                SheetOptionRow(
+                    icon = Icons.Default.PlaylistAddCheck,
+                    label = stringResource(R.string.sonora_track_playlist),
+                    onClick = { onDismiss(); callback() },
                 )
             }
-            DropdownMenuItem(
-                text = { Text(com.stash.core.ui.components.playNextLabel(role, "Play next")) },
-                leadingIcon = { Icon(Icons.Default.PlaylistPlay, contentDescription = null) },
-                onClick = { menuOpen = false; onPlayNext() },
-            )
-            if (role == com.stash.core.ui.components.ListenTogetherRole.NONE) {
-                DropdownMenuItem(
-                    text = { Text("Add to queue") },
-                    leadingIcon = { Icon(Icons.Default.PlaylistAdd, contentDescription = null) },
-                    onClick = { menuOpen = false; onAddToQueue() },
+            onPlayNext?.let { callback ->
+                SheetOptionRow(
+                    icon = Icons.Default.PlaylistPlay,
+                    label = playNextLabel(role, stringResource(R.string.sonora_track_play_next)),
+                    onClick = { onDismiss(); callback() },
                 )
             }
-            DropdownMenuItem(
-                text = { Text("Add to playlist") },
-                leadingIcon = { Icon(Icons.Default.PlaylistAddCheck, contentDescription = null) },
-                onClick = { menuOpen = false; onAddToPlaylist() },
-            )
-            if (role == com.stash.core.ui.components.ListenTogetherRole.NONE) {
-                DropdownMenuItem(
-                    text = { Text("Start radio") },
-                    leadingIcon = { Icon(Icons.Default.Radio, contentDescription = null) },
-                    onClick = { menuOpen = false; onStartRadio() },
-                )
+            if (role == ListenTogetherRole.NONE) {
+                onAddToQueue?.let { callback ->
+                    SheetOptionRow(
+                        icon = Icons.Default.PlaylistAdd,
+                        label = stringResource(R.string.sonora_track_queue),
+                        onClick = { onDismiss(); callback() },
+                    )
+                }
+                onStartRadio?.let { callback ->
+                    SheetOptionRow(
+                        icon = Icons.Default.Radio,
+                        label = stringResource(R.string.sonora_track_radio),
+                        onClick = { onDismiss(); callback() },
+                    )
+                }
             }
         }
     }
 }
 
-/**
- * Formats a duration in seconds to "m:ss" or "h:mm:ss" display string.
- *
- * Internal to the search package so both [SongRow] and any
- * callers that surface a row can share a single formatter.
- */
+/** Keep the formatter shared by Search and album rows. */
 internal fun formatDuration(seconds: Double): String {
     val totalSeconds = seconds.toLong()
     val hours = totalSeconds / 3600
     val minutes = (totalSeconds % 3600) / 60
     val secs = totalSeconds % 60
-    return if (hours > 0) {
-        "%d:%02d:%02d".format(hours, minutes, secs)
-    } else {
-        "%d:%02d".format(minutes, secs)
-    }
+    return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, secs)
+    else "%d:%02d".format(minutes, secs)
 }

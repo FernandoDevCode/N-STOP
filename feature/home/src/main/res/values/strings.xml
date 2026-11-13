@@ -8,7 +8,7 @@
     <string name="nostop_home_report_issue">Report an issue</string>
     <string name="nostop_home_report_hint">Grab diagnostics, then open GitHub</string>
     <string name="nostop_home_translate">Help us translate</string>
-    <string name="nostop_home_crowdin">Join on Crowdin, then request access</string>
+    <string name="nostop_home_crowdin">Translation</string>
     <string name="nostop_home_request_access">Request translator access</string>
     <string name="nostop_home_updated_daily">Updated daily</string>
     <string name="nostop_home_your_mix">Your mix</string>
@@ -20,7 +20,7 @@
     <string name="nostop_home_discover">Discover</string>
     <string name="nostop_home_playlists">Your playlists</string>
     <string name="nostop_home_new_releases">New Releases</string>
-    <string name="nostop_home_qobuz">Qobuz Playlists</string>
+    <string name="nostop_home_qobuz">Legacy feature unavailable in Sonora.</string>
     <string name="nostop_home_top_albums">Top Albums</string>
     <string name="nostop_home_made_for_you">Made for you</string>
     <string name="nostop_home_radios">Radios</string>
@@ -29,7 +29,7 @@
     <string name="nostop_home_show_less">Show less</string>
     <string name="nostop_home_show_all_count">Show all %1$d</string>
     <string name="nostop_home_lossless">Try lossless audio</string>
-    <string name="nostop_home_lossless_hint">Studio-quality FLAC downloads via Qobuz. Tap to set up.</string>
+    <string name="nostop_home_lossless_hint">Legacy feature unavailable in Sonora.</string>
     <string name="nostop_home_setup">Set up →</string>
     <string name="nostop_home_no_lossless">No lossless right now</string>
     <string name="nostop_home_connect">Connect →</string>
@@ -85,4 +85,5 @@
     <string name="nostop_home_continue_current">Your playlists</string>
     <string name="nostop_home_resume_label">Your soundtrack</string>
     <string name="podcast_preparing">Preparing download…</string>
+    <string name="sonora_home_lossless_hint">Legacy feature unavailable in Sonora.</string>
 </resources>

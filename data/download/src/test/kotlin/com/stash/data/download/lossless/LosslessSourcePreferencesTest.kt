@@ -24,6 +24,14 @@ class LosslessSourcePreferencesTest {
         prefs.setLosslessOfflineDismissed(false)
     }
 
+    @Test fun `historical FLAC preference cannot suppress YouTube downloads`() = runTest {
+        prefs.setEnabled(true) // legacy backup or restore
+        assertThat(prefs.enabledNow()).isFalse()
+        assertThat(prefs.youtubeFallbackEnabledNow()).isTrue()
+        prefs.setEnabled(false)
+        assertThat(prefs.enabledNow()).isFalse()
+    }
+
     @Test fun `custom endpoint is null by default, normalised on set, cleared on blank`() = runTest {
         assertThat(prefs.customLosslessEndpoint.first()).isNull()
         prefs.setCustomLosslessEndpoint("  https://relay.example.org/  ")

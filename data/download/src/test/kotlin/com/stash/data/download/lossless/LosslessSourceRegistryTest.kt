@@ -52,7 +52,7 @@ class LosslessSourceRegistryTest {
     }
 
     @Test
-    fun `degraded source is skipped without resolving and the next source wins`() = runTest {
+    fun `disabled legacy lookup ignores all registered sources despite their status`() = runTest {
         acceptAnyQuality()
         // Use active (non-parked) sources so the normal chain reaches them.
         val lucidaResult = flacResult("lucida")
@@ -65,13 +65,13 @@ class LosslessSourceRegistryTest {
         val registry = registry(linkedSetOf(qbdlx, lucida))
         val result = registry.resolve(query)
 
-        assertThat(result).isEqualTo(lucidaResult)
-        coVerify(exactly = 0) { qbdlx.resolve(any()) } // skipped before resolving
-        coVerify(exactly = 1) { lucida.resolve(any()) }
+        assertThat(result).isNull()
+        coVerify(exactly = 0) { qbdlx.resolve(any()) }
+        coVerify(exactly = 0) { lucida.resolve(any()) }
     }
 
     @Test
-    fun `qbdlx is tried ahead of lower-priority sources in the normal chain`() = runTest {
+    fun `Qobuz is not used even if stored in the priority list`() = runTest {
         coEvery { prefs.priorityOrderNow() } returns
             LosslessSourcePreferences.DEFAULT_PRIORITY
         coEvery { prefs.minQualityNow() } returns LosslessSourcePreferences.MinQuality.ANY
@@ -86,13 +86,13 @@ class LosslessSourceRegistryTest {
         val registry = registry(linkedSetOf(lucida, qbdlx)) // scrambled on purpose
         val result = registry.resolve(query)
 
-        assertThat(result).isEqualTo(qbdlxResult)
-        coVerify(exactly = 1) { qbdlx.resolve(any()) }
+        assertThat(result).isNull()
+        coVerify(exactly = 0) { qbdlx.resolve(any()) }
         coVerify(exactly = 0) { lucida.resolve(any()) }
     }
 
     @Test
-    fun `parked qobuz proxies are skipped and an active source serves the normal chain`() = runTest {
+    fun `all old music sources are unreachable even if a proxy appears active`() = runTest {
         coEvery { prefs.priorityOrderNow() } returns
             LosslessSourcePreferences.DEFAULT_PRIORITY
         coEvery { prefs.minQualityNow() } returns LosslessSourcePreferences.MinQuality.ANY
@@ -108,10 +108,10 @@ class LosslessSourceRegistryTest {
         val registry = registry(linkedSetOf(squid, kennyy, lucida))
         val result = registry.resolve(query)
 
-        assertThat(result).isEqualTo(lucidaResult)
-        coVerify(exactly = 0) { squid.resolve(any()) } // parked
-        coVerify(exactly = 0) { kennyy.resolve(any()) } // parked
-        coVerify(exactly = 1) { lucida.resolve(any()) }
+        assertThat(result).isNull()
+        coVerify(exactly = 0) { squid.resolve(any()) }
+        coVerify(exactly = 0) { kennyy.resolve(any()) }
+        coVerify(exactly = 0) { lucida.resolve(any()) }
     }
 
     @Test
@@ -157,11 +157,11 @@ class LosslessSourceRegistryTest {
     }
 
     @Test
-    fun `a healthy source in the chain means a lookup could really search`() = runTest {
+    fun `no legacy music source canSearchNow even when healthy`() = runTest {
         acceptAnyQuality()
         coEvery { healthGate.isDegraded(any()) } returns false
 
-        assertThat(registry(linkedSetOf(sourceInState("lucida"))).canSearchNow()).isTrue()
+        assertThat(registry(linkedSetOf(sourceInState("lucida"))).canSearchNow()).isFalse()
     }
 
     @Test
@@ -182,7 +182,7 @@ class LosslessSourceRegistryTest {
     }
 
     @Test
-    fun `a cancelled caller is rethrown, not treated as a failing source`() = runTest {
+    fun `obsolete music source is never invoked even if it would cancel a worker`() = runTest {
         acceptAnyQuality()
         coEvery { healthGate.isDegraded(any()) } returns false
         val cancelled = mockk<LosslessSource> {
@@ -194,7 +194,17 @@ class LosslessSourceRegistryTest {
 
         val thrown = runCatching { registry(linkedSetOf(cancelled, next)).resolve(query) }.exceptionOrNull()
 
-        assertThat(thrown).isInstanceOf(kotlinx.coroutines.CancellationException::class.java)
-        coVerify(exactly = 0) { next.resolve(any(), any()) } // the chain stops; no lossy fallthrough
+        assertThat(thrown).isNull()
+        coVerify(exactly = 0) { cancelled.resolve(any(), any()) }
+        coVerify(exactly = 0) { next.resolve(any(), any()) }
+    }
+    @Test
+    fun `stale force-Qobuz preference must not revive removed resolver`() = runTest {
+        coEvery { streamingPreference.isForceQbdlxOnly() } returns true
+        acceptAnyQuality()
+        val qbdlx = fakeSource("qbdlx_qobuz", flacResult("qbdlx_qobuz"))
+        assertThat(registry(linkedSetOf(qbdlx)).resolve(query)).isNull()
+        coVerify(exactly = 0) { qbdlx.resolve(any()) }
+        assertThat(registry(linkedSetOf(qbdlx)).canSearchNow()).isFalse()
     }
 }

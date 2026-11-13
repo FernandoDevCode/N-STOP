@@ -15,9 +15,10 @@ internal fun HomeUiState.discoveryPresentation(radio: Boolean): VisualScreenStat
         values.map { VisualCard("mix:${it.id}", it.title, when (it.buildState) { com.stash.core.data.mix.MixBuildState.BUILDING -> "Preparando…"; com.stash.core.data.mix.MixBuildState.EMPTY -> "Mix vazio"; else -> "" }, it.artUrl) })
     val rails = if (radio) listOf(mixes("radio", "Suas estações", radios), mixes("again", "Ouvir novamente", madeForYou))
     else listOf(
-        VisualSection("new", "Novos lançamentos", newReleases.map { VisualCard("new:${it.id}", it.title, it.artist, it.thumbnailUrl) }, plain = true),
-        VisualSection("top", "Álbuns em destaque", topAlbums.map { VisualCard("top:${it.id}", it.title, it.artist, it.thumbnailUrl) }),
-        mixes("mood", "Redescobrir", moodDecades))
+        mixes("again", "Para você", madeForYou),
+        mixes("mood", "Redescobrir", moodDecades),
+        mixes("mine", "Seus mixes", yourMixes),
+    )
     val empty = rails.all { it.cards.isEmpty() }
     return VisualScreenState(page = if (radio) VisualPage.Radio else VisualPage.Explore,
         filters = if (!radio && qobuzDiscoveryEnabled) genres.map { it.label } else emptyList(),

@@ -3,8 +3,7 @@ package com.stash.feature.home
 import com.stash.core.data.db.dao.ListeningEventDao
 import com.stash.core.data.db.dao.TrackTagDao
 import com.stash.core.data.db.entity.TrackTagEntity
-import com.stash.core.data.lastfm.LastFmApiClient
-import com.stash.core.data.lastfm.LastFmTopTrack
+import com.stash.data.spotify.SpotifyTrackCandidate
 import com.stash.core.data.repository.MusicRepository
 import com.stash.core.model.Track
 import com.stash.data.spotify.SpotifyApiClient
@@ -18,7 +17,6 @@ import java.time.LocalDate
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
-import kotlin.math.min
 
 /** Only real catalog identities appear here, never invented songs or artists. */
 data class SonoraWeeklyDiscovery(
@@ -91,10 +89,10 @@ internal object SonoraTasteScorer {
 }
 
 /**
- * MVP candidate engine: Spotify for release dates, Last.fm for genre-tag
- * candidates, YouTube Music for exact song identities and playback IDs.
- * No fabricated musical-quality score: Last.fm tag relevance and catalog
- * validation are proxies, not an objective measure of artistic merit.
+ * Sonora candidate engine: Spotify for release dates and authenticated
+ * music candidates, YouTube Music for verification and playback identities.
+ * Local listening tags rank user interests. Search relevance is a proxy,
+ * not an objective measure of artistic quality.
  *
  * Bounded requests: 6 artist release searches, at most 3 tags per mode,
  * 12 catalog resolutions per mode. The VM loads it once per screen lifetime.
@@ -104,7 +102,6 @@ class SonoraWeeklyDiscoveryEngine @Inject constructor(
     private val trackTagDao: TrackTagDao,
     private val events: ListeningEventDao,
     private val spotify: SpotifyApiClient,
-    private val lastfm: LastFmApiClient,
     private val youtube: YTMusicApiClient,
     private val cache: SonoraWeeklyDiscoveryCache,
     private val feedback: SonoraDiscoveryFeedbackStore,
@@ -126,9 +123,9 @@ class SonoraWeeklyDiscoveryEngine @Inject constructor(
         val recentPlays = attempt { events.getPlayCountsSince(last30) }.orEmpty()
             .associate { it.trackId to it.plays }
         val storedTags = attempt { trackTagDao.getByTracks(tracks.map { it.id }) }.orEmpty()
-        val tags = if (storedTags.map { it.trackId }.distinct().size < tracks.size / 2) {
-            storedTags + inferArtistTags(tracks, storedTags.map { it.trackId }.toSet(), recentPlays)
-        } else storedTags
+        // Never request Last.fm to infer artist tags. Previously enriched
+        // library tags remain usable, but they trigger no new API requests.
+        val tags = storedTags
         val taste = SonoraTasteScorer.rank(tracks, tags, recentPlays)
         val owned = tracks.map { identity(it.artist, it.title) }.toSet()
         val recentArtistPlays = tracks.asSequence()
@@ -162,11 +159,18 @@ class SonoraWeeklyDiscoveryEngine @Inject constructor(
 
         if (releases.isNotEmpty()) onPartial(SonoraWeeklyDiscovery(releases = releases.toList()))
         val used = owned.toMutableSet()
-        val current = discover(taste.currentTags, used)
+        // When a newly synchronized library has no saved tags, use real
+        // recent/listened artists instead of secretly fetching Last.fm data.
+        val currentQueries = taste.currentTags.ifEmpty { recentArtistPlays.take(3) }
+        val recentLower = recentArtistPlays.take(3).map { it.lowercase() }.toSet()
+        val forgottenQueries = taste.forgottenTags.ifEmpty {
+            libraryArtists.filterNot { it.lowercase() in recentLower }.take(3)
+        }
+        val current = discover(currentQueries, used)
         if (current.isNotEmpty()) onPartial(SonoraWeeklyDiscovery(
             releases = releases.toList(), current = current, currentTag = taste.currentTags.firstOrNull(),
         ))
-        val forgotten = discover(taste.forgottenTags, used)
+        val forgotten = discover(forgottenQueries, used)
         return SonoraWeeklyDiscovery(
             releases = releases,
             current = current,
@@ -177,79 +181,42 @@ class SonoraWeeklyDiscoveryEngine @Inject constructor(
     }
 
     /**
-     * The existing tag worker mainly enriches downloaded songs. For a
-     * synchronized streaming library, infer genre tags from a bounded,
-     * stratified sample of actual library artists rather than silently
-     * declaring that the user has no historic preferences.
+     * Spotify catalog candidates, verified conservatively against YouTube
+     * Music. Do not fabricate a version when the artist/title does not match.
+     * Queries are derived from real saved tags or recent/local artist names.
      */
-    private suspend fun inferArtistTags(
-        tracks: List<Track>,
-        taggedIds: Set<Long>,
-        recentPlays: Map<Long, Int>,
-    ): List<TrackTagEntity> {
-        val groups = tracks.asSequence().filter { it.artist.isNotBlank() }
-            .groupBy { it.artist.trim().lowercase() }
-        if (groups.isEmpty()) return emptyList()
-        val played = groups.entries.sortedByDescending { entry ->
-            entry.value.sumOf { recentPlays[it.id] ?: 0 }
-        }.filter { entry -> entry.value.any { (recentPlays[it.id] ?: 0) > 0 } }
-            .take(4)
-        val saved = groups.entries.sortedByDescending { it.value.size }.take(5)
-        // Sample the full artist universe, not only today's dominant genre.
-        val sorted = groups.entries.sortedBy { it.key }
-        val evenlySpaced = (0 until min(7, sorted.size)).map { index ->
-            sorted[(index * sorted.size / min(7, sorted.size)).coerceIn(0, sorted.lastIndex)]
+    private suspend fun discover(queries: List<String>, used: MutableSet<String>): List<TrackSummary> {
+        if (queries.isEmpty()) return emptyList()
+        val candidates = linkedMapOf<String, Pair<SpotifyTrackCandidate, Int>>()
+        val perQuery = queries.take(3).map { query ->
+            attempt { spotify.searchTracksGraphQL(query, limit = 20) }.orEmpty()
+                .filter { it.artists.firstOrNull()?.isNotBlank() == true && it.name.isNotBlank() }
+                .take(20)
         }
-        val chosen = (played + saved + evenlySpaced).distinctBy { it.key }.take(16)
-        val inferred = mutableListOf<TrackTagEntity>()
-        for (entry in chosen) {
-            val untagged = entry.value.filter { it.id !in taggedIds }
-            if (untagged.isEmpty()) continue
-            val artistTags = attempt {
-                lastfm.getArtistTopTags(entry.value.first().artist).getOrNull().orEmpty()
-            }.orEmpty().filter { it.name.isNotBlank() && it.weight > 0f }.take(4)
-            for (track in untagged) for (tag in artistTags) {
-                inferred += TrackTagEntity(
-                    track.id, tag.name.trim().lowercase(), tag.weight.coerceIn(0f, 1f),
-                    TrackTagEntity.SOURCE_ARTIST, 0L,
-                )
-            }
-        }
-        return inferred
-    }
-
-    private suspend fun discover(tags: List<String>, used: MutableSet<String>): List<TrackSummary> {
-        if (tags.isEmpty()) return emptyList()
-        val candidates = linkedMapOf<String, Pair<LastFmTopTrack, Int>>()
-        // Rotate tags while retrieving; broadens musical territory instead of
-        // returning ten tracks from one single genre.
-        val perTag = tags.take(3).map { tag ->
-            attempt { lastfm.getTagTopTracks(tag, 40).getOrNull().orEmpty() }.orEmpty()
-                .filter { it.artist.isNotBlank() && it.title.isNotBlank() }
-                .take(28)
-        }
-        val maxDepth = perTag.maxOfOrNull { it.size } ?: 0
-        for (index in 0 until maxDepth) for (list in perTag) {
+        val depth = perQuery.maxOfOrNull { it.size } ?: 0
+        for (index in 0 until depth) for (list in perQuery) {
             val candidate = list.getOrNull(index) ?: continue
-            val key = identity(candidate.artist, candidate.title)
+            val artist = candidate.artists.firstOrNull() ?: continue
+            val key = identity(artist, candidate.name)
             if (key !in used) {
-                val old = candidates[key]
-                candidates[key] = candidate to ((old?.second ?: 0) + 1)
+                val previous = candidates[key]
+                candidates[key] = candidate to ((previous?.second ?: 0) + 1)
             }
         }
+
         val chosen = mutableListOf<TrackSummary>()
         val artistCounts = mutableMapOf<String, Int>()
         var attempts = 0
         for ((key, scored) in candidates.entries.sortedWith(
-            compareByDescending<Map.Entry<String, Pair<LastFmTopTrack, Int>>> { it.value.second }
-                .thenByDescending { min(it.value.first.playcount, 10000) },
+            compareByDescending<Map.Entry<String, Pair<SpotifyTrackCandidate, Int>>> { it.value.second },
         )) {
             if (attempts >= 16 || chosen.size >= 10) break
             val candidate = scored.first
-            val artistKey = candidate.artist.trim().lowercase()
+            val artist = candidate.artists.firstOrNull() ?: continue
+            val artistKey = artist.trim().lowercase()
             if ((artistCounts[artistKey] ?: 0) >= 2 || key in used) continue
             attempts++
-            val songs = attempt { youtube.searchAll("${candidate.artist} ${candidate.title}") }
+            val songs = attempt { youtube.searchAll("${artist} ${candidate.name}") }
                 ?.sections.orEmpty().flatMap { section ->
                     when (section) {
                         is SearchResultSection.Songs -> section.tracks
@@ -261,8 +228,8 @@ class SonoraWeeklyDiscoveryEngine @Inject constructor(
             val rejected = feedback.rejectedVideoIds()
             val verified = songs.firstOrNull {
                 it.videoId.isNotBlank() && it.videoId !in rejected &&
-                    same(it.artist, candidate.artist) &&
-                    same(it.title, candidate.title) && !it.thumbnailUrl.isNullOrBlank()
+                    same(it.artist, artist) &&
+                    same(it.title, candidate.name) && !it.thumbnailUrl.isNullOrBlank()
             } ?: continue
             chosen += verified
             used += key

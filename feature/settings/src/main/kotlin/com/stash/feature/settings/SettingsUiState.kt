@@ -47,7 +47,7 @@ data class SettingsUiState(
     val stashMixesEnabled: Boolean = true,
     /** Qobuz discovery sections on Home (New Releases / Qobuz Playlists /
      * Top Albums + genre chips). False = Home keeps only mixes + imports. */
-    val qobuzDiscoveryEnabled: Boolean = true,
+    val qobuzDiscoveryEnabled: Boolean = false,
     /** Ambient animated background on the Now Playing screen. */
     val ambientAnimationEnabled: Boolean = true,
     /** How that background moves: Soft glow (default) or Classic. */
@@ -75,7 +75,7 @@ data class SettingsUiState(
      * the new default (functionally identical to v0.9.7 behaviour
      * because captcha-unverified silently falls back to yt-dlp/MP3).
      */
-    val losslessEnabled: Boolean = true,
+    val losslessEnabled: Boolean = false,
     /**
      * Selected lossless quality tier (CD / Hi-Res / Max). Defaults to HI_RES
      * which matches [LosslessSourcePreferences]'s stored default. The actual

@@ -9,7 +9,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.stash.core.ui.theme.StashPurpleLight
 
 /** Purple Space-Grotesk uppercase group label (titleSmall). Optional trailing Beta pill. */
 @Composable
@@ -19,15 +18,15 @@ fun SettingsSectionLabel(
     beta: Boolean = false,
 ) {
     Row(
-        modifier = modifier.padding(start = 4.dp, end = 4.dp, top = 18.dp, bottom = 8.dp),
+        modifier = modifier.padding(start = 6.dp, end = 4.dp, top = 12.dp, bottom = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = text.uppercase(),
             style = MaterialTheme.typography.titleSmall.copy(
-                fontWeight = FontWeight.SemiBold, letterSpacing = 1.0.sp,
+                fontWeight = FontWeight.SemiBold, fontSize = 11.sp, letterSpacing = 1.4.sp,
             ),
-            color = StashPurpleLight,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (beta) {
             Spacer(Modifier.width(8.dp))

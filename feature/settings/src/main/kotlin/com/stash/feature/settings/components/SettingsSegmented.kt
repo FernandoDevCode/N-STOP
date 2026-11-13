@@ -15,10 +15,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.stash.core.ui.theme.StashTextPrimary
 
 /**
  * A horizontal segmented control. Renders [options] as equal-width segments over a
@@ -39,7 +37,7 @@ fun SettingsSegmented(
         modifier = modifier
             .fillMaxWidth()
             .alpha(if (enabled) 1f else 0.38f)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(16.dp))
             // Theme-aware track: a faint tint of onSurface so the control reads on
             // both the dark (#06060C) and light (#F6F3FF) backgrounds.
             .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))
@@ -50,12 +48,15 @@ fun SettingsSegmented(
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(RoundedCornerShape(12.dp))
                     .then(
                         if (active) {
                             Modifier.background(
                                 Brush.verticalGradient(
-                                    listOf(Color(0xFF3A2D6B), Color(0xFF2A2150)),
+                                    listOf(
+                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f),
+                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.09f),
+                                    ),
                                 ),
                             )
                         } else {
@@ -73,7 +74,7 @@ fun SettingsSegmented(
                     // must stay light in BOTH themes (onSurface would go dark — and
                     // illegible — in light mode).
                     color = if (active) {
-                        StashTextPrimary
+                        MaterialTheme.colorScheme.onSurface
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },

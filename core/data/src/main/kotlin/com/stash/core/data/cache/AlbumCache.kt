@@ -68,8 +68,8 @@ open class AlbumCache @Inject constructor(
             if (afterLock != null && !isStale(afterLock)) return@withLock afterLock.detail
 
             val fresh = when (source) {
-                AlbumSource.QOBUZ -> qobuzFetcher.getAlbum(id)
-                AlbumSource.QOBUZ_PLAYLIST -> qobuzFetcher.getPlaylist(id)
+                AlbumSource.QOBUZ -> throw IOException("Legacy Qobuz album is not available in Sonora")
+                AlbumSource.QOBUZ_PLAYLIST -> throw IOException("Legacy Qobuz playlist is not available in Sonora")
                 AlbumSource.YOUTUBE -> api.getAlbum(id).also {
                     // getAlbum answers a browse that didn't come back with a blank,
                     // track-less album. Kept, that was an empty page with no Retry

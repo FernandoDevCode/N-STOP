@@ -84,29 +84,6 @@ fun SettingsPlaybackScreen(
                             onCheckedChange = viewModel::onStreamOnCellularToggle,
                         )
                     }
-                    add {
-                        SettingsToggleRow(
-                            title = stringResource(R.string.nostop_via_youtube),
-                            subtitle = stringResource(R.string.nostop_via_youtube_desc),
-                            checked = forceYouTubeFallback,
-                            onCheckedChange = viewModel::setForceYouTubeFallback,
-                        )
-                    }
-                    // Force-Qobuz is a DEVELOPER instrument and is debug-only below.
-                    // Shipping one of these cost a real outage: a force toggle left on
-                    // in a release install silently disabled lossless, and the hunt for
-                    // it went as far as dex-dumping the APK. Users never see a switch
-                    // whose only effect is to break their audio.
-                    if (isDebuggableBuild) {
-                        add {
-                            SettingsToggleRow(
-                                title = stringResource(R.string.nostop_force_qobuz),
-                                subtitle = stringResource(R.string.nostop_force_qobuz_desc),
-                                checked = forceQbdlxOnly,
-                                onCheckedChange = viewModel::setForceQbdlxOnly,
-                            )
-                        }
-                    }
                 },
             )
         } else {
@@ -153,22 +130,11 @@ fun SettingsPlaybackScreen(
             },
         )
 
+        // Lyrics remain available via the app's own LRC flow. The legacy
+        // Apple Music setting is intentionally not exposed as a Sonora provider.
         SettingsSectionLabel(stringResource(R.string.nostop_lyrics))
-        SettingsSegmented(
-            options = listOf("Apple Music", stringResource(R.string.nostop_lrc_only)),
-            selectedIndex = if (lyricsSourcePreference == LyricsSourcePreference.LRC_ONLY) 1 else 0,
-            onSelect = {
-                lyricsViewModel.setSourcePreference(
-                    if (it == 1) LyricsSourcePreference.LRC_ONLY else LyricsSourcePreference.APPLE_MUSIC,
-                )
-            },
-        )
         Text(
-            text = if (lyricsSourcePreference == LyricsSourcePreference.LRC_ONLY) {
-                stringResource(R.string.nostop_lyrics_lrc_description)
-            } else {
-                stringResource(R.string.nostop_lyrics_apple_description)
-            },
+            text = stringResource(R.string.sonora_lyrics_lrc_note),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = SettingsRowPadH, vertical = 8.dp),

@@ -135,8 +135,8 @@ android {
         applicationId = "com.stash.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 204
-        versionName = "0.9.168-sonora-artwork-glass-contrast"
+        versionCode = 207
+        versionName = "0.9.171-sonora-integrated-identity-search"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // AppAuth redirect scheme removed -- Spotify now uses sp_dc cookie auth
         // Last.fm API credentials exposed via BuildConfig for the app-level
@@ -154,7 +154,7 @@ android {
         buildConfigField(
             "String",
             "SUPPORTERS_JSON_URL",
-            "\"https://stash-tipjar.rawnaldclark.workers.dev\"",
+            "\"\"",
         )
         // Online-Streaming Engine master kill-switch. Flipped to `true` once
         // the engine has been validated end-to-end (see Task 23 of the
@@ -186,8 +186,8 @@ android {
     buildTypes {
         release {
             buildConfigField("String", "SYNC_BASE_URL", "\"$syncReleaseBaseUrl\"")
-            buildConfigField("Boolean", "WEB_LINK_ENABLED", "true")
-            manifestPlaceholders["webLinkEnabled"] = "true"
+            buildConfigField("Boolean", "WEB_LINK_ENABLED", "false")
+            manifestPlaceholders["webLinkEnabled"] = "false"
             // R8 minification is DISABLED because youtubedl-android embeds
             // Chaquopy (Python runtime) + Apache Commons Compress + native
             // binaries that use extensive reflection. R8 obfuscation renames
@@ -213,8 +213,8 @@ android {
         }
         debug {
             buildConfigField("String", "SYNC_BASE_URL", "\"$syncDebugBaseUrl\"")
-            buildConfigField("Boolean", "WEB_LINK_ENABLED", "true")
-            manifestPlaceholders["webLinkEnabled"] = "true"
+            buildConfigField("Boolean", "WEB_LINK_ENABLED", "false")
+            manifestPlaceholders["webLinkEnabled"] = "false"
             applicationIdSuffix = ".debug"
             isDebuggable = true
             signingConfig = signingConfigs.getByName("debug")

@@ -122,8 +122,13 @@ jobs:
             tasks: ':data:spotify:testDebugUnitTest :data:ytmusic:testDebugUnitTest :data:lyrics:testDebugUnitTest :data:download:testDebugUnitTest'
           - shard: engine
             tasks: ':core:data:testDebugUnitTest :core:media:testDebugUnitTest :app:testDebugUnitTest'
+          # Isolate resource-heavy Robolectric Home/visual tests. This still
+          # covers every feature module but avoids hiding failures behind the
+          # 20-minute timeout of the shared features shard.
           - shard: features
-            tasks: ':feature:community:testDebugUnitTest :feature:home:testDebugUnitTest :feature:library:testDebugUnitTest :feature:nowplaying:testDebugUnitTest :feature:search:testDebugUnitTest :feature:settings:testDebugUnitTest :feature:sync:testDebugUnitTest'
+            tasks: ':feature:community:testDebugUnitTest :feature:library:testDebugUnitTest :feature:nowplaying:testDebugUnitTest :feature:search:testDebugUnitTest :feature:settings:testDebugUnitTest :feature:sync:testDebugUnitTest'
+          - shard: home
+            tasks: ':feature:home:testDebugUnitTest'
     steps:
       - name: Check out repository
         uses: actions/checkout@v6

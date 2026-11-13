@@ -313,7 +313,7 @@ class StashApplication : Application(), Configuration.Provider {
         // up. Registered here (before the applicationScope.launch blocks)
         // so it's observing as early as possible; the first STARTED event
         // doesn't fire until after onCreate completes anyway.
-        mirrorSignal.start()
+        // Sonora: disabled legacy remote Stash sync / relay endpoint.
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             object : DefaultLifecycleObserver {
                 override fun onStart(owner: LifecycleOwner) {
@@ -331,11 +331,11 @@ class StashApplication : Application(), Configuration.Provider {
                     // looking, so the first tap after coming back starts at once.
                     playerRepository.warmUp()
                     // Link Stash on the web: is another device's song waiting to be continued here? (at most every 30 s)
-                    handoffOffers.onForeground()
+        // Sonora: disabled legacy remote Stash sync / relay endpoint.
                     // ...and did a linked browser send something here? (at most every 30 s; nothing in the background)
-                    webLinkInbox.onForeground()
+        // Sonora: disabled legacy remote Stash sync / relay endpoint.
                     // ...and is anything mirrored waiting to come in or go out? (at most once a minute, only while mirroring)
-                    mirrorSignal.onForeground()
+        // Sonora: disabled legacy remote Stash sync / relay endpoint.
                 }
 
                 override fun onStop(owner: LifecycleOwner) {
@@ -345,11 +345,11 @@ class StashApplication : Application(), Configuration.Provider {
                     // rebuilds on the next play (or the next onStart pre-warm).
                     applicationScope.launch { innerTubeClient.releasePoTokens() }
                     // Link Stash on the web: what plays goes out now, so a browser opened next sees it (spec §8.1).
-                    handoffPublisher.onBackground()
+        // Sonora: disabled legacy remote Stash sync / relay endpoint.
                 }
             },
         )
-        losslessConfigFetcher.start(applicationScope)
+        // Sonora: disabled legacy remote Stash sync / relay endpoint.
         // A restore whose user picked a different library folder than the
         // backup's: it could not be written before the restart (the live
         // DataStore still held pre-restore values), so apply it now, through
@@ -384,6 +384,11 @@ class StashApplication : Application(), Configuration.Provider {
         // "downloading". At a fresh process start no worker is running, so any
         // IN_PROGRESS row is by definition stale and safe to reset.
         applicationScope.launch {
+            // Inherited installs may have deferred tracks for a Qobuz FLAC
+            // source. Requeue them for Sonora's YouTube download path before
+            // the normal waiting-queue resumption; preserve existing files.
+            runCatching { losslessSourcePreferences.setEnabled(false) }
+                .onFailure { Log.w("SonoraStartup", "lossless migration failed", it) }
             runCatching {
                 val reset = downloadQueueDao.resetStaleInProgress()
                 if (reset > 0) Log.i("StashStartup", "reset $reset stale IN_PROGRESS download rows -> PENDING")
@@ -519,8 +524,7 @@ class StashApplication : Application(), Configuration.Provider {
             // recipe BEFORE the one-shot refresh below, so a freshly
             // reconciled recipe is picked up by that same run instead of
             // waiting for tomorrow's periodic cycle.
-            runCatching { lastFmRecommendationSource.reconcile() }
-                .onFailure { Log.w("StashStartup", "lastfm recommendation reconcile failed", it) }
+
             // Fire a one-shot refresh on first launch so mixes populate
             // without waiting for the 24-hour periodic cycle. Subsequent
             // one-shots are safe (unique-work policy = REPLACE).
@@ -599,19 +603,19 @@ class StashApplication : Application(), Configuration.Provider {
         // they no-op until configuration/authentication is in place, and the
         // recorder just observes the player regardless of whether scrobbling is on.
         listeningRecorder.start()
-        lastFmScrobbler.start()
+        // Sonora: excluded account/scrobble/lossless background service disabled.
         youTubeHistoryScrobbler.start()
         autoSaveScrobbler.start()
-        discordRpcCoordinator.start()
+        // Sonora: excluded account/scrobble/lossless background service disabled.
         // Generic listen sinks (ListenBrainz). No-ops until connected.
-        listenSinkCoordinator.start()
+        // Sonora: excluded account/scrobble/lossless background service disabled.
 
         // Wire the three reactive triggers (cookie change /
         // lastKnownBadCookie transition / rate-limiter circuit-reset
         // event) that enqueue LosslessRetryWorker for the strict-FLAC
         // deferred set. Touching the @Inject field here forces Hilt
         // to construct the singleton if Dagger hasn't already.
-        losslessRetryScheduler.start()
+        // Sonora: excluded account/scrobble/lossless background service disabled.
     }
 
     /**

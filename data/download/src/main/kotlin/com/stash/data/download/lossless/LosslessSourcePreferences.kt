@@ -91,9 +91,9 @@ class LosslessSourcePreferences @Inject constructor(
      * Note `catch {}` COMPLETES the flow: after an error these emit their fallback
      * once and never re-emit for the process lifetime.
      */
-    val enabled: Flow<Boolean> = context.losslessDataStore.data.map { prefs ->
-        prefs[enabledKey] ?: true
-    }.distinctUntilChanged().catch { emit(true) }
+    // Sonora has no approved lossless provider. Do not read a persisted
+    // Stash-era true flag into the active download routing policy.
+    val enabled: Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
 
     suspend fun enabledNow(): Boolean = enabled.first()
 
@@ -119,11 +119,12 @@ class LosslessSourcePreferences @Inject constructor(
     }
 
     suspend fun setEnabled(value: Boolean) {
-        context.losslessDataStore.edit { prefs -> prefs[enabledKey] = value }
-        // WAITING_FOR_LOSSLESS only makes sense under "lossless on +
-        // fallback off". Disabling lossless releases all deferred rows
-        // back to PENDING for the standard yt-dlp worker chain.
-        if (!value) downloadQueueDao.requeueWaitingForLossless()
+        // Old preferences and restored backups may request FLAC. That cannot
+        // enable Qobuz again: persist the Sonora-approved state instead.
+        context.losslessDataStore.edit { prefs -> prefs[enabledKey] = false }
+        // Release queue entries deferred by an older version without deleting
+        // their files or discarding pending downloads.
+        downloadQueueDao.requeueWaitingForLossless()
     }
 
     /**
@@ -136,9 +137,8 @@ class LosslessSourcePreferences @Inject constructor(
      * silent-fallback behaviour exactly; the legacy yt-dlp tier picker
      * (MAX/BEST/HIGH/NORMAL/LOW) governs the fallback's quality.
      */
-    val youtubeFallbackEnabled: Flow<Boolean> = context.losslessDataStore.data.map { prefs ->
-        prefs[youtubeFallbackKey] ?: false
-    }
+    // A stale strict-FLAC flag must never hold YouTube downloads indefinitely.
+    val youtubeFallbackEnabled: Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true)
 
     suspend fun youtubeFallbackEnabledNow(): Boolean = youtubeFallbackEnabled.first()
 

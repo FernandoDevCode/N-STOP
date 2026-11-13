@@ -16,7 +16,7 @@ import org.robolectric.RobolectricTestRunner
  * Verifies the toggle-flip side effects on [LosslessSourcePreferences]:
  *
  *  - `setEnabled(false)` releases all `WAITING_FOR_LOSSLESS` rows.
- *  - `setEnabled(true)` does NOT touch the queue.
+ *  - A legacy `setEnabled(true)` cannot re-enable retired providers and requeues deferred rows.
  *  - `setYoutubeFallbackEnabled(true)` releases all deferred rows.
  *  - `setYoutubeFallbackEnabled(false)` does NOT touch the queue.
  *
@@ -59,9 +59,10 @@ class LosslessSourcePreferencesRequeueTest {
     }
 
     @Test
-    fun `setEnabled true does NOT requeue`() = runTest {
+    fun `setEnabled true cannot reenable retired providers and requeues`() = runTest {
         prefs.setEnabled(true)
-        coVerify(exactly = 0) { downloadQueueDao.requeueWaitingForLossless() }
+        coVerify(exactly = 1) { downloadQueueDao.requeueWaitingForLossless() }
+        org.junit.Assert.assertFalse(prefs.enabledNow())
     }
 
     @Test

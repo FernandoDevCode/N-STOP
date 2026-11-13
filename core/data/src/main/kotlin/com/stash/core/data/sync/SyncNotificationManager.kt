@@ -105,7 +105,7 @@ class SyncNotificationManager @Inject constructor(
             "App Updates",
             NotificationManager.IMPORTANCE_DEFAULT,
         ).apply {
-            description = "Notification when a new version of Stash is available"
+            description = "Notification when a new version of Sonora is available"
         }
 
         val losslessChannel = NotificationChannel(

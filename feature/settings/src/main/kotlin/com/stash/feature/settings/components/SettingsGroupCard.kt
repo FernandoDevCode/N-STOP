@@ -3,6 +3,7 @@ package com.stash.feature.settings.components
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -10,7 +11,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
-import com.stash.core.ui.theme.StashTheme
 
 /**
  * A card whose direct children are settings rows. Draws a hairline divider
@@ -25,14 +25,13 @@ fun SettingsGroupCard(
     modifier: Modifier = Modifier,
     rows: List<@Composable () -> Unit>,
 ) {
-    val extendedColors = StashTheme.extendedColors
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .clip(MaterialTheme.shapes.large),
-        color = extendedColors.glassBackground,
-        shape = MaterialTheme.shapes.large,
-        border = BorderStroke(1.dp, extendedColors.glassBorder),
+            .clip(RoundedCornerShape(20.dp)),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f),
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)),
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             rows.forEachIndexed { i, row ->

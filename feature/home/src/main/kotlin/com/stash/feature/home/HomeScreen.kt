@@ -134,8 +134,6 @@ import com.stash.core.ui.components.SectionHeader
 import com.stash.core.ui.components.SourceIndicator
 import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.data.ytmusic.model.PlaylistSummary
-import com.stash.core.ui.components.streaming.StreamingModeChip
-import com.stash.core.ui.components.streaming.StreamingModeSheet
 import androidx.compose.ui.layout.ContentScale
 import coil3.compose.AsyncImage
 import com.stash.core.ui.theme.StashTheme
@@ -203,20 +201,6 @@ fun HomeScreen(
         if (podcastOpenRequest > 0) selectedMediaTab = 1
     }
     val heroMinimized by viewModel.heroMinimized.collectAsStateWithLifecycle()
-    // Master streaming-mode flag. Both the top-bar StreamingModeChip and
-    // the sheet (StreamingModeSheet) render from this single source of
-    // truth; the chip itself early-returns to nothing while the build-
-    // time kill-switch (StashConstants.STREAMING_ENGINE_ENABLED) is off.
-    val streamingEnabled by viewModel.streamingEnabled.collectAsStateWithLifecycle()
-
-    // Bottom-sheet state for the playback-mode picker triggered by the
-    // top-bar chip. The sheet is the chip's tap target — keeps the chip
-    // a single thumb-friendly icon-and-label while still routing a flip
-    // through the OnlineOfflinePicker so the user explicitly chooses a
-    // tile rather than accidentally toggling mid-scroll.
-    var showStreamingSheet by remember { mutableStateOf(false) }
-    val streamingSheetState = rememberModalBottomSheetState()
-
     // One-time privacy disclosure dialog for streaming. Shown the first
     // time the user enables streaming; the ViewModel persists the
     // "seen" flag and emits a Unit signal on the SharedFlow. The toggle
@@ -412,44 +396,6 @@ fun HomeScreen(
             }
         }
 
-        // ── Lossless connect nudge ───────────────────────────────────
-        // Shown when the user has lossless toggled OFF and hasn't
-        // dismissed. Tap routes to Settings; X dismisses forever.
-        // Stacks below the Last.fm banner if both apply.
-        uiState.losslessPrompt?.let {
-            item {
-                Spacer(Modifier.height(6.dp))
-                LosslessConnectBanner(
-                    onSetUp = {
-                        viewModel.requestSettingsLosslessFocus()
-                        onNavigateToSettings()
-                    },
-                    onDismiss = viewModel::dismissLosslessBanner,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-            }
-        }
-
-        // ── Lossless offline ─────────────────────────────────────────
-        // Shown while lossless is ON, the shared path looks dead and
-        // the user owns no lossless source of their own — the one
-        // moment connecting an account is the difference between FLAC
-        // and a silent YouTube fallback. Tap opens Settings › Audio;
-        // X declines forever.
-        if (uiState.showLosslessOffline) {
-            item {
-                Spacer(Modifier.height(6.dp))
-                LosslessOfflineBanner(
-                    onConnect = {
-                        viewModel.requestSettingsLosslessFocus()
-                        onNavigateToSettings()
-                    },
-                    onDismiss = viewModel::dismissLosslessOffline,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-            }
-        }
-
         // ── Re-tagging library (metadata backfill progress) ──────────
         // v0.9.35: surfaces MetadataBackfillWorker progress on upgrade
         // so users know why disk IO / yt-dlp activity is happening. The
@@ -471,7 +417,8 @@ fun HomeScreen(
         // Order + visibility still come from uiState.sections. Genre chips sit
         // after a populated New Releases rail; when it is hidden or empty they
         // attach to the first populated Qobuz row, without changing filter IDs.
-        val showGenreFilters = uiState.qobuzDiscoveryEnabled && uiState.genres.isNotEmpty()
+        // Excluded providers must never reappear, even with restored legacy state or test fixtures.
+        val showGenreFilters = false
         val chipsAfterReleases = showGenreFilters && uiState.newReleases.isNotEmpty() &&
             HomeSection.NEW_RELEASES in uiState.sections
         val firstPopulatedQobuzSection = uiState.sections.firstOrNull { section ->
@@ -502,7 +449,12 @@ fun HomeScreen(
                     HomeSection.COMMUNITY -> true
                 }
             } == HomeSection.QOBUZ_PLAYLISTS
-        uiState.sections.forEach { section ->
+        uiState.sections.filterNot { section ->
+            section == HomeSection.NEW_RELEASES ||
+                section == HomeSection.QOBUZ_PLAYLISTS ||
+                section == HomeSection.TOP_ALBUMS ||
+                section == HomeSection.COMMUNITY
+        }.forEach { section ->
             val chipsLead = showGenreFilters && !chipsAfterReleases && section == genreFallbackSection
             if (chipsLead) {
                 item(key = "section_genre_chips") {
@@ -660,7 +612,7 @@ fun HomeScreen(
                         }
                     }
                 }
-                HomeSection.COMMUNITY -> item(key = "section_community") { communitySection() }
+                HomeSection.COMMUNITY -> Unit // Legacy Stash community is not presented as a Sonora feature.
             }
         }
 
@@ -680,166 +632,6 @@ fun HomeScreen(
             )
         }
 
-        // Existing service and support actions remain below the music content.
-        item {
-            androidx.compose.foundation.layout.FlowRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 16.dp),
-            ) {
-                Text("Serviços", Modifier.fillMaxWidth().padding(bottom = 8.dp), style = VisualDesign.Heading)
-
-                // Streaming-mode quick-access chip. Tap → opens the
-                // StreamingModeSheet for the picker. Gated on
-                // STREAMING_ENGINE_ENABLED inside the composable so it
-                // renders nothing when the flag is off.
-                StreamingModeChip(
-                    streamingEnabled = streamingEnabled,
-                    onClick = { showStreamingSheet = true },
-                )
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                val socialUriHandler = LocalUriHandler.current
-                androidx.compose.material3.IconButton(
-                    onClick = { socialUriHandler.openUri(STASH_DISCORD_URL) },
-                    modifier = Modifier.size(40.dp),
-                ) {
-                    androidx.compose.material3.Icon(
-                        painter = androidx.compose.ui.res.painterResource(
-                            id = R.drawable.ic_discord,
-                        ),
-                        contentDescription = "Join the Stash Discord",
-                        tint = androidx.compose.ui.graphics.Color(0xFF5865F2),
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-
-                var showHelpMenu by remember { mutableStateOf(false) }
-                Box {
-                    androidx.compose.material3.IconButton(
-                        onClick = { showHelpMenu = true },
-                        modifier = Modifier.size(40.dp),
-                    ) {
-                        androidx.compose.material3.Icon(
-                            imageVector = Icons.Filled.Build,
-                            contentDescription = "Report an issue or help translate",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                    DropdownMenu(
-                        expanded = showHelpMenu,
-                        onDismissRequest = { showHelpMenu = false },
-                    ) {
-                        DropdownMenuItem(
-                            text = {
-                                Column {
-                                    Text(
-                                        text = stringResource(R.string.nostop_home_report_issue),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                    )
-                                    Text(
-                                        text = stringResource(R.string.nostop_home_report_hint),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Filled.Build,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            },
-                            onClick = {
-                                showHelpMenu = false
-                                // The diagnostics preview first (Share / Copy), with
-                                // the GitHub link at its foot — a bug filed with the
-                                // report attached is one nobody has to ask about.
-                                onReportIssue()
-                            },
-                        )
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        DropdownMenuItem(
-                            text = {
-                                Column {
-                                    Text(
-                                        text = stringResource(R.string.nostop_home_translate),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                    )
-                                    Text(
-                                        text = stringResource(R.string.nostop_home_crowdin),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Filled.Language,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            },
-                            onClick = {
-                                showHelpMenu = false
-                                runCatching { socialUriHandler.openUri(STASH_CROWDIN_URL) }
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    text = stringResource(R.string.nostop_home_request_access),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Filled.OpenInNew,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            },
-                            onClick = {
-                                showHelpMenu = false
-                                runCatching { socialUriHandler.openUri(STASH_TRANSLATE_ACCESS_FORM_URL) }
-                            },
-                        )
-                    }
-                }
-            }
-        }
-
-        // ── Supporter pill (full row) ─────────────────────────────────
-        // v0.9.13: live data from TipJarRepository. Tap → ko-fi.
-        item {
-            val tipJar = uiState.tipJar
-            val pillSupporters = remember(tipJar) {
-                val live = tipJar.supporters.map {
-                    Supporter(name = it.name, amount = "${it.amountUsd}", message = it.message)
-                }
-                // Legacy donors pre-date the Ko-fi webhook and exist nowhere
-                // in the Worker's KV — they always ride the tape (deduped in
-                // case they ever re-donate through the live pipeline).
-                val liveNames = live.map { it.name.lowercase() }.toSet()
-                live + LEGACY_SUPPORTERS.filter { it.name.lowercase() !in liveNames }
-            }
-            // Edge-to-edge: the ticker runs the full screen width, no card
-            // chrome — maximum runway for the scrolling messages.
-            SupporterTicker(
-                supporters = pillSupporters,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 12.dp),
-            )
-        }
-
-
         } else if (selectedMediaTab == 1) {
             item(key = "nonstop_podcasts") {
                 com.stash.feature.home.podcasts.PodcastSection()
@@ -855,24 +647,6 @@ fun HomeScreen(
     if (showStreamingDisclosure) {
         com.stash.feature.home.streaming.StreamingDisclosureDialog(
             onDismiss = { showStreamingDisclosure = false },
-        )
-    }
-
-    // ── Streaming-mode picker sheet (chip → bottom sheet) ──────────────
-    // Opens from the top-bar chip. The picker writes through the same
-    // applyStreamingMode path as Settings; here we also run the
-    // first-time disclosure handshake (HomeViewModel.onStreamingToggle).
-    // Sheet auto-dismisses on tile selection so a flip is exactly two
-    // taps: chip → tile.
-    if (showStreamingSheet) {
-        StreamingModeSheet(
-            streamingEnabled = streamingEnabled,
-            onSelect = { requested ->
-                viewModel.onStreamingToggle(requested)
-                showStreamingSheet = false
-            },
-            onDismiss = { showStreamingSheet = false },
-            sheetState = streamingSheetState,
         )
     }
 
@@ -1222,8 +996,7 @@ private fun LosslessOfflineBanner(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "Stash is falling back to lossy audio. " +
-                        "Connect your own Qobuz account for FLAC.",
+                    text = stringResource(R.string.sonora_home_lossless_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1245,164 +1018,6 @@ private fun LosslessOfflineBanner(
                     contentDescription = "Dismiss lossless-offline banner",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp),
-                )
-            }
-        }
-    }
-}
-
-// ── Supporter pill ───────────────────────────────────────────────────────
-
-private data class Supporter(
-    val name: String,
-    val amount: String,
-    val message: String,
-)
-
-// v0.9.13: report-an-issue link shown as a wrench icon next to the
-// wordmark on Home. Tap → GitHub new-issue form so users can file
-// bugs without leaving the project. Edit when the repo URL changes.
-
-// v0.9.38+: Discord invite shown as a chat-bubble icon (blurple-tinted)
-// to the left of the wrench. Tap → opens the invite in the default
-// browser. Edit when the invite rotates.
-private const val STASH_DISCORD_URL = "https://discord.gg/vcbjEby5PC"
-
-// Translation project on Crowdin. Tap → Crowdin project page.
-private const val STASH_CROWDIN_URL = "https://crowdin.com/project/stash-music-player"
-
-// Form to request translator access on Crowdin.
-private const val STASH_TRANSLATE_ACCESS_FORM_URL =
-    "https://docs.google.com/forms/d/e/1FAIpQLSexDpqAvK82QlYYpC8J0ukwVXkzOQSjC8V10SPVbj1ug0ojow/viewform"
-
-private val LEGACY_SUPPORTERS = listOf(
-    Supporter(
-        name = "Cedric",
-        amount = "$10",
-        message = "Just downloaded Stash to replace Spotify. This is amazing bro. Thanks for your work.",
-    ),
-    Supporter(
-        name = "Slowcab",
-        amount = "$5",
-        message = "Amazing work! Keep sticking it to the man!",
-    ),
-    Supporter(
-        name = "RucaNebas",
-        amount = "$5",
-        message = "Awesome application! I hope continuous improvement and support",
-    ),
-)
-
-/**
- * Tip-jar ticker — dublab-style community marquee.
- *
- * One slim strip, ALL supporters flowing through it as a continuous
- * horizontal scroll (name · amount, then their message, ✦-separated) —
- * grassroots radio-station energy instead of a rotating card. Tap
- * anywhere opens ko-fi; goal/progress tracking lives there.
- */
-@Composable
-private fun SupporterTicker(
-    supporters: List<Supporter>,
-    modifier: Modifier = Modifier,
-) {
-    if (supporters.isEmpty()) return
-    val uriHandler = LocalUriHandler.current
-    val extendedColors = StashTheme.extendedColors
-
-    val ink = MaterialTheme.colorScheme.onSurface
-    val dim = MaterialTheme.colorScheme.onSurfaceVariant
-
-    // Supporters woven with station announcements (mission line, dev and
-    // contributor calls) so the wire carries variety, not just gratitude.
-    // Separator: a dimmed interpunct — no color pop, so the
-    // strip stays quiet inside the app's palette.
-    val line = remember(supporters, ink, dim) {
-        val segments = buildTickerSegments(
-            supporters.map { TickerSegment.Shoutout(it.name, it.amount, it.message) },
-        )
-        buildAnnotatedString {
-            segments.forEach { seg ->
-                when (seg) {
-                    is TickerSegment.Shoutout -> {
-                        withStyle(SpanStyle(color = ink, fontWeight = FontWeight.SemiBold)) {
-                            append("${seg.name} · ${seg.amount}")
-                        }
-                        if (seg.message.isNotBlank()) {
-                            withStyle(SpanStyle(color = dim, fontStyle = FontStyle.Italic)) {
-                                append("  “${seg.message}”")
-                            }
-                        }
-                    }
-                    is TickerSegment.Announcement -> {
-                        // Station voice: quiet by design — muted ink, regular
-                        // weight (names are bold, quotes italic; this murmurs).
-                        withStyle(SpanStyle(color = dim)) {
-                            append(seg.text)
-                        }
-                    }
-                }
-                // Entry separator: the app's own interpunct, dimmed — no
-                // color pop, just a quiet beat of air between voices.
-                withStyle(SpanStyle(color = dim.copy(alpha = 0.5f))) { append("    ·    ") }
-            }
-        }
-    }
-
-    // Wall-clock marquee: offset is a pure function of elapsed-since-epoch
-    // (see marqueeOffsetPx), so the tape RESUMES mid-flow after the item
-    // leaves and re-enters composition. basicMarquee restarted from zero on
-    // every return to the top of Home — which is why announcements deep in
-    // the tape were never seen. rememberSaveable pins the epoch across
-    // lazy-item disposal.
-    val epochMs = rememberSaveable { System.currentTimeMillis() }
-    var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            withFrameMillis { nowMs = System.currentTimeMillis() }
-        }
-    }
-    val velocityPxPerSec = with(LocalDensity.current) { 31.dp.toPx() }
-    var tapeWidthPx by remember { mutableIntStateOf(0) }
-
-    // Full-bleed strip: no card, no border, no leading icon — every pixel
-    // of width belongs to the tape.
-    Surface(
-        modifier = modifier.clickable { uriHandler.openUri("https://ko-fi.com/rawnald") },
-        // AMOLED: the glass tint would keep the strip's pixels lit — let the
-        // pure-black ground show through instead.
-        color = if (com.stash.core.ui.theme.LocalIsAmoledTheme.current) {
-            Color.Transparent
-        } else {
-            extendedColors.glassBackground
-        },
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 10.dp)
-                .clipToBounds(),
-        ) {
-            Row(
-                modifier = Modifier
-                    .wrapContentWidth(align = Alignment.Start, unbounded = true)
-                    .graphicsLayer {
-                        translationX = -marqueeOffsetPx(nowMs - epochMs, velocityPxPerSec, tapeWidthPx)
-                    },
-            ) {
-                Text(
-                    text = line,
-                    style = MaterialTheme.typography.labelMedium,
-                    maxLines = 1,
-                    softWrap = false,
-                    modifier = Modifier.onSizeChanged { tapeWidthPx = it.width },
-                )
-                // Second copy of the tape for a seamless wrap.
-                Text(
-                    text = line,
-                    style = MaterialTheme.typography.labelMedium,
-                    maxLines = 1,
-                    softWrap = false,
                 )
             }
         }

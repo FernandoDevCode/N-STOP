@@ -73,8 +73,7 @@ fun PlaylistBrowseScreen(
         if (shouldLoadMore) viewModel.loadMore()
     }
 
-    val title = if (viewModel.genreLabel == "All") "Qobuz Playlists"
-    else "Qobuz Playlists · ${viewModel.genreLabel}"
+    val title = "Coleções indisponíveis"
 
     Scaffold(
         topBar = {
@@ -96,7 +95,7 @@ fun PlaylistBrowseScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 4.dp),
-                placeholder = { Text("Search all Qobuz playlists…") },
+                placeholder = { Text("Busca de coleções indisponível") },
                 singleLine = true,
                 leadingIcon = {
                     Icon(

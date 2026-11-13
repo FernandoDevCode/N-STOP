@@ -167,7 +167,7 @@ private fun FirstEnableConfirmDialog(
         shape = MaterialTheme.shapes.large,
         title = {
             Text(
-                text = "Send your Stash plays to YouTube Music?",
+                text = "Send your Sonora plays to YouTube Music?",
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
             )
@@ -175,7 +175,7 @@ private fun FirstEnableConfirmDialog(
         text = {
             Column {
                 Text(
-                    text = "Every track you finish listening to in Stash will be added to your YouTube Music Watch History. Your Daily Mix and other YouTube Music recommendations will learn from your Stash listening.",
+                    text = "Every track you finish listening to in Sonora will be added to your YouTube Music Watch History. Your Daily Mix and other YouTube Music recommendations will learn from your Sonora listening.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -187,7 +187,7 @@ private fun FirstEnableConfirmDialog(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Stash uses an unofficial YouTube endpoint (the same one the YouTube Music app uses). Google tolerates this pattern for personal-use apps but could change the rules without notice. If that happens, Stash will automatically stop sending plays until a new update fixes the integration.",
+                    text = "Sonora uses an unofficial YouTube endpoint (the same one the YouTube Music app uses). Google tolerates this pattern for personal-use apps but could change the rules without notice. If that happens, Sonora will automatically stop sending plays until a new update fixes the integration.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -199,7 +199,7 @@ private fun FirstEnableConfirmDialog(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Rare but not zero chance of YouTube rate-limiting your account. Stash monitors for errors and pauses itself if it sees problems.",
+                    text = "Rare but not zero chance of YouTube rate-limiting your account. Sonora monitors for errors and pauses itself if it sees problems.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

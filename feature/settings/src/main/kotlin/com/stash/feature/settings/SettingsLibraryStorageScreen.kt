@@ -42,7 +42,7 @@ import com.stash.core.data.db.BackupExportScope
 import com.stash.core.data.db.BackupImportScope
 import com.stash.core.data.weblibrary.WebLibraryFile
 import com.stash.core.model.DownloadNetworkMode
-import com.stash.core.ui.components.GlassCard
+import com.stash.feature.settings.components.SonoraSettingsCard as GlassCard
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.settings.components.SettingsGroupCard
 import com.stash.feature.settings.components.SettingsNavRow
@@ -80,25 +80,25 @@ private val exportScopeOptions = listOf(
         scope = BackupExportScope.LIKES_ONLY,
         label = "Liked songs only",
         description = "Everything you liked, and nothing else. Small file.",
-        fileName = "stash-likes.zip",
+        fileName = "sonora-likes.zip",
     ),
     ExportScopeOption(
         scope = BackupExportScope.EVERYTHING,
         label = "Everything",
         description = "Library and settings. Logins can't be restored either way.",
-        fileName = "stash-backup.zip",
+        fileName = "sonora-backup.zip",
     ),
     ExportScopeOption(
         scope = BackupExportScope.LIBRARY_ONLY,
         label = "Library only",
         description = "Songs, playlists and history. Settings are left out.",
-        fileName = "stash-library.zip",
+        fileName = "sonora-library.zip",
     ),
     ExportScopeOption(
         scope = BackupExportScope.SETTINGS_ONLY,
         label = "Settings only",
         description = "Preferences with no library attached.",
-        fileName = "stash-settings.zip",
+        fileName = "sonora-settings.zip",
     ),
 )
 
@@ -364,18 +364,6 @@ fun SettingsLibraryStorageScreen(
                         },
                         checked = uiState.stashMixesEnabled,
                         onCheckedChange = viewModel::onStashMixesEnabledChanged,
-                    )
-                },
-                {
-                    SettingsToggleRow(
-                        title = stringResource(R.string.nostop_storage_discover_qobuz),
-                        subtitle = if (uiState.qobuzDiscoveryEnabled) {
-                            stringResource(R.string.nostop_storage_qobuz_on)
-                        } else {
-                            stringResource(R.string.nostop_storage_qobuz_off)
-                        },
-                        checked = uiState.qobuzDiscoveryEnabled,
-                        onCheckedChange = viewModel::onQobuzDiscoveryEnabledChanged,
                     )
                 },
             ),

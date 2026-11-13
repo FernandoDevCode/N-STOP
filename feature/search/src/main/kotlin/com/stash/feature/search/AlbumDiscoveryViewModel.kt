@@ -225,6 +225,8 @@ class AlbumDiscoveryViewModel @Inject constructor(
      * disappears while the new fetch is in flight.
      */
     fun retry() {
+        val status = _uiState.value.status
+        if (status is AlbumDiscoveryStatus.Error && !status.canRetry) return
         loadJob?.cancel()
         _uiState.update { it.copy(status = AlbumDiscoveryStatus.Loading) }
         loadJob = viewModelScope.launch { observeAlbum() }
@@ -444,6 +446,15 @@ class AlbumDiscoveryViewModel @Inject constructor(
     }
 
     private suspend fun observeAlbum() {
+        // Bookmarks from older installs may still carry retired catalog IDs.
+        // They must not invoke obsolete clients, silently change the album's
+        // identity, or leave the user in an endless Retry loop.
+        if (albumSource == AlbumSource.QOBUZ || albumSource == AlbumSource.QOBUZ_PLAYLIST) {
+            _uiState.update {
+                it.copy(status = AlbumDiscoveryStatus.Error(RETIRED_SOURCE, canRetry = false))
+            }
+            return
+        }
         try {
             val detail = loadAlbum()
             val totalMs = detail.tracks.sumOf { (it.durationSeconds * 1000).toLong() }
@@ -570,6 +581,8 @@ class AlbumDiscoveryViewModel @Inject constructor(
 
         /** A failure Retry can fix. Plain words, whatever the exception said. */
         internal const val LOAD_FAILED = "Check your connection and try again."
+        internal const val RETIRED_SOURCE =
+            "This saved album uses a retired source. Find it again through YouTube Music search."
 
         /** #481: not sold in the user's country, and no YouTube Music copy. */
         internal const val NOT_AVAILABLE = "This album isn't available in your country."

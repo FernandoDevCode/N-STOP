@@ -118,7 +118,7 @@ typealias VisualArtwork = @Composable (String?, Modifier) -> Unit
 @Composable fun VisualHeader(actions: VisualActions, modifier: Modifier = Modifier) {
     BoxWithConstraints(modifier.fillMaxWidth().testTag("visual-header")) {
         val density = LocalDensity.current
-        val brandWidth = rememberTextMeasurer().measure("NØNSTOP", VisualDesign.Brand, softWrap = false).size.width
+        val brandWidth = rememberTextMeasurer().measure("SONORA", VisualDesign.Brand, softWrap = false).size.width
         val buttonCount = 1 + (if (actions.onCast != null) 1 else 0) + (if (actions.onNotifications != null) 1 else 0)
         val stacked = with(density) { brandWidth.toDp() + VisualDesign.Size.Control * buttonCount + 38.dp > maxWidth }
         val controls: @Composable () -> Unit = {
@@ -127,10 +127,10 @@ typealias VisualArtwork = @Composable (String?, Modifier) -> Unit
             VisualHeaderButton(VisualHeaderSymbol.Settings, "Configurações", actions.onSettings)
         }
         if (stacked) Column(Modifier.fillMaxWidth().padding(start = VisualDesign.Gutter, end = 18.dp, top = 12.dp)) {
-            Text("NØNSTOP", style = VisualDesign.Brand, color = VisualDesign.Ink, maxLines = 1)
+            Text("SONORA", style = VisualDesign.Brand, color = VisualDesign.Ink, maxLines = 1)
             Row(Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically) { controls() }
         } else Row(Modifier.fillMaxWidth().heightIn(min = VisualDesign.Size.Chrome).padding(start = VisualDesign.Gutter, end = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("NØNSTOP", style = VisualDesign.Brand, color = VisualDesign.Ink, maxLines = 1, modifier = Modifier.weight(1f))
+            Text("SONORA", style = VisualDesign.Brand, color = VisualDesign.Ink, maxLines = 1, modifier = Modifier.weight(1f))
             controls()
         }
     }
@@ -176,8 +176,14 @@ typealias VisualArtwork = @Composable (String?, Modifier) -> Unit
 @Composable fun VisualSearchField(query: String, onQuery: (String) -> Unit, onSearch: () -> Unit, modifier: Modifier = Modifier) {
     val shape = RoundedCornerShape(25.dp)
     Row(modifier.fillMaxWidth().heightIn(min = 48.dp).clip(shape)
-        .background(Brush.verticalGradient(if (LocalVisualDark.current) listOf(Color(0xFF535266), Color(0xFF353547)) else listOf(VisualDesign.Surface, VisualDesign.Surface)))
-        .border(1.dp, VisualDesign.Muted.copy(alpha = .6f), shape).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+        .background(Brush.verticalGradient(
+            if (LocalVisualDark.current) listOf(Color(0xFF2D333D), Color(0xFF232832))
+            else listOf(Color(0xFFF3F5F8), Color(0xFFFFFFFF))
+        ))
+        .border(1.dp,
+            if (LocalVisualDark.current) Color.White.copy(alpha = .19f)
+            else Color(0xFF212935).copy(alpha = .16f),
+            shape).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Outlined.Search, null, Modifier.size(23.dp), tint = VisualDesign.Muted)
         Spacer(Modifier.width(VisualDesign.Space.Medium))
         BasicTextField(query, onQuery, Modifier.weight(1f).padding(vertical = 12.dp)

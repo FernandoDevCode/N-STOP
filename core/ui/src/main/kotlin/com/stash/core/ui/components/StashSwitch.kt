@@ -33,10 +33,10 @@ fun StashSwitch(
     // the system setting — dark ground lifts the plum a step so it stays
     // visible against near-black.
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val trackOn = if (dark) Color(0xFF7E6A90) else Color(0xFF6E5A7E)
-    val thumbOn = Color(0xFFF2ECE2)
-    val borderOff = if (dark) Color(0xFF4A4160) else Color(0xFFB9AEC8)
-    val thumbOff = if (dark) Color(0xFF8A7FA0) else Color(0xFF8F84A0)
+    val trackOn = if (dark) Color(0xFFCFD5DE) else Color(0xFF343B47)
+    val thumbOn = if (dark) Color(0xFF20262E) else Color.White
+    val borderOff = if (dark) Color(0xFF535B66) else Color(0xFFA0A8B3)
+    val thumbOff = if (dark) Color(0xFF959DA9) else Color(0xFF707A87)
     Switch(
         checked = checked,
         onCheckedChange = onCheckedChange,

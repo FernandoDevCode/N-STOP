@@ -2,6 +2,9 @@ package com.stash.feature.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -25,12 +28,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
+import com.stash.core.ui.visual.VisualBackground
+import com.stash.core.ui.visual.VisualDesign
+import com.stash.core.ui.visual.VisualTheme
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.feature.settings.components.SettingsGroupCard
 import com.stash.feature.settings.components.SettingsNavRow
 import com.stash.feature.settings.components.SettingsSearchField
-import com.stash.feature.settings.components.SupportBanner
+import com.stash.feature.settings.components.SettingsSectionLabel
 import com.stash.core.ui.components.bottomChromePadding
 
 /**
@@ -55,9 +63,6 @@ fun SettingsHubScreen(
     onOpenLibraryStorage: () -> Unit,
     onOpenAppearance: () -> Unit,
     onOpenAbout: () -> Unit,
-    onDonate: () -> Unit,
-    onDonateCoDev: () -> Unit,
-    onStar: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
@@ -117,14 +122,14 @@ fun SettingsHubScreen(
             SettingsSearchItem(
                 title = stringResource(R.string.nostop_nav_audio),
                 subtitle = stringResource(R.string.nostop_hub_quality_hint),
-                keywords = listOf("bitrate", "flac", "lossless", "quality", "streaming", "wifi", "cellular", "qualidade", "áudio", "dados móveis"),
+                keywords = listOf("bitrate", "quality", "streaming", "wifi", "cellular", "qualidade", "áudio", "dados móveis"),
                 icon = Icons.Rounded.GraphicEq,
                 onSelect = onOpenAudioQuality,
             ),
             SettingsSearchItem(
                 title = stringResource(R.string.nostop_nav_accounts),
                 subtitle = stringResource(R.string.nostop_hub_accounts_hint),
-                keywords = listOf("spotify", "youtube", "lastfm", "last.fm", "login", "sync", "scrobble", "contas", "sincronização"),
+                keywords = listOf("spotify", "youtube", "youtube music", "login", "sync", "contas", "sincronização"),
                 icon = Icons.Rounded.Person,
                 onSelect = onOpenAccounts,
             ),
@@ -138,7 +143,7 @@ fun SettingsHubScreen(
             SettingsSearchItem(
                 title = stringResource(R.string.nostop_appearance),
                 subtitle = stringResource(R.string.nostop_hub_appearance_hint),
-                keywords = listOf("theme", "dark mode", "amoled", "appearance", "home layout", "community", "open stash on", "start tab", "launch", "aparência", "idioma", "português", "tema", "tela inicial"),
+                keywords = listOf("theme", "dark mode", "amoled", "appearance", "home layout", "community", "open sonora on", "start tab", "launch", "aparência", "idioma", "português", "tema", "tela inicial"),
                 icon = Icons.Rounded.Palette,
                 onSelect = onOpenAppearance,
             ),
@@ -173,21 +178,40 @@ fun SettingsHubScreen(
         }
     }
 
+    VisualTheme(
+        dark = com.stash.core.ui.theme.LocalIsDarkTheme.current,
+        amoled = com.stash.core.ui.theme.LocalIsAmoledTheme.current,
+    ) {
+    VisualBackground {
     Column(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 16.dp)
+            .padding(horizontal = VisualDesign.Gutter, vertical = 18.dp)
             // Edge to edge under the glass mini player + tab bar.
             .padding(bottom = bottomChromePadding()),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Text(
-            text = stringResource(R.string.nostop_settings_title),
-            style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        SupportBanner(onDonate = onDonate, onDonateCoDev = onDonateCoDev, onStar = onStar)
+        Column(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+            Text(
+                text = stringResource(R.string.sonora_settings_overline),
+                style = VisualDesign.Caption.copy(letterSpacing = 1.5.sp),
+                color = VisualDesign.Muted,
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = stringResource(R.string.nostop_settings_title),
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = VisualDesign.Ink,
+            )
+            Spacer(Modifier.height(5.dp))
+            Text(
+                text = stringResource(R.string.sonora_settings_intro),
+                style = MaterialTheme.typography.bodyMedium,
+                color = VisualDesign.Muted,
+            )
+        }
         SettingsSearchField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
@@ -219,6 +243,7 @@ fun SettingsHubScreen(
             }
             return@Column
         }
+        SettingsSectionLabel(stringResource(R.string.sonora_settings_sound))
         SettingsGroupCard(
             rows = listOf(
                 {
@@ -237,6 +262,11 @@ fun SettingsHubScreen(
                         onClick = onOpenAudioQuality,
                     )
                 },
+            ),
+        )
+        SettingsSectionLabel(stringResource(R.string.sonora_settings_collection))
+        SettingsGroupCard(
+            rows = listOf(
                 {
                     SettingsNavRow(
                         title = stringResource(R.string.nostop_nav_accounts),
@@ -253,6 +283,11 @@ fun SettingsHubScreen(
                         onClick = onOpenLibraryStorage,
                     )
                 },
+            ),
+        )
+        SettingsSectionLabel(stringResource(R.string.sonora_settings_preferences))
+        SettingsGroupCard(
+            rows = listOf(
                 {
                     SettingsNavRow(
                         title = stringResource(R.string.nostop_appearance),
@@ -271,6 +306,8 @@ fun SettingsHubScreen(
                 },
             ),
         )
+    }
+    }
     }
 }
 

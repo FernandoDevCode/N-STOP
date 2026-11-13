@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -37,15 +36,15 @@ class LosslessSourcePreferencesYoutubeFallbackTest {
     }
 
     @Test
-    fun `youtubeFallbackEnabled defaults to false`() = runTest {
-        assertFalse(prefs.youtubeFallbackEnabledNow())
+    fun `youtubeFallbackEnabled defaults to true after retiring lossless sources`() = runTest {
+        assertTrue(prefs.youtubeFallbackEnabledNow())
     }
 
     @Test
-    fun `setYoutubeFallbackEnabled persists round-trip`() = runTest {
+    fun `legacy toggle cannot disable YouTube fallback`() = runTest {
         prefs.setYoutubeFallbackEnabled(true)
         assertTrue(prefs.youtubeFallbackEnabledNow())
         prefs.setYoutubeFallbackEnabled(false)
-        assertFalse(prefs.youtubeFallbackEnabledNow())
+        assertTrue(prefs.youtubeFallbackEnabledNow())
     }
 }

@@ -73,7 +73,7 @@ data class HomeUiState(
     val selectedGenre: String = "All",
     /** False when the user opted out of Qobuz discovery on Home — hides the
      * genre chips (the rows hide themselves via their empty lists). */
-    val qobuzDiscoveryEnabled: Boolean = true,
+    val qobuzDiscoveryEnabled: Boolean = false,
     /** User-arranged visible Home sections, in render order
      * (Settings > Appearance > Home layout). */
     val sections: List<com.stash.core.data.prefs.HomeSection> =

@@ -1,0 +1,18 @@
+name: Sonora frontend identity gate
+
+on:
+  pull_request:
+  push:
+    branches: [nonstop, 'feat/**', 'fix/**', 'refactor/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  identity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check Sonora frontend and provider policy
+        run: python3 tools/check_sonora_identity.py
