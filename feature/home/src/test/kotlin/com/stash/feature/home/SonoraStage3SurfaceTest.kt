@@ -164,7 +164,12 @@ class SonoraStage3SurfaceTest(private val width: Int, private val height: Int, p
         compose.onNodeWithTag("visual-tab-Library").performClick()
         compose.runOnIdle { check(destination == VisualPage.Library) }
         compose.runOnIdle { backdrop = null; showAlbum = true }
-        compose.mainClock.advanceTimeBy(64)
+        // A manual clock can leave the old Home subtree in semantics for this
+        // transition. Wait for the AlbumDetail composition before targeting
+        // the album's vertical list (not a stale Home or horizontal rail).
+        compose.mainClock.autoAdvance = true
+        compose.waitForIdle()
+        compose.onNodeWithTag("home").assertDoesNotExist()
         compose.onNode(hasScrollAction()).performTouchInput {
             swipeUp(startY = height * .65f, endY = height * .2f)
         }

@@ -30,7 +30,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Periodic WorkManager worker that checks the public GitHub Releases API
- * for a newer version of Stash.
+ * for a newer version of Sonora.
  *
  * This worker is intentionally NOT a HiltWorker — it has no injected
  * dependencies. It creates a lightweight [OkHttpClient] per invocation,
@@ -85,9 +85,9 @@ class UpdateCheckWorker(
         private const val PREFS_NAME = "update_check_prefs"
         private const val KEY_LAST_NOTIFIED_VERSION = "last_notified_version"
         private const val RELEASES_URL =
-            "https://api.github.com/repos/rawnaldclark/Stash/releases/latest"
+            "https://api.github.com/repos/FernandoDevCode/N-STOP/releases/latest"
         private const val DOWNLOAD_URL =
-            "https://github.com/rawnaldclark/Stash/releases/latest"
+            "https://github.com/FernandoDevCode/N-STOP/releases/latest"
 
         /** Lenient JSON parser that ignores unknown keys from the GitHub API. */
         private val json = Json { ignoreUnknownKeys = true }
@@ -201,7 +201,7 @@ class UpdateCheckWorker(
             }
             val request = Request.Builder()
                 .url(RELEASES_URL)
-                .header("User-Agent", "Stash-Android/$installedVersion")
+                .header("User-Agent", "Sonora-Android/$installedVersion")
                 .header("Accept", "application/vnd.github.v3+json")
                 .build()
 

@@ -48,7 +48,7 @@ fun CommunitySection(
             Column(Modifier.weight(1f)) {
                 Text("Community", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onBackground)
                 Text(
-                    "What Stash listeners are digging this week",
+                    "O que a comunidade está ouvindo nesta semana",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

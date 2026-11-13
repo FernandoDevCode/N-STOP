@@ -118,7 +118,7 @@ typealias VisualArtwork = @Composable (String?, Modifier) -> Unit
 @Composable fun VisualHeader(actions: VisualActions, modifier: Modifier = Modifier) {
     BoxWithConstraints(modifier.fillMaxWidth().testTag("visual-header")) {
         val density = LocalDensity.current
-        val brandWidth = rememberTextMeasurer().measure("NØNSTOP", VisualDesign.Brand, softWrap = false).size.width
+        val brandWidth = rememberTextMeasurer().measure("SONORA", VisualDesign.Brand, softWrap = false).size.width
         val buttonCount = 1 + (if (actions.onCast != null) 1 else 0) + (if (actions.onNotifications != null) 1 else 0)
         val stacked = with(density) { brandWidth.toDp() + VisualDesign.Size.Control * buttonCount + 38.dp > maxWidth }
         val controls: @Composable () -> Unit = {
@@ -127,10 +127,10 @@ typealias VisualArtwork = @Composable (String?, Modifier) -> Unit
             VisualHeaderButton(VisualHeaderSymbol.Settings, "Configurações", actions.onSettings)
         }
         if (stacked) Column(Modifier.fillMaxWidth().padding(start = VisualDesign.Gutter, end = 18.dp, top = 12.dp)) {
-            Text("NØNSTOP", style = VisualDesign.Brand, color = VisualDesign.Ink, maxLines = 1)
+            Text("SONORA", style = VisualDesign.Brand, color = VisualDesign.Ink, maxLines = 1)
             Row(Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically) { controls() }
         } else Row(Modifier.fillMaxWidth().heightIn(min = VisualDesign.Size.Chrome).padding(start = VisualDesign.Gutter, end = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("NØNSTOP", style = VisualDesign.Brand, color = VisualDesign.Ink, maxLines = 1, modifier = Modifier.weight(1f))
+            Text("SONORA", style = VisualDesign.Brand, color = VisualDesign.Ink, maxLines = 1, modifier = Modifier.weight(1f))
             controls()
         }
     }

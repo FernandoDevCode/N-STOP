@@ -85,4 +85,5 @@
     <string name="nostop_home_continue_current">Continue ouvindo</string>
     <string name="nostop_home_resume_label">Sua trilha agora</string>
     <string name="podcast_preparing">Preparando download…</string>
+    <string name="sonora_home_lossless_hint">O áudio sem perdas está indisponível. Conecte sua conta do Qobuz para ouvir em FLAC.</string>
 </resources>

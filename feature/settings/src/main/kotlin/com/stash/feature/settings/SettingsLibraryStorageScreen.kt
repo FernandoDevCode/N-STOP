@@ -42,7 +42,7 @@ import com.stash.core.data.db.BackupExportScope
 import com.stash.core.data.db.BackupImportScope
 import com.stash.core.data.weblibrary.WebLibraryFile
 import com.stash.core.model.DownloadNetworkMode
-import com.stash.core.ui.components.GlassCard
+import com.stash.feature.settings.components.SonoraSettingsCard as GlassCard
 import com.stash.core.ui.theme.StashTheme
 import com.stash.feature.settings.components.SettingsGroupCard
 import com.stash.feature.settings.components.SettingsNavRow

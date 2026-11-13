@@ -27,7 +27,6 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import com.stash.feature.settings.R
 import androidx.compose.ui.unit.dp
-import com.stash.core.ui.theme.StashTheme
 
 /**
  * A glass search pill for the Settings hub.
@@ -43,13 +42,12 @@ fun SettingsSearchField(
     modifier: Modifier = Modifier,
     placeholder: String? = null,
 ) {
-    val extendedColors = StashTheme.extendedColors
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(extendedColors.glassBackground)
-            .border(BorderStroke(1.dp, extendedColors.glassBorder), RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.62f))
+            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)), RoundedCornerShape(16.dp))
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -57,7 +55,7 @@ fun SettingsSearchField(
             imageVector = Icons.Rounded.Search,
             contentDescription = null,
             modifier = Modifier.size(18.dp),
-            tint = extendedColors.textTertiary,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.width(10.dp))
         Box(modifier = Modifier.weight(1f)) {
@@ -65,7 +63,7 @@ fun SettingsSearchField(
                 Text(
                     text = placeholder ?: stringResource(R.string.nostop_settings_search_placeholder),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = extendedColors.textTertiary,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             BasicTextField(
@@ -87,7 +85,7 @@ fun SettingsSearchField(
                 modifier = Modifier
                     .size(18.dp)
                     .clickable { onValueChange("") },
-                tint = extendedColors.textTertiary,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }

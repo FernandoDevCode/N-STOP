@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Settings › Library & Storage: "Export for Stash on the web" (the web player's library file). -->
-    <string name="web_library_export_title">Stash on the web</string>
-    <string name="web_library_export_subtitle">Take your likes, your playlists and what you played lately to Stash on the web. Then, in the web player: Settings › Your library › Import from the Stash app.</string>
-    <string name="web_library_export_button">Export for Stash on the web</string>
+    <!-- Settings › Library & Storage: "Export for web player" (the web player's library file). -->
+    <string name="web_library_export_title">Linked web player</string>
+    <string name="web_library_export_subtitle">Export your liked songs, playlists and recent plays to a compatible web player. Then import the file into the library of that service.</string>
+    <string name="web_library_export_button">Export for web player</string>
     <string name="web_library_export_working_title">Exporting your library</string>
     <string name="web_library_export_done_title">Ready for the web</string>
     <!-- %1$s likes, %2$s playlists, %3$s plays: the three counts below. -->
-    <string name="web_library_export_done_body">Saved %1$s, %2$s and %3$s. Open Stash on the web and import this file in Settings › Your library.</string>
+    <string name="web_library_export_done_body">Saved %1$s, %2$s and %3$s. Open the linked web player and import this file in Settings › Your library.</string>
     <plurals name="web_library_export_likes">
         <item quantity="one">%d like</item>
         <item quantity="other">%d likes</item>
@@ -23,7 +23,7 @@
     <string name="web_library_export_failed_title">Couldn’t export</string>
     <string name="web_library_export_failed_body">The file couldn’t be written. Try again, or pick another place to save it.</string>
     <string name="web_library_export_ok">OK</string>
-    <string name="web_library_import_button">Import from Stash on the web</string>
+    <string name="web_library_import_button">Import from web player</string>
     <!-- %1$s: the browser's name ("Chrome on Windows"). -->
     <string name="web_library_sent_title">Sent</string>
     <!-- %1$s the browser, %2$s likes, %3$s playlists, %4$s plays. -->
@@ -51,15 +51,15 @@
     <string name="nostop_classic">Classic</string>
     <string name="nostop_ambient_style_description">Soft glow moves gently. Classic uses the original visual style.</string>
     <string name="nostop_ambient_disabled">Enable Ambient motion to select a style.</string>
-    <string name="nostop_start_tab">Open NØSTOP on</string>
+    <string name="nostop_start_tab">Open Sonora on</string>
     <string name="nostop_home">Home</string>
     <string name="nostop_library">Library</string>
     <string name="nostop_search">Search</string>
-    <string name="nostop_start_tab_description">The tab opened when you launch NØSTOP.</string>
+    <string name="nostop_start_tab_description">The tab opened when you launch Sonora.</string>
     <string name="nostop_home_layout">Home layout</string>
     <string name="nostop_home_layout_description">Rearrange or hide Home sections. Discover stays at the top.</string>
     <string name="nostop_show_likes">Show Liked Songs on Home</string>
-    <string name="nostop_show_likes_description">Show your liked songs from NØSTOP, Spotify and YouTube together in Your playlists.</string>
+    <string name="nostop_show_likes_description">Show your liked songs from Sonora, Spotify and YouTube together in Your playlists.</string>
     <string name="nostop_settings_title">Settings</string>
     <string name="nostop_nav_playback">Playback</string>
     <string name="nostop_nav_audio">Audio &amp; Quality</string>
@@ -119,7 +119,7 @@
     <string name="nostop_accounts_connections">Connections</string>
     <string name="nostop_accounts_mirror_likes">Sync your likes</string>
     <string name="nostop_accounts_discord_title">Before connecting Discord</string>
-    <string name="nostop_accounts_discord_warning">Discord has no official way for a phone app to set your status, so NØSTOP uses your account session. Discord considers this a self-bot and may penalize your account.\n\nEnforcement generally targets spam, but the risk is yours to consider.\n\nDisconnecting clears your status and removes the token from this phone.</string>
+    <string name="nostop_accounts_discord_warning">Discord has no official way for a phone app to set your status, so Sonora uses your account session. Discord considers this a self-bot and may penalize your account.\n\nEnforcement generally targets spam, but the risk is yours to consider.\n\nDisconnecting clears your status and removes the token from this phone.</string>
     <string name="nostop_accounts_connect_anyway">Connect anyway</string>
     <string name="nostop_accounts_cancel">Cancel</string>
     <string name="nostop_accounts_finish_connect">Finish connecting</string>
@@ -164,7 +164,7 @@
     <string name="nostop_quality_off">off</string>
     <string name="nostop_quality_fallback_hint">Use JioSaavn, then YouTube, when a download has no lossless match</string>
     <string name="nostop_quality_advanced">Advanced</string>
-    <string name="nostop_quality_relay_hint">Use your own lossless relay endpoint. It takes priority over the NØSTOP relay.</string>
+    <string name="nostop_quality_relay_hint">Use your own lossless relay endpoint. It takes priority over the Sonora relay.</string>
     <string name="nostop_quality_custom_endpoint">Custom lossless endpoint</string>
     <string name="nostop_quality_test">Test</string>
     <string name="nostop_quality_testing">Testing…</string>
@@ -176,7 +176,7 @@
     <string name="nostop_quality_effects">Effects</string>
     <string name="nostop_quality_equalizer">Equalizer</string>
     <string name="nostop_storage_recommendations_when">Run recommendations when</string>
-    <string name="nostop_storage_mixes">Stash Mixes (beta)</string>
+    <string name="nostop_storage_mixes">Automatic mixes (beta)</string>
     <string name="nostop_storage_mixes_on">Daily Discover, Deep Cuts, and First Listen mixes auto-refresh in the background.</string>
     <string name="nostop_storage_mixes_off">Auto-generated mix playlists are hidden. Background discovery downloads are off.</string>
     <string name="nostop_storage_discover_qobuz">Qobuz discovery on Home</string>
@@ -184,7 +184,7 @@
     <string name="nostop_storage_qobuz_off">Home keeps only your mixes and imported music.</string>
     <string name="nostop_storage_library">Library</string>
     <string name="nostop_storage_library_health">Library Health</string>
-    <string name="nostop_storage_link_web">Link Stash on the web</string>
+    <string name="nostop_storage_link_web">Link Linked web player</string>
     <string name="nostop_storage_web_hint">Pick up where you left off, mirror, send your library</string>
     <string name="nostop_storage_storage">Storage</string>
     <string name="nostop_storage_processing">Processing...</string>
@@ -259,9 +259,9 @@
     <string name="nostop_account_disconnect">Disconnect</string>
     <string name="nostop_account_connect">Connect</string>
     <string name="nostop_disconnect_question">Disconnect %1$s?</string>
-    <string name="nostop_disconnect_warning">NØSTOP will sign out of %1$s on this phone and stop syncing it. Songs from %1$s waiting to download will be removed from the queue.\n\nSongs already downloaded will stay in your library, and you can reconnect at any time.</string>
+    <string name="nostop_disconnect_warning">Sonora will sign out of %1$s on this phone and stop syncing it. Songs from %1$s waiting to download will be removed from the queue.\n\nSongs already downloaded will stay in your library, and you can reconnect at any time.</string>
     <string name="nostop_mirror_question">Mirror likes to %1$s?</string>
-    <string name="nostop_mirror_warning">Liking a song in NØSTOP will also like it on %1$s, and removing your like will remove it there too. Only new likes are mirrored.\n\nThis uses %1$s private web endpoints, not an official API. It may stop working or, in rare cases, cause account restrictions. Consider using a secondary account.</string>
+    <string name="nostop_mirror_warning">Liking a song in Sonora will also like it on %1$s, and removing your like will remove it there too. Only new likes are mirrored.\n\nThis uses %1$s private web endpoints, not an official API. It may stop working or, in rare cases, cause account restrictions. Consider using a secondary account.</string>
     <string name="nostop_mirror_understand">I understand</string>
     <string name="web_unlink_device_question">Remove %1$s?</string>
     <string name="web_unlink_device_warning">It stops seeing your phone at once. Its library stays as it is.</string>
@@ -270,7 +270,7 @@
     <string name="web_unlink_all">Unlink everything</string>
     <string name="web_link_browser">Link a browser</string>
     <string name="web_link_intro">Pick up where you left off, mirror, send your library.</string>
-    <string name="web_link_instruction">Open play.stashfm.app › Settings › Your phone</string>
+    <string name="web_link_instruction">In the linked web player, open Settings › Your phone</string>
     <string name="web_scan_code">Scan code</string>
     <string name="web_linked_devices">Linked devices</string>
     <string name="web_link_another">Link another browser</string>
@@ -318,4 +318,9 @@
     <string name="sonora_image_cache_clearing">Clearing images…</string>
     <string name="sonora_image_cache_success">Cache cleared. Reopen an artist profile to look up its photo again.</string>
     <string name="sonora_image_cache_error">Could not clear all images. Please try again.</string>
+    <string name="sonora_settings_overline">SONORA / PREFERENCES</string>
+    <string name="sonora_settings_intro">Adjust playback, accounts and appearance.</string>
+    <string name="sonora_settings_sound">Sound and playback</string>
+    <string name="sonora_settings_collection">Accounts and library</string>
+    <string name="sonora_settings_preferences">App</string>
 </resources>
