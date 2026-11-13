@@ -129,7 +129,7 @@ fun SettingsHubScreen(
             SettingsSearchItem(
                 title = stringResource(R.string.nostop_nav_accounts),
                 subtitle = stringResource(R.string.nostop_hub_accounts_hint),
-                keywords = listOf("spotify", "youtube", "lastfm", "last.fm", "login", "sync", "scrobble", "contas", "sincronização"),
+                keywords = listOf("spotify", "youtube", "youtube music", "login", "sync", "contas", "sincronização"),
                 icon = Icons.Rounded.Person,
                 onSelect = onOpenAccounts,
             ),

@@ -598,19 +598,19 @@ class StashApplication : Application(), Configuration.Provider {
         // they no-op until configuration/authentication is in place, and the
         // recorder just observes the player regardless of whether scrobbling is on.
         listeningRecorder.start()
-        lastFmScrobbler.start()
+        // Sonora: excluded account/scrobble/lossless background service disabled.
         youTubeHistoryScrobbler.start()
         autoSaveScrobbler.start()
-        discordRpcCoordinator.start()
+        // Sonora: excluded account/scrobble/lossless background service disabled.
         // Generic listen sinks (ListenBrainz). No-ops until connected.
-        listenSinkCoordinator.start()
+        // Sonora: excluded account/scrobble/lossless background service disabled.
 
         // Wire the three reactive triggers (cookie change /
         // lastKnownBadCookie transition / rate-limiter circuit-reset
         // event) that enqueue LosslessRetryWorker for the strict-FLAC
         // deferred set. Touching the @Inject field here forces Hilt
         // to construct the singleton if Dagger hasn't already.
-        losslessRetryScheduler.start()
+        // Sonora: excluded account/scrobble/lossless background service disabled.
     }
 
     /**

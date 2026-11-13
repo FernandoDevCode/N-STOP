@@ -360,7 +360,7 @@ class UpdateCheckWorker(
             applicationContext,
             SyncNotificationManager.CHANNEL_UPDATE,
         )
-            .setContentTitle("Stash Update Available")
+            .setContentTitle("Atualização do Sonora disponível")
             .setContentText("Version $releaseName is ready. Tap to download.")
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setAutoCancel(true)
