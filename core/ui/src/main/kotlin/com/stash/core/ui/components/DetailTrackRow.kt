@@ -4,6 +4,13 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -74,9 +81,13 @@ fun DetailTrackRow(
     selectionActive: Boolean = false,
     selected: Boolean = false,
     onMoreClick: (() -> Unit)? = null,
+    /** Keep a visible menu only for exceptional, explicitly approved surfaces. */
+    showMoreButton: Boolean = false,
 ) {
     val extendedColors = StashTheme.extendedColors
     val primaryColor = MaterialTheme.colorScheme.primary
+    val haptic = LocalHapticFeedback.current
+    val optionsLabel = stringResource(R.string.sonora_track_options)
 
     // Subtle background highlight for the currently-playing track.
     val rowBackground = if (isPlaying) {
@@ -91,11 +102,24 @@ fun DetailTrackRow(
             .background(rowBackground)
             .combinedClickable(
                 onClick = onClick,
-                onLongClickLabel = selectLongClickLabel(selectionActive, onLongPress),
-                onLongClick = onLongPress,
+                onLongClickLabel = if (!selectionActive) optionsLabel else
+                    selectLongClickLabel(selectionActive, onLongPress),
+                onLongClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLongPress()
+                },
             )
             .selectionRowSemantics(selectionActive, selected)
-            .padding(horizontal = 20.dp, vertical = 10.dp),
+            .semantics {
+                if (!selectionActive && onMoreClick != null && showMoreButton) {
+                    customActions = listOf(CustomAccessibilityAction(optionsLabel) {
+                        onMoreClick()
+                        true
+                    })
+                }
+            }
+            .heightIn(min = 62.dp)
+            .padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // -- Track number --
