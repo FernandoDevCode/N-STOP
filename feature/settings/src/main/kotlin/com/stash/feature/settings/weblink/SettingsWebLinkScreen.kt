@@ -47,7 +47,7 @@ import com.stash.core.data.weblink.WebLinkStatus
 import com.stash.core.data.weblink.inbox.IncomingSend
 import com.stash.feature.settings.WebLibraryExportSheet
 import com.stash.feature.settings.WebLibraryExportViewModel
-import com.stash.core.ui.components.GlassCard
+import com.stash.feature.settings.components.SonoraSettingsCard as GlassCard
 import com.stash.feature.settings.components.SettingsGroupCard
 import com.stash.feature.settings.components.SettingsToggleRow
 import com.stash.feature.settings.components.SettingsNavRow
