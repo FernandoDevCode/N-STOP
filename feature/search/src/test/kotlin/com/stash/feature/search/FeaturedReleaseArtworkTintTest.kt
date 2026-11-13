@@ -54,6 +54,15 @@ class FeaturedReleaseArtworkTintTest {
         )))
     }
 
+    @Test fun `transparent artwork pixels do not influence selected pigment`() {
+        val tint = requireNotNull(featuredArtworkTintFromPixels(pixels(
+            0x00E7192C to 90, // transparent red must be ignored
+            0xFFFFC72D.toInt() to 10,
+        )))
+        assertTrue(tint.green > tint.blue * 3f)
+        assertTrue(tint.red >= tint.green)
+    }
+
     @Test fun `multicolor sleeve chooses largest coherent hue region`() {
         val tint = requireNotNull(featuredArtworkTintFromPixels(pixels(
             0xFF269D43.toInt() to 48,
