@@ -1,0 +1,77 @@
+name: Sonora - build debug APK (direct)
+
+on:
+  push:
+    branches:
+      - feat/sonora-identity-providers-unification-20261113
+    paths:
+      - .github/workflows/sonora-debug-direct.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout this exact commit
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v6
+      - name: Verify Sonora launcher assets
+        run: python3 tools/verify_sonora_launcher.py
+      - name: Verify Sonora identity gate
+        run: python3 tools/check_sonora_identity.py
+      - name: Compile Sonora debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace
+      - name: Verify package and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          AAPT=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name aapt | sort -V | tail -n1)
+          SIGNER=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -n1)
+          test -n "$AAPT" && test -n "$SIGNER"
+          "$AAPT" dump badging "$APK" | tee /tmp/sonora-badging.txt
+          grep -q "name='com.stash.app.debug'" /tmp/sonora-badging.txt
+          "$SIGNER" verify "$APK"
+      - name: Publish experimental APK for this commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          SHORT_SHA=${GITHUB_SHA:0:12}
+          TAG="sonora-build-${SHORT_SHA}"
+          APK="Sonora-${SHORT_SHA}-debug.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$APK"
+          SHA256=$(sha256sum "$APK" | cut -d' ' -f1)
+          cat > /tmp/sonora-notes.md <<EOF
+          Sonora - compilacao de teste.
+
+          Commit exato: ${GITHUB_SHA}
+          SHA-256: ${SHA256}
+          Pacote debug: com.stash.app.debug
+          Esta compilacao verifica Gradle, identidade visual estatica e assinatura.
+          A suite completa de testes e a validacao visual sao executadas separadamente.
+          APK experimental, sem merge na nonstop. Nao substitui a versao canonica.
+          EOF
+          gh release create "$TAG" "$APK" --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Sonora Debug ${SHORT_SHA}" \
+            --notes-file /tmp/sonora-notes.md \
+            --prerelease --latest=false
