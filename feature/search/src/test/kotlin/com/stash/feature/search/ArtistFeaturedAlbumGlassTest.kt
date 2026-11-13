@@ -21,6 +21,7 @@ class ArtistFeaturedAlbumGlassTest {
         val border = artistFeaturedAlbumGlassBorder(ArtistNeutralPalette.bridge)
 
         assertTrue(kotlin.math.abs(fill.red - fill.blue) < .02f)
-        assertEquals(.12f, border.alpha, .001f)
+        // ARGB 8-bit alpha is quantized to steps of 1/255 by Compose Color.
+        assertEquals(.12f, border.alpha, 1f / 255f)
     }
 }
