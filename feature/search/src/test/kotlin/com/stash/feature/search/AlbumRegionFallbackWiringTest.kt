@@ -88,6 +88,8 @@ class AlbumRegionFallbackWiringTest {
 
     private val couldNotLoad =
         AlbumDiscoveryStatus.Error("Check your connection and try again.", canRetry = true)
+    private val retiredSource =
+        AlbumDiscoveryStatus.Error(AlbumDiscoveryViewModel.RETIRED_SOURCE, canRetry = false)
 
     private val lithicPage = Json.parseToJsonElement(
         """
@@ -148,17 +150,21 @@ class AlbumRegionFallbackWiringTest {
         val vm = vm(AlbumSource.QOBUZ)
         advanceUntilIdle()
 
-        assertEquals(couldNotLoad, vm.uiState.value.status)
+        assertEquals(retiredSource, vm.uiState.value.status)
         verify(retiredQobuzClient, never()).getAlbum(any())
         verify(innerTube, never()).browse(any(), anyOrNull())
         verify(innerTube, never()).searchWithStatus(any(), anyOrNull())
+        vm.retry() // A permanently unsupported identity must not expose retry.
+        advanceUntilIdle()
+        assertEquals(retiredSource, vm.uiState.value.status)
+        verify(innerTube, never()).browse(any(), anyOrNull())
     }
 
     @Test fun `retired Qobuz playlist is rejected without network access`() = runTest {
         val vm = vm(AlbumSource.QOBUZ_PLAYLIST)
         advanceUntilIdle()
 
-        assertEquals(couldNotLoad, vm.uiState.value.status)
+        assertEquals(retiredSource, vm.uiState.value.status)
         verify(retiredQobuzClient, never()).getAlbum(any())
         verify(innerTube, never()).browse(any(), anyOrNull())
     }
