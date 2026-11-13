@@ -9,7 +9,7 @@
     <string name="nostop_playlist_confirm">Create</string>
     <string name="nostop_playlist_cancel">Cancel</string>
     <string name="nostop_like_save_to">Save to…</string>
-    <string name="nostop_like_nostop_songs">NØSTOP Liked Songs</string>
+    <string name="nostop_like_nostop_songs">Sonora Liked Songs</string>
     <string name="nostop_like_spotify_songs">Spotify Liked Songs</string>
     <string name="nostop_like_youtube_songs">YouTube Music Liked Music</string>
     <string name="nostop_like_already_saved">✓ Already saved</string>
@@ -28,7 +28,7 @@
     <string name="nostop_track_view_album">View Album</string>
     <string name="nostop_track_delete">Delete</string>
     <string name="nostop_share_song_title">Share “%1$s”</string>
-    <string name="nostop_share_nostop_link">NØSTOP link</string>
+    <string name="nostop_share_nostop_link">Sonora link</string>
     <string name="nostop_share_spotify_link">Spotify link</string>
     <string name="nostop_share_youtube_link">YouTube Music link</string>
     <string name="nostop_share_info_only">Song info only</string>
