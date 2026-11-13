@@ -1,75 +1,51 @@
 #!/usr/bin/env python3
-"""Regenerate Sonora launchers from the approved artwork, never from the Android template.
+"""Regenerate Sonora launcher assets from the approved exact icon image.
 
-Run locally with: python -m pip install Pillow && python tools/regenerate_sonora_launcher.py
-The resulting PNGs are committed; normal Android builds have no Python dependency.
+Source: app/src/main/res/drawable-nodpi/sonora_launcher_final.webp
+Run: python -m pip install Pillow && python tools/regenerate_sonora_launcher.py
+Commit output PNGs. Android builds need no Python dependencies.
 """
 from pathlib import Path
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageOps, ImageChops
 
 ROOT = Path(__file__).resolve().parents[1]
 RES = ROOT / "app/src/main/res"
-SRC = RES / "drawable-nodpi/sonora_icon_foreground.png"
+SRC = RES / "drawable-nodpi/sonora_launcher_final.webp"
 
-# Validate the exact approved source before decoding. The v183 build contained a
-# corrupted PNG with an intact header; checking image dimensions was insufficient.
-import hashlib
-source_bytes = SRC.read_bytes()
-source_sha = hashlib.sha256(source_bytes).hexdigest()
-with Image.open(SRC) as check_source:
-    if check_source.mode == "P":
-        assert source_sha == "e1c2d05e937bdd4bf34d3994a448ae69703325868d70a9406dbe90a77f8063b1", f"Unexpected source hash: {source_sha}"
-original = Image.open(SRC).convert("RGBA")
-alpha = original.getchannel("A")
-bounds = alpha.getbbox()
-assert bounds is not None, "Approved symbol is missing"
-symbol = original.crop(bounds)
+with Image.open(SRC) as opened:
+    artwork = opened.convert("RGBA")
+assert artwork.size == (512, 512), f"Expected 512x512 launcher, got {artwork.size}"
 
-# Foreground is true 32-bit RGBA, not indexed + tRNS. All pixels come from
-# the same approved artwork; resize only adjusts optical size for launcher.
-S = 288
-target_height = 174
-target_width = round(target_height * symbol.width / symbol.height)
-scaled = symbol.resize((target_width, target_height), Image.Resampling.LANCZOS)
-foreground = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-foreground.alpha_composite(scaled, ((S - target_width)//2, (S - target_height)//2))
-foreground.save(SRC, format="PNG", optimize=True)
-
-monochrome = Image.new("RGBA", (S, S), (255, 255, 255, 0))
-monochrome.putalpha(foreground.getchannel("A"))
-monochrome.save(RES / "drawable-nodpi/sonora_icon_monochrome.png", format="PNG", optimize=True)
-
-# Legacy mipmaps are essential fallback paths for OEM launchers. Replace all
-# old Android-template icons rather than assuming adaptive icons always load.
-BASE = 384
-def legacy_icon(round_mask: bool):
-    canvas = Image.new("RGBA", (BASE, BASE), (35, 32, 46, 255))
-    m = Image.new("L", (BASE, BASE), 0)
-    draw = ImageDraw.Draw(m)
-    if round_mask:
-        draw.ellipse((0, 0, BASE-1, BASE-1), fill=255)
-    else:
-        draw.rounded_rectangle((0, 0, BASE-1, BASE-1), radius=82, fill=255)
-    canvas.putalpha(m)
-    img = foreground.resize((BASE, BASE), Image.Resampling.LANCZOS)
-    canvas.alpha_composite(img)
-    return canvas
-
-icons = {"ic_launcher.png": legacy_icon(False),
-         "ic_launcher_round.png": legacy_icon(True)}
-for name, image in icons.items():
-    for density, pixels in (("mdpi",48),("hdpi",72),("xhdpi",96),
-                            ("xxhdpi",144),("xxxhdpi",192)):
-        dest = RES / ("mipmap-" + density) / name
-        image.resize((pixels,pixels), Image.Resampling.LANCZOS).save(dest, format="PNG", optimize=True)
-
-# Fail immediately if a generated resource is indexed or malformed.
-files = [SRC, RES/"drawable-nodpi/sonora_icon_monochrome.png"]
-files += [RES / ("mipmap-" + density) / name for density in
-          ("mdpi","hdpi","xhdpi","xxhdpi","xxxhdpi") for name in icons]
-for dest in files:
+def save_rgba(image: Image.Image, dest: Path) -> None:
+    image.save(dest, format="PNG", optimize=True)
     with Image.open(dest) as check:
         check.load()
-        assert check.mode == "RGBA", f"Not RGBA: {dest}"
-    assert dest.read_bytes()[25] == 6, f"Not PNG truecolor-alpha: {dest}"
-print(f"Verified {len(files)} Sonora PNG resources (RGBA, PNG color type 6).")
+        assert check.mode == "RGBA" and check.size == image.size
+    assert dest.read_bytes()[25] == 6
+
+# Preserve the complete approved composition, including the subtle dark curves.
+save_rgba(artwork.resize((288, 288), Image.Resampling.LANCZOS),
+          RES / "drawable-nodpi/sonora_icon_foreground.png")
+
+# Android themed-icon monochrome is a bright-emblem silhouette, not the black tile.
+brightness = ImageOps.grayscale(artwork)
+white_alpha = brightness.point(lambda v: int(max(0, min(255, (v-69)*255/120))))
+white_alpha = ImageChops.multiply(white_alpha, artwork.getchannel("A"))
+mono = Image.new("RGBA", artwork.size, (255, 255, 255, 0))
+mono.putalpha(white_alpha)
+save_rgba(mono.resize((288,288), Image.Resampling.LANCZOS),
+          RES / "drawable-nodpi/sonora_icon_monochrome.png")
+
+for density, size in (("mdpi",48), ("hdpi",72), ("xhdpi",96),
+                      ("xxhdpi",144), ("xxxhdpi",192)):
+    save_rgba(artwork.resize((size,size), Image.Resampling.LANCZOS),
+              RES / f"mipmap-{density}/ic_launcher.png")
+    # Some OEMs load round legacy artwork separately from the adaptive icon.
+    round_mask = Image.new("L", artwork.size, 0)
+    ImageDraw.Draw(round_mask).ellipse((0,0,511,511), fill=255)
+    round_art = artwork.copy()
+    round_art.putalpha(ImageChops.multiply(artwork.getchannel("A"), round_mask))
+    save_rgba(round_art.resize((size,size), Image.Resampling.LANCZOS),
+              RES / f"mipmap-{density}/ic_launcher_round.png")
+
+print("Regenerated 12 RGBA Sonora launcher fallback PNGs from the approved artwork.")
