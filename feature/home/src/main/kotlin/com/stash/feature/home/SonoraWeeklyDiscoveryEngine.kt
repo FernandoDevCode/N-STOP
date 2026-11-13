@@ -216,7 +216,7 @@ class SonoraWeeklyDiscoveryEngine @Inject constructor(
             val artistKey = artist.trim().lowercase()
             if ((artistCounts[artistKey] ?: 0) >= 2 || key in used) continue
             attempts++
-            val songs = attempt { youtube.searchAll("$"+"{artist} $"+"{candidate.name}") }
+            val songs = attempt { youtube.searchAll("${artist} ${candidate.name}") }
                 ?.sections.orEmpty().flatMap { section ->
                     when (section) {
                         is SearchResultSection.Songs -> section.tracks
