@@ -22,6 +22,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -61,6 +62,10 @@ internal fun SonoraColdStartIntro(
         // on Default, rather than blocking the main thread between animation frames.
         val prepared = withContext(Dispatchers.Default) { buildLogoLayers() }
         layers.value = prepared
+        // Give HWUI two vsyncs to upload the 5 tiny textures during the
+        // visually black first frame, avoiding first-use GPU upload hitches.
+        withFrameNanos { }
+        withFrameNanos { }
         formation.animateTo(1f, tween(2950, easing = LinearEasing))
         // Start the real app only after ALL moving logo geometry has stopped.
         // NavHost/Home initial composition therefore cannot steal its frame budget.
@@ -86,6 +91,17 @@ internal fun SonoraColdStartIntro(
             native.save()
             native.translate((size.width - side) / 2f, (size.height - side) / 2f)
             native.scale(unit, unit)
+
+            if (progress == 0f) {
+                // 1/255 alpha is visually indistinguishable from black, but
+                // forces textures into GPU memory before the moving frames.
+                for (bitmap in arrayOf(
+                    available.ignition, available.spine, available.left,
+                    available.right, available.bars,
+                )) {
+                    available.draw(native, bitmap, 1f / 255f)
+                }
+            }
 
             val ignition = phase(progress, .025f, .11f) *
                 (1f - phase(progress, .20f, .30f))
