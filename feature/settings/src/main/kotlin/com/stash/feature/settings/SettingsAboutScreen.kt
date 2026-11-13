@@ -89,7 +89,7 @@ fun SettingsAboutScreen(
                         val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                             type = "text/plain"
                             putExtra(android.content.Intent.EXTRA_STREAM, target.contentUri)
-                            putExtra(android.content.Intent.EXTRA_SUBJECT, "NØSTOP crash report")
+                            putExtra(android.content.Intent.EXTRA_SUBJECT, "Sonora — crash report")
                             addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         }
                         val chooser = android.content.Intent.createChooser(send, context.getString(R.string.nostop_about_crash_chooser))
