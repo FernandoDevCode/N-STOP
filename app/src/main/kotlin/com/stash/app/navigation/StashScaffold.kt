@@ -266,9 +266,6 @@ fun StashScaffold(
             // takes the bottom edge. This drops innerPadding.bottom to 0 so the
             // content extends full-height behind that action bar.
             if (!selectionActive) {
-                val qobuzStatusViewModel: QobuzStatusViewModel = androidx.hilt.navigation.compose.hiltViewModel()
-                val qobuzStatus by qobuzStatusViewModel.bannerStatus.collectAsStateWithLifecycle()
-
                 // No bottom navigation-bar padding here: the tab bar's glass runs down under
                 // the system bar and pads its own items (StashBottomBar), so content scrolling
                 // under it is frosted all the way to the screen's edge. The cards above it keep
@@ -278,14 +275,6 @@ fun StashScaffold(
                 val navigationHeight = com.stash.core.ui.visual.VisualDesign.Size.Chrome +
                     with(density) { WindowInsets.navigationBars.getBottom(this).toDp() }
                 Column(if (!onNowPlaying) Modifier.sonoraBottomFade(navigationHeight) else Modifier) {
-                    AnimatedVisibility(
-                        visible = !onNowPlaying,
-                        modifier = cardInsets,
-                        enter = fadeIn(),
-                        exit = fadeOut(),
-                    ) {
-                        com.stash.core.ui.components.QobuzDiscoveryBanner(status = qobuzStatus)
-                    }
                     // On Now Playing the LiveLyricsBar (rendered inside the
                     // screen itself) takes the MiniPlayer's spot — the full
                     // player already shows all transport controls, so the

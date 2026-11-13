@@ -205,56 +205,16 @@ class StreamSourceRegistry internal constructor(
         // downloads (2026-09-05): off means no FLAC anywhere, so the lossless sources
         // leave the chain and the track streams from the lossy rungs. It outranks the
         // force-source test toggles: a stale force pref must not override a user choice.
-        val lossless = losslessPrefs.enabledNow()
+        // Sonora uses YouTube/YouTube Music for resolvable audio. Spotify is a
+        // catalog identity, not an unauthorized audio file source. Legacy
+        // Qobuz/JioSaavn credentials and toggles are ignored on every path.
+        val lossless = false
         val resolvers = buildList<Pair<String, suspend (TrackEntity) -> StreamUrl?>> {
-            if (streamingPreference.isForceQbdlxOnly()) {
-                // Test toggle: qbdlx (direct-Qobuz) ONLY — skip every other source
-                // so qbdlx can be exercised even when the proxies are healthy.
-                // Takes precedence over the other force toggles. Gated by
-                // allowYtDlp so speculative background fill spends none of that
-                // account's quota (only foreground/next-up resolves hit it).
-                if (allowYtDlp && lossless) add("qbdlx" to qbdlx::resolve)
-                // A force toggle is a TEST instrument, but the pref outlives the
-                // build — and qbdlx can die under it (it did; #429's reporter had
-                // this toggle on and got an infinite spinner on every track). Keep
-                // the lossy safety net so no stale preference means silence.
-                // Retiring a source has to mean retiring its force branch in the
-                // same change, or a stale pref with no UI left to clear it routes
-                // every track through a dead source.
-                if (allowYouTube && allowYtDlp) add("jiosaavn" to jiosaavn::resolve)
-                if (allowYouTube) add("youtube" to { t: TrackEntity -> youtube.resolve(t, allowYtDlp) })
-            } else if (streamingPreference.isForceYouTubeFallback()) {
-                // Test toggle: skip the lossless sources, forcing the
-                // YouTube fallback path. Still gated by allowYouTube so the
-                // background-fill keeps resolving nothing (matching a genuine
-                // both-sources-down outage).
-                if (allowYouTube) add("youtube" to { t: TrackEntity -> youtube.resolve(t, allowYtDlp) })
-            } else {
-                // PARKED 2026-07-01: kennyy/squid hosts are down for us. Kept in
-                // sync with LosslessSourceRegistry.PARKED_SOURCE_IDS (download
-                // side) — re-enabling is uncommenting these two lines.
-                // add("kennyy" to kennyy::resolve)
-                // add("squid" to qobuz::resolve)
-
-                // qbdlx (direct Qobuz API) is the primary lossless source:
-                // plain Range-seekable FLAC, no proxy, no client-side decrypt —
-                // the fastest path. Foreground/next-up only (allowYtDlp = true),
-                // never the speculative background fill.
-                // qbdlx self-gates on LosslessAvailability (BYO / custom endpoint
-                // / relay); no build gate.
-                if (allowYtDlp && lossless) {
-                    add("qbdlx" to qbdlx::resolve)
-                }
-                // AAC 320 fallback (96 under Save Data). Foreground/next-up only: a
-                // speculative full-queue fill must not turn into one metadata
-                // search + media probe per track. Any miss/outage continues to
-                // the existing YouTube fallback below.
-                if (allowYouTube && allowYtDlp) {
-                    add("jiosaavn" to jiosaavn::resolve)
-                }
-                if (allowYouTube) add("youtube" to { t: TrackEntity -> youtube.resolve(t, allowYtDlp) })
-            }
+            if (allowYouTube) add("youtube" to { t: TrackEntity -> youtube.resolve(t, allowYtDlp) })
         }
+        Log.i(TAG, "Sonora audio chain for ${track.id}: youtube=$allowYouTube")
+        val hedged = false
+
         // Which sources are actually IN PLAY for this resolve, and why.
         //
         // Added after a "works in debug, dead in release" hunt where qbdlx never

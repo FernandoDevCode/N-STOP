@@ -366,18 +366,6 @@ fun SettingsLibraryStorageScreen(
                         onCheckedChange = viewModel::onStashMixesEnabledChanged,
                     )
                 },
-                {
-                    SettingsToggleRow(
-                        title = stringResource(R.string.nostop_storage_discover_qobuz),
-                        subtitle = if (uiState.qobuzDiscoveryEnabled) {
-                            stringResource(R.string.nostop_storage_qobuz_on)
-                        } else {
-                            stringResource(R.string.nostop_storage_qobuz_off)
-                        },
-                        checked = uiState.qobuzDiscoveryEnabled,
-                        onCheckedChange = viewModel::onQobuzDiscoveryEnabledChanged,
-                    )
-                },
             ),
         )
 

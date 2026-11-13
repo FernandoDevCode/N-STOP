@@ -260,7 +260,12 @@ fun SettingsAppearanceScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
         )
-        val homeSections = uiState.homeSectionOrder.filterNot { it == com.stash.core.data.prefs.HomeSection.COMMUNITY }
+        val homeSections = uiState.homeSectionOrder.filterNot {
+            it == com.stash.core.data.prefs.HomeSection.COMMUNITY ||
+                it == com.stash.core.data.prefs.HomeSection.NEW_RELEASES ||
+                it == com.stash.core.data.prefs.HomeSection.QOBUZ_PLAYLISTS ||
+                it == com.stash.core.data.prefs.HomeSection.TOP_ALBUMS
+        }
         homeSections.forEachIndexed { index, section ->
             // Community's switch is its own, off by default (spec 2026-09-26 §3), not the hidden set.
             val community = section == com.stash.core.data.prefs.HomeSection.COMMUNITY
@@ -293,7 +298,7 @@ fun SettingsAppearanceScreen(
 private fun com.stash.core.data.prefs.HomeSection.displayLabel(): String = when (this) {
     com.stash.core.data.prefs.HomeSection.YOUR_PLAYLISTS -> "Your playlists"
     com.stash.core.data.prefs.HomeSection.NEW_RELEASES -> "New Releases"
-    com.stash.core.data.prefs.HomeSection.QOBUZ_PLAYLISTS -> "Qobuz Playlists"
+    com.stash.core.data.prefs.HomeSection.QOBUZ_PLAYLISTS -> "Coleções legadas"
     com.stash.core.data.prefs.HomeSection.TOP_ALBUMS -> "Top Albums"
     com.stash.core.data.prefs.HomeSection.MADE_FOR_YOU -> "Made for you"
     com.stash.core.data.prefs.HomeSection.RADIOS -> "Radios"

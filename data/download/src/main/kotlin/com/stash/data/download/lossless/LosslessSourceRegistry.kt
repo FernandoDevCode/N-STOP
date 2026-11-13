@@ -85,21 +85,9 @@ class LosslessSourceRegistry @Inject constructor(
             source.rateLimitState().let { !it.isCircuitBroken && it.recentFailures == 0 }
     }
 
-    /** The sources [resolve] asks, in order. */
-    private suspend fun chain(): List<LosslessSource> =
-        // Test toggles (outage drills): filter the chain to a single source so a
-        // forced download exercises that source even when the Qobuz proxies are
-        // healthy. A miss falls through to a normal null return (no quota to
-        // protect).
-        if (streamingPreference.isForceQbdlxOnly()) {
-            orderedSources().filter { it.id == "qbdlx_qobuz" }
-        } else {
-            // Normal chain skips parked (host-down) sources. qbdlx self-gates on
-            // LosslessAvailability. The force toggle above bypasses the filter so
-            // a manual test can still reach a source on demand, and
-            // orderedSources()/Settings still list them.
-            orderedSources().filterNot { it.id in PARKED_SOURCE_IDS }
-        }
+    /** Legacy Qobuz sources stay registered for data compatibility, but no
+     * excluded music service is called by Sonora's download lookup. */
+    private suspend fun chain(): List<LosslessSource> = emptyList()
 
     /**
      * All registered sources, in user-configured priority order. Sources
