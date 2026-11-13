@@ -84,6 +84,7 @@ import dev.chrisbanes.haze.rememberHazeState
  * Also publishes the app-wide album colour ([LocalAlbumChrome]) and hosts the queue
  * sheet the mini player opens.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun StashScaffold(
     pendingDeepLink: String? = null,
