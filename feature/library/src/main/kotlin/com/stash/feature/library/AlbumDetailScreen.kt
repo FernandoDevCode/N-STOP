@@ -219,7 +219,7 @@ fun AlbumDetailScreen(
                             if (selection.isActive) selection.toggle(track.id)
                             else viewModel.playTrack(track.id)
                         },
-                        onLongPress = { if (!selection.isActive) selection.enter(track.id) },
+                        onLongPress = { if (!selection.isActive) selectedTrack = track else selection.toggle(track.id) },
                         showArtist = false,
                         isResolving = track.id == tappedTrackId,
                         selectionActive = selection.isActive,
@@ -315,6 +315,10 @@ fun AlbumDetailScreen(
         ) {
             TrackOptionsSheet(
                 track = selectedTrack!!,
+                onSelectMultiple = { selected ->
+                    selectedTrack = null
+                    selection.enter(selected.id)
+                },
                 onPlayNext = {
                     viewModel.playNext(it)
                     selectedTrack = null

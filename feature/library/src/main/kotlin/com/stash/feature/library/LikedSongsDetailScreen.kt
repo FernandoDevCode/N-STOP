@@ -212,7 +212,7 @@ fun LikedSongsDetailScreen(
                                 if (selection.isActive) selection.toggle(track.id)
                                 else viewModel.playTrack(track.id)
                             },
-                            onLongPress = { if (!selection.isActive) selection.enter(track.id) },
+                            onLongPress = { if (!selection.isActive) selectedTrack = track else selection.toggle(track.id) },
                             isResolving = track.id == tappedTrackId,
                             selectionActive = selection.isActive,
                             selected = selection.isSelected(track.id),
@@ -312,6 +312,10 @@ fun LikedSongsDetailScreen(
         ) {
             TrackOptionsSheet(
                 track = selectedTrack!!,
+                onSelectMultiple = { selected ->
+                    selectedTrack = null
+                    selection.enter(selected.id)
+                },
                 onPlayNext = {
                     viewModel.playNext(it)
                     selectedTrack = null
