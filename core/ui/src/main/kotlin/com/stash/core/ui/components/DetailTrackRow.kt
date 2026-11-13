@@ -42,6 +42,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.stash.core.model.MusicSource
+import com.stash.core.ui.R
 import com.stash.core.model.Track
 import com.stash.core.ui.theme.StashTheme
 import com.stash.core.ui.util.formatDuration
