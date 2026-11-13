@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="web_library_export_title">Stash na web</string>
-    <string name="web_library_export_subtitle">Leve suas músicas curtidas, playlists e reproduções recentes para o Stash na web. Depois, no player web, acesse Configurações › Sua biblioteca › Importar do aplicativo Stash.</string>
-    <string name="web_library_export_button">Exportar para o Stash na web</string>
+    <string name="web_library_export_title">Player web vinculado</string>
+    <string name="web_library_export_subtitle">Exporte músicas curtidas, playlists e reproduções recentes para um player web compatível. Depois, importe o arquivo na biblioteca desse serviço.</string>
+    <string name="web_library_export_button">Exportar para player web</string>
     <string name="web_library_export_working_title">Exportando sua biblioteca</string>
     <string name="web_library_export_done_title">Pronto para usar na web</string>
-    <string name="web_library_export_done_body">Foram salvos %1$s, %2$s e %3$s. Abra o Stash na web e importe este arquivo em Configurações › Sua biblioteca.</string>
+    <string name="web_library_export_done_body">Foram salvos %1$s, %2$s e %3$s. Abra o player web vinculado e importe este arquivo em Configurações › Sua biblioteca.</string>
     <plurals name="web_library_export_likes">
         <item quantity="one">%d música curtida</item>
         <item quantity="other">%d músicas curtidas</item>
@@ -21,7 +21,7 @@
     <string name="web_library_export_failed_title">Não foi possível exportar</string>
     <string name="web_library_export_failed_body">Não foi possível salvar o arquivo. Tente novamente ou escolha outro local.</string>
     <string name="web_library_export_ok">OK</string>
-    <string name="web_library_import_button">Importar do Stash na web</string>
+    <string name="web_library_import_button">Importar do player web</string>
     <string name="web_library_sent_title">Enviado</string>
     <string name="web_library_sent_body">%2$s, %3$s e %4$s enviados para %1$s. Uma confirmação será solicitada antes da importação.</string>
     <string name="nostop_appearance">Aparência</string>
@@ -47,15 +47,15 @@
     <string name="nostop_classic">Clássico</string>
     <string name="nostop_ambient_style_description">Brilho suave anima as cores delicadamente. Clássico usa o visual original.</string>
     <string name="nostop_ambient_disabled">Ative a animação ambiente para escolher um estilo.</string>
-    <string name="nostop_start_tab">Abrir o NØSTOP em</string>
+    <string name="nostop_start_tab">Abrir o Sonora em</string>
     <string name="nostop_home">Início</string>
     <string name="nostop_library">Biblioteca</string>
     <string name="nostop_search">Buscar</string>
-    <string name="nostop_start_tab_description">A aba exibida quando você abre o NØSTOP.</string>
+    <string name="nostop_start_tab_description">A aba exibida ao abrir o Sonora.</string>
     <string name="nostop_home_layout">Organização do Início</string>
     <string name="nostop_home_layout_description">Reorganize ou oculte seções da tela inicial. Descobrir permanece no topo.</string>
     <string name="nostop_show_likes">Mostrar músicas curtidas no Início</string>
-    <string name="nostop_show_likes_description">Exiba as músicas curtidas do NØSTOP, Spotify e YouTube juntas em Suas playlists.</string>
+    <string name="nostop_show_likes_description">Exiba as músicas curtidas do Sonora, Spotify e YouTube juntas em Suas playlists.</string>
     <string name="nostop_settings_title">Configurações</string>
     <string name="nostop_nav_playback">Reprodução</string>
     <string name="nostop_nav_audio">Áudio e qualidade</string>
@@ -115,7 +115,7 @@
     <string name="nostop_accounts_connections">Conexões</string>
     <string name="nostop_accounts_mirror_likes">Sincronizar suas curtidas</string>
     <string name="nostop_accounts_discord_title">Antes de conectar o Discord</string>
-    <string name="nostop_accounts_discord_warning">O Discord não oferece um método oficial para aplicativos móveis atualizarem seu status. Por isso, o NØSTOP usa a sessão da sua conta. O Discord considera isso um self-bot e pode aplicar penalidades.\n\nA fiscalização costuma focar spam, mas ainda existe risco para a sua conta.\n\nAo desconectar, o status é limpo e o token é removido deste celular.</string>
+    <string name="nostop_accounts_discord_warning">O Discord não oferece um método oficial para aplicativos móveis atualizarem seu status. Por isso, o Sonora usa a sessão da sua conta. O Discord considera isso um self-bot e pode aplicar penalidades.\n\nA fiscalização costuma focar spam, mas ainda existe risco para a sua conta.\n\nAo desconectar, o status é limpo e o token é removido deste celular.</string>
     <string name="nostop_accounts_connect_anyway">Conectar mesmo assim</string>
     <string name="nostop_accounts_cancel">Cancelar</string>
     <string name="nostop_accounts_finish_connect">Concluir conexão</string>
@@ -160,7 +160,7 @@
     <string name="nostop_quality_off">desligado</string>
     <string name="nostop_quality_fallback_hint">Usar JioSaavn e depois YouTube quando não houver versão sem perdas para baixar</string>
     <string name="nostop_quality_advanced">Avançado</string>
-    <string name="nostop_quality_relay_hint">Use seu próprio servidor intermediário para áudio sem perdas. Ele terá prioridade sobre o do NØSTOP.</string>
+    <string name="nostop_quality_relay_hint">Use seu próprio servidor intermediário para áudio sem perdas. Ele terá prioridade sobre o do Sonora.</string>
     <string name="nostop_quality_custom_endpoint">Servidor de áudio sem perdas personalizado</string>
     <string name="nostop_quality_test">Testar</string>
     <string name="nostop_quality_testing">Testando…</string>
@@ -172,7 +172,7 @@
     <string name="nostop_quality_effects">Efeitos</string>
     <string name="nostop_quality_equalizer">Equalizador</string>
     <string name="nostop_storage_recommendations_when">Executar recomendações quando</string>
-    <string name="nostop_storage_mixes">Mixes do NØSTOP (beta)</string>
+    <string name="nostop_storage_mixes">Mixes do Sonora (beta)</string>
     <string name="nostop_storage_mixes_on">Os mixes Daily Discover, Deep Cuts e First Listen são atualizados automaticamente em segundo plano.</string>
     <string name="nostop_storage_mixes_off">Playlists de mixes automáticos ficam ocultas. Downloads de descoberta em segundo plano ficam desativados.</string>
     <string name="nostop_storage_discover_qobuz">Descobertas do Qobuz no Início</string>
@@ -180,7 +180,7 @@
     <string name="nostop_storage_qobuz_off">O Início mostra apenas seus mixes e músicas importadas.</string>
     <string name="nostop_storage_library">Biblioteca</string>
     <string name="nostop_storage_library_health">Saúde da biblioteca</string>
-    <string name="nostop_storage_link_web">Vincular NØSTOP na web</string>
+    <string name="nostop_storage_link_web">Vincular Sonora na web</string>
     <string name="nostop_storage_web_hint">Continue de onde parou, sincronize e envie sua biblioteca</string>
     <string name="nostop_storage_storage">Armazenamento</string>
     <string name="nostop_storage_processing">Processando...</string>
@@ -255,9 +255,9 @@
     <string name="nostop_account_disconnect">Desconectar</string>
     <string name="nostop_account_connect">Conectar</string>
     <string name="nostop_disconnect_question">Desconectar %1$s?</string>
-    <string name="nostop_disconnect_warning">O NØSTOP desconectará %1$s deste celular e interromperá a sincronização. As músicas de %1$s que estiverem aguardando download serão removidas da fila.\n\nAs músicas já baixadas permanecerão na biblioteca. Você poderá reconectar quando quiser.</string>
+    <string name="nostop_disconnect_warning">O Sonora desconectará %1$s deste celular e interromperá a sincronização. As músicas de %1$s que estiverem aguardando download serão removidas da fila.\n\nAs músicas já baixadas permanecerão na biblioteca. Você poderá reconectar quando quiser.</string>
     <string name="nostop_mirror_question">Sincronizar curtidas com %1$s?</string>
-    <string name="nostop_mirror_warning">Curtir uma música no NØSTOP também a curtirá no %1$s; retirar a curtida fará o mesmo lá. Só as novas curtidas serão sincronizadas.\n\nEsse recurso utiliza interfaces privadas do %1$s, não uma API oficial. Ele pode deixar de funcionar ou, em casos raros, causar restrições na conta. Considere usar uma conta secundária.</string>
+    <string name="nostop_mirror_warning">Curtir uma música no Sonora também a curtirá no %1$s; retirar a curtida fará o mesmo lá. Só as novas curtidas serão sincronizadas.\n\nEsse recurso utiliza interfaces privadas do %1$s, não uma API oficial. Ele pode deixar de funcionar ou, em casos raros, causar restrições na conta. Considere usar uma conta secundária.</string>
     <string name="nostop_mirror_understand">Entendi</string>
     <string name="web_unlink_device_question">Remover %1$s?</string>
     <string name="web_unlink_device_warning">O dispositivo perde acesso ao seu celular imediatamente. A biblioteca dele não será alterada.</string>
@@ -266,7 +266,7 @@
     <string name="web_unlink_all">Desvincular tudo</string>
     <string name="web_link_browser">Vincular navegador</string>
     <string name="web_link_intro">Continue de onde parou, sincronize a reprodução e envie sua biblioteca.</string>
-    <string name="web_link_instruction">Abra play.stashfm.app › Configurações › Seu celular</string>
+    <string name="web_link_instruction">No player web vinculado, acesse Configurações › Seu celular</string>
     <string name="web_scan_code">Ler código</string>
     <string name="web_linked_devices">Dispositivos vinculados</string>
     <string name="web_link_another">Vincular outro navegador</string>
@@ -314,4 +314,9 @@
     <string name="sonora_image_cache_clearing">Limpando imagens…</string>
     <string name="sonora_image_cache_success">Cache limpo. Reabra o perfil do artista para buscar outra vez.</string>
     <string name="sonora_image_cache_error">Não foi possível limpar todas as imagens. Tente novamente.</string>
+    <string name="sonora_settings_overline">SONORA / PREFERÊNCIAS</string>
+    <string name="sonora_settings_intro">Ajuste reprodução, contas e aparência.</string>
+    <string name="sonora_settings_sound">Som e reprodução</string>
+    <string name="sonora_settings_collection">Contas e biblioteca</string>
+    <string name="sonora_settings_preferences">Aplicativo</string>
 </resources>

@@ -21,7 +21,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.data.prefs.HiResOutputMode
 import com.stash.core.media.output.SignalQuality
-import com.stash.core.ui.components.GlassCard
+import com.stash.feature.settings.components.SonoraSettingsCard as GlassCard
 import com.stash.feature.settings.components.SettingsPickerRow
 import com.stash.feature.settings.components.SettingsSectionLabel
 

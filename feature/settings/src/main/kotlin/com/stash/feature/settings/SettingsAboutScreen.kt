@@ -23,7 +23,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.work.WorkManager
 import com.stash.core.data.sync.workers.UpdateCheckWorker
-import com.stash.core.ui.components.GlassCard
+import com.stash.feature.settings.components.SonoraSettingsCard as GlassCard
 import com.stash.feature.settings.components.SettingsScaffold
 import com.stash.feature.settings.components.SettingsSectionLabel
 import com.stash.feature.settings.components.SettingsValueRow
@@ -89,7 +89,7 @@ fun SettingsAboutScreen(
                         val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                             type = "text/plain"
                             putExtra(android.content.Intent.EXTRA_STREAM, target.contentUri)
-                            putExtra(android.content.Intent.EXTRA_SUBJECT, "NØSTOP crash report")
+                            putExtra(android.content.Intent.EXTRA_SUBJECT, "Sonora — crash report")
                             addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         }
                         val chooser = android.content.Intent.createChooser(send, context.getString(R.string.nostop_about_crash_chooser))

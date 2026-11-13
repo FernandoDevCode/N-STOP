@@ -60,7 +60,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.media.equalizer.NamedPreset
-import com.stash.core.ui.components.GlassCard
+import com.stash.feature.settings.components.SonoraSettingsCard as GlassCard
 import com.stash.core.ui.theme.StashTheme
 
 /** Frequency labels for the 5 EQ bands: 60 Hz, 230 Hz, 910 Hz, 3.6 kHz, 14 kHz. */
