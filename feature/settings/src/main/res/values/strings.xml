@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Settings › Library & Storage: "Export for Linked web player" (the web player's library file). -->
+    <!-- Settings › Library & Storage: "Export for web player" (the web player's library file). -->
     <string name="web_library_export_title">Linked web player</string>
-    <string name="web_library_export_subtitle">Take your likes, your playlists and what you played lately to Linked web player. Then, in the web player: Settings › Your library › Import from the Stash app.</string>
-    <string name="web_library_export_button">Export for Linked web player</string>
+    <string name="web_library_export_subtitle">Export your liked songs, playlists and recent plays to a compatible web player. Then import the file into that service's library.</string>
+    <string name="web_library_export_button">Export for web player</string>
     <string name="web_library_export_working_title">Exporting your library</string>
     <string name="web_library_export_done_title">Ready for the web</string>
     <!-- %1$s likes, %2$s playlists, %3$s plays: the three counts below. -->
-    <string name="web_library_export_done_body">Saved %1$s, %2$s and %3$s. Open Linked web player and import this file in Settings › Your library.</string>
+    <string name="web_library_export_done_body">Saved %1$s, %2$s and %3$s. Open the linked web player and import this file in Settings › Your library.</string>
     <plurals name="web_library_export_likes">
         <item quantity="one">%d like</item>
         <item quantity="other">%d likes</item>
@@ -23,7 +23,7 @@
     <string name="web_library_export_failed_title">Couldn’t export</string>
     <string name="web_library_export_failed_body">The file couldn’t be written. Try again, or pick another place to save it.</string>
     <string name="web_library_export_ok">OK</string>
-    <string name="web_library_import_button">Import from Linked web player</string>
+    <string name="web_library_import_button">Import from web player</string>
     <!-- %1$s: the browser's name ("Chrome on Windows"). -->
     <string name="web_library_sent_title">Sent</string>
     <!-- %1$s the browser, %2$s likes, %3$s playlists, %4$s plays. -->
@@ -59,7 +59,7 @@
     <string name="nostop_home_layout">Home layout</string>
     <string name="nostop_home_layout_description">Rearrange or hide Home sections. Discover stays at the top.</string>
     <string name="nostop_show_likes">Show Liked Songs on Home</string>
-    <string name="nostop_show_likes_description">Show your liked songs from NØSTOP, Spotify and YouTube together in Your playlists.</string>
+    <string name="nostop_show_likes_description">Show your liked songs from Sonora, Spotify and YouTube together in Your playlists.</string>
     <string name="nostop_settings_title">Settings</string>
     <string name="nostop_nav_playback">Playback</string>
     <string name="nostop_nav_audio">Audio &amp; Quality</string>
@@ -164,7 +164,7 @@
     <string name="nostop_quality_off">off</string>
     <string name="nostop_quality_fallback_hint">Use JioSaavn, then YouTube, when a download has no lossless match</string>
     <string name="nostop_quality_advanced">Advanced</string>
-    <string name="nostop_quality_relay_hint">Use your own lossless relay endpoint. It takes priority over the NØSTOP relay.</string>
+    <string name="nostop_quality_relay_hint">Use your own lossless relay endpoint. It takes priority over the Sonora relay.</string>
     <string name="nostop_quality_custom_endpoint">Custom lossless endpoint</string>
     <string name="nostop_quality_test">Test</string>
     <string name="nostop_quality_testing">Testing…</string>
@@ -259,9 +259,9 @@
     <string name="nostop_account_disconnect">Disconnect</string>
     <string name="nostop_account_connect">Connect</string>
     <string name="nostop_disconnect_question">Disconnect %1$s?</string>
-    <string name="nostop_disconnect_warning">NØSTOP will sign out of %1$s on this phone and stop syncing it. Songs from %1$s waiting to download will be removed from the queue.\n\nSongs already downloaded will stay in your library, and you can reconnect at any time.</string>
+    <string name="nostop_disconnect_warning">Sonora will sign out of %1$s on this phone and stop syncing it. Songs from %1$s waiting to download will be removed from the queue.\n\nSongs already downloaded will stay in your library, and you can reconnect at any time.</string>
     <string name="nostop_mirror_question">Mirror likes to %1$s?</string>
-    <string name="nostop_mirror_warning">Liking a song in NØSTOP will also like it on %1$s, and removing your like will remove it there too. Only new likes are mirrored.\n\nThis uses %1$s private web endpoints, not an official API. It may stop working or, in rare cases, cause account restrictions. Consider using a secondary account.</string>
+    <string name="nostop_mirror_warning">Liking a song in Sonora will also like it on %1$s, and removing your like will remove it there too. Only new likes are mirrored.\n\nThis uses %1$s private web endpoints, not an official API. It may stop working or, in rare cases, cause account restrictions. Consider using a secondary account.</string>
     <string name="nostop_mirror_understand">I understand</string>
     <string name="web_unlink_device_question">Remove %1$s?</string>
     <string name="web_unlink_device_warning">It stops seeing your phone at once. Its library stays as it is.</string>
