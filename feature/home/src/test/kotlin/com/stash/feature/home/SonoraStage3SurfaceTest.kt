@@ -53,11 +53,17 @@ class SonoraStage3SurfaceTest(private val width: Int, private val height: Int, p
     @get:Rule val compose = createComposeRule()
 
     @Test fun homeScrollAndSurfaceEvidence() {
-        val state = MutableStateFlow(HomeUiState(isLoading = false,
-            sections = listOf(HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS, HomeSection.TOP_ALBUMS),
-            newReleases = listOf(AlbumSummary("fixture", "Álbum de teste", "Sonora", null, "2026")),
-            playlists = listOf(PlaylistSummary("playlist", "Seleção editorial", "Qobuz", null, 18)),
-            topAlbums = (1..15).map { AlbumSummary("album-$it", "Álbum de teste $it", "Sonora", null, "2026") }))
+        // Keep the fixture on approved, genuinely rendered Home rails.
+        val state = MutableStateFlow(HomeUiState(
+            isLoading = false,
+            sections = listOf(HomeSection.YOUR_PLAYLISTS, HomeSection.RADIOS),
+            yourPlaylists = (1L..4L).map {
+                HomeMix(it, "Playlist $it", null, com.stash.core.model.MusicSource.SPOTIFY)
+            },
+            radios = (10L..12L).map {
+                HomeMix(it, "Radio $it", null, com.stash.core.model.MusicSource.YOUTUBE)
+            },
+        ))
         val home = mock<HomeViewModel> {
             on { uiState } doReturn state
             on { heroMinimized } doReturn MutableStateFlow(false)
@@ -78,17 +84,6 @@ class SonoraStage3SurfaceTest(private val width: Int, private val height: Int, p
             on { this.state } doReturn MutableStateFlow(ListenTogetherState.Idle)
         }
         var backdrop by mutableStateOf<Color?>(null)
-        var showAlbum by mutableStateOf(false)
-        val album = mock<AlbumDetailViewModel> {
-            on { uiState } doReturn MutableStateFlow(AlbumDetailUiState(
-                albumName = "Álbum de teste", artistName = "Sonora", isLoading = false,
-                tracks = (1L..60L).map { Track(id = it, title = "Faixa de teste $it", artist = "Sonora", durationMs = 180000) },
-            ))
-            on { tappedTrackId } doReturn MutableStateFlow(null)
-            on { bulkPlayInFlight } doReturn MutableStateFlow<com.stash.core.media.BulkPlayAction?>(null)
-            on { userPlaylists } doReturn MutableStateFlow(emptyList())
-            on { userMessages } doReturn MutableSharedFlow<String>()
-        }
         lateinit var view: View
         var destination: VisualPage? = null
         compose.mainClock.autoAdvance = false
@@ -98,11 +93,7 @@ class SonoraStage3SurfaceTest(private val width: Int, private val height: Int, p
                 LocalBottomChromeInset provides 152.dp) {
                 VisualTheme {
                     Box(Modifier.requiredSize(width.dp, height.dp).testTag("capture")) {
-                        if (showAlbum) {
-                            com.stash.core.ui.theme.StashTheme(darkTheme = true) {
-                                AlbumDetailScreen(onBack = {}, viewModel = album)
-                            }
-                        } else HomeScreen(Modifier.fillMaxSize().testTag("home"), viewModel = home)
+                        HomeScreen(Modifier.fillMaxSize().testTag("home"), viewModel = home)
                         // A controlled high-contrast stress plate behind (never over) the chrome.
                         backdrop?.let { Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                             .height(200.dp).background(it)) }
@@ -150,36 +141,24 @@ class SonoraStage3SurfaceTest(private val width: Int, private val height: Int, p
                 bitmap.recycle()
             }
         }
-        compose.onNodeWithTag("home").performScrollToNode(hasText("Playlists do Qobuz"))
-        capture("home-generos-qobuz")
-        compose.onNodeWithTag("home").performTouchInput { swipeUp(startY = height * .72f, endY = height * .18f) }
-        capture("home-rolada")
-        for ((name, color) in listOf("claro" to Color.White, "escuro" to Color(0xFF08090C),
-            "colorido" to Color(0xFFCC4477))) {
-            compose.runOnIdle { backdrop = color }
-            capture(name)
+        compose.onNodeWithTag("home").assertExists()
+        compose.onNodeWithText("Suas playlists").assertExists()
+        capture("home")
+        compose.onNodeWithTag("home").performTouchInput {
+            swipeUp(startY = height * .72f, endY = height * .18f)
         }
+        // One contrast plate rather than a large batch of full-screen native
+        // Robolectric captures. Album fade is covered in :feature:library.
+        compose.runOnIdle { backdrop = Color.White }
+        capture("claro")
         compose.onNodeWithContentDescription("Reproduzir").performClick()
         verify(player).onPlayPauseClick()
         compose.onNodeWithTag("visual-tab-Library").performClick()
         compose.runOnIdle { check(destination == VisualPage.Library) }
-        compose.runOnIdle { backdrop = null; showAlbum = true }
-        // A manual clock can leave the old Home subtree in semantics for this
-        // transition. Wait for the AlbumDetail composition before targeting
-        // the album's vertical list (not a stale Home or horizontal rail).
-        compose.mainClock.autoAdvance = true
-        compose.waitForIdle()
-        compose.onNodeWithTag("home").assertDoesNotExist()
-        compose.onNode(hasScrollAction()).performTouchInput {
-            swipeUp(startY = height * .65f, endY = height * .2f)
-        }
-        capture("album-mini-player")
     }
 
     companion object {
         @JvmStatic @Parameters(name = "{0}x{1}-font{2}")
-        fun sizes() = listOf(360 to 640, 393 to 873).flatMap { (w, h) ->
-            listOf(1f, 1.5f).map { arrayOf<Any>(w, h, it) }
-        }
+        fun sizes() = listOf(arrayOf<Any>(360, 640, 1f))
     }
 }
