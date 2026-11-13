@@ -145,8 +145,13 @@ fun SearchScreen(
                 .padding(inner)
                 ,
         ) {
-            VisualHeader(VisualActions(onSettings = onSettings))
-            Text("Buscar", Modifier.padding(horizontal = VisualDesign.Gutter, vertical = 12.dp), style = VisualDesign.PageTitle)
+            // This is a primary tab, not a settings entry point. A single
+            // clear title keeps the search field visible above the fold.
+            Text(
+                text = stringResource(R.string.nostop_search_title),
+                modifier = Modifier.padding(horizontal = VisualDesign.Gutter, vertical = 10.dp),
+                style = VisualDesign.PageTitle,
+            )
             SearchBar(state.query, viewModel::onQueryChanged, { viewModel.onQueryChanged("") }, viewModel::onSearchCommitted)
 
             when (val status = state.status) {
@@ -443,37 +448,44 @@ private fun SectionedResultsList(
                         LaunchedEffect(videoId) {
                             losslessPrefetcher.warmUp(top.track.toTrackItem())
                         }
-                        TopResultCard(
-                            item = top,
-                            onArtistClick = onArtistClick,
-                            onTrackPlay = onTopTrackClick,
+                        SongRow(
+                            item = top.track.toSearchResultItem(),
                             isDownloading = videoId in downloadingIds,
                             isDownloaded = videoId in downloadedIds,
                             isPreviewLoading = previewLoadingId == videoId,
                             isPreviewPlaying = previewState is PreviewState.Playing &&
                                 previewState.videoId == videoId,
-                            isResolving = (videoId.hashCode().toLong() == tappedTrackId),
-                            onPreview = { onPreview(top.track.toTrackItem()) },
+                            isResolving = videoId.hashCode().toLong() == tappedTrackId,
+                            isPlaying = isRowPlaying(videoId, currentPlayingYoutubeId),
+                            onPlay = { onTopTrackClick(top.track) },
                             onStopPreview = onStopPreview,
                             onDownload = { onDownload(top.track) },
                             onPlayNext = { onPlayNext(top.track.toTrackItem()) },
                             onAddToQueue = { onAddToQueue(top.track.toTrackItem()) },
                             onAddToPlaylist = { onRequestAddToPlaylist(top.track.toTrackItem()) },
                             onStartRadio = { onStartRadio(top.track.toTrackItem()) },
+                            modifier = Modifier.padding(horizontal = 16.dp),
                         )
-                    } else {
+                    } else if (top is TopResultItem.ArtistTop) {
                         TopResultCard(
                             item = top,
                             onArtistClick = onArtistClick,
-                            onTrackPlay = onTopTrackClick,
-                            artistPhotoUrl = (top as? TopResultItem.ArtistTop)?.artist?.let {
-                                selectedArtistPhotoUrl(it.id, it.avatarUrl, selectedArtistPhotos)
-                            },
+                            artistPhotoUrl = selectedArtistPhotoUrl(
+                                top.artist.id, top.artist.avatarUrl, selectedArtistPhotos,
+                            ),
                         )
                     }
                 }
                 is SearchResultSection.Songs -> {
-                    item(key = "songs_header") { VisualSectionTitle(stringResource(R.string.nostop_search_songs)) }
+                    item(key = "songs_header") {
+                        VisualSectionTitle(stringResource(R.string.nostop_search_songs))
+                        Text(
+                            text = stringResource(R.string.sonora_search_hold_hint),
+                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     items(section.tracks, key = { "song_" + it.videoId }) { t ->
                         val item = t.toSearchResultItem()
                         // Warm the lossless URL cache for each song row as it
@@ -560,189 +572,61 @@ internal fun selectedArtistPhotoUrl(
  */
 @Composable
 private fun TopResultCard(
-    item: TopResultItem,
-    artistPhotoUrl: String? = null,
+    item: TopResultItem.ArtistTop,
+    artistPhotoUrl: String?,
     onArtistClick: (ArtistSummary) -> Unit,
-    onTrackPlay: (TrackSummary) -> Unit,
-    // new — only consulted when item is TrackTop
-    isDownloading: Boolean = false,
-    isDownloaded: Boolean = false,
-    isPreviewLoading: Boolean = false,
-    isPreviewPlaying: Boolean = false,
-    isResolving: Boolean = false,
-    onPreview: () -> Unit = {},
-    onStopPreview: () -> Unit = {},
-    onDownload: () -> Unit = {},
-    onPlayNext: () -> Unit = {},
-    onAddToQueue: () -> Unit = {},
-    onAddToPlaylist: () -> Unit = {},
-    onStartRadio: () -> Unit = {},
 ) {
-    val extendedColors = StashTheme.extendedColors
-    val clickMod = when (item) {
-        is TopResultItem.ArtistTop -> Modifier.clickable { onArtistClick(item.artist) }
-        is TopResultItem.TrackTop -> Modifier.clickable { onTrackPlay(item.track) }
-    }
-
-    // Keep text and actions on separate rows: on compact 360dp screens
-    // three actions plus 96dp art used to squeeze song titles to 3-5 letters.
-    Column(
+    // A featured artist is an identity/navigational result, never a track
+    // download/queue surface. Keep it distinct from compact track rows.
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
             .testTag("TopResultCard")
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(14.dp))
             .background(VisualDesign.cardSurface())
-            .then(clickMod)
-            .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .clickable { onArtistClick(item.artist) }
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        val photo = artistPhotoUrl ?: item.artist.avatarUrl
         Box(
-            modifier = Modifier
-                .size(78.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(extendedColors.elevatedSurface),
+            Modifier.size(80.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center,
         ) {
-            val thumb = when (item) {
-                is TopResultItem.ArtistTop -> artistPhotoUrl ?: item.artist.avatarUrl
-                is TopResultItem.TrackTop -> item.track.thumbnailUrl
-            }
-            if (thumb != null) {
+            if (photo != null) {
                 AsyncImage(
-                    model = thumb,
+                    model = photo,
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,
                 )
             } else {
-                val icon = if (item is TopResultItem.ArtistTop) {
-                    Icons.Default.Person
-                } else {
-                    Icons.Default.MusicNote
-                }
                 Icon(
-                    imageVector = icon,
+                    imageVector = Icons.Default.Person,
                     contentDescription = null,
-                    modifier = Modifier.size(40.dp),
-                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(32.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
-
-        Spacer(Modifier.width(13.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            val (primary, secondary, kind) = when (item) {
-                is TopResultItem.ArtistTop ->
-                    Triple(item.artist.name, null, stringResource(R.string.nostop_search_kind_artist))
-                is TopResultItem.TrackTop ->
-                    Triple(item.track.title, item.track.artist, stringResource(R.string.nostop_search_kind_song))
-            }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
             Text(
-                text = kind,
+                text = stringResource(R.string.nostop_search_kind_artist),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = primary,
+                text = item.artist.name,
                 style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onBackground,
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (secondary != null) {
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = secondary,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-
-        }
-        if (item is TopResultItem.TrackTop) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-            // Preview button — mirrors PreviewDownloadRow's control
-            IconButton(
-                onClick = if (isPreviewPlaying) onStopPreview else onPreview,
-                modifier = Modifier.size(40.dp),
-            ) {
-                when {
-                    isPreviewLoading || isResolving -> CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    isPreviewPlaying -> Icon(
-                        imageVector = Icons.Default.Stop,
-                        contentDescription = "Stop preview",
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                    else -> Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "Preview",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
-            // Download action — mirrors PreviewDownloadRow's control
-            Box(
-                modifier = Modifier.size(40.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                when {
-                    isDownloaded -> {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = "Downloaded",
-                            modifier = Modifier.size(24.dp),
-                            tint = extendedColors.success,
-                        )
-                    }
-                    isDownloading -> {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            strokeWidth = 2.5.dp,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                    else -> {
-                        IconButton(onClick = onDownload) {
-                            Icon(
-                                imageVector = Icons.Default.Download,
-                                contentDescription = "Download",
-                                modifier = Modifier.size(24.dp),
-                                tint = MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Same ⋮ menu the ordinary song rows have — the Top-result card is
-            // the highest-visibility card and used to be the one with none.
-            SearchTrackMenu(
-                onPlayNext = onPlayNext,
-                onAddToQueue = onAddToQueue,
-                onAddToPlaylist = onAddToPlaylist,
-                onStartRadio = onStartRadio,
-            )
-            }
         }
     }
 }
@@ -842,31 +726,28 @@ private fun NoResultsMessage() {
 
 @Composable
 private fun EmptySearchPrompt() {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        contentAlignment = Alignment.Center,
+    // No giant placeholder illustration or provider-specific marketing.
+    // An empty library/history is an honest, quiet state.
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 42.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(
-                imageVector = Icons.Default.MusicNote,
-                contentDescription = null,
-                modifier = Modifier.size(64.dp),
-                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = stringResource(R.string.nostop_search_youtube),
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = stringResource(R.string.nostop_search_empty_hint),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        Icon(
+            imageVector = Icons.Default.Search,
+            contentDescription = null,
+            modifier = Modifier.size(28.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = stringResource(R.string.sonora_search_idle_title),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            text = stringResource(R.string.sonora_search_idle_subtitle),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
