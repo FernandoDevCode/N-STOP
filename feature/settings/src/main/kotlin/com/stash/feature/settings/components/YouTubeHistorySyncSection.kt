@@ -110,7 +110,7 @@ fun YouTubeHistorySyncSection(
                 )
             }
 
-            com.stash.core.ui.components.SonoraSwitch(
+            com.stash.core.ui.components.StashSwitch(
                 checked = enabled,
                 onCheckedChange = { checked ->
                     if (checked) {
