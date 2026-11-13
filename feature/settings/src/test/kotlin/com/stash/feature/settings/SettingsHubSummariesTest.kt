@@ -42,33 +42,35 @@ class SettingsHubSummariesTest {
 
     // --- audioQuality -----------------------------------------------------
 
-    @Test fun `audio lossless on with MAX tier → Lossless · Max`() {
+    @Test fun `legacy MAX lossless flag does not override YouTube quality`() {
         val s = settingsHubSummaries(
             state = SettingsUiState(
                 losslessEnabled = true,
                 losslessQualityTier = LosslessQualityTier.MAX,
+                audioQuality = QualityTier.BEST,
             ),
             versionName = "0.9.51",
             streamingEnabled = true,
             streamOnCellular = false,
         )
-        assertEquals("Lossless · Max", s.audioQuality)
+        assertEquals("YouTube · Best", s.audioQuality)
     }
 
-    @Test fun `audio lossless on with HI_RES tier → Lossless · Hi-Res`() {
+    @Test fun `legacy Hi Res flag cannot advertise unavailable FLAC`() {
         val s = settingsHubSummaries(
             state = SettingsUiState(
                 losslessEnabled = true,
                 losslessQualityTier = LosslessQualityTier.HI_RES,
+                audioQuality = QualityTier.NORMAL,
             ),
             versionName = "0.9.51",
             streamingEnabled = true,
             streamOnCellular = false,
         )
-        assertEquals("Lossless · Hi-Res", s.audioQuality)
+        assertEquals("YouTube · Normal", s.audioQuality)
     }
 
-    @Test fun `audio lossless off → audioQuality label`() {
+    @Test fun `lossless off reports active YouTube quality`() {
         val s = settingsHubSummaries(
             state = SettingsUiState(
                 losslessEnabled = false,
@@ -78,7 +80,7 @@ class SettingsHubSummariesTest {
             streamingEnabled = true,
             streamOnCellular = false,
         )
-        assertEquals("Max", s.audioQuality)
+        assertEquals("YouTube · Max", s.audioQuality)
     }
 
     // --- accounts ---------------------------------------------------------

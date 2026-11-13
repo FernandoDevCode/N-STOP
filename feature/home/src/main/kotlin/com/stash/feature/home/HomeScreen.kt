@@ -417,7 +417,8 @@ fun HomeScreen(
         // Order + visibility still come from uiState.sections. Genre chips sit
         // after a populated New Releases rail; when it is hidden or empty they
         // attach to the first populated Qobuz row, without changing filter IDs.
-        val showGenreFilters = uiState.qobuzDiscoveryEnabled && uiState.genres.isNotEmpty()
+        // Excluded providers must never reappear, even with restored legacy state or test fixtures.
+        val showGenreFilters = false
         val chipsAfterReleases = showGenreFilters && uiState.newReleases.isNotEmpty() &&
             HomeSection.NEW_RELEASES in uiState.sections
         val firstPopulatedQobuzSection = uiState.sections.firstOrNull { section ->
@@ -448,7 +449,12 @@ fun HomeScreen(
                     HomeSection.COMMUNITY -> true
                 }
             } == HomeSection.QOBUZ_PLAYLISTS
-        uiState.sections.forEach { section ->
+        uiState.sections.filterNot { section ->
+            section == HomeSection.NEW_RELEASES ||
+                section == HomeSection.QOBUZ_PLAYLISTS ||
+                section == HomeSection.TOP_ALBUMS ||
+                section == HomeSection.COMMUNITY
+        }.forEach { section ->
             val chipsLead = showGenreFilters && !chipsAfterReleases && section == genreFallbackSection
             if (chipsLead) {
                 item(key = "section_genre_chips") {

@@ -214,57 +214,44 @@ class SonoraHomeScreenTest {
         compose.onNodeWithText("Ouvir agora").assertDoesNotExist()
     }
 
-    @Test fun genresFollowNewReleasesAndKeepOriginalFilterIdentifiers() {
+    @Test fun legacyDiscoverySectionsStayHiddenEvenWithRestoredAlbums() {
         state.value = HomeUiState(
             isLoading = false,
-            sections = listOf(HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS),
-            newReleases = listOf(AlbumSummary("release", "Álbum fixture", "Artista", null, "2026")),
-            playlists = listOf(PlaylistSummary("playlist", "Playlist fixture", "Qobuz", null, 12)),
-        )
-        render()
-        val releases = compose.onNodeWithText("Novos lançamentos").fetchSemanticsNode().boundsInRoot
-        val genres = compose.onNodeWithText("Todos").fetchSemanticsNode().boundsInRoot
-        val playlists = compose.onNodeWithText("Playlists do Qobuz").fetchSemanticsNode().boundsInRoot
-        check(releases.top < genres.top && genres.top < playlists.top)
-        // The filters remain comfortably separated from New Releases, while the
-        // following Qobuz heading no longer inherits a full section gap.
-        check(playlists.top - genres.bottom in 12f..40f)
-        compose.onNodeWithText("Eletrônica").performClick()
-        compose.runOnIdle { verify(vm).onSelectGenre("Electronic") }
-    }
-
-    @Test fun genresMoveToFirstPopulatedQobuzSectionWhenReleasesAreEmpty() {
-        state.value = HomeUiState(
-            isLoading = false,
-            sections = listOf(HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS),
-            newReleases = emptyList(),
-            playlists = listOf(PlaylistSummary("playlist", "Playlist fixture", "Qobuz", null, 12)),
+            qobuzDiscoveryEnabled = true, // Even stale flags must not restore retired services.
+            sections = listOf(
+                HomeSection.NEW_RELEASES, HomeSection.QOBUZ_PLAYLISTS,
+                HomeSection.TOP_ALBUMS, HomeSection.YOUR_PLAYLISTS,
+            ),
+            newReleases = listOf(AlbumSummary("retired-release", "Legacy album", "Old source", null, "2026")),
+            playlists = listOf(PlaylistSummary("retired-list", "Legacy playlist", "Old source", null, 12)),
+            topAlbums = listOf(AlbumSummary("retired-top", "Legacy chart", "Old source", null, "2026")),
+            yourPlaylists = listOf(HomeMix(9L, "Minha playlist", null, MusicSource.SPOTIFY)),
         )
         render()
         compose.onNodeWithText("Novos lançamentos").assertDoesNotExist()
-        val genres = compose.onNodeWithText("Todos").fetchSemanticsNode().boundsInRoot
-        val playlists = compose.onNodeWithText("Playlists do Qobuz").fetchSemanticsNode().boundsInRoot
-        check(genres.top < playlists.top)
-        check(playlists.top - genres.bottom in 6f..36f)
+        compose.onNodeWithText("Playlists do Qobuz").assertDoesNotExist()
+        compose.onNodeWithText("Legacy album").assertDoesNotExist()
+        compose.onNodeWithText("Legacy playlist").assertDoesNotExist()
+        compose.onNodeWithText("Todos").assertDoesNotExist()
+        compose.onNodeWithText("Suas playlists").assertExists()
     }
 
-    @Test fun emptyCustomSectionsDoNotBreakGenreToQobuzContinuity() {
+    @Test fun removingRetiredSectionsPreservesPlayableRailOrder() {
         state.value = HomeUiState(
             isLoading = false,
             sections = listOf(
-                HomeSection.NEW_RELEASES,
-                HomeSection.MADE_FOR_YOU,
-                HomeSection.RADIOS,
-                HomeSection.QOBUZ_PLAYLISTS,
+                HomeSection.RADIOS, HomeSection.NEW_RELEASES,
+                HomeSection.QOBUZ_PLAYLISTS, HomeSection.TOP_ALBUMS,
+                HomeSection.YOUR_PLAYLISTS,
             ),
-            newReleases = listOf(AlbumSummary("release", "Álbum fixture", "Artista", null, "2026")),
-            madeForYou = emptyList(),
-            radios = emptyList(),
-            playlists = listOf(PlaylistSummary("playlist", "Playlist fixture", "Qobuz", null, 12)),
+            radios = listOf(HomeMix(8L, "Rádio real", null, MusicSource.SPOTIFY)),
+            yourPlaylists = listOf(HomeMix(9L, "Playlist real", null, MusicSource.SPOTIFY)),
         )
         render()
-        val genres = compose.onNodeWithText("Todos").fetchSemanticsNode().boundsInRoot
-        val playlists = compose.onNodeWithText("Playlists do Qobuz").fetchSemanticsNode().boundsInRoot
-        check(playlists.top - genres.bottom in 12f..40f)
+        val radios = compose.onNodeWithText("Rádios").fetchSemanticsNode().boundsInRoot.top
+        val playlists = compose.onNodeWithText("Suas playlists").fetchSemanticsNode().boundsInRoot.top
+        check(radios < playlists)
+        compose.onNodeWithText("Playlist real").performClick()
+        compose.runOnIdle { check(opened == 9L) }
     }
 }

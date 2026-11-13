@@ -499,21 +499,36 @@ class HomeViewModelTest {
     }
 
     // ------------------------------------------------------------------
-    // Qobuz discovery rows + genre filter
+    // Retired catalog providers must not be queried or advertised on Home.
     // ------------------------------------------------------------------
 
     @Test
-    fun `discovery rows load for All genre on init`() = runTest {
-        val vm = buildVm(discoveryAlbums = listOf(albumSummary("a1")))
+    fun `legacy Qobuz feeds are not queried after provider removal`() = runTest {
+        val repo = mock<HomeDiscoveryRepository> {
+            onBlocking { newReleases(anyOrNull()) } doReturn listOf(albumSummary("retired"))
+            onBlocking { topAlbums(anyOrNull()) } doReturn listOf(albumSummary("retired"))
+            onBlocking { communityPlaylists(anyOrNull()) } doReturn emptyList()
+        }
+        val vm = buildVm(homeDiscovery = repo)
 
-        val state = vm.uiState.first { it.newReleases.isNotEmpty() }
-
-        assertThat(state.selectedGenre).isEqualTo("All")
-        assertThat(state.newReleases.single().id).isEqualTo("a1")
+        val state = vm.uiState.first { !it.isLoading }
+        assertThat(state.qobuzDiscoveryEnabled).isFalse()
+        assertThat(state.newReleases).isEmpty()
+        assertThat(state.topAlbums).isEmpty()
+        assertThat(state.playlists).isEmpty()
+        assertThat(state.sections).containsNoneOf(
+            com.stash.core.data.prefs.HomeSection.NEW_RELEASES,
+            com.stash.core.data.prefs.HomeSection.QOBUZ_PLAYLISTS,
+            com.stash.core.data.prefs.HomeSection.TOP_ALBUMS,
+            com.stash.core.data.prefs.HomeSection.COMMUNITY,
+        )
+        verifyBlocking(repo, org.mockito.kotlin.never()) { newReleases(anyOrNull()) }
+        verifyBlocking(repo, org.mockito.kotlin.never()) { topAlbums(anyOrNull()) }
+        verifyBlocking(repo, org.mockito.kotlin.never()) { communityPlaylists(anyOrNull()) }
     }
 
     @Test
-    fun `onSelectGenre re-fetches rows with that genre id`() = runTest {
+    fun `historical genre selection does not revive removed feeds`() = runTest {
         val repo = mock<HomeDiscoveryRepository> {
             onBlocking { newReleases(anyOrNull()) } doReturn emptyList()
             onBlocking { topAlbums(anyOrNull()) } doReturn emptyList()
@@ -525,7 +540,8 @@ class HomeViewModelTest {
         vm.onSelectGenre("Pop/Rock")
         runCurrent()
 
-        assertThat(vm.uiState.value.selectedGenre).isEqualTo("Pop/Rock")
-        verifyBlocking(repo) { newReleases(eq(112)) }   // Pop/Rock genre_id
+        assertThat(vm.uiState.value.selectedGenre).isEqualTo("All")
+        assertThat(vm.uiState.value.qobuzDiscoveryEnabled).isFalse()
+        verifyBlocking(repo, org.mockito.kotlin.never()) { newReleases(anyOrNull()) }
     }
 }
