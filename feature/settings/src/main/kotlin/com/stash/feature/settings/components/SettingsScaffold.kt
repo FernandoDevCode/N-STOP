@@ -19,6 +19,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontWeight
+import com.stash.core.ui.visual.VisualBackground
+import com.stash.core.ui.visual.VisualDesign
+import com.stash.core.ui.visual.VisualTheme
 import com.stash.core.ui.components.bottomChromePadding
 
 /**
@@ -33,11 +37,13 @@ fun SettingsScaffold(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    VisualTheme(dark = com.stash.core.ui.theme.LocalIsDarkTheme.current, amoled = com.stash.core.ui.theme.LocalIsAmoledTheme.current) {
+    VisualBackground {
     Column(modifier = modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 4.dp, vertical = 8.dp),
+                .padding(start = 10.dp, end = 20.dp, top = 10.dp, bottom = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
@@ -49,7 +55,8 @@ fun SettingsScaffold(
             }
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
             )
         }
@@ -57,11 +64,13 @@ fun SettingsScaffold(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = VisualDesign.Gutter)
                 // Edge to edge under the glass mini player + tab bar.
                 .padding(bottom = bottomChromePadding()),
             verticalArrangement = Arrangement.spacedBy(SettingsGroupGap),
             content = content,
         )
+    }
+    }
     }
 }
