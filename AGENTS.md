@@ -1,4 +1,4 @@
-# NØNSTOP — instruções de contexto para agentes
+# Sonora — instruções de contexto para agentes
 
 ## Tarefas do Player v8 / Art Lab
 - Leia PRIMEIRO `docs/player-v8/README.md` e depois `docs/player-v8/PLAYER_V8_ART_LAB_SPEC.md`.
@@ -20,3 +20,8 @@ Estas instruções de v8 não substituem as regras técnicas gerais do projeto n
 - Publicar APK de validação usando o commit que foi integrado ao fluxo canônico; release/pré-release são artefatos e **não** significam que a branch de origem tenha sido integrada.
 - Preserve os IDs de aplicativo, a assinatura, os dados do usuário e a distinção Debug/Release. Não reverter decisões mais novas por commits antigos.
 - O estado consolidado, testes e exceções estão documentados em `docs/SONORA_CONSOLIDATION.md`. O teste visual das fotos/fade no Redmi é uma pendência distinta do sucesso do CI.
+
+## Identidade e provedores em qualquer alteração de UI
+- Execute `python3 tools/check_sonora_identity.py` e revise `docs/sonora/IDENTITY_PROVIDERS_GATE.md` antes do merge; não permita nova referência Stash/NØNSTOP/Qobuz na experiência visível.
+- Não relacione fonte de catálogo ao provedor do áudio; preservar os contratos da Busca. Não chamar YouTube de FLAC nem substituir endpoints legados por domínios inventados.
+- Verificação estática não substitui inspeção visual em aparelho. Preservar licenças GPL e dados internos.
