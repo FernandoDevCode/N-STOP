@@ -78,8 +78,8 @@ internal fun SonoraColdStartIntro(
     Canvas(
         Modifier
             .fillMaxSize()
-            .background(Color(0xFF0B0E13))
-            .graphicsLayer { alpha = opacity.value },
+            .graphicsLayer { alpha = opacity.value }
+            .background(Color(0xFF0B0E13)),
     ) {
         val available = layers.value ?: return@Canvas
         val progress = formation.value
