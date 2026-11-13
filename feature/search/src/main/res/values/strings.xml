@@ -33,4 +33,17 @@
     <string name="album_download_one">Download 1 track to your library?</string>
     <string name="album_download_confirm_button">Download</string>
     <string name="album_download_cancel">Cancel</string>
+    <string name="sonora_track_actions">Track options</string>
+    <string name="sonora_track_stop">Stop preview</string>
+    <string name="sonora_track_download">Download</string>
+    <string name="sonora_track_downloaded">Downloaded</string>
+    <string name="sonora_track_downloading">Downloading</string>
+    <string name="sonora_track_pending">Download pending</string>
+    <string name="sonora_track_playlist">Add to playlist</string>
+    <string name="sonora_track_play_next">Play next</string>
+    <string name="sonora_track_queue">Add to queue</string>
+    <string name="sonora_track_radio">Start song radio</string>
+    <string name="sonora_search_hold_hint">Tap to play · Hold for options</string>
+    <string name="sonora_search_idle_title">Start with a song</string>
+    <string name="sonora_search_idle_subtitle">Search for music, artists or albums.</string>
 </resources>
