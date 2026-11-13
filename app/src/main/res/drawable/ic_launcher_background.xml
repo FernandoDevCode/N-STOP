@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <!-- Matte graphite-violet derived from the approved Sonora icon. No baked-in outer border:
-         the Android adaptive launcher owns the final mask and shape. -->
-    <gradient android:angle="270" android:startColor="#302C3B" android:endColor="#1D1B27" />
+    <!-- Charcoal backing for any adaptive-mask transparency; no violet tint. -->
+    <solid android:color="#0B0E13"/>
 </shape>
