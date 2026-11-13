@@ -23,7 +23,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.work.WorkManager
 import com.stash.core.data.sync.workers.UpdateCheckWorker
-import com.stash.core.ui.components.GlassCard
+import com.stash.feature.settings.components.SonoraSettingsCard as GlassCard
 import com.stash.feature.settings.components.SettingsScaffold
 import com.stash.feature.settings.components.SettingsSectionLabel
 import com.stash.feature.settings.components.SettingsValueRow
