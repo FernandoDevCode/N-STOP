@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="web_library_export_title">Stash na web</string>
-    <string name="web_library_export_subtitle">Leve suas músicas curtidas, playlists e reproduções recentes para o Stash na web. Depois, no player web, acesse Configurações › Sua biblioteca › Importar do aplicativo Stash.</string>
-    <string name="web_library_export_button">Exportar para o Stash na web</string>
+    <string name="web_library_export_title">Player web vinculado</string>
+    <string name="web_library_export_subtitle">Leve suas músicas curtidas, playlists e reproduções recentes para o Player web vinculado. Depois, no player web, acesse Configurações › Sua biblioteca › Importar do aplicativo Stash.</string>
+    <string name="web_library_export_button">Exportar para o Player web vinculado</string>
     <string name="web_library_export_working_title">Exportando sua biblioteca</string>
     <string name="web_library_export_done_title">Pronto para usar na web</string>
-    <string name="web_library_export_done_body">Foram salvos %1$s, %2$s e %3$s. Abra o Stash na web e importe este arquivo em Configurações › Sua biblioteca.</string>
+    <string name="web_library_export_done_body">Foram salvos %1$s, %2$s e %3$s. Abra o Player web vinculado e importe este arquivo em Configurações › Sua biblioteca.</string>
     <plurals name="web_library_export_likes">
         <item quantity="one">%d música curtida</item>
         <item quantity="other">%d músicas curtidas</item>
@@ -21,7 +21,7 @@
     <string name="web_library_export_failed_title">Não foi possível exportar</string>
     <string name="web_library_export_failed_body">Não foi possível salvar o arquivo. Tente novamente ou escolha outro local.</string>
     <string name="web_library_export_ok">OK</string>
-    <string name="web_library_import_button">Importar do Stash na web</string>
+    <string name="web_library_import_button">Importar do Player web vinculado</string>
     <string name="web_library_sent_title">Enviado</string>
     <string name="web_library_sent_body">%2$s, %3$s e %4$s enviados para %1$s. Uma confirmação será solicitada antes da importação.</string>
     <string name="nostop_appearance">Aparência</string>
@@ -47,11 +47,11 @@
     <string name="nostop_classic">Clássico</string>
     <string name="nostop_ambient_style_description">Brilho suave anima as cores delicadamente. Clássico usa o visual original.</string>
     <string name="nostop_ambient_disabled">Ative a animação ambiente para escolher um estilo.</string>
-    <string name="nostop_start_tab">Abrir o NØSTOP em</string>
+    <string name="nostop_start_tab">Abrir o Sonora em</string>
     <string name="nostop_home">Início</string>
     <string name="nostop_library">Biblioteca</string>
     <string name="nostop_search">Buscar</string>
-    <string name="nostop_start_tab_description">A aba exibida quando você abre o NØSTOP.</string>
+    <string name="nostop_start_tab_description">A aba exibida ao abrir o Sonora.</string>
     <string name="nostop_home_layout">Organização do Início</string>
     <string name="nostop_home_layout_description">Reorganize ou oculte seções da tela inicial. Descobrir permanece no topo.</string>
     <string name="nostop_show_likes">Mostrar músicas curtidas no Início</string>
@@ -115,7 +115,7 @@
     <string name="nostop_accounts_connections">Conexões</string>
     <string name="nostop_accounts_mirror_likes">Sincronizar suas curtidas</string>
     <string name="nostop_accounts_discord_title">Antes de conectar o Discord</string>
-    <string name="nostop_accounts_discord_warning">O Discord não oferece um método oficial para aplicativos móveis atualizarem seu status. Por isso, o NØSTOP usa a sessão da sua conta. O Discord considera isso um self-bot e pode aplicar penalidades.\n\nA fiscalização costuma focar spam, mas ainda existe risco para a sua conta.\n\nAo desconectar, o status é limpo e o token é removido deste celular.</string>
+    <string name="nostop_accounts_discord_warning">O Discord não oferece um método oficial para aplicativos móveis atualizarem seu status. Por isso, o Sonora usa a sessão da sua conta. O Discord considera isso um self-bot e pode aplicar penalidades.\n\nA fiscalização costuma focar spam, mas ainda existe risco para a sua conta.\n\nAo desconectar, o status é limpo e o token é removido deste celular.</string>
     <string name="nostop_accounts_connect_anyway">Conectar mesmo assim</string>
     <string name="nostop_accounts_cancel">Cancelar</string>
     <string name="nostop_accounts_finish_connect">Concluir conexão</string>
@@ -266,7 +266,7 @@
     <string name="web_unlink_all">Desvincular tudo</string>
     <string name="web_link_browser">Vincular navegador</string>
     <string name="web_link_intro">Continue de onde parou, sincronize a reprodução e envie sua biblioteca.</string>
-    <string name="web_link_instruction">Abra play.stashfm.app › Configurações › Seu celular</string>
+    <string name="web_link_instruction">No player web vinculado, acesse Configurações › Seu celular</string>
     <string name="web_scan_code">Ler código</string>
     <string name="web_linked_devices">Dispositivos vinculados</string>
     <string name="web_link_another">Vincular outro navegador</string>
@@ -314,4 +314,9 @@
     <string name="sonora_image_cache_clearing">Limpando imagens…</string>
     <string name="sonora_image_cache_success">Cache limpo. Reabra o perfil do artista para buscar outra vez.</string>
     <string name="sonora_image_cache_error">Não foi possível limpar todas as imagens. Tente novamente.</string>
+    <string name="sonora_settings_overline">SONORA / PREFERÊNCIAS</string>
+    <string name="sonora_settings_intro">Ajuste reprodução, contas e aparência.</string>
+    <string name="sonora_settings_sound">Som e reprodução</string>
+    <string name="sonora_settings_collection">Contas e biblioteca</string>
+    <string name="sonora_settings_preferences">Aplicativo</string>
 </resources>
