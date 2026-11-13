@@ -154,8 +154,9 @@ private fun traceLight(canvas: NativeCanvas, path: Path, visible: Float, brightn
     val tail = measure.length * 0.34f
     measure.getSegment((distance - tail).coerceAtLeast(0f), distance, trace, true)
     drawGlowPath(canvas, trace, brightness)
-    val line = brush(brightness).apply {
+    val line = brush().apply {
         color = android.graphics.Color.WHITE
+        alpha = (255f * brightness).toInt()
         style = Paint.Style.STROKE
         strokeWidth = 3f
     }
@@ -174,8 +175,9 @@ private fun drawSonoraMark(canvas: NativeCanvas, t: Float) {
             )
         }
         canvas.drawCircle(503f, 500f, 72f, haze)
-        canvas.drawCircle(503f, 500f, 2.5f, brush(ignition).apply {
+        canvas.drawCircle(503f, 500f, 2.5f, brush().apply {
             color = android.graphics.Color.WHITE
+            alpha = (255f * ignition).toInt()
         })
     }
 
@@ -186,8 +188,8 @@ private fun drawSonoraMark(canvas: NativeCanvas, t: Float) {
             lineTo(503f, 500f + 418f * spine)
         }
         drawGlowPath(canvas, line, spine)
-        canvas.drawPath(line, brush(spine).apply {
-            color = rgba(240, 236, 244, 255)
+        canvas.drawPath(line, brush().apply {
+            color = rgba((240 * spine).toInt(), 236, 244, 255)
             strokeWidth = 2.7f
             style = Paint.Style.STROKE
         })
