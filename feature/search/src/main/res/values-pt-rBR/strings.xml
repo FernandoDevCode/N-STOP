@@ -33,4 +33,17 @@
     <string name="album_download_one">Baixar 1 música para sua biblioteca?</string>
     <string name="album_download_confirm_button">Baixar</string>
     <string name="album_download_cancel">Cancelar</string>
+    <string name="sonora_track_actions">Opções da música</string>
+    <string name="sonora_track_stop">Parar prévia</string>
+    <string name="sonora_track_download">Baixar</string>
+    <string name="sonora_track_downloaded">Baixada</string>
+    <string name="sonora_track_downloading">Baixando</string>
+    <string name="sonora_track_pending">Download pendente</string>
+    <string name="sonora_track_playlist">Adicionar à playlist</string>
+    <string name="sonora_track_play_next">Reproduzir a seguir</string>
+    <string name="sonora_track_queue">Adicionar à fila</string>
+    <string name="sonora_track_radio">Iniciar rádio da música</string>
+    <string name="sonora_search_hold_hint">Toque para ouvir · Segure para opções</string>
+    <string name="sonora_search_idle_title">Comece por uma música</string>
+    <string name="sonora_search_idle_subtitle">Pesquise músicas, artistas ou álbuns.</string>
 </resources>
