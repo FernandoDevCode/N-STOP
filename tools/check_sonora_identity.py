@@ -84,6 +84,26 @@ gradle = (ROOT / "app/build.gradle.kts").read_text()
 if 'buildConfigField("Boolean", "WEB_LINK_ENABLED", "true")' in gradle:
     VIOLATIONS.append("app/build.gradle.kts: unsupported external Stash web sync is enabled")
 
+# Excluded music catalogs must also be unreachable from artist/album flows,
+# background discovery, and restored strict-lossless download preferences.
+weekly = (ROOT / "feature/home/src/main/kotlin/com/stash/feature/home/SonoraWeeklyDiscoveryEngine.kt").read_text()
+if re.search(r"lastfm\s*\.\s*get(?:TagTopTracks|ArtistTopTags)", weekly):
+    VIOLATIONS.append("SonoraWeeklyDiscoveryEngine: active Last.fm catalog request")
+discography = (ROOT / "data/download/src/main/kotlin/com/stash/data/download/lossless/qbdlx/QobuzDiscographyProvider.kt").read_text()
+active_merge = discography.split("override suspend fun mergeInto(", 1)[-1].split("private fun unchanged(", 1)[0]
+if "apiClient." in active_merge:
+    VIOLATIONS.append("QobuzDiscographyProvider: restored artist route may query Qobuz")
+album_cache = (ROOT / "core/data/src/main/kotlin/com/stash/core/data/cache/AlbumCache.kt").read_text()
+if re.search(r"AlbumSource\.QOBUZ(?:_PLAYLIST)?\s*->\s*qobuzFetcher\.", album_cache):
+    VIOLATIONS.append("AlbumCache: restored Qobuz album route may call excluded provider")
+prefs = (ROOT / "data/download/src/main/kotlin/com/stash/data/download/lossless/LosslessSourcePreferences.kt").read_text()
+if "val enabled: Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)" not in prefs:
+    VIOLATIONS.append("LosslessSourcePreferences: old strict-FLAC flag may block downloads")
+if "val youtubeFallbackEnabled: Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true)" not in prefs:
+    VIOLATIONS.append("LosslessSourcePreferences: YouTube fallback can be disabled by a stale flag")
+if "https://stash-tipjar.rawnaldclark.workers.dev" in gradle:
+    VIOLATIONS.append("app/build.gradle.kts: obsolete supporter server remains configured")
+
 if VIOLATIONS:
     print("SONORA IDENTITY GATE FAILED:")
     for item in sorted(set(VIOLATIONS)):
