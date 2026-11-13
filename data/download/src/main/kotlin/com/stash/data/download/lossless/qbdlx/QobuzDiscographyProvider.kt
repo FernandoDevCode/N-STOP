@@ -24,62 +24,13 @@ class QobuzDiscographyProvider @Inject constructor(
     private val apiClient: QbdlxApiClient,
 ) : DiscographySupplement {
 
+    /** Sonora only displays albums from Spotify/YouTube catalogs. Never fetch
+     * Qobuz supplements even when this legacy provider is DI-registered. */
     override suspend fun mergeInto(
         artistName: String,
         ytAlbums: List<AlbumSummary>,
         ytSingles: List<AlbumSummary>,
-    ): MergedDiscography = runCatching {
-        val nName = QobuzCandidateMatcher.normalize(artistName)
-        if (nName.isBlank() || nName in VARIOUS_ARTISTS) return unchanged(ytAlbums, ytSingles)
-
-        val candidates = apiClient.searchArtists(artistName)
-            .filter { QobuzCandidateMatcher.normalize(it.name) !in VARIOUS_ARTISTS }
-            .filterNot { isSuperstringPseudo(nName, QobuzCandidateMatcher.normalize(it.name)) }
-            .distinctBy { it.id }
-        val scored = candidates
-            .map { it to QobuzCandidateMatcher.artistSimilarity(nName, QobuzCandidateMatcher.normalize(it.name)) }
-            .filter { it.second >= ARTIST_MATCH_THRESHOLD }
-            .sortedByDescending { it.second }
-        // Collapse the artist's OWN duplicate entities (same name, different id):
-        // dedup by normalized NAME so "distinct candidate" == "distinct artist".
-        val distinctArtists = scored.distinctBy { QobuzCandidateMatcher.normalize(it.first.name) }
-        val best = distinctArtists.firstOrNull()?.first ?: return unchanged(ytAlbums, ytSingles)
-
-        val nBest = QobuzCandidateMatcher.normalize(best.name)
-        // Qobuz's artist-discography endpoint is a firehose: real studio albums
-        // PLUS singles, compilations, and every release the artist is merely
-        // FEATURED on (tribute/cover singles credited to other artists, guest
-        // spots credited to "X, Lil Wayne", etc.). YouTube's album grid is
-        // clean/curated, so Qobuz is here ONLY to fill genuine ALBUM gaps.
-        // Keep a release only if it is:
-        //   1. the matched artist's OWN release — the PRIMARY artist's name is
-        //      EXACTLY the match (strict, not subset). Drops features/collabs
-        //      ("Jay Sean, Lil Wayne" ≠ "Lil Wayne") and covers by others.
-        //   2. album-length — enough tracks to be an album, not a single/EP.
-        //      release_type is null from this endpoint, so track count is the
-        //      only reliable signal (real albums ~8-24 tracks; singles 1-3).
-        val ownAlbums = apiClient.getArtistAlbums(best.id).filter {
-            QobuzCandidateMatcher.normalize(it.artist?.name.orEmpty()) == nBest &&
-                it.tracks_count >= ALBUM_MIN_TRACKS
-        }
-        if (ytAlbums.isNotEmpty()) {
-            // A confident single match still needs corroboration: at least one Qobuz
-            // release title must overlap a YT one, else we may have matched a homonym.
-            val ytKeys = ytAlbums.map { QobuzCandidateMatcher.normalize(it.title) }.toSet()
-            val overlap = ownAlbums.any { QobuzCandidateMatcher.normalize(it.title) in ytKeys }
-            if (!overlap) return unchanged(ytAlbums, ytSingles)
-        } else {
-            // No YT titles to corroborate against → an ambiguous name is unresolvable.
-            if (distinctArtists.size >= 2) return unchanged(ytAlbums, ytSingles)
-        }
-
-        // Gap-fill the ALBUMS lane only; singles/EPs stay 100% YouTube (we don't
-        // supplement them — that's where most of the Qobuz noise lives).
-        MergedDiscography(
-            albums = DiscographyMerger.gapFill(ytAlbums, ownAlbums.map { it.toAlbumSummary(best.name) }),
-            singles = ytSingles,
-        )
-    }.getOrElse { unchanged(ytAlbums, ytSingles) }
+    ): MergedDiscography = unchanged(ytAlbums, ytSingles)
 
     private fun unchanged(a: List<AlbumSummary>, s: List<AlbumSummary>) = MergedDiscography(a, s)
 
