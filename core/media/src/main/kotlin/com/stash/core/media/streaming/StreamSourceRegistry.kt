@@ -213,8 +213,6 @@ class StreamSourceRegistry internal constructor(
             if (allowYouTube) add("youtube" to { t: TrackEntity -> youtube.resolve(t, allowYtDlp) })
         }
         Log.i(TAG, "Sonora audio chain for ${track.id}: youtube=$allowYouTube")
-        val hedged = false
-
         // Which sources are actually IN PLAY for this resolve, and why.
         //
         // Added after a "works in debug, dead in release" hunt where qbdlx never
