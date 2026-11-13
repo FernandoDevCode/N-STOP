@@ -154,7 +154,7 @@ android {
         buildConfigField(
             "String",
             "SUPPORTERS_JSON_URL",
-            "\"https://stash-tipjar.rawnaldclark.workers.dev\"",
+            "\"\"",
         )
         // Online-Streaming Engine master kill-switch. Flipped to `true` once
         // the engine has been validated end-to-end (see Task 23 of the
