@@ -396,44 +396,6 @@ fun HomeScreen(
             }
         }
 
-        // ── Lossless connect nudge ───────────────────────────────────
-        // Shown when the user has lossless toggled OFF and hasn't
-        // dismissed. Tap routes to Settings; X dismisses forever.
-        // Stacks below the Last.fm banner if both apply.
-        uiState.losslessPrompt?.let {
-            item {
-                Spacer(Modifier.height(6.dp))
-                LosslessConnectBanner(
-                    onSetUp = {
-                        viewModel.requestSettingsLosslessFocus()
-                        onNavigateToSettings()
-                    },
-                    onDismiss = viewModel::dismissLosslessBanner,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-            }
-        }
-
-        // ── Lossless offline ─────────────────────────────────────────
-        // Shown while lossless is ON, the shared path looks dead and
-        // the user owns no lossless source of their own — the one
-        // moment connecting an account is the difference between FLAC
-        // and a silent YouTube fallback. Tap opens Settings › Audio;
-        // X declines forever.
-        if (uiState.showLosslessOffline) {
-            item {
-                Spacer(Modifier.height(6.dp))
-                LosslessOfflineBanner(
-                    onConnect = {
-                        viewModel.requestSettingsLosslessFocus()
-                        onNavigateToSettings()
-                    },
-                    onDismiss = viewModel::dismissLosslessOffline,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-            }
-        }
-
         // ── Re-tagging library (metadata backfill progress) ──────────
         // v0.9.35: surfaces MetadataBackfillWorker progress on upgrade
         // so users know why disk IO / yt-dlp activity is happening. The

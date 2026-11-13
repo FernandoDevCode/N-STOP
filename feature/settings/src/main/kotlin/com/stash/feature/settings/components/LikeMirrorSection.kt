@@ -75,15 +75,7 @@ fun LikeMirrorSection(
             connectHint = "Connect YouTube Music first",
             onToggle = onYtMusicToggle,
         )
-        // Last.fm loved tracks. Stash already imports your Last.fm loves; this is
-        // the direction that was missing, so a heart here reaches Last.fm too.
-        MirrorToggleRow(
-            label = "Last.fm",
-            connected = lastFmConnected,
-            enabled = lastFmEnabled,
-            connectHint = "Connect Last.fm first",
-            onToggle = onLastFmToggle,
-        )
+
     }
 }
 
