@@ -1,12 +1,14 @@
 package com.stash.app
 
+import android.graphics.Bitmap
 import android.graphics.BlurMaskFilter
 import android.graphics.Canvas as NativeCanvas
+import android.graphics.Color as NativeColor
 import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
-import android.graphics.PathMeasure
 import android.graphics.RadialGradient
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
 import androidx.compose.animation.core.Animatable
@@ -16,32 +18,59 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlin.math.min
 
 /**
- * Sonora cold-start identity. This is a native, timeline-driven drawing, NOT a GIF:
- * first frame is absolutely dark; the image forms progressively and keeps its
- * graphite/chrome lighting until the entire overlay crossfades into the app.
+ * Cinematic Sonora cold-start. Chrome gradients, glows and geometry are rasterized
+ * ONCE, off the UI thread. Animation frames only draw GPU-backed bitmap layers
+ * with simple clipping/opacity: no BlurMaskFilter, PathMeasure, shaders, allocations
+ * of new paths or gradients in the hot frame loop.
  *
- * Rendering is independent of display resolution, density and decoder frame limits.
- * Only used for a normal cold launcher start; never for deep links or recreation.
+ * At t=0 the window is absolutely black. The mark stays chrome-lit at the end.
  */
 @Composable
-internal fun SonoraColdStartIntro(onFinished: () -> Unit) {
+internal fun SonoraColdStartIntro(
+    onSettled: () -> Unit,
+    onFinished: () -> Unit,
+) {
     val formation = remember { Animatable(0f) }
     val opacity = remember { Animatable(1f) }
+    val layers = remember { mutableStateOf<LogoLayers?>(null) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            layers.value?.dispose()
+            layers.value = null
+        }
+    }
 
     LaunchedEffect(Unit) {
+        // A cold boot gets a static black screen while shaders/blur are prepared
+        // on Default, rather than blocking the main thread between animation frames.
+        val prepared = withContext(Dispatchers.Default) { buildLogoLayers() }
+        layers.value = prepared
+        // Give HWUI two vsyncs to upload the 5 tiny textures during the
+        // visually black first frame, avoiding first-use GPU upload hitches.
+        withFrameNanos { }
+        withFrameNanos { }
         formation.animateTo(1f, tween(2950, easing = LinearEasing))
-        delay(520) // The *illuminated* logo stays on screen; it never becomes flat.
+        // Start the real app only after ALL moving logo geometry has stopped.
+        // NavHost/Home initial composition therefore cannot steal its frame budget.
+        onSettled()
+        delay(520)
         opacity.animateTo(0f, tween(280, easing = LinearEasing))
         onFinished()
     }
@@ -52,44 +81,218 @@ internal fun SonoraColdStartIntro(onFinished: () -> Unit) {
             .graphicsLayer { alpha = opacity.value }
             .background(Color(0xFF0B0E13)),
     ) {
-        val t = formation.value
+        val available = layers.value ?: return@Canvas
+        val progress = formation.value
+        val side = min(size.width * 0.94f, size.height * 0.63f)
+        val unit = side / LOGO_UNITS
+
         drawIntoCanvas { composeCanvas ->
-            val canvas = composeCanvas.nativeCanvas
-            val side = min(size.width * 0.94f, size.height * 0.63f)
-            val unit = side / 1000f
-            canvas.save()
-            canvas.translate((size.width - side) / 2f, (size.height - side) / 2f)
-            canvas.scale(unit, unit)
-            drawSonoraMark(canvas, t)
-            canvas.restore()
+            val native = composeCanvas.nativeCanvas
+            native.save()
+            native.translate((size.width - side) / 2f, (size.height - side) / 2f)
+            native.scale(unit, unit)
+
+            if (progress == 0f) {
+                // 1/255 alpha is visually indistinguishable from black, but
+                // forces textures into GPU memory before the moving frames.
+                for (bitmap in arrayOf(
+                    available.ignition, available.spine, available.left,
+                    available.right, available.bars,
+                )) {
+                    available.draw(native, bitmap, 1f / 255f)
+                }
+            }
+
+            val ignition = phase(progress, .025f, .11f) *
+                (1f - phase(progress, .20f, .30f))
+            available.draw(native, available.ignition, ignition)
+
+            val spine = phase(progress, .10f, .35f)
+            available.draw(
+                native, available.spine, spine,
+                0f, 500f - 420f * spine, LOGO_UNITS, 500f + 420f * spine,
+            )
+
+            // Two independent illuminated arcs: reveal top-to-bottom without
+            // ever recomputing the chrome, mask blur or bezier curves.
+            val left = phase(progress, .20f, .71f)
+            available.draw(
+                native, available.left, phase(progress, .20f, .64f),
+                0f, 0f, 1000f, 200f + 790f * left,
+            )
+            val right = phase(progress, .27f, .76f)
+            available.draw(
+                native, available.right, phase(progress, .27f, .70f),
+                0f, 0f, 1000f, 90f + 850f * right,
+            )
+
+            // Waveform progressively expands both outwards and vertically.
+            val bars = phase(progress, .53f, .84f)
+            available.draw(
+                native, available.bars, bars,
+                503f - 260f * bars, 500f - 116f * bars,
+                503f + 260f * bars, 500f + 116f * bars,
+            )
+            native.restore()
         }
     }
 }
+
+private const val LOGO_UNITS = 1000f
+private const val RASTER_PX = 512
 
 private fun phase(time: Float, start: Float, finish: Float): Float {
     val x = ((time - start) / (finish - start)).coerceIn(0f, 1f)
     return x * x * (3f - 2f * x)
 }
 
-private fun rgba(alpha: Int, r: Int, g: Int, b: Int): Int =
-    android.graphics.Color.argb(alpha.coerceIn(0, 255), r, g, b)
+/** The only objects accessed by the per-frame drawing callback. */
+private class LogoLayers(
+    val ignition: Bitmap,
+    val spine: Bitmap,
+    val left: Bitmap,
+    val right: Bitmap,
+    val bars: Bitmap,
+) {
+    private val source = Rect(0, 0, RASTER_PX, RASTER_PX)
+    private val destination = RectF(0f, 0f, LOGO_UNITS, LOGO_UNITS)
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
 
-private fun brush(alpha: Float = 1f): Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-    this.alpha = (alpha.coerceIn(0f, 1f) * 255).toInt()
+    fun draw(
+        canvas: NativeCanvas, bitmap: Bitmap, alpha: Float,
+        left: Float = 0f, top: Float = 0f,
+        right: Float = LOGO_UNITS, bottom: Float = LOGO_UNITS,
+    ) {
+        val opacity = (alpha * 255).toInt().coerceIn(0, 255)
+        if (opacity == 0) return
+        paint.alpha = opacity
+        canvas.save()
+        canvas.clipRect(left, top, right, bottom)
+        canvas.drawBitmap(bitmap, source, destination, paint)
+        canvas.restore()
+    }
+
+    fun dispose() {
+        ignition.recycle()
+        spine.recycle()
+        left.recycle()
+        right.recycle()
+        bars.recycle()
+    }
+}
+
+/**
+ * This runs on Dispatchers.Default once per cold launch. Software blur is allowed
+ * here because it no longer blocks RenderThread / per-frame Compose draw calls.
+ * 5 * 512px RGBA textures ~= 5 MiB; no full-screen bitmap or animation frame cache.
+ */
+private fun buildLogoLayers(): LogoLayers = LogoLayers(
+    ignition = raster { canvas ->
+        val haze = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = RadialGradient(
+                503f, 500f, 72f,
+                intArrayOf(0x82D3E1FF.toInt(), 0x00D3E1FF), null,
+                Shader.TileMode.CLAMP,
+            )
+        }
+        canvas.drawCircle(503f, 500f, 72f, haze)
+        canvas.drawCircle(503f, 500f, 2.5f, solid(NativeColor.WHITE))
+    },
+    spine = raster { canvas ->
+        val path = Path().apply {
+            moveTo(503f, 82f)
+            lineTo(503f, 918f)
+        }
+        glow(canvas, path, 1f)
+        canvas.drawPath(path, solid(0xFFF1F7FF.toInt()).apply {
+            strokeWidth = 2.7f
+            style = Paint.Style.STROKE
+        })
+    },
+    left = raster { canvas ->
+        val shape = leftShape()
+        glow(canvas, shape, .38f)
+        canvas.drawPath(shape, solid(NativeColor.WHITE).apply { shader = chrome() })
+        // Edge light remains in the finished mark; it never switches to flat white.
+        glow(canvas, leftLightGuide(), .56f)
+        canvas.drawPath(leftLightGuide(), solid(0xFFEDF5FF.toInt()).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = 2.1f
+            alpha = 115
+        })
+    },
+    right = raster { canvas ->
+        val shape = rightShape()
+        glow(canvas, shape, .38f)
+        canvas.drawPath(shape, solid(NativeColor.WHITE).apply { shader = chrome() })
+        glow(canvas, rightLightGuide(), .56f)
+        canvas.drawPath(rightLightGuide(), solid(0xFFEDF5FF.toInt()).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = 2.1f
+            alpha = 115
+        })
+    },
+    bars = raster { canvas ->
+        for ((x, h) in arrayOf(
+            456f to 196f, 550f to 196f,
+            409f to 124f, 597f to 124f,
+            363f to 56f, 643f to 56f,
+        )) {
+            val rect = RectF(x - 8.5f, 500f - h / 2f, x + 8.5f, 500f + h / 2f)
+            val halo = solid(0x3EB4CFFF).apply {
+                style = Paint.Style.STROKE
+                strokeWidth = 12f
+                maskFilter = BlurMaskFilter(14f, BlurMaskFilter.Blur.NORMAL)
+            }
+            canvas.drawRoundRect(rect, 8.5f, 8.5f, halo)
+            canvas.drawRoundRect(rect, 8.5f, 8.5f, solid(NativeColor.WHITE).apply {
+                shader = LinearGradient(
+                    x - 10f, 0f, x + 13f, 0f,
+                    intArrayOf(0xFF8998B6.toInt(), 0xFFF6FAFF.toInt(), 0xFFC3D1E9.toInt()),
+                    null, Shader.TileMode.CLAMP,
+                )
+            })
+        }
+    },
+)
+
+private fun raster(draw: (NativeCanvas) -> Unit): Bitmap {
+    val bitmap = Bitmap.createBitmap(RASTER_PX, RASTER_PX, Bitmap.Config.ARGB_8888)
+    val canvas = NativeCanvas(bitmap)
+    canvas.scale(RASTER_PX / LOGO_UNITS, RASTER_PX / LOGO_UNITS)
+    draw(canvas)
+    return bitmap
+}
+
+private fun solid(color: Int) = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    this.color = color
     strokeCap = Paint.Cap.ROUND
     strokeJoin = Paint.Join.ROUND
+}
+
+private fun glow(canvas: NativeCanvas, path: Path, strength: Float) {
+    val p = solid(android.graphics.Color.argb((30f * strength).toInt(), 173, 200, 255)).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 26f
+        maskFilter = BlurMaskFilter(19f, BlurMaskFilter.Blur.NORMAL)
+    }
+    canvas.drawPath(path, p)
+    p.maskFilter = null
+    p.strokeWidth = 9f
+    p.color = android.graphics.Color.argb((36f * strength).toInt(), 190, 212, 255)
+    canvas.drawPath(path, p)
 }
 
 private fun chrome(): Shader = LinearGradient(
     250f, 220f, 740f, 780f,
     intArrayOf(
-        android.graphics.Color.rgb(250, 252, 255),
-        android.graphics.Color.rgb(143, 157, 181),
-        android.graphics.Color.rgb(221, 232, 248),
-        android.graphics.Color.rgb(249, 250, 253),
-        android.graphics.Color.rgb(114, 132, 163),
+        0xFFFAFCFF.toInt(),
+        0xFF8F9DB5.toInt(),
+        0xFFDDE8F8.toInt(),
+        0xFFF9FAFD.toInt(),
+        0xFF7284A3.toInt(),
     ),
-    floatArrayOf(0f, 0.27f, 0.53f, 0.73f, 1f),
+    floatArrayOf(0f, .27f, .53f, .73f, 1f),
     Shader.TileMode.CLAMP,
 )
 
@@ -129,137 +332,4 @@ private fun rightLightGuide(): Path = Path().apply {
     cubicTo(503f, 197f, 517f, 229f, 557f, 238f)
     cubicTo(700f, 280f, 744f, 405f, 734f, 500f)
     cubicTo(724f, 630f, 648f, 705f, 552f, 755f)
-}
-
-private fun drawGlowPath(canvas: NativeCanvas, path: Path, strength: Float) {
-    if (strength <= 0f) return
-    val glow = brush().apply {
-        color = rgba((30f * strength).toInt(), 173, 200, 255)
-        style = Paint.Style.STROKE
-        strokeWidth = 26f
-        maskFilter = BlurMaskFilter(19f, BlurMaskFilter.Blur.NORMAL)
-    }
-    canvas.drawPath(path, glow)
-    glow.maskFilter = null
-    glow.strokeWidth = 9f
-    glow.color = rgba((36f * strength).toInt(), 190, 212, 255)
-    canvas.drawPath(path, glow)
-}
-
-private fun traceLight(canvas: NativeCanvas, path: Path, visible: Float, brightness: Float) {
-    if (visible <= 0f || brightness <= 0f) return
-    val measure = PathMeasure(path, false)
-    val trace = Path()
-    val distance = measure.length * visible.coerceIn(0f, 1f)
-    val tail = measure.length * 0.34f
-    measure.getSegment((distance - tail).coerceAtLeast(0f), distance, trace, true)
-    drawGlowPath(canvas, trace, brightness)
-    val line = brush().apply {
-        color = android.graphics.Color.WHITE
-        alpha = (255f * brightness).toInt()
-        style = Paint.Style.STROKE
-        strokeWidth = 3f
-    }
-    canvas.drawPath(trace, line)
-}
-
-private fun drawSonoraMark(canvas: NativeCanvas, t: Float) {
-    // Nothing at t=0. A single faint white ignition point emerges first.
-    val ignition = phase(t, 0.025f, 0.11f) * (1f - phase(t, 0.20f, 0.30f))
-    if (ignition > 0f) {
-        val haze = brush().apply {
-            shader = RadialGradient(
-                503f, 500f, 72f,
-                intArrayOf(rgba((130 * ignition).toInt(), 211, 225, 255), rgba(0, 211, 225, 255)),
-                null, Shader.TileMode.CLAMP,
-            )
-        }
-        canvas.drawCircle(503f, 500f, 72f, haze)
-        canvas.drawCircle(503f, 500f, 2.5f, brush().apply {
-            color = android.graphics.Color.WHITE
-            alpha = (255f * ignition).toInt()
-        })
-    }
-
-    val spine = phase(t, 0.10f, 0.35f)
-    if (spine > 0f) {
-        val line = Path().apply {
-            moveTo(503f, 500f - 418f * spine)
-            lineTo(503f, 500f + 418f * spine)
-        }
-        drawGlowPath(canvas, line, spine)
-        canvas.drawPath(line, brush().apply {
-            color = rgba((240 * spine).toInt(), 236, 244, 255)
-            strokeWidth = 2.7f
-            style = Paint.Style.STROKE
-        })
-    }
-
-    val left = leftShape()
-    val right = rightShape()
-    val leftVisible = phase(t, 0.32f, 0.69f)
-    val rightVisible = phase(t, 0.37f, 0.73f)
-
-    // A specular edge moves over the symbol *before* the body becomes visible.
-    traceLight(canvas, leftLightGuide(), phase(t, 0.20f, 0.64f), 1f - 0.3f * phase(t, 0.66f, 0.85f))
-    traceLight(canvas, rightLightGuide(), phase(t, 0.29f, 0.70f), 1f - 0.3f * phase(t, 0.69f, 0.85f))
-
-    // Permanent chrome treatment: this is never replaced with a flat-white icon.
-    val surface = brush().apply { shader = chrome() }
-    if (leftVisible > 0f) {
-        drawGlowPath(canvas, left, 0.38f * leftVisible)
-        surface.alpha = (leftVisible * 255).toInt()
-        canvas.drawPath(left, surface)
-    }
-    if (rightVisible > 0f) {
-        drawGlowPath(canvas, right, 0.38f * rightVisible)
-        surface.alpha = (rightVisible * 255).toInt()
-        canvas.drawPath(right, surface)
-    }
-
-    // The waveform is born from the middle, then expands to the outer short bars.
-    val bars = arrayOf(
-        floatArrayOf(456f, 196f, 0f),
-        floatArrayOf(550f, 196f, 0f),
-        floatArrayOf(409f, 124f, 0.035f),
-        floatArrayOf(597f, 124f, 0.035f),
-        floatArrayOf(363f, 56f, 0.065f),
-        floatArrayOf(643f, 56f, 0.065f),
-    )
-    for (bar in bars) {
-        val appear = phase(t, 0.54f + bar[2], 0.75f + bar[2])
-        if (appear <= 0f) continue
-        val h = bar[1] * appear
-        val rect = RectF(bar[0] - 8.5f, 500f - h / 2f, bar[0] + 8.5f, 500f + h / 2f)
-        val glow = brush().apply {
-            style = Paint.Style.STROKE
-            color = rgba((62 * appear).toInt(), 180, 207, 255)
-            strokeWidth = 12f
-            maskFilter = BlurMaskFilter(14f, BlurMaskFilter.Blur.NORMAL)
-        }
-        canvas.drawRoundRect(rect, 8.5f, 8.5f, glow)
-        canvas.drawRoundRect(rect, 8.5f, 8.5f, brush(appear).apply {
-            shader = LinearGradient(
-                bar[0] - 10f, 0f, bar[0] + 13f, 0f,
-                intArrayOf(0xFF8998B6.toInt(), 0xFFF6FAFF.toInt(), 0xFFC3D1E9.toInt()),
-                null, Shader.TileMode.CLAMP,
-            )
-        })
-    }
-
-    // Persistent delicate rim highlights after formation, not an abrupt flat end frame.
-    val settled = phase(t, 0.76f, 0.92f)
-    if (settled > 0f) {
-        val shine = brush(settled * 0.35f).apply {
-            style = Paint.Style.STROKE
-            strokeWidth = 2.1f
-            shader = LinearGradient(
-                240f, 255f, 740f, 705f,
-                intArrayOf(0x00FFFFFF, 0xFFFFFFFF.toInt(), 0x00FFFFFF, 0xFFEDF5FF.toInt()),
-                null, Shader.TileMode.CLAMP,
-            )
-        }
-        canvas.drawPath(leftLightGuide(), shine)
-        canvas.drawPath(rightLightGuide(), shine)
-    }
 }
