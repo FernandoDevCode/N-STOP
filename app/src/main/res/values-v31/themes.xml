@@ -1,8 +1,8 @@
 <resources>
     <style name="Theme.Stash" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">@drawable/nonstop_splash</item>
-        <item name="android:windowSplashScreenBackground">#201E29</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/sonora_icon_foreground</item>
+        <item name="android:windowBackground">@drawable/sonora_intro_background</item>
+        <item name="android:windowSplashScreenBackground">#0B0E13</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/sonora_intro_blank</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>

@@ -10,6 +10,13 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -238,7 +245,19 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // Play only for a genuine cold launch from the launcher. Notifications, share
+        // intents, deep links, Recents resumes and config recreations bypass the intro.
+        val cinematicLaunch = savedInstanceState == null &&
+            intent?.action == Intent.ACTION_MAIN &&
+            intent?.hasCategory(Intent.CATEGORY_LAUNCHER) == true &&
+            (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0
+        if (cinematicLaunch) {
+            WindowCompat.getInsetsController(window, window.decorView)
+                .hide(WindowInsetsCompat.Type.systemBars())
+        }
+
         setContent {
+            var showCinematicIntro by remember { mutableStateOf(cinematicLaunch) }
             val themeMode by themeModeFlow.collectAsState(initial = initialThemeMode)
             val amoledDark by themePreference.amoledDark.collectAsState(initial = initialAmoledDark)
             LaunchedEffect(themeMode, amoledDark) {
@@ -293,13 +312,22 @@ class MainActivity : ComponentActivity() {
                     LocalListenTogetherRole provides role,
                     LocalCreateTrackLink provides createTrackLink,
                 ) {
-                    StashScaffold(
-                        pendingDeepLink = pendingDeepLink.value,
-                        onDeepLinkConsumed = { pendingDeepLink.value = null },
-                        startTab = startTab,
-                        statusBarProbe = BuildConfig.DEBUG &&
-                            intent?.getBooleanExtra("sonora_status_probe", false) == true,
-                    )
+                    Box(Modifier.fillMaxSize()) {
+                        StashScaffold(
+                            pendingDeepLink = pendingDeepLink.value,
+                            onDeepLinkConsumed = { pendingDeepLink.value = null },
+                            startTab = startTab,
+                            statusBarProbe = BuildConfig.DEBUG &&
+                                intent?.getBooleanExtra("sonora_status_probe", false) == true,
+                        )
+                        if (showCinematicIntro) {
+                            SonoraColdStartIntro {
+                                showCinematicIntro = false
+                                WindowCompat.getInsetsController(window, window.decorView)
+                                    .show(WindowInsetsCompat.Type.systemBars())
+                            }
+                        }
+                    }
                 }
             }
         }
