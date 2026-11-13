@@ -384,6 +384,11 @@ class StashApplication : Application(), Configuration.Provider {
         // "downloading". At a fresh process start no worker is running, so any
         // IN_PROGRESS row is by definition stale and safe to reset.
         applicationScope.launch {
+            // Inherited installs may have deferred tracks for a Qobuz FLAC
+            // source. Requeue them for Sonora's YouTube download path before
+            // the normal waiting-queue resumption; preserve existing files.
+            runCatching { losslessSourcePreferences.setEnabled(false) }
+                .onFailure { Log.w("SonoraStartup", "lossless migration failed", it) }
             runCatching {
                 val reset = downloadQueueDao.resetStaleInProgress()
                 if (reset > 0) Log.i("StashStartup", "reset $reset stale IN_PROGRESS download rows -> PENDING")
