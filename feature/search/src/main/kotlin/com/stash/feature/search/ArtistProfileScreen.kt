@@ -126,6 +126,18 @@ fun ArtistProfileScreen(
     val featuredAlbum = remember(state.albums, state.singles) {
         selectArtistFeaturedAlbum(state.albums, state.singles)
     }
+    // Artwork owns the release card's tint; the artist photograph still owns
+    // the surrounding hero and backdrop. The existing extractor caches by URL.
+    val featuredPalette by produceState(
+        initialValue = ArtistNeutralPalette,
+        key1 = featuredAlbum?.thumbnailUrl,
+    ) {
+        value = artistPaletteFromPhoto(context, featuredAlbum?.thumbnailUrl)
+    }
+    val smoothFeaturedBridge by animateColorAsState(
+        targetValue = featuredPalette.bridge,
+        label = "artistFeaturedArtworkTint",
+    )
     val previewState by vm.delegate.previewState.collectAsStateWithLifecycle()
     val downloadingIds by vm.delegate.downloadingIds.collectAsStateWithLifecycle()
     val downloadedIds by vm.delegate.downloadedIds.collectAsStateWithLifecycle()
@@ -247,7 +259,7 @@ fun ArtistProfileScreen(
                     onOpenAbout = { selectedArtistTab = 3 },
                     featuredContent = featuredAlbum?.let { album ->
                         @Composable {
-                            ArtistFeaturedAlbum(album = album, photoTone = smoothBridge, onOpen = onNavigateToAlbum)
+                            ArtistFeaturedAlbum(album = album, artworkTone = smoothFeaturedBridge, onOpen = onNavigateToAlbum)
                         }
                     },
                 )
