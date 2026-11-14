@@ -373,16 +373,43 @@ fun SonoraSourceSearchScreen(
                             }
                         }
                     }
-                    is SourceSearchState.Error -> {
-                        Text(sourceState.message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    is SourceSearchState.Error -> Column(
+                        modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            if (source == CatalogSource.SPOTIFY)
+                                "Spotify indisponível" else "YouTube indisponível",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontFamily = FontFamily.SansSerif,
+                                fontWeight = FontWeight.SemiBold,
+                            ),
+                        )
+                        Text(
+                            sourceState.message,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontFamily = FontFamily.SansSerif, fontSize = 14.sp,
+                            ),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         TextButton(onClick = viewModel::retry) { Text("Tentar novamente") }
                     }
                     is SourceSearchState.Empty -> Text(
-                        "Nenhum resultado nesta fonte.",
+                        "Não há resultados nesta fonte.",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontFamily = FontFamily.SansSerif, fontSize = 14.sp,
+                        ),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 22.dp),
                     )
-                    else -> Text("Pesquise nesta fonte para ver os resultados.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    else -> Text(
+                        "Pesquise nesta fonte para ver os resultados.",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontFamily = FontFamily.SansSerif, fontSize = 14.sp,
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 22.dp),
+                    )
                 }
             }
         }
