@@ -12,16 +12,16 @@
 
 ## Decisão de produto superveniente — 14/11/2026 (Spotify primeiro)
 
-Esta seção substitui APENAS a antiga regra de mistura de fontes e os defaults de seleção múltipla. As invariantes de IDs, segurança da reprodução, erros e não canonicalização permanecem válidas.
+Esta seção substitui os defaults históricos de lista mista, seleção de múltiplas fontes e YTM como catálogo pesquisável. As invariantes de identidade e reprodução permanecem válidas.
 
-- A Busca inicia em **Spotify**, com **guia exclusiva**. Outras guias: **YouTube convencional (WEB)** e **YouTube Music (YTM)**, independentes. Uma guia exibe somente resultados daquela fonte; o texto da consulta é compartilhado.
+- A Busca oferece exatamente **duas guias**: **Spotify** (inicial) e **YouTube convencional (WEB)**. Só a guia escolhida participa da consulta; o texto é compartilhado. **YTM não é uma fonte da Busca**.
 - YouTube significa explicitamente www.youtube.com / InnerTube WEB, não music.youtube.com. Slowed + reverb, lives, remixes, demos e covers precisam manter seu videoId original em todas as ações.
 - O alfinete grava a guia selecionada; desligado, a escolha dura apenas a sessão da Busca. Nova sessão sem pin começa em Spotify.
 - O motor universal continua a agregar e ordenar resultados normalizados, mas com `selection.enabled = setOf(guiaAtiva)` para não misturar fontes.
 - Paginação é independente por fonte e só pode anunciar continuidade que o provedor realmente forneceu. Não confundir falha com catálogo vazio.
 - Spotify é catálogo: música só reproduz após confirmar um áudio seguro por fonte existente; artistas/álbuns requerem rotas conscientes de identidade Spotify. Nunca usar spotifyId como videoId ou browseId YTM.
 - A integração nesta branch NÃO equivale à aprovação de dispositivos ou CI: estado, limites e testes devem ser conferidos antes do merge e do APK canônico.
-- Restrições técnicas atuais: API YTM `searchAll` não expõe continuation para o UI; busca paginada no YouTube WEB e Spotify, sem continuação inventada no YTM. Rotas Spotify para artista/álbum não são convertidas silenciosamente para IDs de outro catálogo.
+- A enumeração compartilhada pode manter `YOUTUBE_MUSIC` por compatibilidade interna, mas o novo fluxo da Busca bloqueia seleção, ações e consultas a essa fonte. Preferências YTM fixadas anteriormente passam a Spotify. A infraestrutura interna de áudio existente é preservada.
 
 ## 1. Registro da preparação
 
