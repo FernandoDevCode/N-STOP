@@ -23,6 +23,18 @@ Esta seção substitui os defaults históricos de lista mista, seleção de múl
 - A integração nesta branch NÃO equivale à aprovação de dispositivos ou CI: estado, limites e testes devem ser conferidos antes do merge e do APK canônico.
 - A enumeração compartilhada pode manter `YOUTUBE_MUSIC` por compatibilidade interna, mas o novo fluxo da Busca bloqueia seleção, ações e consultas a essa fonte. Preferências YTM fixadas anteriormente passam a Spotify. A infraestrutura interna de áudio existente é preservada.
 
+## Correção de regressões observadas no APK experimental (14/11/2026)
+
+Capturas reais no Redmi mostraram: (1) a guia Spotify retornando limitação de serviço ao pesquisar "jota quest"; (2) campo de busca excessivamente alto porque o placeholder quebrava linha; (3) roxo herdado nos filtros, histórico muito espaçado e botões "Remover" dominantes; (4) títulos de vídeo importantes truncados.
+
+A resposta aprovada nesta branch deve:
+- Priorizar o mesmo `searchDesktop` GraphQL do Spotify Web Player que o projeto já utiliza, mantendo resultado **exclusivamente Spotify**; usar `/v1/search` apenas como fallback, respeitando e memorizando 429/Retry-After, sem mascarar erros como ausência de resultados.
+- Reconhecer tracks, artists e albums tanto em `data.search` quanto `data.searchV2`, preservar suas URIs e os IDs sem substituição por vídeo. Paginação não pode repetir a mesma página indefinidamente.
+- Campo de Busca compacto de uma linha e dica curta; título em fonte sans-serif; guias Spotify/YouTube neutras, sem cor roxa herdada; alfinete com rótulo de estado; histórico denso com gesto de remover discreto e acessível.
+- Spotify com grupos Músicas/Artistas/Álbuns; YouTube convencional com miniaturas 16:9 e até duas linhas de título para preservar os nomes das versões.
+- Nenhuma alteração em player, miniplayer, assinatura, cache de biblioteca, autenticação, downloads, identidade de vídeo, nem nas escolhas anteriores de duas guias.
+- Validação: testes unitários de parsing/roteamento/cooldown, compilação integral e gate de identidade; aparência e busca live dependem de inspeção em aparelho, não apenas CI.
+
 ## 1. Registro da preparação
 
 O checkout auditado estava em `codex/search-checkpoint-0`, no commit `0ded5dbad41c967f603fe80f5cb14c4986718cff`. Na auditoria, `nonstop`, o merge-base e o HEAD apontavam para o mesmo commit; o remoto também declarava `nonstop` como branch padrão. A branch de trabalho não substitui a regra canônica: os futuros branches/worktrees devem nascer da `nonstop` atualizada e os PRs devem ter base `nonstop`.
