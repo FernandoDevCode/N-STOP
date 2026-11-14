@@ -103,15 +103,15 @@ class YouTubeWebSearchClientTest {
         server.start()
         try {
             server.enqueue(MockResponse().setBody(config)); server.enqueue(MockResponse().setBody(fixture()))
-            server.enqueue(MockResponse().setBody(config))
+            // Config is cached: continuation must not GET youtube.com/ again.
             server.enqueue(MockResponse().setBody("""{"onResponseReceivedCommands":[{"appendContinuationItemsAction":{"targetId":"search-feed","continuationItems":[{"videoRenderer":{"videoId":"9Vz-MkbnSg4","title":{"simpleText":"Garden"}}}]}}]}"""))
             val client = YouTubeWebSearchClient(OkHttpClient(), origin = server.url("/").toString().trimEnd('/'))
             val first = client.search("demo")
             val second = client.search("demo", first.continuation, first.nextRank)
-            server.takeRequest()
+            assertEquals("/", server.takeRequest().path)
             assertTrue(server.takeRequest().body.readUtf8().contains("\"query\":\"demo\""))
-            server.takeRequest()
             assertTrue(server.takeRequest().body.readUtf8().contains("\"continuation\":\"page-two\""))
+            assertEquals("config must be reused for continuation", 3, server.requestCount)
             assertEquals(5, second.videos.single().providerRank)
             assertEquals("9Vz-MkbnSg4", second.videos.single().videoId)
         } finally { server.shutdown() }
