@@ -61,6 +61,11 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.media.equalizer.NamedPreset
 import com.stash.feature.settings.components.SonoraSettingsCard as GlassCard
+import com.stash.feature.settings.components.SettingsPageHeader
+import com.stash.feature.settings.components.SettingsPageSurface
+import com.stash.feature.settings.R
+import androidx.compose.ui.res.stringResource
+import com.stash.core.ui.components.bottomChromePadding
 import com.stash.core.ui.theme.StashTheme
 
 /** Frequency labels for the 5 EQ bands: 60 Hz, 230 Hz, 910 Hz, 3.6 kHz, 14 kHz. */
@@ -120,6 +125,7 @@ fun EqualizerScreen(
     // Scaffold with a transparent container — the parent NavHost already
     // paints the app's themed gradient background, so we don't want this
     // screen to clobber it with the default surface colour.
+    SettingsPageSurface {
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = Color.Transparent,
@@ -302,8 +308,9 @@ fun EqualizerScreen(
         }
 
             // Bottom padding for nav bar clearance
-            Spacer(Modifier.height(80.dp))
+            Spacer(Modifier.height(bottomChromePadding()))
         }
+    }
     }
 }
 
@@ -318,28 +325,16 @@ private fun EqHeader(
     onToggle: (Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(onClick = onBack) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back",
-                tint = MaterialTheme.colorScheme.onBackground,
+    SettingsPageHeader(
+        title = stringResource(R.string.nostop_quality_equalizer),
+        onBack = onBack,
+        trailing = {
+            com.stash.core.ui.components.StashSwitch(
+                checked = enabled,
+                onCheckedChange = onToggle,
             )
-        }
-        Text(
-            text = "Equalizer",
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.weight(1f),
-        )
-        com.stash.core.ui.components.StashSwitch(
-            checked = enabled,
-            onCheckedChange = onToggle,
-        )
-    }
+        },
+    )
 }
 
 /**

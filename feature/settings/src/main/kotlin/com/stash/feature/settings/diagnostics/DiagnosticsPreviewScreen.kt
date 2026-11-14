@@ -38,6 +38,10 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.feature.settings.components.SonoraSettingsCard as GlassCard
+import com.stash.feature.settings.components.SettingsPageHeader
+import com.stash.feature.settings.components.SettingsPageSurface
+import com.stash.feature.settings.R
+import androidx.compose.ui.res.stringResource
 
 /**
  * Diagnostics preview — shows the user the full, already-redacted diagnostics
@@ -59,32 +63,15 @@ fun DiagnosticsPreviewScreen(
     val clipboard = LocalClipboardManager.current
     val uriHandler = LocalUriHandler.current
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .padding(horizontal = 16.dp),
-    ) {
-        Spacer(Modifier.height(16.dp))
-
-        // Top bar: back + title (mirrors LibraryHealthScreen's Header).
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onNavigateBack) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
-                    tint = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-            Spacer(Modifier.size(4.dp))
-            Text(
-                text = "Diagnostics",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
+    SettingsPageSurface {
+        Column(Modifier.fillMaxSize().statusBarsPadding()) {
+            SettingsPageHeader(
+                title = stringResource(R.string.nostop_about_diagnostics),
+                onBack = onNavigateBack,
             )
-        }
-
+            Column(
+                modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 20.dp),
+            ) {
         Spacer(Modifier.height(8.dp))
 
         when {
@@ -204,6 +191,8 @@ fun DiagnosticsPreviewScreen(
                 }
 
                 Spacer(Modifier.height(8.dp))
+            }
+        }
             }
         }
     }

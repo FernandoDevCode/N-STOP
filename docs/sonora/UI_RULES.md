@@ -60,6 +60,10 @@ Antes de aprovar alteração de frontend:
 4. Screenshots de dispositivo/emulador em Busca, álbum, playlist e favoritos; medir se a densidade e o teclado não regrediram.
 5. Rodar CI e confirmar o commit exato do APK. Nunca declarar visual aprovado só por compilar.
 
-**Escopo desta primeira implementação:** Buscar/Popular/Álbum online (SongRow), Álbum/Playlist/Artista/Curtidas da biblioteca (DetailTrackRow), e remoção da engrenagem da Busca. Demais componentes e submenus devem adotar estas regras em alterações posteriores, sem redesign oportunista.
+**Cobertura integrada na v208 (UI):** SongRow na Busca, Populares e Álbum online; DetailTrackRow no Álbum, Playlist, Artista e Curtidas locais; TrackListItem em Biblioteca e listas de músicas compartilhadas. As faixas de álbum local são numeradas sem duplicar a capa do cabeçalho. As opções por pressão longa permanecem acessíveis no TalkBack, mesmo quando o botão ⋮ não é exibido. Ações por seleção múltipla e opções próprias da coleção continuam separadas.
+
+**Submenus de Configurações:** SettingsScaffold e SettingsPageSurface/SettingsPageHeader compartilham fundo, cabeçalho, tipografia e cor nas rotas Reprodução, Qualidade, Contas, Biblioteca, Aparência, Sobre, Conexão web e também nas telas profundas Equalizador, Saúde da Biblioteca, Diagnósticos e Músicas Bloqueadas. Controles antigos de upgrade FLAC não devem reaparecer em Saúde da Biblioteca; arquivos FLAC existentes continuam listados normalmente.
+
+**Validação que o CI não cobre:** capturas reais de cada rota em dark/light, PT-BR/EN, TalkBack, fontes grandes e Android 16; testes de gesto/contexto em aparelho. Esta cobertura de código não é homologação visual automática.
 
 **Nota de arquitetura:** a UI antiga da Busca ainda é YTM sectioned. A busca universal Spotify + YouTube + YTM segue a especificação `SEARCH_REWORK_PLAN.md`; esta alteração visual não a implementa nem muda fontes.

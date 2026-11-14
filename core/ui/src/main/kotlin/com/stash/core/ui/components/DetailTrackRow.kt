@@ -84,6 +84,8 @@ fun DetailTrackRow(
     onMoreClick: (() -> Unit)? = null,
     /** Keep a visible menu only for exceptional, explicitly approved surfaces. */
     showMoreButton: Boolean = false,
+    /** Album tracklists use the numbered, artwork-free variation. */
+    showArtwork: Boolean = true,
 ) {
     val extendedColors = StashTheme.extendedColors
     val primaryColor = MaterialTheme.colorScheme.primary
@@ -112,9 +114,9 @@ fun DetailTrackRow(
             )
             .selectionRowSemantics(selectionActive, selected)
             .semantics {
-                if (!selectionActive && onMoreClick != null && showMoreButton) {
+                if (!selectionActive) {
                     customActions = listOf(CustomAccessibilityAction(optionsLabel) {
-                        onMoreClick()
+                        (onMoreClick ?: onLongPress)()
                         true
                     })
                 }
@@ -142,8 +144,10 @@ fun DetailTrackRow(
             }
         }
 
-        // -- Album art thumbnail (48dp, 8dp rounded corners) --
-        val artUrl = track.albumArtPath ?: track.albumArtUrl
+        // Albums already display their artwork prominently in the header.
+        // Avoid repeating it on every numbered track row.
+        if (showArtwork) {
+            val artUrl = track.albumArtPath ?: track.albumArtUrl
         Box(
             modifier = Modifier
                 .size(48.dp)
@@ -168,7 +172,10 @@ fun DetailTrackRow(
             }
         }
 
-        Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(12.dp))
+        } else {
+            Spacer(modifier = Modifier.width(4.dp))
+        }
 
         // -- Title + artist stacked vertically --
         Column(
@@ -215,7 +222,7 @@ fun DetailTrackRow(
                 color = MaterialTheme.colorScheme.primary,
                 strokeWidth = 2.dp,
             )
-            else -> Text(
+            track.durationMs > 0L -> Text(
                 text = formatDuration(track.durationMs),
                 style = MaterialTheme.typography.bodySmall,
                 color = extendedColors.textTertiary,
@@ -223,7 +230,7 @@ fun DetailTrackRow(
         }
 
         // -- Overflow menu (only when not selecting) --
-        if (!selectionActive && onMoreClick != null) {
+        if (!selectionActive && showMoreButton && onMoreClick != null) {
             IconButton(onClick = onMoreClick, modifier = Modifier.size(32.dp)) {
                 Icon(
                     imageVector = Icons.Default.MoreVert,

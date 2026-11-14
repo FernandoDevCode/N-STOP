@@ -35,45 +35,45 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.data.db.dao.LibraryHealthBucket
 import com.stash.feature.settings.components.SonoraSettingsCard as GlassCard
+import com.stash.feature.settings.components.SettingsPageHeader
+import com.stash.feature.settings.components.SettingsPageSurface
+import com.stash.feature.settings.R
+import androidx.compose.ui.res.stringResource
+import com.stash.core.ui.components.bottomChromePadding
 import com.stash.core.ui.components.SectionHeader
 import com.stash.core.ui.theme.StashTheme
 import com.stash.data.download.lyrics.LyricsFetchStatus
-import com.stash.feature.settings.FlacUpgradeUiState
-import com.stash.feature.settings.FlacUpgradeViewModel
 
 /**
  * Library Health screen — answers "what's actually in my library?" by
  * histograming downloaded tracks across (codec, bitrate-band) buckets read
  * straight from the DB.
  *
- * Two reasons this exists:
- *  1. Verifying yield of the MAX (format-141) experiment — switch tier,
- *     re-download a sample, watch the AAC ~256 / Opus ~160 / AAC ~128 split
- *     change in real time.
- *  2. Backfilling pre-v0.8.1 rows whose `file_format` / `quality_kbps`
- *     columns sat at defaults because the sync writer never populated them.
+ * Reports the codecs and bitrates of existing files, including previously
+ * downloaded FLAC. The retired lossless upgrade service must not be offered
+ * as a new download or streaming option; only existing local metadata is shown.
  */
 @Composable
 fun LibraryHealthScreen(
     onNavigateBack: () -> Unit,
     viewModel: LibraryHealthViewModel = hiltViewModel(),
     lyricsViewModel: LyricsFetchViewModel = hiltViewModel(),
-    flacViewModel: FlacUpgradeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val lyricsStatus by lyricsViewModel.status.collectAsStateWithLifecycle()
-    val flacState by flacViewModel.state.collectAsStateWithLifecycle()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp),
-    ) {
-        Spacer(Modifier.height(16.dp))
-
-        Header(onBack = onNavigateBack)
-
+    SettingsPageSurface {
+        Column(Modifier.fillMaxSize()) {
+            SettingsPageHeader(
+                title = stringResource(R.string.nostop_storage_library_health),
+                onBack = onNavigateBack,
+            )
+            Column(
+                modifier = Modifier.fillMaxWidth().weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = bottomChromePadding()),
+            ) {
         Spacer(Modifier.height(8.dp))
 
         Text(
@@ -125,38 +125,14 @@ fun LibraryHealthScreen(
 
         Spacer(Modifier.height(20.dp))
 
-        FlacUpgradeSection(state = flacState, onRun = flacViewModel::runNow)
-
-        Spacer(Modifier.height(20.dp))
-
         LyricsFetchSection(
             status = lyricsStatus,
             onFetch = lyricsViewModel::fetchLyrics,
         )
 
         Spacer(Modifier.height(40.dp))
-    }
-}
-
-@Composable
-private fun Header(onBack: () -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(onClick = onBack) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back",
-                tint = MaterialTheme.colorScheme.onSurface,
-            )
+            }
         }
-        Spacer(Modifier.size(4.dp))
-        Text(
-            text = "Library Health",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
     }
 }
 
@@ -493,48 +469,6 @@ private fun QualityInfoRefreshSection(onClick: () -> Unit) {
                 },
             ) {
                 Text("Refresh")
-            }
-        }
-    }
-}
-
-@Composable
-private fun FlacUpgradeSection(
-    state: FlacUpgradeUiState,
-    onRun: () -> Unit,
-) {
-    SectionHeader(title = "FLAC upgrades")
-    GlassCard {
-        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-            Text(
-                text = "Look for lossless versions of downloaded tracks that aren't FLAC yet. " +
-                    "Keeps running in the background. To run this after every sync, " +
-                    "turn it on in Audio & Quality.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(8.dp))
-            state.message?.let {
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(Modifier.height(4.dp))
-            }
-            state.detail?.let {
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(4.dp))
-            }
-            Spacer(Modifier.height(4.dp))
-            if (state.active) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            } else {
-                Button(onClick = onRun) { Text("Check for upgrades") }
             }
         }
     }

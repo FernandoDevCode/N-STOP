@@ -1021,7 +1021,7 @@ private fun LikedTab(
                             else onTrackClick(track)
                         },
                         isPlaying = track.id == currentlyPlayingTrackId,
-                        onLongPress = { if (!selection.isActive) selection.enter(track.id) },
+                        onLongPress = { if (selection.isActive) selection.toggle(track.id) else selectedTrack = track },
                         selectionActive = selection.isActive,
                         selected = selection.isSelected(track.id),
                         onMoreClick = { selectedTrack = track },
@@ -1067,6 +1067,7 @@ private fun LikedTab(
                 onDownload = { onDownloadTrack(it.id); selectedTrack = null },
                 onRemoveDownload = { onRemoveDownloadTrack(it); selectedTrack = null },
                 onDelete = { trackToDelete = it; selectedTrack = null },
+                onSelectMultiple = { selected -> selection.enter(selected.id); selectedTrack = null },
             )
         }
     }
@@ -1740,7 +1741,7 @@ private fun TracksTab(
                             else onTrackClick(track)
                         },
                         isPlaying = track.id == currentlyPlayingTrackId,
-                        onLongPress = { if (!selection.isActive) selection.enter(track.id) },
+                        onLongPress = { if (selection.isActive) selection.toggle(track.id) else selectedTrack = track },
                         selectionActive = selection.isActive,
                         selected = selection.isSelected(track.id),
                         onMoreClick = { selectedTrack = track },
@@ -1788,6 +1789,7 @@ private fun TracksTab(
                 onDownload = { onDownloadTrack(it.id); selectedTrack = null },
                 onRemoveDownload = { onRemoveDownloadTrack(it); selectedTrack = null },
                 onDelete = { trackToDelete = it; selectedTrack = null },
+                onSelectMultiple = { selected -> selection.enter(selected.id); selectedTrack = null },
             )
 
             // Bottom padding for gesture navigation inset

@@ -39,6 +39,10 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.ui.theme.StashTheme
+import com.stash.feature.settings.components.SettingsPageHeader
+import com.stash.feature.settings.components.SettingsPageSurface
+import com.stash.feature.settings.R
+import androidx.compose.ui.res.stringResource
 
 /**
  * Settings → Blocked Songs viewer.
@@ -56,142 +60,76 @@ fun BlockedSongsScreen(
 ) {
     val blocked by viewModel.blockedTracks.collectAsStateWithLifecycle()
     val extendedColors = StashTheme.extendedColors
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
-    ) {
-        if (blocked.isEmpty()) {
-            // -- Empty state --
-            IconButton(
-                onClick = onBack,
-                modifier = Modifier
-                    .statusBarsPadding()
-                    .padding(start = 8.dp, top = 8.dp)
-                    .align(Alignment.TopStart)
-                    .size(48.dp)
-                    .background(
-                        color = extendedColors.glassBackground,
-                        shape = CircleShape,
-                    ),
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
-                    tint = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-
-            Column(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .padding(horizontal = 32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Block,
-                    contentDescription = null,
-                    modifier = Modifier.size(72.dp),
-                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = "No blocked songs",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Songs you block with \u201CDelete & Block\u201D show up here. Tap Unblock to re-allow them on the next sync.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                )
-            }
-            return@Box
-        }
-
-        // -- Content: header + list --
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 96.dp),
-        ) {
-            item(key = "header") {
-                BlockedSongsHeader(
-                    count = blocked.size,
-                    onBack = onBack,
-                )
-            }
-
-            items(blocked, key = { it.canonicalKey }) { row ->
-                BlockedTrackListItem(
-                    row = row,
-                    onUnblock = { viewModel.unblock(row.canonicalKey) },
-                )
-                HorizontalDivider(
-                    modifier = Modifier.padding(start = 80.dp, end = 20.dp),
-                    thickness = 0.5.dp,
-                    color = extendedColors.glassBorder,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun BlockedSongsHeader(count: Int, onBack: () -> Unit) {
-    val extendedColors = StashTheme.extendedColors
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(start = 8.dp, top = 8.dp),
-        ) {
-            IconButton(
-                onClick = onBack,
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(
-                        color = extendedColors.glassBackground,
-                        shape = CircleShape,
-                    ),
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
-                    tint = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-        }
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp),
-        ) {
-            Text(
-                text = "Blocked Songs",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
+    SettingsPageSurface {
+        Column(Modifier.fillMaxSize()) {
+            SettingsPageHeader(
+                title = stringResource(R.string.sonora_blocked_title),
+                onBack = onBack,
+                // This deep route draws edge-to-edge; keep its back target below
+                // the system status bar just as the previous header did.
+                modifier = Modifier.statusBarsPadding(),
             )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "These songs are skipped during every sync. Tap Unblock to re-allow one.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "$count song${if (count != 1) "s" else ""}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(modifier = Modifier.height(12.dp))
+            if (blocked.isEmpty()) {
+                Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Block,
+                            contentDescription = null,
+                            modifier = Modifier.size(52.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .48f),
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            text = stringResource(R.string.sonora_blocked_empty_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = stringResource(R.string.sonora_blocked_empty_description),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 96.dp),
+                ) {
+                    item(key = "description") {
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)) {
+                            Text(
+                                text = stringResource(R.string.sonora_blocked_description),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = stringResource(R.string.sonora_blocked_count, blocked.size),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                    items(blocked, key = { it.canonicalKey }) { row ->
+                        BlockedTrackListItem(
+                            row = row,
+                            onUnblock = { viewModel.unblock(row.canonicalKey) },
+                        )
+                        HorizontalDivider(
+                            modifier = Modifier.padding(start = 80.dp, end = 20.dp),
+                            thickness = .5.dp,
+                            color = extendedColors.glassBorder,
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -252,7 +190,7 @@ private fun BlockedTrackListItem(
 
         TextButton(onClick = onUnblock) {
             Text(
-                text = "Unblock",
+                text = stringResource(R.string.sonora_blocked_unblock),
                 color = MaterialTheme.colorScheme.primary,
             )
         }

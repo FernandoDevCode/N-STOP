@@ -321,4 +321,11 @@
     <string name="sonora_settings_preferences">Aplicativo</string>
     <string name="sonora_audio_quality_note">Reprodução e downloads usam áudio do YouTube ou YouTube Music. Qualidade sem perdas não está disponível nesta configuração.</string>
     <string name="sonora_lyrics_lrc_note">Letras sincronizadas aparecem quando disponíveis, sem alterar suas músicas ou seus downloads.</string>
+    <string name="sonora_settings_back">Voltar</string>
+    <string name="sonora_blocked_title">Músicas bloqueadas</string>
+    <string name="sonora_blocked_empty_title">Nenhuma música bloqueada</string>
+    <string name="sonora_blocked_empty_description">Músicas bloqueadas aparecem aqui. Você pode desbloqueá-las para incluí-las na próxima sincronização.</string>
+    <string name="sonora_blocked_description">Essas músicas são ignoradas na sincronização até serem desbloqueadas.</string>
+    <string name="sonora_blocked_count">Músicas: %1$d</string>
+    <string name="sonora_blocked_unblock">Desbloquear</string>
 </resources>
