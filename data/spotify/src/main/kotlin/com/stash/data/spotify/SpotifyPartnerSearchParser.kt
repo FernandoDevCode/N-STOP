@@ -84,7 +84,10 @@ internal fun parseSpotifyPartnerSearchPage(
                     else null,
                 explicit = ((payload["contentRating"] as? JsonObject)
                     ?.string("label") == "EXPLICIT"),
-                releaseDate = payload.string("date") ?: payload.string("releaseDate"),
+                releaseDate = payload.string("date")
+                    ?: (payload["date"] as? JsonObject)?.string("isoString")?.take(10)
+                    ?: (payload["date"] as? JsonObject)?.number("year")?.toString()
+                    ?: payload.string("releaseDate"),
                 releaseGroup = null,
             )
         }
