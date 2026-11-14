@@ -824,47 +824,141 @@ class SpotifyApiClient @Inject constructor(
         }
     }
 
-    /** True Spotify artist discography by artist ID, including special editions. */
+    /**
+     * Artist releases are read by the exact Spotify artist URI. The existing
+     * searchDesktop path works on devices where the public Web API returns
+     * HTTP 429; detail pages must also prefer the Web Player Partner API.
+     * Do not synthesize albums from YouTube or replace release identities.
+     */
     suspend fun searchArtistReleasesPage(
         spotifyArtistId: String,
         offset: Int = 0,
     ): SpotifyCatalogPage = withContext(Dispatchers.IO) {
         require(spotifyArtistId.matches(Regex("[A-Za-z0-9]{22}")))
         require(offset >= 0)
+        val variables = buildJsonObject {
+            put("uri", "spotify:artist:$spotifyArtistId")
+            put("offset", offset)
+            put("limit", 10)
+        }.toString()
+        val partner = try {
+            executeGraphQL(
+                operationName = "queryArtistDiscographyAll",
+                variables = variables,
+                seedHash = SpotifyAuthConfig.HASH_ARTIST_DISCOGRAPHY_ALL,
+            )
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (error: Exception) {
+            Log.w(TAG, "Artist Partner discography unavailable: ${error.javaClass.simpleName}")
+            null
+        }
+        partner?.let { parseSpotifyPartnerArtistReleasesPage(it, offset, 10) }
+            ?.let { return@withContext it }
+
         val url = "$WEB_API_BASE/artists/$spotifyArtistId/albums?" +
             "include_groups=album,single,compilation,appears_on&market=BR&limit=10&offset=$offset"
-        parseSpotifyArtistAlbumsPage(authorizedCatalogResponse(url))
+        parseSpotifyArtistAlbumsPage(authorizedCatalogResponse(url, preferPublicToken = true))
     }
 
-    /** Spotify album tracks by album ID. Never used as YouTube browse IDs. */
+    /** Album tracks by the real Spotify album URI, including edition tracks. */
     suspend fun searchAlbumTracksPage(
         spotifyAlbumId: String,
         offset: Int = 0,
     ): SpotifyCatalogPage = withContext(Dispatchers.IO) {
         require(spotifyAlbumId.matches(Regex("[A-Za-z0-9]{22}")))
         require(offset >= 0)
+        val variables = buildJsonObject {
+            put("uri", "spotify:album:$spotifyAlbumId")
+            put("locale", "")
+            put("offset", offset)
+            put("limit", 10)
+        }.toString()
+        val partner = try {
+            executeGraphQL(
+                operationName = "getAlbum",
+                variables = variables,
+                seedHash = SpotifyAuthConfig.HASH_GET_ALBUM,
+            )
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (error: Exception) {
+            Log.w(TAG, "Album Partner tracks unavailable: ${error.javaClass.simpleName}")
+            null
+        }
+        partner?.let { parseSpotifyPartnerAlbumTracksPage(it, offset, 10) }
+            ?.let { return@withContext it }
+
         val url = "$WEB_API_BASE/albums/$spotifyAlbumId/tracks?market=BR&limit=10&offset=$offset"
-        parseSpotifyAlbumTracksPage(authorizedCatalogResponse(url))
+        parseSpotifyAlbumTracksPage(authorizedCatalogResponse(url, preferPublicToken = true))
     }
 
-    private suspend fun authorizedCatalogResponse(url: String): String {
-        val token = tokenManager.getSpotifyAccessToken()
+    /** Shared REST fallback for search, artist releases and album tracks.
+     * A 429 opens one cooldown for every catalog detail route, not one per page.
+     */
+    private suspend fun authorizedCatalogResponse(
+        url: String,
+        preferPublicToken: Boolean = false,
+    ): String {
+        val now = System.currentTimeMillis()
+        if (catalogRestCooldownUntilMs > now) {
+            throw SpotifyRateLimitException(
+                ((catalogRestCooldownUntilMs - now) / 1000L).coerceAtLeast(1L)
+            )
+        }
+        val publicToken = if (preferPublicToken) getClientCredentialsToken() else null
+        val userToken = tokenManager.getSpotifyAccessToken()
+        var bearer = publicToken ?: userToken
             ?: throw SpotifyApiException(0, url, "Spotify não conectado")
-        var response = executeSearchRequest(url, token)
+        var response = executeSearchRequest(url, bearer)
         var body = response.body?.string()
-        if (response.code == 401) {
+        val status = response.code
+        val retryAfter = response.header("Retry-After")?.toLongOrNull()
+        response.close()
+        var resultCode = status
+
+        if (resultCode == 401 && bearer == userToken) {
             val refreshed = tokenManager.forceRefreshSpotifyAccessToken()
                 ?: throw SpotifyApiException(401, url, "Sessão Spotify expirada")
-            response = executeSearchRequest(url, refreshed)
+            bearer = refreshed
+            response = executeSearchRequest(url, bearer)
+            resultCode = response.code
             body = response.body?.string()
+            val refreshedRetry = response.header("Retry-After")?.toLongOrNull()
+            response.close()
+            if (resultCode == 429) {
+                rememberCatalogRateLimit(refreshedRetry)
+                throw SpotifyRateLimitException(refreshedRetry)
+            }
+        } else if (resultCode in listOf(401, 403) && publicToken != null && userToken != null) {
+            // One fallback to the connected account if public credentials have
+            // become invalid. Never retry a genuine 429 with another token.
+            response = executeSearchRequest(url, userToken)
+            resultCode = response.code
+            body = response.body?.string()
+            val alternateRetry = response.header("Retry-After")?.toLongOrNull()
+            response.close()
+            if (resultCode == 429) {
+                rememberCatalogRateLimit(alternateRetry)
+                throw SpotifyRateLimitException(alternateRetry)
+            }
         }
-        if (response.code == 429) {
-            throw SpotifyRateLimitException(response.header("Retry-After")?.toLongOrNull())
+        if (resultCode == 429) {
+            rememberCatalogRateLimit(retryAfter)
+            throw SpotifyRateLimitException(retryAfter)
         }
-        if (!response.isSuccessful) {
-            throw SpotifyApiException(response.code, url, "Spotify HTTP ${response.code}")
+        if (resultCode !in 200..299) {
+            throw SpotifyApiException(resultCode, url, "Spotify HTTP $resultCode")
         }
         return body ?: throw SpotifyApiException(502, url, "Spotify sem resposta")
+    }
+
+    private fun rememberCatalogRateLimit(retryAfter: Long?) {
+        val seconds = (retryAfter ?: 60L).coerceIn(30L, 86_400L)
+        catalogRestCooldownUntilMs = maxOf(
+            catalogRestCooldownUntilMs,
+            System.currentTimeMillis() + seconds * 1_000L,
+        )
     }
 
     /**
