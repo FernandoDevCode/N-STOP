@@ -26,6 +26,7 @@ import javax.inject.Inject
 import kotlin.math.abs
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -48,7 +49,7 @@ data class SpotifyBrowsePage(
     val entry: UniversalSearchResult,
     val items: List<UniversalSearchResult> = emptyList(),
     val continuation: String? = null,
-    val loading: Boolean = true,
+    val loading: Boolean = false,
     val error: String? = null,
 )
 
@@ -92,6 +93,7 @@ class SonoraSearchViewModel @Inject constructor(
     val moreError = _moreError.asStateFlow()
     private val _browse = MutableStateFlow<List<SpotifyBrowsePage>>(emptyList())
     val browse = _browse.asStateFlow()
+    private var browseRequest: Job? = null
     // A Spotify search result is catalog metadata; matching its exact audio
     // on YouTube is network I/O. Share one in-flight lookup between speculative
     // preparation and the user's tap, keyed to the immutable Spotify identity +
@@ -302,48 +304,51 @@ class SonoraSearchViewModel @Inject constructor(
         next[chosenSource.value] != null &&
         (pages[chosenSource.value] ?: 0) < LIMIT_PAGES
 
-    /** Spotify detail stack keeps actual Spotify identities throughout artist -> album. */
+    /** Real Spotify IDs only; never remap artist / album to a YTM browse ID. */
     fun openSpotifyBrowse(item: UniversalSearchResult) {
         if (item.identity.source != CatalogSource.SPOTIFY ||
             item.type !in setOf(SearchResultType.ARTIST, SearchResultType.ALBUM)) return
+        browseRequest?.cancel()
         _browse.value = _browse.value + SpotifyBrowsePage(entry = item)
         loadSpotifyBrowse()
     }
 
     fun closeSpotifyBrowse() {
+        browseRequest?.cancel()
         if (_browse.value.isNotEmpty()) _browse.value = _browse.value.dropLast(1)
     }
 
-    fun retrySpotifyBrowse() {
-        loadSpotifyBrowse()
-    }
+    fun retrySpotifyBrowse() = loadSpotifyBrowse()
 
     fun loadSpotifyBrowse() {
-        val top = _browse.value.lastOrNull() ?: return
-        // Never request another page while one is in flight, unless the stack
-        // frame was just created with its initial loading placeholder.
-        if (top.loading && top.items.isNotEmpty()) return
-        val entryKey = top.entry.stableKey
-        _browse.value = _browse.value.dropLast(1) + top.copy(loading = true, error = null)
-        viewModelScope.launch {
+        val current = _browse.value.lastOrNull() ?: return
+        // A double-tap or LazyColumn pagination callback must never launch
+        // duplicate requests while loading. The first frame starts unblocked.
+        if (current.loading || browseRequest?.isActive == true) return
+        if (current.items.isNotEmpty() && current.continuation == null) return
+
+        val depth = _browse.value.size
+        val key = current.entry.stableKey
+        _browse.value = _browse.value.dropLast(1) + current.copy(loading = true, error = null)
+        browseRequest = viewModelScope.launch {
             try {
-                val page = sources.browseSpotify(top.entry, top.continuation)
-                val now = _browse.value.lastOrNull()
-                if (now?.entry?.stableKey != entryKey) return@launch
-                val combined = (now.items + page.items).distinctBy { it.stableKey }
-                _browse.value = _browse.value.dropLast(1) + now.copy(
-                    items = combined,
-                    continuation = page.continuation?.takeUnless { it == top.continuation },
+                val page = sources.browseSpotify(current.entry, current.continuation)
+                val last = _browse.value.lastOrNull()
+                if (_browse.value.size != depth || last?.entry?.stableKey != key) return@launch
+                val merged = (last.items + page.items).distinctBy { it.stableKey }
+                _browse.value = _browse.value.dropLast(1) + last.copy(
+                    items = merged,
+                    continuation = page.continuation?.takeUnless { it == current.continuation },
                     loading = false,
                 )
                 prepareSpotifyMatches(page.items)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                val now = _browse.value.lastOrNull()
-                if (now?.entry?.stableKey == entryKey) {
-                    _browse.value = _browse.value.dropLast(1) + now.copy(
-                        loading = false, error = describe(CatalogSource.SPOTIFY, e),
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (error: Exception) {
+                val last = _browse.value.lastOrNull()
+                if (_browse.value.size == depth && last?.entry?.stableKey == key) {
+                    _browse.value = _browse.value.dropLast(1) + last.copy(
+                        loading = false, error = describe(CatalogSource.SPOTIFY, error),
                     )
                 }
             }
