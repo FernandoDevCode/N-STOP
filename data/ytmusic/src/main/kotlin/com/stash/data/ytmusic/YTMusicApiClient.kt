@@ -484,7 +484,7 @@ class YTMusicApiClient @Inject constructor(
      *
      * This method emits four section kinds in fixed order —
      * Top → Songs → Artists → Albums — skipping any shelf that is missing or
-     * empty. The Songs list is capped at 4 rows per the Search tab spec.
+     * empty. Songs are not truncated by the parser. Pagination remains source-specific.
      *
      * A missing `sectionListRenderer` or a zero-shelf response (e.g.
      * InnerTube's "No results" message) yields [SearchAllResults] with an
