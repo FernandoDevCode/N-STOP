@@ -771,6 +771,15 @@ class SpotifyApiClient @Inject constructor(
      * Uses a connected user's authorized token; never presents a YouTube fallback
      * as a Spotify result. A failed request stays a failure (not an empty catalog).
      */
+    @Volatile
+    private var catalogRestCooldownUntilMs: Long = 0L
+
+    /**
+     * Prefer Spotify's existing web-player searchDesktop query. The REST
+     * /v1/search endpoint is frequently 429 on web-user tokens (observed
+     * in Sonora on-device); REST is a fallback, not the primary search.
+     * Never translate a YouTube hit into a Spotify catalog result.
+     */
     suspend fun searchCatalogPage(
         query: String,
         offset: Int = 0,
@@ -779,9 +788,40 @@ class SpotifyApiClient @Inject constructor(
         require(query.isNotBlank())
         require(offset >= 0)
         val pageSize = limit.coerceIn(1, 10)
+        val variables = buildJsonObject {
+            put("searchTerm", query)
+            put("offset", offset)
+            put("limit", pageSize)
+            put("numberOfTopResults", 5)
+            put("includeAudiobooks", false)
+            put("includePreReleases", false)
+        }.toString()
+        val partner = executeGraphQL(
+            operationName = "searchDesktop",
+            variables = variables,
+            seedHash = SpotifyAuthConfig.HASH_SEARCH_DESKTOP,
+        )
+        if (partner != null) {
+            parseSpotifyPartnerSearchPage(partner, offset, pageSize)?.let {
+                return@withContext it
+            }
+        }
+
+        val now = System.currentTimeMillis()
+        if (catalogRestCooldownUntilMs > now) {
+            throw SpotifyRateLimitException(
+                ((catalogRestCooldownUntilMs - now) / 1000L).coerceAtLeast(1L)
+            )
+        }
         val url = "$WEB_API_BASE/search?type=track,artist,album&limit=$pageSize" +
             "&offset=$offset&market=BR&q=${URLEncoder.encode(query, "UTF-8")}"
-        parseSpotifyCatalogPage(authorizedCatalogResponse(url))
+        try {
+            parseSpotifyCatalogPage(authorizedCatalogResponse(url))
+        } catch (limited: SpotifyRateLimitException) {
+            val seconds = (limited.retryAfterSeconds ?: 60L).coerceIn(30L, 86_400L)
+            catalogRestCooldownUntilMs = System.currentTimeMillis() + seconds * 1000L
+            throw limited
+        }
     }
 
     /** True Spotify artist discography by artist ID, including special editions. */
