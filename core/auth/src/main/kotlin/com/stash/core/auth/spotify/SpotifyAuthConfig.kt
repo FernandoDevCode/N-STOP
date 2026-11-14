@@ -86,6 +86,16 @@ object SpotifyAuthConfig {
      */
     const val HASH_SEARCH_DESKTOP = "75bbf6bfcfdf85b8fc828417bfad92b7cd66bf7f556d85670f4da8292373ebec"
 
+    // Legacy Partner API seed hashes. Both are automatically re-scraped when
+    // Spotify rotates the web-player persisted queries, like searchDesktop.
+    // Album hash from a public Partner API implementation (2026); discography
+    // from published Spicetify client metadata (2024).
+    const val HASH_ARTIST_DISCOGRAPHY_ALL =
+        "9380995a9d4663cbcb5113fef3c6aabf70ae6d407ba61793fd01e2a1dd6929b0"
+    const val HASH_GET_ALBUM =
+        "b9bfabef66ed756e5e13f68a942deb60bd4125ec1f1be8cc42769dc0259b4b10"
+
+
     /**
      * Persisted query hash for the `addToLibrary` / `removeFromLibrary`
      * mutations — the heart button in the Spotify web player. One
