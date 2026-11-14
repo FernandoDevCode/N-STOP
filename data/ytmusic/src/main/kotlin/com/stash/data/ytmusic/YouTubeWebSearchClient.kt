@@ -6,6 +6,8 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
 import okhttp3.*
@@ -41,15 +43,40 @@ class YouTubeWebSearchClient(
     private val http = client.newBuilder().callTimeout(timeoutMs, TimeUnit.MILLISECONDS).build()
     private val userAgent = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36"
 
+    // The old path fetched youtube.com/ on every search and again on every
+    // continuation. On cellular it added a redundant round-trip to each
+    // Spotify match before the player could even begin resolving audio.
+    private data class WebConfig(val version: String, val key: String, val validUntilNs: Long)
+    private val configMutex = Mutex()
+    @Volatile private var cachedConfig: WebConfig? = null
+
+    private suspend fun webConfig(): WebConfig {
+        fun fresh(config: WebConfig?): WebConfig? =
+            config?.takeIf { System.nanoTime() < it.validUntilNs }
+        fresh(cachedConfig)?.let { return it }
+        return configMutex.withLock {
+            fresh(cachedConfig)?.let { return@withLock it }
+            // Real WEB config, never an invented YouTube Music version/key.
+            val html = request(Request.Builder().url("$origin/")
+                .header("User-Agent", userAgent).build())
+            fun field(name: String): String =
+                Regex("\\\"$name\\\"\\\\s*:\\\\s*\\\"([^\\\"]+)\\\"")
+                    .find(html)?.groupValues?.get(1)
+                    ?: throw IOException("Missing YouTube WEB config: $name")
+            WebConfig(
+                version = field("INNERTUBE_CLIENT_VERSION"),
+                key = field("INNERTUBE_API_KEY"),
+                validUntilNs = System.nanoTime() + 15L * 60L * 1_000_000_000L,
+            ).also { cachedConfig = it }
+        }
+    }
+
     suspend fun search(query: String, continuation: String? = null, rankOffset: Int = 0): YouTubeWebSearchPage = withContext(Dispatchers.Default) {
         require(query.isNotBlank())
         require(rankOffset >= 0)
-        // Discover the actual WEB build instead of synthesizing a Music client version.
-        val html = request(Request.Builder().url("$origin/").header("User-Agent", userAgent).build())
-        fun config(name: String): String = Regex("\"$name\"\\s*:\\s*\"([^\"]+)\"")
-            .find(html)?.groupValues?.get(1) ?: throw IOException("Missing YouTube WEB config: $name")
-        val version = config("INNERTUBE_CLIENT_VERSION")
-        val key = config("INNERTUBE_API_KEY")
+        val config = webConfig()
+        val version = config.version
+        val key = config.key
         val body = buildJsonObject {
             putJsonObject("context") { putJsonObject("client") {
                 put("clientName", "WEB"); put("clientVersion", version)
