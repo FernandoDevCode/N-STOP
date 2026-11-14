@@ -47,7 +47,7 @@ data class SpotifyBrowsePage(
     val error: String? = null,
 )
 
-/** One source tab at a time. No blended catalog and no implicit YTM fallback. */
+/** Spotify or YouTube WEB, one catalog at a time; never search YTM. */
 @HiltViewModel
 @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
 class SonoraSearchViewModel @Inject constructor(
@@ -129,6 +129,7 @@ class SonoraSearchViewModel @Inject constructor(
     }
 
     fun select(source: CatalogSource) {
+        if (source != CatalogSource.SPOTIFY && source != CatalogSource.YOUTUBE) return
         if (chosenSource.value == source) return
         chosenSource.value = source
         _moreError.value = null
@@ -321,11 +322,12 @@ class SonoraSearchViewModel @Inject constructor(
                             (item.durationMs ?: video.durationMs ?: 0L) / 1000.0,
                             item.artworkUrl)
                     }
-                    CatalogSource.YOUTUBE, CatalogSource.YOUTUBE_MUSIC -> {
+                    CatalogSource.YOUTUBE -> {
                         val audioId = item.audioIdentity?.audioId ?: return@launch
                         TrackItem(audioId, item.title, item.subtitle.orEmpty(),
                             (item.durationMs ?: 0L) / 1000.0, item.artworkUrl)
                     }
+                    CatalogSource.YOUTUBE_MUSIC -> return@launch
                 }
                 if (action == SearchResultAction.PLAY) {
                     _resolving.value = item.stableKey
