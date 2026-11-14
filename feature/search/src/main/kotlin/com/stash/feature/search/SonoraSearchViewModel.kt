@@ -218,8 +218,11 @@ class SonoraSearchViewModel @Inject constructor(
                         ?.takeIf { it.query == q }?.items.orEmpty()
                     val combined = (previous + page.items).distinctBy { it.stableKey }
                     states[src] = SourceSearchState.Data(q, combined)
-                    // A provider that repeats the same cursor cannot loop indefinitely.
-                    next[src] = page.continuation?.takeUnless { it == continuation }
+                    // A provider that ignores offset or repeats a continuation
+                    // must not issue up to 25 identical pages as the list scrolls.
+                    next[src] = if (combined.size > previous.size)
+                        page.continuation?.takeUnless { it == continuation }
+                    else null
                     ranks[src] = page.nextRank
                     pages[src] = (pages[src] ?: 0) + 1
                     publish()
