@@ -29,7 +29,7 @@ internal fun parseSearchAll(response: JsonObject): SearchAllResults {
         // Parsers live in SearchResponseParser.kt as top-level internal funcs.
         when (title) {
             "Songs" -> parseSongsShelf(renderer).takeIf { it.isNotEmpty() }
-                ?.let { sections.add(SearchResultSection.Songs(it.take(4))) }
+                ?.let { sections.add(SearchResultSection.Songs(it)) }
             "Artists" -> parseArtistsShelf(renderer).takeIf { it.isNotEmpty() }
                 ?.let { sections.add(SearchResultSection.Artists(it)) }
             "Albums" -> parseAlbumsShelf(renderer).takeIf { it.isNotEmpty() }
