@@ -221,6 +221,7 @@ fun AlbumDetailScreen(
                         },
                         onLongPress = { if (!selection.isActive) selectedTrack = track else selection.toggle(track.id) },
                         showArtist = false,
+                        showArtwork = false,
                         isResolving = track.id == tappedTrackId,
                         selectionActive = selection.isActive,
                         selected = selection.isSelected(track.id),
@@ -229,7 +230,7 @@ fun AlbumDetailScreen(
 
                     if (index < state.tracks.lastIndex) {
                         HorizontalDivider(
-                            modifier = Modifier.padding(start = 80.dp, end = 20.dp),
+                            modifier = Modifier.padding(start = 52.dp, end = 20.dp),
                             thickness = 0.5.dp,
                             color = extendedColors.glassBorder,
                         )

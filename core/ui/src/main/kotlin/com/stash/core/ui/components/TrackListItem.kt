@@ -31,6 +31,11 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.layout.ContentScale
@@ -40,13 +45,15 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.stash.core.model.MusicSource
 import com.stash.core.model.Track
+import com.stash.core.ui.R
 import com.stash.core.ui.theme.StashTheme
 
 /**
  * A reusable track row used in both the Library and Home screens.
  *
  * Displays a 48 dp album-art placeholder, title + artist column,
- * formatted duration, source indicator dot, and an overflow menu icon.
+ * known duration and discreet source identity. Options use long press; a
+ * visible overflow icon is exceptional and must be explicitly opted into.
  *
  * When the row is crowded (a Hi-Res pill plus two source labels on a narrow
  * phone or at a large display size) the decoration steps aside so the title
@@ -80,8 +87,10 @@ fun TrackListItem(
     isResolving: Boolean = false,
     selectionActive: Boolean = false,
     selected: Boolean = false,
+    /** Only opt-in exceptional surfaces show a permanent overflow icon. */
+    showMoreButton: Boolean = false,
 ) {
-    val hasMoreButton = !selectionActive && onMoreClick != null
+    val hasMoreButton = !selectionActive && showMoreButton && onMoreClick != null
     // Inside a TrackRowFitScope the list shares one width reading and one text measurer; on its own
     // the row reads its width with BoxWithConstraints. Either way the optional decoration (source
     // labels, Hi-Res qualifier) steps aside before it squeezes the title to "…". See [decideTrackRowFit].
@@ -91,7 +100,7 @@ fun TrackListItem(
             track, environment.rowWidth, environment.measurer, isPlaying, isResolving, selectionActive, hasMoreButton,
         )
         TrackListItemRow(
-            track, onClick, modifier, isPlaying, onMoreClick, onLongPress, isResolving, selectionActive, selected, fit,
+            track, onClick, modifier, isPlaying, onMoreClick, onLongPress, isResolving, selectionActive, selected, showMoreButton, fit,
         )
     } else {
         BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
@@ -99,7 +108,7 @@ fun TrackListItem(
                 track, maxWidth, rememberTextMeasurer(), isPlaying, isResolving, selectionActive, hasMoreButton,
             )
             TrackListItemRow(
-                track, onClick, Modifier, isPlaying, onMoreClick, onLongPress, isResolving, selectionActive, selected, fit,
+                track, onClick, Modifier, isPlaying, onMoreClick, onLongPress, isResolving, selectionActive, selected, showMoreButton, fit,
             )
         }
     }
@@ -118,8 +127,12 @@ private fun TrackListItemRow(
     isResolving: Boolean,
     selectionActive: Boolean,
     selected: Boolean,
+    showMoreButton: Boolean,
     fit: TrackRowFit,
 ) {
+    val haptic = LocalHapticFeedback.current
+    val optionsLabel = stringResource(R.string.sonora_track_options)
+    val longAction = if (selectionActive) onLongPress else onLongPress ?: onMoreClick
     val extendedColors = StashTheme.extendedColors
     val primaryColor = MaterialTheme.colorScheme.primary
 
@@ -136,10 +149,23 @@ private fun TrackListItemRow(
             .background(rowBackground)
             .combinedClickable(
                 onClick = onClick,
-                onLongClickLabel = selectLongClickLabel(selectionActive, onLongPress),
-                onLongClick = onLongPress,
+                onLongClickLabel = if (!selectionActive && longAction != null) optionsLabel else null,
+                onLongClick = longAction?.let { action ->
+                    {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        action()
+                    }
+                },
             )
             .selectionRowSemantics(selectionActive, selected)
+            .semantics {
+                if (!selectionActive && (onMoreClick != null || onLongPress != null)) {
+                    customActions = listOf(CustomAccessibilityAction(optionsLabel) {
+                        (onMoreClick ?: onLongPress)?.invoke()
+                        true
+                    })
+                }
+            }
             .padding(horizontal = RowHorizontalPadding, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -245,7 +271,7 @@ private fun TrackListItemRow(
                 tint = primaryColor,
                 modifier = Modifier.size(PlayingIconSize),
             )
-            else -> Text(
+            track.durationMs > 0L -> Text(
                 text = formatDuration(track.durationMs),
                 style = MaterialTheme.typography.bodySmall,
                 color = extendedColors.textTertiary,
@@ -258,7 +284,7 @@ private fun TrackListItemRow(
         SourceIndicator(source = track.source, showLabel = fit.showSourceLabels)
 
         // -- Overflow menu (only when not selecting) --
-        if (!selectionActive && onMoreClick != null) {
+        if (!selectionActive && showMoreButton && onMoreClick != null) {
             IconButton(onClick = onMoreClick, modifier = Modifier.size(MoreButtonSize)) {
                 Icon(
                     imageVector = Icons.Default.MoreVert,
