@@ -35,6 +35,11 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stash.core.data.db.dao.LibraryHealthBucket
 import com.stash.feature.settings.components.SonoraSettingsCard as GlassCard
+import com.stash.feature.settings.components.SettingsPageHeader
+import com.stash.feature.settings.components.SettingsPageSurface
+import com.stash.feature.settings.R
+import androidx.compose.ui.res.stringResource
+import com.stash.core.ui.components.bottomChromePadding
 import com.stash.core.ui.components.SectionHeader
 import com.stash.core.ui.theme.StashTheme
 import com.stash.data.download.lyrics.LyricsFetchStatus
@@ -64,16 +69,18 @@ fun LibraryHealthScreen(
     val lyricsStatus by lyricsViewModel.status.collectAsStateWithLifecycle()
     val flacState by flacViewModel.state.collectAsStateWithLifecycle()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp),
-    ) {
-        Spacer(Modifier.height(16.dp))
-
-        Header(onBack = onNavigateBack)
-
+    SettingsPageSurface {
+        Column(Modifier.fillMaxSize()) {
+            SettingsPageHeader(
+                title = stringResource(R.string.nostop_storage_library_health),
+                onBack = onNavigateBack,
+            )
+            Column(
+                modifier = Modifier.fillMaxWidth().weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = bottomChromePadding()),
+            ) {
         Spacer(Modifier.height(8.dp))
 
         Text(
@@ -135,28 +142,8 @@ fun LibraryHealthScreen(
         )
 
         Spacer(Modifier.height(40.dp))
-    }
-}
-
-@Composable
-private fun Header(onBack: () -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(onClick = onBack) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back",
-                tint = MaterialTheme.colorScheme.onSurface,
-            )
+            }
         }
-        Spacer(Modifier.size(4.dp))
-        Text(
-            text = "Library Health",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
     }
 }
 

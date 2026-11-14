@@ -325,4 +325,11 @@
     <string name="sonora_settings_preferences">App</string>
     <string name="sonora_audio_quality_note">Playback and downloads use YouTube or YouTube Music audio. Lossless quality is not available with this configuration.</string>
     <string name="sonora_lyrics_lrc_note">Synchronized lyrics appear when available. Your songs and downloads are unchanged.</string>
+    <string name="sonora_settings_back">Back</string>
+    <string name="sonora_blocked_title">Blocked songs</string>
+    <string name="sonora_blocked_empty_title">No blocked songs</string>
+    <string name="sonora_blocked_empty_description">Songs you block appear here. You can unblock them to include them in the next sync.</string>
+    <string name="sonora_blocked_description">These songs are skipped during synchronization until you unblock them.</string>
+    <string name="sonora_blocked_count">Songs: %1$d</string>
+    <string name="sonora_blocked_unblock">Unblock</string>
 </resources>
