@@ -89,7 +89,6 @@ fun SonoraSourceSearchScreen(
     val moreError by viewModel.moreError.collectAsStateWithLifecycle()
     val resolving by viewModel.resolving.collectAsStateWithLifecycle()
     val recent by viewModel.recent.collectAsStateWithLifecycle()
-    val selectedPhotos by viewModel.selectedPhotos.collectAsStateWithLifecycle()
     val browse by viewModel.browse.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -146,7 +145,6 @@ fun SonoraSourceSearchScreen(
                 listOf(
                     CatalogSource.SPOTIFY to "Spotify",
                     CatalogSource.YOUTUBE to "YouTube",
-                    CatalogSource.YOUTUBE_MUSIC to "YTM",
                 ).forEach { (option, label) ->
                     FilterChip(
                         selected = source == option,
@@ -213,26 +211,7 @@ fun SonoraSourceSearchScreen(
                                             result.identity.source == CatalogSource.SPOTIFY
                                         ) {
                                             viewModel.openSpotifyBrowse(result)
-                                        } else if (result.supports(SearchResultAction.NAVIGATE) &&
-                                            result.identity.source == CatalogSource.YOUTUBE_MUSIC
-                                        ) {
-                                            when (result.type) {
-                                                SearchResultType.ARTIST -> onNavigateToArtist(
-                                                    result.identity.catalogId, result.title,
-                                                    selectedPhotos[result.identity.catalogId]?.photoUrl
-                                                        ?: result.artworkUrl,
-                                                )
-                                                SearchResultType.ALBUM -> onNavigateToAlbum(
-                                                    AlbumSummary(
-                                                        id = result.identity.catalogId,
-                                                        title = result.title,
-                                                        artist = result.subtitle.orEmpty(),
-                                                        thumbnailUrl = result.artworkUrl,
-                                                        year = null,
-                                                    ),
-                                                )
-                                                else -> Unit
-                                            }
+
                                         }
                                     },
                                     onLongPress = { sheetItem = result },
@@ -290,15 +269,7 @@ fun SonoraSourceSearchScreen(
                             if (action == SearchResultAction.NAVIGATE) {
                                 if (item.identity.source == CatalogSource.SPOTIFY) {
                                     viewModel.openSpotifyBrowse(item)
-                                } else if (item.identity.source == CatalogSource.YOUTUBE_MUSIC) {
-                                    when (item.type) {
-                                        SearchResultType.ARTIST -> onNavigateToArtist(
-                                            item.identity.catalogId, item.title, item.artworkUrl)
-                                        SearchResultType.ALBUM -> onNavigateToAlbum(
-                                            AlbumSummary(item.identity.catalogId, item.title,
-                                                item.subtitle.orEmpty(), item.artworkUrl, null))
-                                        else -> Unit
-                                    }
+
                                 }
                             } else viewModel.onAction(item, action)
                         },
