@@ -1092,38 +1092,40 @@ class SpotifyApiClient @Inject constructor(
         artistName: String,
         sinceDate: String,
     ): List<SpotifyRecentArtistAlbum> = withContext(Dispatchers.IO) {
-        val token = tokenManager.getSpotifyAccessToken() ?: run {
-            Log.w(TAG, "Home recent-album query unavailable: no Spotify access token")
-            return@withContext emptyList()
-        }
-        if (artistName.isBlank()) return@withContext emptyList()
-        val url = "$WEB_API_BASE/search?type=album&limit=20&q=" +
-            URLEncoder.encode("artist:\"${artistName.trim()}\"", "UTF-8")
+        if (artistName.isBlank() || sinceDate.length != 10) return@withContext emptyList()
+        // The legacy Home route called /v1/search directly and silently
+        // swallowed 429s, so new releases vanished although Search worked.
+        // Reuse the working Spotify Partner catalogue path, preserving only
+        // verified Spotify dates and an exact artist credit.
         try {
-            executeSearchRequest(url, token).use { response ->
-                if (!response.isSuccessful) {
-                    Log.w(TAG, "Home Spotify REST request unavailable: HTTP ${response.code}")
-                    return@use emptyList()
-                }
-                val root = json.parseToJsonElement(response.body?.string().orEmpty()).jsonObject
-                root["albums"]?.jsonObject?.get("items")?.jsonArray.orEmpty()
-                    .mapNotNull { value ->
-                        val album = value.jsonObject
-                        val name = album["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                        val date = album["release_date"]?.jsonPrimitive?.contentOrNull
-                            ?: return@mapNotNull null
-                        if (date.length != 10 || date < sinceDate) return@mapNotNull null
-                        val artistNames = album["artists"]?.jsonArray.orEmpty()
-                            .mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull }
-                        if (artistNames.none { it.equals(artistName, ignoreCase = true) }) return@mapNotNull null
-                        SpotifyRecentArtistAlbum(name, artistName, date)
-                    }
-                    .distinctBy { it.title.lowercase() to it.artist.lowercase() }
-                    .sortedByDescending { it.releaseDate }
+            val query = "artist:\"${artistName.trim()}\""
+            val candidates = mutableListOf<SpotifyCatalogItem>()
+            var offset = 0
+            repeat(2) {
+                val page = searchCatalogPage(query, offset = offset, limit = 10)
+                candidates += page.items
+                if (!page.hasMore) return@repeat
+                offset += 10
             }
+            candidates.asSequence()
+                .filter { it.kind == SpotifyCatalogKind.ALBUM }
+                .filter { album ->
+                    album.subtitle.orEmpty().split(',').any {
+                        it.trim().equals(artistName.trim(), ignoreCase = true)
+                    }
+                }
+                .mapNotNull { album ->
+                    val date = album.releaseDate
+                    if (date == null || date.length != 10 || date < sinceDate) null
+                    else SpotifyRecentArtistAlbum(album.title, artistName.trim(), date)
+                }
+                .distinctBy { it.title.lowercase() to it.releaseDate }
+                .sortedByDescending { it.releaseDate }
+                .toList()
         } catch (cancel: CancellationException) {
             throw cancel
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            Log.w(TAG, "Home recent-album catalog unavailable: ${error.javaClass.simpleName}")
             emptyList()
         }
     }
