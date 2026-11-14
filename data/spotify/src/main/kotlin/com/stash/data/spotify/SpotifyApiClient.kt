@@ -781,6 +781,33 @@ class SpotifyApiClient @Inject constructor(
         val pageSize = limit.coerceIn(1, 10)
         val url = "$WEB_API_BASE/search?type=track,artist,album&limit=$pageSize" +
             "&offset=$offset&market=BR&q=${URLEncoder.encode(query, "UTF-8")}"
+        parseSpotifyCatalogPage(authorizedCatalogResponse(url))
+    }
+
+    /** True Spotify artist discography by artist ID, including special editions. */
+    suspend fun searchArtistReleasesPage(
+        spotifyArtistId: String,
+        offset: Int = 0,
+    ): SpotifyCatalogPage = withContext(Dispatchers.IO) {
+        require(spotifyArtistId.matches(Regex("[A-Za-z0-9]{22}")))
+        require(offset >= 0)
+        val url = "$WEB_API_BASE/artists/$spotifyArtistId/albums?" +
+            "include_groups=album,single,compilation,appears_on&market=BR&limit=10&offset=$offset"
+        parseSpotifyArtistAlbumsPage(authorizedCatalogResponse(url))
+    }
+
+    /** Spotify album tracks by album ID. Never used as YouTube browse IDs. */
+    suspend fun searchAlbumTracksPage(
+        spotifyAlbumId: String,
+        offset: Int = 0,
+    ): SpotifyCatalogPage = withContext(Dispatchers.IO) {
+        require(spotifyAlbumId.matches(Regex("[A-Za-z0-9]{22}")))
+        require(offset >= 0)
+        val url = "$WEB_API_BASE/albums/$spotifyAlbumId/tracks?market=BR&limit=10&offset=$offset"
+        parseSpotifyAlbumTracksPage(authorizedCatalogResponse(url))
+    }
+
+    private suspend fun authorizedCatalogResponse(url: String): String {
         val token = tokenManager.getSpotifyAccessToken()
             ?: throw SpotifyApiException(0, url, "Spotify não conectado")
         var response = executeSearchRequest(url, token)
@@ -797,7 +824,7 @@ class SpotifyApiClient @Inject constructor(
         if (!response.isSuccessful) {
             throw SpotifyApiException(response.code, url, "Spotify HTTP ${response.code}")
         }
-        parseSpotifyCatalogPage(body ?: throw SpotifyApiException(502, url, "Spotify sem resposta"))
+        return body ?: throw SpotifyApiException(502, url, "Spotify sem resposta")
     }
 
     /**
