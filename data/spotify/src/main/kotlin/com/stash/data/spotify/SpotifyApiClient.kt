@@ -1101,10 +1101,10 @@ class SpotifyApiClient @Inject constructor(
             val query = "artist:\"${artistName.trim()}\""
             val candidates = mutableListOf<SpotifyCatalogItem>()
             var offset = 0
-            repeat(2) {
+            for (pageIndex in 0 until 2) {
                 val page = searchCatalogPage(query, offset = offset, limit = 10)
                 candidates += page.items
-                if (!page.hasMore) return@repeat
+                if (!page.hasMore) break
                 offset += 10
             }
             candidates.asSequence()
