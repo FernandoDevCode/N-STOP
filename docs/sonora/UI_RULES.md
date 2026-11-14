@@ -66,4 +66,4 @@ Antes de aprovar alteração de frontend:
 
 **Validação que o CI não cobre:** capturas reais de cada rota em dark/light, PT-BR/EN, TalkBack, fontes grandes e Android 16; testes de gesto/contexto em aparelho. Esta cobertura de código não é homologação visual automática.
 
-**Atualização de Busca (branch em validação):** Spotify é a guia inicial, YouTube WEB convencional tem guia independente (não é YTM) e YouTube Music é terceira guia. Busca usa identidades separadas e o motor de resultados; navegação Spotify e paginação YTM continuam pendências até integração verificada, conforme `SEARCH_REWORK_PLAN.md`.
+**Atualização de Busca (PR #86 em validação):** somente duas guias, Spotify inicial e YouTube convencional WEB; YouTube Music não aparece nem é consultado na Busca. Componentes internos de YTM necessários à reprodução permanecem intactos. Esta alteração não substitui validação de CI e dispositivo; consulte `SEARCH_REWORK_PLAN.md`.
