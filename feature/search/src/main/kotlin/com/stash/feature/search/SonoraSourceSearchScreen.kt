@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -71,6 +72,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.merge
 
 /** Spotify opens first; YouTube means conventional WEB videos, NOT YT Music. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SonoraSourceSearchScreen(
     onNavigateToArtist: (String, String, String?) -> Unit,
@@ -341,6 +343,7 @@ private fun SourceSearchRow(
 }
 
 /** In-app Spotify pages, keyed by real Spotify IDs; never enter the YTM route. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SpotifyCatalogBrowseContent(
     viewModel: SonoraSearchViewModel,
