@@ -767,6 +767,107 @@ class SpotifyApiClient @Inject constructor(
     }
 
     /**
+     * Main Sonora search catalog. Three Spotify result buckets are fetched together.
+     * Uses a connected user's authorized token; never presents a YouTube fallback
+     * as a Spotify result. A failed request stays a failure (not an empty catalog).
+     */
+    @Volatile
+    private var catalogRestCooldownUntilMs: Long = 0L
+
+    /**
+     * Prefer Spotify's existing web-player searchDesktop query. The REST
+     * /v1/search endpoint is frequently 429 on web-user tokens (observed
+     * in Sonora on-device); REST is a fallback, not the primary search.
+     * Never translate a YouTube hit into a Spotify catalog result.
+     */
+    suspend fun searchCatalogPage(
+        query: String,
+        offset: Int = 0,
+        limit: Int = 10,
+    ): SpotifyCatalogPage = withContext(Dispatchers.IO) {
+        require(query.isNotBlank())
+        require(offset >= 0)
+        val pageSize = limit.coerceIn(1, 10)
+        val variables = buildJsonObject {
+            put("searchTerm", query)
+            put("offset", offset)
+            put("limit", pageSize)
+            put("numberOfTopResults", 5)
+            put("includeAudiobooks", false)
+            put("includePreReleases", false)
+        }.toString()
+        val partner = executeGraphQL(
+            operationName = "searchDesktop",
+            variables = variables,
+            seedHash = SpotifyAuthConfig.HASH_SEARCH_DESKTOP,
+        )
+        if (partner != null) {
+            parseSpotifyPartnerSearchPage(partner, offset, pageSize)?.let {
+                return@withContext it
+            }
+        }
+
+        val now = System.currentTimeMillis()
+        if (catalogRestCooldownUntilMs > now) {
+            throw SpotifyRateLimitException(
+                ((catalogRestCooldownUntilMs - now) / 1000L).coerceAtLeast(1L)
+            )
+        }
+        val url = "$WEB_API_BASE/search?type=track,artist,album&limit=$pageSize" +
+            "&offset=$offset&market=BR&q=${URLEncoder.encode(query, "UTF-8")}"
+        try {
+            parseSpotifyCatalogPage(authorizedCatalogResponse(url))
+        } catch (limited: SpotifyRateLimitException) {
+            val seconds = (limited.retryAfterSeconds ?: 60L).coerceIn(30L, 86_400L)
+            catalogRestCooldownUntilMs = System.currentTimeMillis() + seconds * 1000L
+            throw limited
+        }
+    }
+
+    /** True Spotify artist discography by artist ID, including special editions. */
+    suspend fun searchArtistReleasesPage(
+        spotifyArtistId: String,
+        offset: Int = 0,
+    ): SpotifyCatalogPage = withContext(Dispatchers.IO) {
+        require(spotifyArtistId.matches(Regex("[A-Za-z0-9]{22}")))
+        require(offset >= 0)
+        val url = "$WEB_API_BASE/artists/$spotifyArtistId/albums?" +
+            "include_groups=album,single,compilation,appears_on&market=BR&limit=10&offset=$offset"
+        parseSpotifyArtistAlbumsPage(authorizedCatalogResponse(url))
+    }
+
+    /** Spotify album tracks by album ID. Never used as YouTube browse IDs. */
+    suspend fun searchAlbumTracksPage(
+        spotifyAlbumId: String,
+        offset: Int = 0,
+    ): SpotifyCatalogPage = withContext(Dispatchers.IO) {
+        require(spotifyAlbumId.matches(Regex("[A-Za-z0-9]{22}")))
+        require(offset >= 0)
+        val url = "$WEB_API_BASE/albums/$spotifyAlbumId/tracks?market=BR&limit=10&offset=$offset"
+        parseSpotifyAlbumTracksPage(authorizedCatalogResponse(url))
+    }
+
+    private suspend fun authorizedCatalogResponse(url: String): String {
+        val token = tokenManager.getSpotifyAccessToken()
+            ?: throw SpotifyApiException(0, url, "Spotify não conectado")
+        var response = executeSearchRequest(url, token)
+        var body = response.body?.string()
+        if (response.code == 401) {
+            val refreshed = tokenManager.forceRefreshSpotifyAccessToken()
+                ?: throw SpotifyApiException(401, url, "Sessão Spotify expirada")
+            response = executeSearchRequest(url, refreshed)
+            body = response.body?.string()
+        }
+        if (response.code == 429) {
+            throw SpotifyRateLimitException(response.header("Retry-After")?.toLongOrNull())
+        }
+        if (!response.isSuccessful) {
+            throw SpotifyApiException(response.code, url, "Spotify HTTP ${response.code}")
+        }
+        return body ?: throw SpotifyApiException(502, url, "Spotify sem resposta")
+    }
+
+    /**
      * Official Spotify artist profile image; no scraped galleries, no album cover proxy.
      * Search requires a connected user's token (same documented constraint as searchTracks).
      * Failures/429 are not retried here; the artist screen retains its current catalog art.

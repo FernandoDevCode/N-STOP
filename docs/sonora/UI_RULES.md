@@ -66,4 +66,4 @@ Antes de aprovar alteração de frontend:
 
 **Validação que o CI não cobre:** capturas reais de cada rota em dark/light, PT-BR/EN, TalkBack, fontes grandes e Android 16; testes de gesto/contexto em aparelho. Esta cobertura de código não é homologação visual automática.
 
-**Nota de arquitetura:** a UI antiga da Busca ainda é YTM sectioned. A busca universal Spotify + YouTube + YTM segue a especificação `SEARCH_REWORK_PLAN.md`; esta alteração visual não a implementa nem muda fontes.
+**Atualização de Busca (PR #86 em validação):** somente duas guias, Spotify inicial e YouTube convencional WEB; YouTube Music não aparece nem é consultado na Busca. Componentes internos de YTM necessários à reprodução permanecem intactos. Esta alteração não substitui validação de CI e dispositivo; consulte `SEARCH_REWORK_PLAN.md`.
