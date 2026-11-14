@@ -435,18 +435,23 @@ private fun SourceSearchRow(
     onLongPress: () -> Unit,
 ) {
     val isVideo = item.type == SearchResultType.VIDEO
-    val width = if (isVideo) 90.dp else 54.dp
+    val isArtist = item.type == SearchResultType.ARTIST
+    val width = if (isVideo) 96.dp else 52.dp
+    val height = if (isVideo) 54.dp else 52.dp
     Row(
         modifier = Modifier.fillMaxWidth()
+            .heightIn(min = 64.dp)
             .combinedClickable(onClick = onTap, onLongClick = onLongPress)
-            .padding(vertical = 7.dp),
+            .padding(vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(Modifier.width(width).height(54.dp)
-            .clip(RoundedCornerShape(7.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center) {
+        Box(
+            Modifier.width(width).height(height)
+                .clip(if (isArtist) CircleShape else RoundedCornerShape(7.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center,
+        ) {
             if (item.artworkUrl != null) {
                 AsyncImage(
                     model = item.artworkUrl,
@@ -456,22 +461,41 @@ private fun SourceSearchRow(
                     modifier = Modifier.fillMaxSize(),
                 )
             } else {
-                Icon(Icons.Default.MusicNote, contentDescription = null)
+                Icon(Icons.Default.MusicNote,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(22.dp))
             }
         }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(item.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
-                buildString {
-                    append(item.subtitle.orEmpty())
-                    if (item.type == SearchResultType.ARTIST) append(" · Artista")
-                    if (item.type == SearchResultType.ALBUM) append(" · Álbum")
-                },
+                item.title,
+                maxLines = if (isVideo) 2 else 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontFamily = FontFamily.SansSerif,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                ),
+            )
+            val metadata = buildString {
+                append(item.subtitle.orEmpty())
+                if (isArtist) append(" · Artista")
+                if (item.type == SearchResultType.ALBUM) append(" · Álbum")
+                if (item.durationMs != null && item.durationMs > 0L) {
+                    val seconds = item.durationMs / 1000L
+                    if (isNotBlank()) append(" · ")
+                    append("${seconds / 60}:${(seconds % 60).toString().padStart(2, '0')}")
+                }
+            }
+            if (metadata.isNotEmpty()) Text(
+                metadata,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontFamily = FontFamily.SansSerif,
+                    fontSize = 13.sp,
+                ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
