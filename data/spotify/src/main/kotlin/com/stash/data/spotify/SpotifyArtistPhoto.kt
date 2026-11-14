@@ -1,6 +1,8 @@
 package com.stash.data.spotify
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -62,3 +64,37 @@ internal fun parseSpotifyArtistDetail(body: String, requestedId: String, request
             ?: return null
         SpotifyArtistPhoto(url, "https://open.spotify.com/artist/$requestedId")
     }.getOrNull()
+
+/**
+ * Spotify Partner artist profile by the exact Spotify artist URI.
+ * Do not borrow an album cover or a similarly named artist's portrait.
+ * A missing URI, mismatched name, or non-Spotify URL fails closed.
+ */
+internal fun parseSpotifyPartnerArtistDetail(
+    root: JsonObject,
+    requestedId: String,
+    requestedName: String,
+): SpotifyArtistPhoto? {
+    if (root["errors"] != null ||
+        !requestedId.matches(Regex("[A-Za-z0-9]{22}")) || requestedName.isBlank()) return null
+    val artist = ((root["data"] as? JsonObject)?.get("artistUnion") as? JsonObject)
+        ?: return null
+    if (artist["uri"]?.jsonPrimitive?.contentOrNull != "spotify:artist:$requestedId") return null
+    val actualName = (artist["profile"] as? JsonObject)
+        ?.get("name")?.jsonPrimitive?.contentOrNull.orEmpty()
+    if (normalizedArtistName(actualName) != normalizedArtistName(requestedName)) return null
+    val visuals = artist["visuals"] as? JsonObject ?: return null
+    val avatar = visuals["avatarImage"] as? JsonObject ?: return null
+    val sources = avatar["sources"] as? JsonArray ?: return null
+    val url = sources.mapNotNull { element ->
+        val image = element as? JsonObject ?: return@mapNotNull null
+        val uri = image["url"]?.jsonPrimitive?.contentOrNull
+            ?.takeIf { it.startsWith("https://i.scdn.co/image/") }
+            ?: return@mapNotNull null
+        val width = image["width"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0
+        val height = image["height"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0
+        Triple(uri, width.toLong() * height, width)
+    }.maxWithOrNull(compareBy<Triple<String, Long, Int>> { it.second }.thenBy { it.third })
+        ?.first ?: return null
+    return SpotifyArtistPhoto(url, "https://open.spotify.com/artist/$requestedId")
+}
