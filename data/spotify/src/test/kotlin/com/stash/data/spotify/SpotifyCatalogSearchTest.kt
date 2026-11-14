@@ -43,4 +43,30 @@ class SpotifyCatalogSearchTest {
         assertEquals(SpotifyCatalogKind.TRACK, page.items.single().kind)
         assertEquals("valid", page.items.single().id)
     }
+    @Test fun `artist discography retains separate regular and anniversary IDs`() {
+        val page = parseSpotifyArtistAlbumsPage("""
+          {"next":"https://api.spotify.com/v1/artists/artist/albums?offset=10",
+           "items":[
+             {"id":"regular","name":"Slipknot","release_date":"1999-06-29","album_group":"album","artists":[{"name":"Slipknot"}]},
+             {"id":"anniversary","name":"Slipknot (25th Anniversary Edition)","release_date":"2024-06-29","album_group":"album","artists":[{"name":"Slipknot"}]}
+           ]}
+        """.trimIndent())
+        assertTrue(page.hasMore)
+        assertEquals(listOf("regular","anniversary"), page.items.map { it.id })
+        assertEquals("2024-06-29", page.items.last().releaseDate)
+        assertEquals("album", page.items.last().releaseGroup)
+    }
+
+    @Test fun `album track pagination preserves Spotify track IDs`() {
+        val page = parseSpotifyAlbumTracksPage("""
+          {"next":null,"items":[
+            {"id":"spotifytrack1","name":"Track 1","artists":[{"name":"Slipknot"}],"duration_ms":152000}
+          ]}
+        """.trimIndent())
+        assertFalse(page.hasMore)
+        assertEquals(SpotifyCatalogKind.TRACK, page.items.single().kind)
+        assertEquals("spotifytrack1", page.items.single().id)
+        assertEquals("Slipknot", page.items.single().subtitle)
+    }
+
 }
