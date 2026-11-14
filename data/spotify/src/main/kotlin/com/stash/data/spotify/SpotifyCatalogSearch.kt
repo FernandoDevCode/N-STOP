@@ -19,6 +19,8 @@ data class SpotifyCatalogItem(
     val artworkUrl: String?,
     val durationMs: Long? = null,
     val explicit: Boolean = false,
+    val releaseDate: String? = null,
+    val releaseGroup: String? = null,
 )
 
 data class SpotifyCatalogPage(
@@ -67,6 +69,8 @@ internal fun parseSpotifyCatalogPage(raw: String): SpotifyCatalogPage {
                 durationMs = if (kind == SpotifyCatalogKind.TRACK)
                     (item["duration_ms"] as? JsonPrimitive)?.longOrNull else null,
                 explicit = (item["explicit"] as? JsonPrimitive)?.booleanOrNull == true,
+                releaseDate = item.string("release_date"),
+                releaseGroup = item.string("album_group"),
             )
         }
     }
@@ -75,3 +79,16 @@ internal fun parseSpotifyCatalogPage(raw: String): SpotifyCatalogPage {
 
 private fun JsonObject.string(key: String): String? =
     (get(key) as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+
+/** Artist albums and album track endpoints return a page at the root, not a search bucket. */
+internal fun parseSpotifyArtistAlbumsPage(raw: String): SpotifyCatalogPage {
+    val root = Json.parseToJsonElement(raw) as? JsonObject
+        ?: return SpotifyCatalogPage(emptyList(), false)
+    return parseSpotifyCatalogPage(JsonObject(mapOf("albums" to root)).toString())
+}
+
+internal fun parseSpotifyAlbumTracksPage(raw: String): SpotifyCatalogPage {
+    val root = Json.parseToJsonElement(raw) as? JsonObject
+        ?: return SpotifyCatalogPage(emptyList(), false)
+    return parseSpotifyCatalogPage(JsonObject(mapOf("tracks" to root)).toString())
+}
