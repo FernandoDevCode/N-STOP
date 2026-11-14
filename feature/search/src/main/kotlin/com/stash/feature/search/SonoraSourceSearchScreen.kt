@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -54,6 +55,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -91,6 +93,7 @@ fun SonoraSourceSearchScreen(
     val browse by viewModel.browse.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val keyboard = LocalSoftwareKeyboardController.current
+    val uriHandler = LocalUriHandler.current
     var sheetItem by remember { mutableStateOf<UniversalSearchResult?>(null) }
 
     LaunchedEffect(viewModel) {
@@ -163,7 +166,8 @@ fun SonoraSourceSearchScreen(
             }
             if (query.trim().length < 2) {
                 Text("Pesquisas recentes", style = MaterialTheme.typography.titleMedium)
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = bottomChromePadding())) {
                     items(recent, key = { "${it.type}:${it.text}:${it.subtitle}" }) { item ->
                         Row(Modifier.fillMaxWidth().clickable { viewModel.onRecent(item) }
                             .padding(vertical = 13.dp)) {
@@ -195,6 +199,7 @@ fun SonoraSourceSearchScreen(
                         LazyColumn(
                             state = scroll,
                             modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(bottom = bottomChromePadding()),
                             verticalArrangement = Arrangement.spacedBy(2.dp),
                         ) {
                             items(list, key = { it.stableKey }) { result ->
@@ -276,14 +281,34 @@ fun SonoraSourceSearchScreen(
                     SearchResultAction.PLAY_NEXT to "Reproduzir a seguir",
                     SearchResultAction.ADD_TO_QUEUE to "Adicionar à fila",
                     SearchResultAction.DOWNLOAD to "Baixar",
+                    SearchResultAction.NAVIGATE to "Abrir detalhes",
                 ).filter { item.supports(it.first) }.forEach { (action, label) ->
                     TextButton(
                         modifier = Modifier.fillMaxWidth(),
                         onClick = {
                             sheetItem = null
-                            viewModel.onAction(item, action)
+                            if (action == SearchResultAction.NAVIGATE) {
+                                if (item.identity.source == CatalogSource.SPOTIFY) {
+                                    viewModel.openSpotifyBrowse(item)
+                                } else if (item.identity.source == CatalogSource.YOUTUBE_MUSIC) {
+                                    when (item.type) {
+                                        SearchResultType.ARTIST -> onNavigateToArtist(
+                                            item.identity.catalogId, item.title, item.artworkUrl)
+                                        SearchResultType.ALBUM -> onNavigateToAlbum(
+                                            AlbumSummary(item.identity.catalogId, item.title,
+                                                item.subtitle.orEmpty(), item.artworkUrl, null))
+                                        else -> Unit
+                                    }
+                                }
+                            } else viewModel.onAction(item, action)
                         },
                     ) { Text(label) }
+                }
+                if (item.identity.source == CatalogSource.SPOTIFY) {
+                    TextButton(onClick = {
+                        uriHandler.openUri("https://open.spotify.com/${item.type.name.lowercase()}/${item.identity.catalogId}")
+                        sheetItem = null
+                    }) { Text("Abrir no Spotify") }
                 }
             }
         }
@@ -315,7 +340,8 @@ private fun SourceSearchRow(
                 AsyncImage(
                     model = item.artworkUrl,
                     contentDescription = null,
-                    contentScale = ContentScale.Crop,
+                    contentScale = if (item.identity.source == CatalogSource.SPOTIFY)
+                        ContentScale.Fit else ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
                 )
             } else {
@@ -353,6 +379,7 @@ private fun SpotifyCatalogBrowseContent(
     BackHandler { viewModel.closeSpotifyBrowse() }
     var sheetItem by remember { mutableStateOf<UniversalSearchResult?>(null) }
     val resolving by viewModel.resolving.collectAsStateWithLifecycle()
+    val uriHandler = LocalUriHandler.current
     val scroll = rememberLazyListState()
     LaunchedEffect(page.entry.stableKey) { scroll.scrollToItem(0) }
 
@@ -401,6 +428,7 @@ private fun SpotifyCatalogBrowseContent(
                 LazyColumn(
                     state = scroll,
                     modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = bottomChromePadding()),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     items(page.items, key = { it.stableKey }) { result ->
@@ -439,12 +467,19 @@ private fun SpotifyCatalogBrowseContent(
                     SearchResultAction.PLAY_NEXT to "Reproduzir a seguir",
                     SearchResultAction.ADD_TO_QUEUE to "Adicionar à fila",
                     SearchResultAction.DOWNLOAD to "Baixar",
+                    SearchResultAction.NAVIGATE to "Abrir detalhes",
                 ).filter { result.supports(it.first) }.forEach { (action, label) ->
                     TextButton(onClick = {
                         sheetItem = null
-                        viewModel.onAction(result, action)
+                        if (action == SearchResultAction.NAVIGATE) {
+                            viewModel.openSpotifyBrowse(result)
+                        } else viewModel.onAction(result, action)
                     }) { Text(label) }
                 }
+                TextButton(onClick = {
+                    uriHandler.openUri("https://open.spotify.com/${result.type.name.lowercase()}/${result.identity.catalogId}")
+                    sheetItem = null
+                }) { Text("Abrir no Spotify") }
             }
         }
     }
