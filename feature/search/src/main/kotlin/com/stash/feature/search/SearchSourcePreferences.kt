@@ -23,13 +23,18 @@ class SearchSourcePreferences @Inject constructor(@ApplicationContext private va
     private val sourceKey = stringPreferencesKey("source")
 
     val selection: Flow<PinnedSearchSource> = context.sonoraSearchSourceStore.data.map { prefs ->
-        val source = prefs[sourceKey]?.let { name ->
-            CatalogSource.entries.firstOrNull { it.name == name }
-        } ?: CatalogSource.SPOTIFY
+        // Migrate a previously pinned YTM tab to Spotify without exposing it.
+        val source = when (prefs[sourceKey]) {
+            CatalogSource.YOUTUBE.name -> CatalogSource.YOUTUBE
+            else -> CatalogSource.SPOTIFY
+        }
         PinnedSearchSource(source = source, pinned = prefs[pinnedKey] == true)
     }
 
     suspend fun save(source: CatalogSource, pinned: Boolean) {
+        require(source == CatalogSource.SPOTIFY || source == CatalogSource.YOUTUBE) {
+            "Only Spotify and conventional YouTube may be pinned in Search"
+        }
         context.sonoraSearchSourceStore.edit { prefs ->
             prefs[pinnedKey] = pinned
             prefs[sourceKey] = source.name
