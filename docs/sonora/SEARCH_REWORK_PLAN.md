@@ -1,6 +1,6 @@
 # Sonora — especificação vigente e contrato do rework da Busca
 
-**Status:** base documental para desenvolvimento paralelo; ainda sem implementação
+**Status:** contratos e motor mergeados; integração por fonte em andamento nesta branch (não homologada)
 
 **Data da consolidação:** 10/11/2026
 
@@ -9,6 +9,19 @@
 **Destino canônico:** `nonstop`
 
 **Autoridade:** este documento prevalece, para a Busca, sobre planos históricos e experimentais. `AGENTS.md` e `docs/SONORA_CONSOLIDATION.md` continuam prevalecendo nas regras gerais do repositório.
+
+## Decisão de produto superveniente — 14/11/2026 (Spotify primeiro)
+
+Esta seção substitui APENAS a antiga regra de mistura de fontes e os defaults de seleção múltipla. As invariantes de IDs, segurança da reprodução, erros e não canonicalização permanecem válidas.
+
+- A Busca inicia em **Spotify**, com **guia exclusiva**. Outras guias: **YouTube convencional (WEB)** e **YouTube Music (YTM)**, independentes. Uma guia exibe somente resultados daquela fonte; o texto da consulta é compartilhado.
+- YouTube significa explicitamente www.youtube.com / InnerTube WEB, não music.youtube.com. Slowed + reverb, lives, remixes, demos e covers precisam manter seu videoId original em todas as ações.
+- O alfinete grava a guia selecionada; desligado, a escolha dura apenas a sessão da Busca. Nova sessão sem pin começa em Spotify.
+- O motor universal continua a agregar e ordenar resultados normalizados, mas com `selection.enabled = setOf(guiaAtiva)` para não misturar fontes.
+- Paginação é independente por fonte e só pode anunciar continuidade que o provedor realmente forneceu. Não confundir falha com catálogo vazio.
+- Spotify é catálogo: música só reproduz após confirmar um áudio seguro por fonte existente; artistas/álbuns requerem rotas conscientes de identidade Spotify. Nunca usar spotifyId como videoId ou browseId YTM.
+- A integração nesta branch NÃO equivale à aprovação de dispositivos ou CI: estado, limites e testes devem ser conferidos antes do merge e do APK canônico.
+- Restrições técnicas atuais: API YTM `searchAll` não expõe continuation para o UI; busca paginada no YouTube WEB e Spotify, sem continuação inventada no YTM. Rotas Spotify para artista/álbum não são convertidas silenciosamente para IDs de outro catálogo.
 
 ## 1. Registro da preparação
 
