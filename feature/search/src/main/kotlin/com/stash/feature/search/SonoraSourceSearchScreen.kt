@@ -1,5 +1,6 @@
 package com.stash.feature.search
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -23,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PushPin
@@ -84,6 +86,7 @@ fun SonoraSourceSearchScreen(
     val resolving by viewModel.resolving.collectAsStateWithLifecycle()
     val recent by viewModel.recent.collectAsStateWithLifecycle()
     val selectedPhotos by viewModel.selectedPhotos.collectAsStateWithLifecycle()
+    val browse by viewModel.browse.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val keyboard = LocalSoftwareKeyboardController.current
     var sheetItem by remember { mutableStateOf<UniversalSearchResult?>(null) }
@@ -91,6 +94,11 @@ fun SonoraSourceSearchScreen(
     LaunchedEffect(viewModel) {
         merge(viewModel.messages, viewModel.delegate.userMessages)
             .collect { snackbar.showSnackbar(it) }
+    }
+
+    if (browse.isNotEmpty()) {
+        SpotifyCatalogBrowseContent(viewModel, browse.last(), snackbar)
+        return
     }
 
     Scaffold(
@@ -194,6 +202,10 @@ fun SonoraSourceSearchScreen(
                                     onTap = {
                                         if (result.supports(SearchResultAction.PLAY)) {
                                             viewModel.onAction(result, SearchResultAction.PLAY)
+                                        } else if (result.supports(SearchResultAction.NAVIGATE) &&
+                                            result.identity.source == CatalogSource.SPOTIFY
+                                        ) {
+                                            viewModel.openSpotifyBrowse(result)
                                         } else if (result.supports(SearchResultAction.NAVIGATE) &&
                                             result.identity.source == CatalogSource.YOUTUBE_MUSIC
                                         ) {
@@ -325,5 +337,112 @@ private fun SourceSearchRow(
             )
         }
         if (resolving) CircularProgressIndicator(Modifier.size(18.dp))
+    }
+}
+
+/** In-app Spotify pages, keyed by real Spotify IDs; never enter the YTM route. */
+@Composable
+private fun SpotifyCatalogBrowseContent(
+    viewModel: SonoraSearchViewModel,
+    page: SpotifyBrowsePage,
+    snackbar: SnackbarHostState,
+) {
+    BackHandler { viewModel.closeSpotifyBrowse() }
+    var sheetItem by remember { mutableStateOf<UniversalSearchResult?>(null) }
+    val resolving by viewModel.resolving.collectAsStateWithLifecycle()
+    val scroll = rememberLazyListState()
+    LaunchedEffect(page.entry.stableKey) { scroll.scrollToItem(0) }
+
+    Scaffold(
+        modifier = Modifier.imePadding(),
+        containerColor = androidx.compose.ui.graphics.Color.Transparent,
+        snackbarHost = { SnackbarHost(snackbar, Modifier.padding(bottom = bottomChromePadding())) },
+    ) { inner ->
+        Column(Modifier.fillMaxSize().padding(inner).padding(horizontal = 20.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                IconButton(onClick = viewModel::closeSpotifyBrowse) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "Voltar")
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(page.entry.title, style = MaterialTheme.typography.titleLarge,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        if (page.entry.type == SearchResultType.ARTIST)
+                            "Spotify · Lançamentos" else "Spotify · Faixas do álbum",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+            if (page.error != null) {
+                Text(page.error, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick = viewModel::retrySpotifyBrowse) { Text("Tentar novamente") }
+            }
+            if (page.loading && page.items.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                    CircularProgressIndicator(Modifier.padding(top = 32.dp))
+                }
+            } else if (page.items.isEmpty() && page.error == null) {
+                Text("Nenhum lançamento encontrado no catálogo Spotify.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                LaunchedEffect(scroll, page.entry.stableKey, page.items.size) {
+                    snapshotFlow {
+                        scroll.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+                    }.distinctUntilChanged().collect { last ->
+                        if (last >= page.items.size - 4 && page.continuation != null &&
+                            !page.loading) viewModel.loadSpotifyBrowse()
+                    }
+                }
+                LazyColumn(
+                    state = scroll,
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    items(page.items, key = { it.stableKey }) { result ->
+                        SourceSearchRow(
+                            item = result,
+                            resolving = resolving == result.stableKey,
+                            onTap = {
+                                when {
+                                    result.type == SearchResultType.ALBUM ->
+                                        viewModel.openSpotifyBrowse(result)
+                                    result.type == SearchResultType.TRACK ->
+                                        viewModel.onAction(result, SearchResultAction.PLAY)
+                                }
+                            },
+                            onLongPress = { sheetItem = result },
+                        )
+                    }
+                    if (page.continuation != null || page.loading) item {
+                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            if (page.loading) CircularProgressIndicator(Modifier.size(24.dp))
+                            else TextButton(onClick = viewModel::loadSpotifyBrowse) {
+                                Text("Carregar mais lançamentos")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    sheetItem?.let { result ->
+        ModalBottomSheet(onDismissRequest = { sheetItem = null }) {
+            Column(Modifier.fillMaxWidth().padding(20.dp)) {
+                Text(result.title, style = MaterialTheme.typography.titleMedium)
+                listOf(
+                    SearchResultAction.PLAY to "Reproduzir",
+                    SearchResultAction.PLAY_NEXT to "Reproduzir a seguir",
+                    SearchResultAction.ADD_TO_QUEUE to "Adicionar à fila",
+                    SearchResultAction.DOWNLOAD to "Baixar",
+                ).filter { result.supports(it.first) }.forEach { (action, label) ->
+                    TextButton(onClick = {
+                        sheetItem = null
+                        viewModel.onAction(result, action)
+                    }) { Text(label) }
+                }
+            }
+        }
     }
 }
