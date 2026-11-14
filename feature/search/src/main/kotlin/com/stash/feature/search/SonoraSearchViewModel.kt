@@ -39,6 +39,14 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+data class SpotifyBrowsePage(
+    val entry: UniversalSearchResult,
+    val items: List<UniversalSearchResult> = emptyList(),
+    val continuation: String? = null,
+    val loading: Boolean = true,
+    val error: String? = null,
+)
+
 /** One source tab at a time. No blended catalog and no implicit YTM fallback. */
 @HiltViewModel
 @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
@@ -74,6 +82,8 @@ class SonoraSearchViewModel @Inject constructor(
     val loadingMore = _loadingMore.asStateFlow()
     private val _moreError = MutableStateFlow<String?>(null)
     val moreError = _moreError.asStateFlow()
+    private val _browse = MutableStateFlow<List<SpotifyBrowsePage>>(emptyList())
+    val browse = _browse.asStateFlow()
     private val _resolving = MutableStateFlow<String?>(null)
     val resolving = _resolving.asStateFlow()
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 8)
@@ -226,6 +236,53 @@ class SonoraSearchViewModel @Inject constructor(
     fun hasMore(): Boolean =
         next[chosenSource.value] != null &&
         (pages[chosenSource.value] ?: 0) < LIMIT_PAGES
+
+    /** Spotify detail stack keeps actual Spotify identities throughout artist -> album. */
+    fun openSpotifyBrowse(item: UniversalSearchResult) {
+        if (item.identity.source != CatalogSource.SPOTIFY ||
+            item.type !in setOf(SearchResultType.ARTIST, SearchResultType.ALBUM)) return
+        _browse.value = _browse.value + SpotifyBrowsePage(entry = item)
+        loadSpotifyBrowse()
+    }
+
+    fun closeSpotifyBrowse() {
+        if (_browse.value.isNotEmpty()) _browse.value = _browse.value.dropLast(1)
+    }
+
+    fun retrySpotifyBrowse() {
+        loadSpotifyBrowse()
+    }
+
+    fun loadSpotifyBrowse() {
+        val top = _browse.value.lastOrNull() ?: return
+        // Never request another page while one is in flight, unless the stack
+        // frame was just created with its initial loading placeholder.
+        if (top.loading && top.items.isNotEmpty()) return
+        val entryKey = top.entry.stableKey
+        _browse.value = _browse.value.dropLast(1) + top.copy(loading = true, error = null)
+        viewModelScope.launch {
+            try {
+                val page = sources.browseSpotify(top.entry, top.continuation)
+                val now = _browse.value.lastOrNull()
+                if (now?.entry?.stableKey != entryKey) return@launch
+                val combined = (now.items + page.items).distinctBy { it.stableKey }
+                _browse.value = _browse.value.dropLast(1) + now.copy(
+                    items = combined,
+                    continuation = page.continuation?.takeUnless { it == top.continuation },
+                    loading = false,
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val now = _browse.value.lastOrNull()
+                if (now?.entry?.stableKey == entryKey) {
+                    _browse.value = _browse.value.dropLast(1) + now.copy(
+                        loading = false, error = describe(CatalogSource.SPOTIFY, e),
+                    )
+                }
+            }
+        }
+    }
 
     fun onRecent(entry: RecentSearch) {
         viewModelScope.launch { recentStore.record(entry) }
