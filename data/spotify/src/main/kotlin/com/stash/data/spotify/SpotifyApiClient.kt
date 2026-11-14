@@ -767,6 +767,40 @@ class SpotifyApiClient @Inject constructor(
     }
 
     /**
+     * Main Sonora search catalog. Three Spotify result buckets are fetched together.
+     * Uses a connected user's authorized token; never presents a YouTube fallback
+     * as a Spotify result. A failed request stays a failure (not an empty catalog).
+     */
+    suspend fun searchCatalogPage(
+        query: String,
+        offset: Int = 0,
+        limit: Int = 10,
+    ): SpotifyCatalogPage = withContext(Dispatchers.IO) {
+        require(query.isNotBlank())
+        require(offset >= 0)
+        val pageSize = limit.coerceIn(1, 10)
+        val url = "$WEB_API_BASE/search?type=track,artist,album&limit=$pageSize" +
+            "&offset=$offset&market=BR&q=${URLEncoder.encode(query, "UTF-8")}"
+        val token = tokenManager.getSpotifyAccessToken()
+            ?: throw SpotifyApiException(0, url, "Spotify não conectado")
+        var response = executeSearchRequest(url, token)
+        var body = response.body?.string()
+        if (response.code == 401) {
+            val refreshed = tokenManager.forceRefreshSpotifyAccessToken()
+                ?: throw SpotifyApiException(401, url, "Sessão Spotify expirada")
+            response = executeSearchRequest(url, refreshed)
+            body = response.body?.string()
+        }
+        if (response.code == 429) {
+            throw SpotifyRateLimitException(response.header("Retry-After")?.toLongOrNull())
+        }
+        if (!response.isSuccessful) {
+            throw SpotifyApiException(response.code, url, "Spotify HTTP ${response.code}")
+        }
+        parseSpotifyCatalogPage(body ?: throw SpotifyApiException(502, url, "Spotify sem resposta"))
+    }
+
+    /**
      * Official Spotify artist profile image; no scraped galleries, no album cover proxy.
      * Search requires a connected user's token (same documented constraint as searchTracks).
      * Failures/429 are not retried here; the artist screen retains its current catalog art.
