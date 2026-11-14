@@ -59,8 +59,12 @@ class LiveSearchSources @Inject constructor(
                     providerRank = rank,
                     rankingScore = ordinalScore(rank),
                     // Spotify catalog has no stream URL. PLAY resolves strictly on tap.
-                    supportedActions = if (type == SearchResultType.TRACK)
-                        setOf(SearchResultAction.PLAY) else emptySet(),
+                    supportedActions = when (type) {
+                        SearchResultType.TRACK -> setOf(SearchResultAction.PLAY)
+                        SearchResultType.ARTIST, SearchResultType.ALBUM ->
+                            setOf(SearchResultAction.NAVIGATE)
+                        else -> emptySet()
+                    },
                 )
             }
             LiveSearchPage(
@@ -165,6 +169,57 @@ class LiveSearchSources @Inject constructor(
             // The existing YTM searchAll API has no surfaced continuation contract.
             LiveSearchPage(results, continuation = null, nextRank = rankOffset + results.size)
         }
+    }
+
+    /** In-app Spotify details use Spotify IDs, not remapped YouTube browse IDs. */
+    suspend fun browseSpotify(
+        entry: UniversalSearchResult,
+        continuation: String? = null,
+    ): LiveSearchPage {
+        require(entry.identity.source == CatalogSource.SPOTIFY)
+        val offset = continuation?.toIntOrNull()?.coerceAtLeast(0) ?: 0
+        val page = when (entry.type) {
+            SearchResultType.ARTIST ->
+                spotify.searchArtistReleasesPage(entry.identity.catalogId, offset)
+            SearchResultType.ALBUM ->
+                spotify.searchAlbumTracksPage(entry.identity.catalogId, offset)
+            else -> return LiveSearchPage(emptyList(), null, offset)
+        }
+        val items = page.items.mapIndexed { index, item ->
+            val kind = when (item.kind) {
+                SpotifyCatalogKind.TRACK -> SearchResultType.TRACK
+                SpotifyCatalogKind.ALBUM -> SearchResultType.ALBUM
+                SpotifyCatalogKind.ARTIST -> SearchResultType.ARTIST
+            }
+            val rank = offset + index
+            UniversalSearchResult(
+                identity = CatalogIdentity(
+                    CatalogSource.SPOTIFY, item.id,
+                    "spotify:${item.kind.name.lowercase()}:${item.id}",
+                ),
+                type = kind,
+                title = item.title,
+                subtitle = if (kind == SearchResultType.ALBUM)
+                    listOfNotNull(item.subtitle, item.releaseDate?.take(4), item.releaseGroup)
+                        .filter { it.isNotBlank() }.joinToString(" · ")
+                        .ifBlank { null }
+                    else item.subtitle,
+                artworkUrl = item.artworkUrl ?: if (kind == SearchResultType.TRACK)
+                    entry.artworkUrl else null,
+                durationMs = item.durationMs,
+                isExplicit = item.explicit,
+                providerRank = rank,
+                rankingScore = ordinalScore(rank),
+                supportedActions = if (kind == SearchResultType.TRACK)
+                    setOf(SearchResultAction.PLAY)
+                    else setOf(SearchResultAction.NAVIGATE),
+            )
+        }
+        return LiveSearchPage(
+            items = items,
+            continuation = if (page.hasMore && items.isNotEmpty()) (offset + 10).toString() else null,
+            nextRank = offset + items.size,
+        )
     }
 
     private fun ordinalScore(rank: Int): Double = 1.0 / (rank + 1.0)
