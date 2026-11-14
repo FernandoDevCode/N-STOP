@@ -1,5 +1,7 @@
 package com.stash.feature.search
 
+import android.os.SystemClock
+import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -23,6 +25,9 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlin.math.abs
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -63,6 +68,9 @@ class SonoraSearchViewModel @Inject constructor(
     companion object {
         private const val QUERY_KEY = "sonora_source_query"
         private const val LIMIT_PAGES = 25
+        private const val MATCH_PREFETCH_COUNT = 2
+        private const val MATCH_CACHE_MAX_ITEMS = 32
+        private const val PLAY_LOG_TAG = "SonoraSearchPlayback"
     }
 
     private val typedQuery = MutableStateFlow(savedState.get<String>(QUERY_KEY).orEmpty())
@@ -84,6 +92,56 @@ class SonoraSearchViewModel @Inject constructor(
     val moreError = _moreError.asStateFlow()
     private val _browse = MutableStateFlow<List<SpotifyBrowsePage>>(emptyList())
     val browse = _browse.asStateFlow()
+    // A Spotify search result is catalog metadata; matching its exact audio
+    // on YouTube is network I/O. Share one in-flight lookup between speculative
+    // preparation and the user's tap, keyed to the immutable Spotify identity +
+    // metadata. Never use this cache for conventional YouTube video selections.
+    // All map access is on the ViewModel's Main dispatcher.
+    private val spotifyMatchTasks =
+        object : LinkedHashMap<String, Deferred<YouTubeWebVideo?>>(16, 0.75f, true) {
+            override fun removeEldestEntry(
+                eldest: MutableMap.MutableEntry<String, Deferred<YouTubeWebVideo?>>,
+            ): Boolean = size > MATCH_CACHE_MAX_ITEMS
+        }
+
+    private fun matchKey(item: UniversalSearchResult): String =
+        listOf(item.stableKey, item.title, item.subtitle.orEmpty(),
+            item.durationMs?.toString().orEmpty()).joinToString("|")
+
+    private fun matchTask(item: UniversalSearchResult): Deferred<YouTubeWebVideo?> {
+        val key = matchKey(item)
+        spotifyMatchTasks[key]?.let { return it }
+        val artist = item.subtitle?.substringBefore(',')?.trim().orEmpty()
+        val job = viewModelScope.async(Dispatchers.IO) {
+            findConservativeSpotifyAudio(item, artist)
+        }
+        spotifyMatchTasks[key] = job
+        // Don't cache a transient miss or HTTP error forever. Successful
+        // matches stay in this bounded ViewModel-lifetime lookup cache.
+        viewModelScope.launch {
+            try {
+                if (job.await() == null && spotifyMatchTasks[key] === job) {
+                    spotifyMatchTasks.remove(key)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                if (spotifyMatchTasks[key] === job) spotifyMatchTasks.remove(key)
+            }
+        }
+        return job
+    }
+
+    private fun prepareSpotifyMatches(items: List<UniversalSearchResult>) {
+        items.asSequence()
+            .filter { it.identity.source == CatalogSource.SPOTIFY &&
+                it.type == SearchResultType.TRACK &&
+                !it.subtitle.isNullOrBlank() &&
+                (it.durationMs ?: 0L) > 0L }
+            .take(MATCH_PREFETCH_COUNT)
+            .forEach { matchTask(it) }
+    }
+
     private val _resolving = MutableStateFlow<String?>(null)
     val resolving = _resolving.asStateFlow()
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 8)
@@ -193,6 +251,9 @@ class SonoraSearchViewModel @Inject constructor(
             ranks[src] = page.nextRank
             pages[src] = 1
             publish()
+            if (src == CatalogSource.SPOTIFY && typedQuery.value.trim() == q) {
+                prepareSpotifyMatches(items)
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -275,6 +336,7 @@ class SonoraSearchViewModel @Inject constructor(
                     continuation = page.continuation?.takeUnless { it == top.continuation },
                     loading = false,
                 )
+                prepareSpotifyMatches(page.items)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -310,17 +372,20 @@ class SonoraSearchViewModel @Inject constructor(
         if (!item.supports(action)) return
         if (item.type != SearchResultType.TRACK && item.type != SearchResultType.VIDEO) return
         viewModelScope.launch {
+            val tapStartMs = SystemClock.elapsedRealtime()
             try {
                 val track = when (item.identity.source) {
                     CatalogSource.SPOTIFY -> {
                         if (action != SearchResultAction.PLAY) return@launch
                         _resolving.value = item.stableKey
-                        val artist = item.subtitle?.substringBefore(',')?.trim().orEmpty()
-                        val video = findConservativeSpotifyAudio(item, artist)
+                        val video = matchTask(item).await()
+                        Log.d(PLAY_LOG_TAG,
+                            "Spotify match ms=" + (SystemClock.elapsedRealtime() - tapStartMs))
                         if (video == null) {
                             _messages.emit("Não foi possível confirmar um áudio equivalente para esta faixa.")
                             return@launch
                         }
+                        val artist = item.subtitle?.substringBefore(',')?.trim().orEmpty()
                         TrackItem(video.videoId, item.title, artist,
                             (item.durationMs ?: video.durationMs ?: 0L) / 1000.0,
                             item.artworkUrl)
@@ -334,7 +399,12 @@ class SonoraSearchViewModel @Inject constructor(
                 }
                 if (action == SearchResultAction.PLAY) {
                     _resolving.value = item.stableKey
-                    when (player.playFromStream(track)) {
+                    val streamStartMs = SystemClock.elapsedRealtime()
+                    val routing = player.playFromStream(track)
+                    Log.d(PLAY_LOG_TAG, "source=${item.identity.source} streamResolveMs=" +
+                        (SystemClock.elapsedRealtime() - streamStartMs) +
+                        " tapToPlayerMs=" + (SystemClock.elapsedRealtime() - tapStartMs))
+                    when (routing) {
                         is StreamRoutingResult.Item, StreamRoutingResult.Deduped -> Unit
                         StreamRoutingResult.NotAvailable -> _messages.emit("Áudio indisponível.")
                         StreamRoutingResult.CellularRefused -> _messages.emit("Streaming por dados móveis desativado.")
