@@ -60,7 +60,7 @@ class YouTubeWebSearchClient(
             val html = request(Request.Builder().url("$origin/")
                 .header("User-Agent", userAgent).build())
             fun field(name: String): String =
-                Regex("\\\"$name\\\"\\\\s*:\\\\s*\\\"([^\\\"]+)\\\"")
+                Regex("\"$name\"\\s*:\\s*\"([^\"]+)\"")
                     .find(html)?.groupValues?.get(1)
                     ?: throw IOException("Missing YouTube WEB config: $name")
             WebConfig(
