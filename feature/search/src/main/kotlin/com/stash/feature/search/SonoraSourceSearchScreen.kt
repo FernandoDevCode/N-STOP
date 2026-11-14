@@ -568,8 +568,26 @@ private fun SpotifyCatalogBrowseContent(
                 }
             }
             if (page.error != null) {
-                Text(page.error, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButton(onClick = viewModel::retrySpotifyBrowse) { Text("Tentar novamente") }
+                Text(
+                    page.error,
+                    modifier = Modifier.padding(top = 14.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = viewModel::retrySpotifyBrowse) {
+                        Text("Tentar novamente")
+                    }
+                    TextButton(onClick = {
+                        val kind = if (page.entry.type == SearchResultType.ARTIST)
+                            "artist" else "album"
+                        uriHandler.openUri(
+                            "https://open.spotify.com/$kind/${page.entry.identity.catalogId}"
+                        )
+                    }) {
+                        Text("Abrir no Spotify")
+                    }
+                }
             }
             if (page.loading && page.items.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
