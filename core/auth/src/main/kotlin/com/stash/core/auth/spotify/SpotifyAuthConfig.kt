@@ -95,6 +95,9 @@ object SpotifyAuthConfig {
     const val HASH_GET_ALBUM =
         "b9bfabef66ed756e5e13f68a942deb60bd4125ec1f1be8cc42769dc0259b4b10"
 
+    const val HASH_ARTIST_OVERVIEW =
+        "35648a112beb1794e39ab931365f6ae4a8d45e65396d641eeda94e4003d41497"
+
 
     /**
      * Persisted query hash for the `addToLibrary` / `removeFromLibrary`
