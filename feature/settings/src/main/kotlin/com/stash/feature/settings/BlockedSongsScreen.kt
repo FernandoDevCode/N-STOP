@@ -65,6 +65,9 @@ fun BlockedSongsScreen(
             SettingsPageHeader(
                 title = stringResource(R.string.sonora_blocked_title),
                 onBack = onBack,
+                // This deep route draws edge-to-edge; keep its back target below
+                // the system status bar just as the previous header did.
+                modifier = Modifier.statusBarsPadding(),
             )
             if (blocked.isEmpty()) {
                 Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
