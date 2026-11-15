@@ -295,15 +295,16 @@ fun SettingsAppearanceScreen(
     }
 }
 
+@Composable
 private fun com.stash.core.data.prefs.HomeSection.displayLabel(): String = when (this) {
-    com.stash.core.data.prefs.HomeSection.YOUR_PLAYLISTS -> "Your playlists"
-    com.stash.core.data.prefs.HomeSection.NEW_RELEASES -> "New Releases"
-    com.stash.core.data.prefs.HomeSection.QOBUZ_PLAYLISTS -> "Coleções legadas"
-    com.stash.core.data.prefs.HomeSection.TOP_ALBUMS -> "Top Albums"
-    com.stash.core.data.prefs.HomeSection.MADE_FOR_YOU -> "Made for you"
-    com.stash.core.data.prefs.HomeSection.RADIOS -> "Radios"
-    com.stash.core.data.prefs.HomeSection.MOOD_DECADES -> "Mood & decades"
-    com.stash.core.data.prefs.HomeSection.COMMUNITY -> "Community"
+    com.stash.core.data.prefs.HomeSection.YOUR_PLAYLISTS -> stringResource(R.string.sonora_home_section_playlists)
+    com.stash.core.data.prefs.HomeSection.NEW_RELEASES -> stringResource(R.string.sonora_home_section_releases)
+    com.stash.core.data.prefs.HomeSection.QOBUZ_PLAYLISTS -> stringResource(R.string.sonora_home_section_legacy)
+    com.stash.core.data.prefs.HomeSection.TOP_ALBUMS -> stringResource(R.string.sonora_home_section_top_albums)
+    com.stash.core.data.prefs.HomeSection.MADE_FOR_YOU -> stringResource(R.string.sonora_home_section_made_for_you)
+    com.stash.core.data.prefs.HomeSection.RADIOS -> stringResource(R.string.sonora_home_section_radios)
+    com.stash.core.data.prefs.HomeSection.MOOD_DECADES -> stringResource(R.string.sonora_home_section_moods)
+    com.stash.core.data.prefs.HomeSection.COMMUNITY -> stringResource(R.string.sonora_home_section_community)
 }
 
 /** One row of the Home layout editor: name, up/down movers, show switch. */
@@ -341,7 +342,7 @@ private fun HomeSectionRow(
         IconButton(onClick = onMoveUp, enabled = canMoveUp) {
             Icon(
                 imageVector = Icons.Filled.KeyboardArrowUp,
-                contentDescription = "Move $label up",
+                contentDescription = stringResource(R.string.sonora_home_section_move_up, label),
                 tint = if (canMoveUp) {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 } else {
@@ -352,7 +353,7 @@ private fun HomeSectionRow(
         IconButton(onClick = onMoveDown, enabled = canMoveDown) {
             Icon(
                 imageVector = Icons.Filled.KeyboardArrowDown,
-                contentDescription = "Move $label down",
+                contentDescription = stringResource(R.string.sonora_home_section_move_down, label),
                 tint = if (canMoveDown) {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 } else {
