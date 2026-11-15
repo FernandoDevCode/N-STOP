@@ -328,4 +328,14 @@
     <string name="sonora_blocked_description">Essas músicas são ignoradas na sincronização até serem desbloqueadas.</string>
     <string name="sonora_blocked_count">Músicas: %1$d</string>
     <string name="sonora_blocked_unblock">Desbloquear</string>
+    <string name="sonora_home_section_playlists">Suas playlists</string>
+    <string name="sonora_home_section_releases">Novos lançamentos</string>
+    <string name="sonora_home_section_legacy">Coleções legadas</string>
+    <string name="sonora_home_section_top_albums">Álbuns em destaque</string>
+    <string name="sonora_home_section_made_for_you">Feito para você</string>
+    <string name="sonora_home_section_radios">Rádios</string>
+    <string name="sonora_home_section_moods">Climas e décadas</string>
+    <string name="sonora_home_section_community">Comunidade</string>
+    <string name="sonora_home_section_move_up">Mover %1$s para cima</string>
+    <string name="sonora_home_section_move_down">Mover %1$s para baixo</string>
 </resources>

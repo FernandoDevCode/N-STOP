@@ -332,4 +332,14 @@
     <string name="sonora_blocked_description">These songs are skipped during synchronization until you unblock them.</string>
     <string name="sonora_blocked_count">Songs: %1$d</string>
     <string name="sonora_blocked_unblock">Unblock</string>
+    <string name="sonora_home_section_playlists">Your playlists</string>
+    <string name="sonora_home_section_releases">New releases</string>
+    <string name="sonora_home_section_legacy">Legacy collections</string>
+    <string name="sonora_home_section_top_albums">Top albums</string>
+    <string name="sonora_home_section_made_for_you">Made for you</string>
+    <string name="sonora_home_section_radios">Radios</string>
+    <string name="sonora_home_section_moods">Moods &amp; decades</string>
+    <string name="sonora_home_section_community">Community</string>
+    <string name="sonora_home_section_move_up">Move %1$s up</string>
+    <string name="sonora_home_section_move_down">Move %1$s down</string>
 </resources>

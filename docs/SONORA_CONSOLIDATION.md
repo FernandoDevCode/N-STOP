@@ -5,6 +5,7 @@
 - **Sonora v213**, `versionCode 213`, commit `20a7f37a9e3f779a579e5b87721da08c3049736b`, na branch canônica `nonstop`.
 - A v211 restaurou a base UX da v208; v212 introduziu a atmosfera da Busca; v213 corrigiu a faixa da barra de status, deu maior legibilidade ao movimento orgânico e fixou a cor azul-grafite (sem amostragem de fotos de artistas).
 - Testes de módulos, compilação de Debug, assinatura e publicação canônica foram verificados; a **homologação visual de animação e insets no Redmi permanece pendente**.
+- O inventário de lacunas funcionais e decisões de reaproveitamento está em [`docs/sonora/FEATURE_GAP_AUDIT_2026-11-15.md`](sonora/FEATURE_GAP_AUDIT_2026-11-15.md).
 - A auditoria operacional de branches/PRs está em [`docs/sonora/GITHUB_CLEANUP_AUDIT_2026-11-15.md`](sonora/GITHUB_CLEANUP_AUDIT_2026-11-15.md).
 - O conteúdo abaixo descreve o **checkpoint histórico V22.2**; não é mais o SHA da versão corrente.
 
