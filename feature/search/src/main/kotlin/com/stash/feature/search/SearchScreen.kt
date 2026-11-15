@@ -1,9 +1,12 @@
 package com.stash.feature.search
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.imePadding
@@ -61,6 +64,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.ContentScale
@@ -69,6 +73,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
@@ -129,6 +134,20 @@ fun SearchScreen(
     val selectedArtistPhotos by viewModel.artistPhotos.collectAsStateWithLifecycle()
     val currentPlayingYoutubeId by viewModel.currentPlayingYoutubeId.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    // Use the same top artist photograph as the existing card, not song art.
+    val primaryArtist = (state.status as? SearchStatus.Results)
+        ?.sections?.filterIsInstance<SearchResultSection.Top>()
+        ?.firstOrNull()?.item as? TopResultItem.ArtistTop
+    val featuredPhoto = primaryArtist?.artist?.let { artist ->
+        selectedArtistPhotoUrl(artist.id, artist.avatarUrl, selectedArtistPhotos)
+    }
+    val artistColor = rememberSearchArtistTint(featuredPhoto)
+    val atmosphereTint by animateColorAsState(
+        targetValue = searchAtmosphereTint(artistColor),
+        animationSpec = tween(durationMillis = 1400),
+        label = "sonora-search-artist-tint",
+    )
+    val showAtmosphere = LocalVisualDark.current && !LocalVisualAmoled.current
 
     LaunchedEffect(viewModel) {
         merge(
@@ -143,6 +162,10 @@ fun SearchScreen(
         snackbarHost = { SnackbarHost(snackbarHostState, Modifier.padding(bottom = bottomChromePadding())) },
         containerColor = Color.Transparent,
     ) { inner ->
+        Box(Modifier.fillMaxSize()) {
+            if (showAtmosphere) {
+                SonoraSearchAtmosphere(tint = atmosphereTint, modifier = Modifier.fillMaxSize())
+            }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -180,6 +203,7 @@ fun SearchScreen(
                 is SearchStatus.Results -> SectionedResultsList(
                     sections = status.sections,
                     selectedArtistPhotos = selectedArtistPhotos,
+                    artistTint = atmosphereTint,
                     downloadingIds = downloadingIds,
                     downloadedIds = downloadedIds,
                     waitingForLosslessIds = waitingForLosslessIds,
@@ -220,6 +244,7 @@ fun SearchScreen(
                 onCreatePlaylist = viewModel::onCreatePlaylistAndAdd,
                 onDismiss = viewModel::onDismissPlaylistSheet,
             )
+        }
         }
     }
 }
@@ -399,6 +424,7 @@ private fun RecentSearchThumb(entry: RecentSearch, photoUrl: String?) {
 private fun SectionedResultsList(
     sections: List<SearchResultSection>,
     selectedArtistPhotos: Map<String, SelectedArtistPhoto>,
+    artistTint: Color,
     downloadingIds: Set<String>,
     downloadedIds: Set<String>,
     waitingForLosslessIds: Set<String>,
@@ -482,6 +508,7 @@ private fun SectionedResultsList(
                             artistPhotoUrl = selectedArtistPhotoUrl(
                                 top.artist.id, top.artist.avatarUrl, selectedArtistPhotos,
                             ),
+                            artistTint = artistTint,
                         )
                     }
                 }
@@ -583,17 +610,45 @@ internal fun selectedArtistPhotoUrl(
 private fun TopResultCard(
     item: TopResultItem.ArtistTop,
     artistPhotoUrl: String?,
+    artistTint: Color,
     onArtistClick: (ArtistSummary) -> Unit,
 ) {
     // A featured artist is an identity/navigational result, never a track
     // download/queue surface. Keep it distinct from compact track rows.
+    val contextualGlass = LocalVisualDark.current && !LocalVisualAmoled.current
+    val cardFill = if (contextualGlass) {
+        Brush.horizontalGradient(
+            listOf(Color(0xFF202833), lerp(Color(0xFF1B242D), artistTint, 0.26f)),
+        )
+    } else {
+        // Restore the exact v208 card treatment in light and AMOLED themes.
+        VisualDesign.cardSurface()
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
             .testTag("TopResultCard")
             .clip(RoundedCornerShape(14.dp))
-            .background(VisualDesign.cardSurface())
+            .background(cardFill)
+            .drawBehind {
+                if (contextualGlass) {
+                    // Static tinted glass distinct from the moving atmosphere.
+                    drawRect(
+                        Brush.radialGradient(
+                            colors = listOf(artistTint.copy(alpha = 0.16f), Color.Transparent),
+                            center = androidx.compose.ui.geometry.Offset(
+                                size.width * 0.80f, size.height * 0.30f,
+                            ),
+                            radius = size.width * 0.74f,
+                        ),
+                    )
+                }
+            }
+            .border(
+                if (contextualGlass) 0.6.dp else 0.dp,
+                Color.White.copy(alpha = 0.10f), RoundedCornerShape(14.dp),
+            )
             .clickable { onArtistClick(item.artist) }
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
