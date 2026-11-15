@@ -32,8 +32,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
-import kotlin.math.cos
-import kotlin.math.sin
 import kotlin.random.Random
 
 private val SONORA_BLUE = Color(0xFF19475B)
@@ -74,29 +72,55 @@ internal fun rememberSearchArtistTint(photoUrl: String?): Color? {
     return tint
 }
 
-/** A smooth quasi-aperiodic field: no GIF loop, reverse playback or random jumps. */
+/**
+ * An endless seeded path, not a repeating easing loop. Each knot is a new
+ * pseudo-random destination; Catmull-Rom interpolation keeps both position
+ * and velocity continuous at every segment boundary (C1 continuity).
+ * Motion never flips playback direction at a loop seam because there is none.
+ */
 internal data class SearchDrift(val x: Float, val y: Float, val radius: Float)
 
-internal fun searchDriftAt(seconds: Float): List<SearchDrift> {
-    val t = seconds.coerceAtLeast(0f)
-    return listOf(
-        SearchDrift(
-            .25f + .11f * sin(t * .128f + .6f) + .06f * sin(t * .047f + 1.4f),
-            .19f + .065f * cos(t * .073f + 1.2f) + .037f * sin(t * .149f),
-            .68f + .06f * sin(t * .057f),
-        ),
-        SearchDrift(
-            .80f + .12f * sin(t * .091f + 2.5f) + .035f * cos(t * .041f),
-            .51f + .065f * sin(t * .111f + 1.5f) + .07f * cos(t * .063f),
-            .57f + .045f * cos(t * .048f + 3.1f),
-        ),
-        SearchDrift(
-            .39f + .085f * cos(t * .065f + 1.8f) + .055f * sin(t * .119f),
-            .88f + .068f * sin(t * .083f + 2.9f) + .032f * cos(t * .153f),
-            .55f + .05f * sin(t * .075f + 4.2f),
-        ),
+private fun randomKnot(index: Int, seed: Int): Float {
+    var x = index * 374761393 + seed * 668265263
+    x = (x xor (x ushr 13)) * 1274126177
+    x = x xor (x ushr 16)
+    return (x ushr 8).toFloat() / 16777215f
+}
+
+private fun smoothWander(seconds: Float, segmentSeconds: Float, seed: Int): Float {
+    val position = seconds.coerceAtLeast(0f) / segmentSeconds
+    val index = position.toInt()
+    val u = position - index
+    val p0 = randomKnot(index - 1, seed)
+    val p1 = randomKnot(index, seed)
+    val p2 = randomKnot(index + 1, seed)
+    val p3 = randomKnot(index + 2, seed)
+    return p1 + .5f * u * (
+        p2 - p0 + u * (
+            2f * p0 - 5f * p1 + 4f * p2 - p3 +
+                u * (3f * (p1 - p2) + p3 - p0)
+        )
     )
 }
+
+internal fun searchDriftAt(seconds: Float): List<SearchDrift> =
+    listOf(
+        SearchDrift(
+            x = .25f + .30f * (smoothWander(seconds, 17f, 11) - .5f),
+            y = .21f + .25f * (smoothWander(seconds, 22f, 12) - .5f),
+            radius = .66f + .13f * (smoothWander(seconds, 29f, 13) - .5f),
+        ),
+        SearchDrift(
+            x = .76f + .30f * (smoothWander(seconds, 23f, 21) - .5f),
+            y = .51f + .27f * (smoothWander(seconds, 19f, 22) - .5f),
+            radius = .58f + .12f * (smoothWander(seconds, 31f, 23) - .5f),
+        ),
+        SearchDrift(
+            x = .41f + .27f * (smoothWander(seconds, 21f, 31) - .5f),
+            y = .84f + .21f * (smoothWander(seconds, 26f, 32) - .5f),
+            radius = .57f + .12f * (smoothWander(seconds, 35f, 33) - .5f),
+        ),
+    )
 
 @Composable
 internal fun SonoraSearchAtmosphere(tint: Color, modifier: Modifier = Modifier) {
