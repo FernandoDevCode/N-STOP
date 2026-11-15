@@ -609,30 +609,40 @@ private fun TopResultCard(
 ) {
     // A featured artist is an identity/navigational result, never a track
     // download/queue surface. Keep it distinct from compact track rows.
+    val contextualGlass = LocalVisualDark.current && !LocalVisualAmoled.current
+    val cardFill = if (contextualGlass) {
+        Brush.horizontalGradient(
+            listOf(Color(0xFF202833), lerp(Color(0xFF1B242D), artistTint, 0.26f)),
+        )
+    } else {
+        // Restore the exact v208 card treatment in light and AMOLED themes.
+        VisualDesign.cardSurface()
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
             .testTag("TopResultCard")
             .clip(RoundedCornerShape(14.dp))
-            .background(
-                Brush.horizontalGradient(
-                    listOf(Color(0xFF202833), lerp(Color(0xFF1B242D), artistTint, 0.26f)),
-                ),
-            )
+            .background(cardFill)
             .drawBehind {
-                // Static tinted glass distinct from the moving screen atmosphere.
-                drawRect(
-                    Brush.radialGradient(
-                        colors = listOf(artistTint.copy(alpha = 0.16f), Color.Transparent),
-                        center = androidx.compose.ui.geometry.Offset(
-                            size.width * 0.80f, size.height * 0.30f,
+                if (contextualGlass) {
+                    // Static tinted glass distinct from the moving atmosphere.
+                    drawRect(
+                        Brush.radialGradient(
+                            colors = listOf(artistTint.copy(alpha = 0.16f), Color.Transparent),
+                            center = androidx.compose.ui.geometry.Offset(
+                                size.width * 0.80f, size.height * 0.30f,
+                            ),
+                            radius = size.width * 0.74f,
                         ),
-                        radius = size.width * 0.74f,
-                    ),
-                )
+                    )
+                }
             }
-            .border(0.6.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(14.dp))
+            .border(
+                if (contextualGlass) 0.6.dp else 0.dp,
+                Color.White.copy(alpha = 0.10f), RoundedCornerShape(14.dp),
+            )
             .clickable { onArtistClick(item.artist) }
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
