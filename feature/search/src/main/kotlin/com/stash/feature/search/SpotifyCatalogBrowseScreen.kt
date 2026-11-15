@@ -72,10 +72,10 @@ internal fun SpotifyCatalogBrowseContent(
     }
 }
 
-private fun UniversalSearchResult.isSingleOrEp(): Boolean =
+internal fun UniversalSearchResult.isSingleOrEp(): Boolean =
     releaseKind?.lowercase()?.let { it.contains("single") || it.contains("ep") } == true
 
-private fun UniversalSearchResult.spotifyUrl(): String? {
+internal fun UniversalSearchResult.spotifyUrl(): String? {
     if (identity.source != CatalogSource.SPOTIFY ||
         !identity.catalogId.matches(Regex("[A-Za-z0-9]{22}"))) return null
     val kind = when (type) {
