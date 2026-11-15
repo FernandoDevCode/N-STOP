@@ -67,3 +67,13 @@ Antes de aprovar alteração de frontend:
 **Validação que o CI não cobre:** capturas reais de cada rota em dark/light, PT-BR/EN, TalkBack, fontes grandes e Android 16; testes de gesto/contexto em aparelho. Esta cobertura de código não é homologação visual automática.
 
 **Atualização de Busca (PR #86 em validação):** somente duas guias, Spotify inicial e YouTube convencional WEB; YouTube Music não aparece nem é consultado na Busca. Componentes internos de YTM necessários à reprodução permanecem intactos. Esta alteração não substitui validação de CI e dispositivo; consulte `SEARCH_REWORK_PLAN.md`.
+
+## Correção de regressão visual — Spotify no PR #86 (2026-11-15)
+
+Os detalhes Spotify **não podem** usar a linha genérica da Busca como página completa:
+- **Artista:** reutilizar `ArtistHero`, `ArtistProfileBackdrop`, `ArtistSectionTabs`, `ArtistFeaturedReleaseCard` e `AlbumSquareCard`, conservando fotografia, atmosfera, destaque e seções. Guias que dependem de dados inexistentes (ex.: populares não consultados) não devem fingir resultados.
+- **Álbum:** reutilizar `AlbumHero` e `SongRow(editorial=true, editorialAlbum=true)`: capa única no hero, número e duração nas faixas. Não repetir a capa do álbum em cada linha.
+- Os dados continuam `CatalogSource.SPOTIFY`. **Nunca** encaminhar o Spotify ID como YTM browseId ou YouTube videoId, nem trocar uma versão da gravação sem confirmação.
+- Desabilitar/ocultar ações que dependam de downloads ou filas que o novo contexto Spotify não implementa. Ações válidas: abrir lançamento/faixa no Spotify e reproduzir com matching conservador existente.
+- A lógica de Spotify (`browseSpotify`, paginação, erro) permanece separada da apresentação; não duplicar telas genéricas nem sobrescrever as páginas YTM existentes.
+- Validar no Redmi: Slipknot e Red Hot Chili Peppers (artista), Californication (álbum completo), volta álbum→artista→Busca, rolagem/paginação, play, menus, mini-player, modo escuro e tipografia ampliada. CI sem inspeção visual não aprova o design.
