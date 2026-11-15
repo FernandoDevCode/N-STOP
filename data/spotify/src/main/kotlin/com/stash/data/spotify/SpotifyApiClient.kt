@@ -1049,7 +1049,29 @@ class SpotifyApiClient @Inject constructor(
      */
     suspend fun getArtistPhotoById(id: String, expectedName: String): SpotifyArtistPhoto? =
         withContext(Dispatchers.IO) {
-            if (!id.matches(Regex("[A-Za-z0-9]{22}"))) return@withContext null
+            if (!id.matches(Regex("[A-Za-z0-9]{22}")) || expectedName.isBlank()) {
+                return@withContext null
+            }
+            // The same identity-preserving Partner catalogue can deliver the
+            // artist's official avatar when /v1/artists/{id} hard-rate-limits.
+            try {
+                val variables = buildJsonObject {
+                    put("uri", "spotify:artist:$id")
+                    put("locale", "")
+                }.toString()
+                val response = executeGraphQL(
+                    operationName = "queryArtistOverview",
+                    variables = variables,
+                    seedHash = SpotifyAuthConfig.HASH_ARTIST_OVERVIEW,
+                )
+                response?.let { parseSpotifyPartnerArtistDetail(it, id, expectedName) }
+                    ?.let { return@withContext it }
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (error: Exception) {
+                Log.w(TAG, "Partner artist profile unavailable: ${error.javaClass.simpleName}")
+            }
+            if (catalogRestCooldownUntilMs > System.currentTimeMillis()) return@withContext null
             // Public artist metadata can use client credentials. Spotify user
             // login is NOT required just to render an artist's official photo.
             val userToken = tokenManager.getSpotifyAccessToken()
