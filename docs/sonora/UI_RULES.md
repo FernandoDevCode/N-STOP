@@ -50,6 +50,14 @@ O Sonora deve manter superfícies grafite/neutral, arte como fonte de atmosfera 
 - Transições de 150–260 ms apenas quando favorecem compreensão; não animar toda a tela durante entrada do teclado.
 - Loading e download comunicam estado real. Mini-player e barra inferior seguem com identidade aprovada, sem reimplementação local.
 
+### 4.1 Barra de status e arte edge-to-edge (regra global)
+
+- A janela Android desenha atrás da barra de status e do recorte da câmera, sem uma faixa opaca independente.
+- O fundo de **todas** as rotas cobre a tela até a borda superior. Heróis com foto, capa ou gradiente (artista, álbum online, coleções locais e player) também começam atrás dos ícones do sistema.
+- **Controles e textos** continuam abaixo dos insets seguros. Componentes full-bleed aplicam `statusBarsPadding()` só nos botões sobrepostos; rotas sem herói recebem o padding seguro no host, sem duplicação.
+- Um Scaffold interno de uma rota full-bleed não deve reintroduzir o inset superior. Manter suporte a recorte, teclado, navegação por gestos e seleção múltipla.
+- Conferir visualmente em Android 16 com recorte de câmera, modo claro/escuro, scroll e mudanças de rota; CI verde não prova continuidade visual.
+
 ### 5. Governança de UI
 
 Antes de aprovar alteração de frontend:
