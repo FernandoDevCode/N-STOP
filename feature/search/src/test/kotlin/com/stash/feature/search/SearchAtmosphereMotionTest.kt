@@ -8,12 +8,13 @@ import org.junit.Test
 import kotlin.math.abs
 
 class SearchAtmosphereMotionTest {
-    @Test fun defaultIsGraphiteBlueAndArtistTintIsLimited() {
-        val neutral = searchAtmosphereTint(null)
-        val red = searchAtmosphereTint(Color.Red)
-        assertEquals(Color(0xFF19475B), neutral)
-        assertTrue(red.red > neutral.red)
-        assertTrue(red.red < Color.Red.red)
+    @Test fun colorIsFixedAndWidthRelativeRadiusKeepsContrast() {
+        assertEquals(Color(0xFF19475B), SONORA_SEARCH_BLUE)
+        val drift = searchDriftAt(12f).first()
+        val radius = searchHazeRadius(400f, drift)
+        assertTrue(radius in 300f..500f)
+        assertTrue(drift.x in 0f..1f)
+        assertTrue(drift.y in 0f..1f)
     }
 
     @Test fun adjacentFramesDoNotJump() {
