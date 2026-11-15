@@ -2,7 +2,6 @@ package com.stash.feature.search
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -106,10 +105,6 @@ fun AlbumDiscoveryScreen(
     }
 
     Scaffold(
-        // The outer host owns safe padding for ordinary routes. This hero draws
-        // into the status-bar region; AlbumHero offsets its action buttons itself.
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        containerColor = androidx.compose.ui.graphics.Color.Transparent,
         snackbarHost = { SnackbarHost(snackbar, Modifier.padding(bottom = bottomChromePadding())) },
     ) { inner ->
         LazyColumn(

@@ -80,8 +80,6 @@ fun AlbumHero(
     onSave: () -> Unit = {},
     isSaved: Boolean = false,
     actionsEnabled: Boolean = true,
-    /** Hide actions that require YouTube audio/download or native library IDs. */
-    collectionActionsEnabled: Boolean = true,
 ) {
     val ink = MaterialTheme.colorScheme.background
     Column(modifier = modifier.fillMaxWidth()) {
@@ -151,7 +149,7 @@ fun AlbumHero(
                     tint = Color(0xFFF4F5F7),
                 )
             }
-            if (collectionActionsEnabled) AlbumOverflow(
+            AlbumOverflow(
                 onAddToQueue = onAddToQueue,
                 onDownloadAll = onDownloadAll,
                 onShuffle = onShuffle,
@@ -225,7 +223,6 @@ fun AlbumHero(
                         modifier = Modifier.size(29.dp),
                     )
                 }
-                if (collectionActionsEnabled) {
                 // The underlying action can shuffle only downloaded tracks.
                 // Keep the editorial button visible but correctly disabled otherwise.
                 Surface(
@@ -282,7 +279,6 @@ fun AlbumHero(
                     streamingEnabled = streamingEnabled,
                     enabled = actionsEnabled,
                 )
-                } // Spotify-owned metadata has no local queue/download/save album action.
             }
             Spacer(Modifier.height(15.dp))
         }

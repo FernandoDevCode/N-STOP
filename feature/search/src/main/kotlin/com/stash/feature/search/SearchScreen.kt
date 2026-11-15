@@ -101,23 +101,6 @@ import com.stash.core.ui.visual.*
 import com.stash.core.ui.components.bottomChromePadding
 
 /**
- * Active Sonora Search: Spotify-first source tabs with conventional YouTube WEB.
- * Keep legacy composables below for backwards-compatible helpers and regression
- * tests; they are no longer instantiated by the app's Search route.
- */
-@Composable
-fun SearchScreen(
-    onNavigateToArtist: (artistId: String, name: String, avatarUrl: String?) -> Unit,
-    onNavigateToAlbum: (album: AlbumSummary) -> Unit,
-    @Suppress("UNUSED_PARAMETER") onSettings: () -> Unit = {},
-) {
-    SonoraSourceSearchScreen(
-        onNavigateToArtist = onNavigateToArtist,
-        onNavigateToAlbum = onNavigateToAlbum,
-    )
-}
-
-/**
  * Top-level search screen composable.
  *
  * Task 9 rewired the body: results now render as four ordered sections
@@ -127,7 +110,7 @@ fun SearchScreen(
  * error state.
  */
 @Composable
-private fun LegacySearchScreen(
+fun SearchScreen(
     onNavigateToArtist: (artistId: String, name: String, avatarUrl: String?) -> Unit,
     onNavigateToAlbum: (album: AlbumSummary) -> Unit,
     onSettings: () -> Unit = {},

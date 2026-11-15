@@ -104,10 +104,10 @@ class YTMusicApiClientTest {
         )
 
         val songs = result.sections[1] as SearchResultSection.Songs
-        // Fixture ships 6 songs; display all returned songs without a local four-row cap.
+        // Fixture ships 6 songs; parser must cap at 4 per the Search tab spec.
         assertEquals(
-            "songs list must preserve all returned shelf entries",
-            6,
+            "songs list must be capped at 4 even when the shelf has more",
+            4,
             songs.tracks.size,
         )
         assertTrue(
@@ -142,14 +142,14 @@ class YTMusicApiClientTest {
     }
 
     @Test
-    fun `searchAll preserves all 6 songs when shelf exceeds old cap`() = runTest {
-        // search_artist.json ships 6 songs; no artificial display cap.
+    fun `searchAll caps Songs shelf at 4 items even if fixture has more`() = runTest {
+        // search_artist.json ships 6 songs; parser must cap at 4 per spec §3.2.
         val client = fakeClient(loadFixture("search_artist.json"))
 
         val result = client.searchAll("lootpack")
 
         val songs = result.sections.filterIsInstance<SearchResultSection.Songs>().single()
-        assertEquals(6, songs.tracks.size)
+        assertEquals(4, songs.tracks.size)
     }
 
     @Test

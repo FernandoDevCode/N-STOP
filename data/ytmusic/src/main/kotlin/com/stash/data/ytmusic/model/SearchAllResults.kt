@@ -14,7 +14,7 @@ sealed interface SearchResultSection {
     /** Single tall "Top result" card (either artist or track). */
     data class Top(val item: TopResultItem) : SearchResultSection
 
-    /** All parsed song rows from the returned page. */
+    /** Up to 4 inline song rows. */
     data class Songs(val tracks: List<TrackSummary>) : SearchResultSection
 
     /** Horizontal row of artist avatar cards. */

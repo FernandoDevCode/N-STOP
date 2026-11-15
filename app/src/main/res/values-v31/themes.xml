@@ -4,7 +4,6 @@
         <item name="android:windowSplashScreenBackground">#0B0E13</item>
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/sonora_intro_blank</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:windowLayoutInDisplayCutoutMode">always</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
         <item name="android:windowLightStatusBar">false</item>

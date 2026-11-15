@@ -767,242 +767,12 @@ class SpotifyApiClient @Inject constructor(
     }
 
     /**
-     * Main Sonora search catalog. Three Spotify result buckets are fetched together.
-     * Uses a connected user's authorized token; never presents a YouTube fallback
-     * as a Spotify result. A failed request stays a failure (not an empty catalog).
-     */
-    @Volatile
-    private var catalogRestCooldownUntilMs: Long = 0L
-
-    /**
-     * Prefer Spotify's existing web-player searchDesktop query. The REST
-     * /v1/search endpoint is frequently 429 on web-user tokens (observed
-     * in Sonora on-device); REST is a fallback, not the primary search.
-     * Never translate a YouTube hit into a Spotify catalog result.
-     */
-    suspend fun searchCatalogPage(
-        query: String,
-        offset: Int = 0,
-        limit: Int = 10,
-    ): SpotifyCatalogPage = withContext(Dispatchers.IO) {
-        require(query.isNotBlank())
-        require(offset >= 0)
-        val pageSize = limit.coerceIn(1, 10)
-        val variables = buildJsonObject {
-            put("searchTerm", query)
-            put("offset", offset)
-            put("limit", pageSize)
-            put("numberOfTopResults", 5)
-            put("includeAudiobooks", false)
-            put("includePreReleases", false)
-        }.toString()
-        val partner = executeGraphQL(
-            operationName = "searchDesktop",
-            variables = variables,
-            seedHash = SpotifyAuthConfig.HASH_SEARCH_DESKTOP,
-        )
-        if (partner != null) {
-            parseSpotifyPartnerSearchPage(partner, offset, pageSize)?.let {
-                return@withContext it
-            }
-        }
-
-        val now = System.currentTimeMillis()
-        if (catalogRestCooldownUntilMs > now) {
-            throw SpotifyRateLimitException(
-                ((catalogRestCooldownUntilMs - now) / 1000L).coerceAtLeast(1L)
-            )
-        }
-        val url = "$WEB_API_BASE/search?type=track,artist,album&limit=$pageSize" +
-            "&offset=$offset&market=BR&q=${URLEncoder.encode(query, "UTF-8")}"
-        try {
-            parseSpotifyCatalogPage(authorizedCatalogResponse(url))
-        } catch (limited: SpotifyRateLimitException) {
-            val seconds = (limited.retryAfterSeconds ?: 60L).coerceIn(30L, 86_400L)
-            catalogRestCooldownUntilMs = System.currentTimeMillis() + seconds * 1000L
-            throw limited
-        }
-    }
-
-    /**
-     * Artist releases are read by the exact Spotify artist URI. The existing
-     * searchDesktop path works on devices where the public Web API returns
-     * HTTP 429; detail pages must also prefer the Web Player Partner API.
-     * Do not synthesize albums from YouTube or replace release identities.
-     */
-    suspend fun searchArtistReleasesPage(
-        spotifyArtistId: String,
-        offset: Int = 0,
-    ): SpotifyCatalogPage = withContext(Dispatchers.IO) {
-        require(spotifyArtistId.matches(Regex("[A-Za-z0-9]{22}")))
-        require(offset >= 0)
-        val variables = buildJsonObject {
-            put("uri", "spotify:artist:$spotifyArtistId")
-            put("offset", offset)
-            put("limit", 10)
-        }.toString()
-        val partner = try {
-            executeGraphQL(
-                operationName = "queryArtistDiscographyAll",
-                variables = variables,
-                seedHash = SpotifyAuthConfig.HASH_ARTIST_DISCOGRAPHY_ALL,
-            )
-        } catch (cancel: CancellationException) {
-            throw cancel
-        } catch (error: Exception) {
-            Log.w(TAG, "Artist Partner discography unavailable: ${error.javaClass.simpleName}")
-            null
-        }
-        partner?.let { parseSpotifyPartnerArtistReleasesPage(it, offset, 10) }
-            ?.let { return@withContext it }
-
-        val url = "$WEB_API_BASE/artists/$spotifyArtistId/albums?" +
-            "include_groups=album,single,compilation,appears_on&market=BR&limit=10&offset=$offset"
-        parseSpotifyArtistAlbumsPage(authorizedCatalogResponse(url, preferPublicToken = true))
-    }
-
-    /** Album tracks by the real Spotify album URI, including edition tracks. */
-    suspend fun searchAlbumTracksPage(
-        spotifyAlbumId: String,
-        offset: Int = 0,
-    ): SpotifyCatalogPage = withContext(Dispatchers.IO) {
-        require(spotifyAlbumId.matches(Regex("[A-Za-z0-9]{22}")))
-        require(offset >= 0)
-        val variables = buildJsonObject {
-            put("uri", "spotify:album:$spotifyAlbumId")
-            put("locale", "")
-            put("offset", offset)
-            put("limit", 10)
-        }.toString()
-        val partner = try {
-            executeGraphQL(
-                operationName = "getAlbum",
-                variables = variables,
-                seedHash = SpotifyAuthConfig.HASH_GET_ALBUM,
-            )
-        } catch (cancel: CancellationException) {
-            throw cancel
-        } catch (error: Exception) {
-            Log.w(TAG, "Album Partner tracks unavailable: ${error.javaClass.simpleName}")
-            null
-        }
-        partner?.let { parseSpotifyPartnerAlbumTracksPage(it, offset, 10) }
-            ?.let { return@withContext it }
-
-        val url = "$WEB_API_BASE/albums/$spotifyAlbumId/tracks?market=BR&limit=10&offset=$offset"
-        parseSpotifyAlbumTracksPage(authorizedCatalogResponse(url, preferPublicToken = true))
-    }
-
-    /** Shared REST fallback for search, artist releases and album tracks.
-     * A 429 opens one cooldown for every catalog detail route, not one per page.
-     */
-    private suspend fun authorizedCatalogResponse(
-        url: String,
-        preferPublicToken: Boolean = false,
-    ): String {
-        val now = System.currentTimeMillis()
-        if (catalogRestCooldownUntilMs > now) {
-            throw SpotifyRateLimitException(
-                ((catalogRestCooldownUntilMs - now) / 1000L).coerceAtLeast(1L)
-            )
-        }
-        val publicToken = if (preferPublicToken) getClientCredentialsToken() else null
-        val userToken = tokenManager.getSpotifyAccessToken()
-        var bearer = publicToken ?: userToken
-            ?: throw SpotifyApiException(0, url, "Spotify não conectado")
-        var response = executeSearchRequest(url, bearer)
-        var body = response.body?.string()
-        val status = response.code
-        val retryAfter = response.header("Retry-After")?.toLongOrNull()
-        response.close()
-        var resultCode = status
-
-        if (resultCode == 401 && bearer == userToken) {
-            val refreshed = tokenManager.forceRefreshSpotifyAccessToken()
-                ?: throw SpotifyApiException(401, url, "Sessão Spotify expirada")
-            bearer = refreshed
-            response = executeSearchRequest(url, bearer)
-            resultCode = response.code
-            body = response.body?.string()
-            val refreshedRetry = response.header("Retry-After")?.toLongOrNull()
-            response.close()
-            if (resultCode == 429) {
-                rememberCatalogRateLimit(refreshedRetry)
-                throw SpotifyRateLimitException(refreshedRetry)
-            }
-        } else if (resultCode in listOf(401, 403) && publicToken != null && userToken != null) {
-            // One fallback to the connected account if public credentials have
-            // become invalid. Never retry a genuine 429 with another token.
-            response = executeSearchRequest(url, userToken)
-            resultCode = response.code
-            body = response.body?.string()
-            val alternateRetry = response.header("Retry-After")?.toLongOrNull()
-            response.close()
-            if (resultCode == 429) {
-                rememberCatalogRateLimit(alternateRetry)
-                throw SpotifyRateLimitException(alternateRetry)
-            }
-        }
-        if (resultCode == 429) {
-            rememberCatalogRateLimit(retryAfter)
-            throw SpotifyRateLimitException(retryAfter)
-        }
-        if (resultCode !in 200..299) {
-            throw SpotifyApiException(resultCode, url, "Spotify HTTP $resultCode")
-        }
-        return body ?: throw SpotifyApiException(502, url, "Spotify sem resposta")
-    }
-
-    private fun rememberCatalogRateLimit(retryAfter: Long?) {
-        val seconds = (retryAfter ?: 60L).coerceIn(30L, 86_400L)
-        catalogRestCooldownUntilMs = maxOf(
-            catalogRestCooldownUntilMs,
-            System.currentTimeMillis() + seconds * 1_000L,
-        )
-    }
-
-    /**
      * Official Spotify artist profile image; no scraped galleries, no album cover proxy.
      * Search requires a connected user's token (same documented constraint as searchTracks).
      * Failures/429 are not retried here; the artist screen retains its current catalog art.
      */
     suspend fun searchArtistPhoto(name: String): SpotifyArtistPhoto? = withContext(Dispatchers.IO) {
         if (name.isBlank()) return@withContext null
-        // Use the working Partner search first. REST /v1/search frequently
-        // returns 429 and must not hide an available official artist image.
-        try {
-            val variables = buildJsonObject {
-                put("searchTerm", name.trim())
-                put("offset", 0)
-                put("limit", 10)
-                put("numberOfTopResults", 5)
-                put("includeAudiobooks", false)
-                put("includePreReleases", false)
-            }.toString()
-            val partner = executeGraphQL(
-                operationName = "searchDesktop",
-                variables = variables,
-                seedHash = SpotifyAuthConfig.HASH_SEARCH_DESKTOP,
-            )
-            val options = partner?.let { parseSpotifyPartnerSearchPage(it, 0, 10) }
-                ?.items.orEmpty()
-                .filter { it.kind == SpotifyCatalogKind.ARTIST &&
-                    it.title.trim().equals(name.trim(), ignoreCase = true) &&
-                    it.id.matches(Regex("[A-Za-z0-9]{22}")) &&
-                    it.artworkUrl?.startsWith("https://i.scdn.co/image/") == true }
-                .distinctBy { it.id }
-            if (options.size == 1) {
-                return@withContext SpotifyArtistPhoto(
-                    options.single().artworkUrl!!,
-                    "https://open.spotify.com/artist/${options.single().id}",
-                )
-            }
-        } catch (cancel: CancellationException) {
-            throw cancel
-        } catch (error: Exception) {
-            Log.w(TAG, "Partner artist photo unavailable: ${error.javaClass.simpleName}")
-        }
-        if (catalogRestCooldownUntilMs > System.currentTimeMillis()) return@withContext null
         // Public client credentials are a best-effort alternative when Spotify
         // is not connected. The API may refuse /search with 429; in that case
         // caller falls back to the unique MusicBrainz -> official-ID route.
@@ -1049,29 +819,7 @@ class SpotifyApiClient @Inject constructor(
      */
     suspend fun getArtistPhotoById(id: String, expectedName: String): SpotifyArtistPhoto? =
         withContext(Dispatchers.IO) {
-            if (!id.matches(Regex("[A-Za-z0-9]{22}")) || expectedName.isBlank()) {
-                return@withContext null
-            }
-            // The same identity-preserving Partner catalogue can deliver the
-            // artist's official avatar when /v1/artists/{id} hard-rate-limits.
-            try {
-                val variables = buildJsonObject {
-                    put("uri", "spotify:artist:$id")
-                    put("locale", "")
-                }.toString()
-                val response = executeGraphQL(
-                    operationName = "queryArtistOverview",
-                    variables = variables,
-                    seedHash = SpotifyAuthConfig.HASH_ARTIST_OVERVIEW,
-                )
-                response?.let { parseSpotifyPartnerArtistDetail(it, id, expectedName) }
-                    ?.let { return@withContext it }
-            } catch (cancel: CancellationException) {
-                throw cancel
-            } catch (error: Exception) {
-                Log.w(TAG, "Partner artist profile unavailable: ${error.javaClass.simpleName}")
-            }
-            if (catalogRestCooldownUntilMs > System.currentTimeMillis()) return@withContext null
+            if (!id.matches(Regex("[A-Za-z0-9]{22}"))) return@withContext null
             // Public artist metadata can use client credentials. Spotify user
             // login is NOT required just to render an artist's official photo.
             val userToken = tokenManager.getSpotifyAccessToken()
@@ -1149,40 +897,38 @@ class SpotifyApiClient @Inject constructor(
         artistName: String,
         sinceDate: String,
     ): List<SpotifyRecentArtistAlbum> = withContext(Dispatchers.IO) {
-        if (artistName.isBlank() || sinceDate.length != 10) return@withContext emptyList()
-        // The legacy Home route called /v1/search directly and silently
-        // swallowed 429s, so new releases vanished although Search worked.
-        // Reuse the working Spotify Partner catalogue path, preserving only
-        // verified Spotify dates and an exact artist credit.
+        val token = tokenManager.getSpotifyAccessToken() ?: run {
+            Log.w(TAG, "Home recent-album query unavailable: no Spotify access token")
+            return@withContext emptyList()
+        }
+        if (artistName.isBlank()) return@withContext emptyList()
+        val url = "$WEB_API_BASE/search?type=album&limit=20&q=" +
+            URLEncoder.encode("artist:\"${artistName.trim()}\"", "UTF-8")
         try {
-            val query = "artist:\"${artistName.trim()}\""
-            val candidates = mutableListOf<SpotifyCatalogItem>()
-            var offset = 0
-            for (pageIndex in 0 until 2) {
-                val page = searchCatalogPage(query, offset = offset, limit = 10)
-                candidates += page.items
-                if (!page.hasMore) break
-                offset += 10
-            }
-            candidates.asSequence()
-                .filter { it.kind == SpotifyCatalogKind.ALBUM }
-                .filter { album ->
-                    album.subtitle.orEmpty().split(',').any {
-                        it.trim().equals(artistName.trim(), ignoreCase = true)
+            executeSearchRequest(url, token).use { response ->
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "Home Spotify REST request unavailable: HTTP ${response.code}")
+                    return@use emptyList()
+                }
+                val root = json.parseToJsonElement(response.body?.string().orEmpty()).jsonObject
+                root["albums"]?.jsonObject?.get("items")?.jsonArray.orEmpty()
+                    .mapNotNull { value ->
+                        val album = value.jsonObject
+                        val name = album["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                        val date = album["release_date"]?.jsonPrimitive?.contentOrNull
+                            ?: return@mapNotNull null
+                        if (date.length != 10 || date < sinceDate) return@mapNotNull null
+                        val artistNames = album["artists"]?.jsonArray.orEmpty()
+                            .mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull }
+                        if (artistNames.none { it.equals(artistName, ignoreCase = true) }) return@mapNotNull null
+                        SpotifyRecentArtistAlbum(name, artistName, date)
                     }
-                }
-                .mapNotNull { album ->
-                    val date = album.releaseDate
-                    if (date == null || date.length != 10 || date < sinceDate) null
-                    else SpotifyRecentArtistAlbum(album.title, artistName.trim(), date)
-                }
-                .distinctBy { it.title.lowercase() to it.releaseDate }
-                .sortedByDescending { it.releaseDate }
-                .toList()
+                    .distinctBy { it.title.lowercase() to it.artist.lowercase() }
+                    .sortedByDescending { it.releaseDate }
+            }
         } catch (cancel: CancellationException) {
             throw cancel
-        } catch (error: Exception) {
-            Log.w(TAG, "Home recent-album catalog unavailable: ${error.javaClass.simpleName}")
+        } catch (_: Exception) {
             emptyList()
         }
     }

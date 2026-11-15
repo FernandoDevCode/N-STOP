@@ -106,10 +106,6 @@ fun ArtistHero(
     onPlayArtist: () -> Unit,
     onStartRadio: () -> Unit,
     streamingEnabled: Boolean,
-    /** Spotify catalog may offer no local YTM radio or photo editor. */
-    radioEnabled: Boolean = true,
-    photoEditingEnabled: Boolean = true,
-    streamingSettingsEnabled: Boolean = true,
     onStreamingClick: () -> Unit,
     onOpenAbout: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -221,11 +217,15 @@ fun ArtistHero(
         Box(
             Modifier.fillMaxWidth().height(photoHeightDp)
                 .onSizeChanged { onPhotoFrameMeasured(it.height) }
-                .then(if (photoEditingEnabled) Modifier
-                    .pointerInput(onEditPhoto) { detectTapGestures(onLongPress = { onEditPhoto() }) }
-                    .semantics {
-                        onLongClick("Editar fotografia do artista") { onEditPhoto(); true }
-                    } else Modifier),
+                .pointerInput(onEditPhoto) {
+                    detectTapGestures(onLongPress = { onEditPhoto() })
+                }
+                .semantics {
+                    onLongClick("Editar fotografia do artista") {
+                        onEditPhoto()
+                        true
+                    }
+                },
         )
 
         // Match the reference's quieter 38dp translucent circles while
@@ -295,7 +295,7 @@ fun ArtistHero(
                             favorites.edit().putBoolean(bookmarkKey, bookmarked).apply()
                         },
                     )
-                    if (photoEditingEnabled) DropdownMenuItem(
+                    DropdownMenuItem(
                         text = { Text("Editar fotografia") },
                         onClick = { moreOpen = false; onEditPhoto() },
                     )
@@ -308,7 +308,7 @@ fun ArtistHero(
                             },
                         )
                     }
-                    if (radioEnabled) DropdownMenuItem(
+                    DropdownMenuItem(
                         text = { Text("Rádio do artista") },
                         leadingIcon = { Icon(Icons.Default.Radio, contentDescription = null) },
                         onClick = { moreOpen = false; onStartRadio() },
@@ -319,7 +319,7 @@ fun ArtistHero(
                             onClick = { moreOpen = false; onOpenAbout() },
                         )
                     }
-                    if (streamingSettingsEnabled && StashConstants.STREAMING_ENGINE_ENABLED) {
+                    if (StashConstants.STREAMING_ENGINE_ENABLED) {
                         DropdownMenuItem(
                             text = {
                                 Text(if (streamingEnabled) "Streaming: ativado" else "Modo download")

@@ -30,6 +30,9 @@ import kotlinx.serialization.json.JsonObject
 private const val PAGE_TYPE_ARTIST = "MUSIC_PAGE_TYPE_ARTIST"
 private const val PAGE_TYPE_ALBUM = "MUSIC_PAGE_TYPE_ALBUM"
 
+/** Max song rows to surface, matching the titled-"Songs"-shelf cap in searchAll. */
+private const val FLAT_SONGS_CAP = 4
+
 /**
  * Walks the flat `itemSectionRenderer` rows of a search response and groups them
  * into Songs / Artists / Albums sections. Returns an empty list when [shelves]
@@ -72,7 +75,7 @@ internal fun parseFlatSearchSections(shelves: JsonArray): List<SearchResultSecti
     }
 
     return buildList {
-        if (songs.isNotEmpty()) add(SearchResultSection.Songs(songs))
+        if (songs.isNotEmpty()) add(SearchResultSection.Songs(songs.take(FLAT_SONGS_CAP)))
         if (artists.isNotEmpty()) add(SearchResultSection.Artists(artists))
         if (albums.isNotEmpty()) add(SearchResultSection.Albums(albums))
     }

@@ -1,6 +1,6 @@
 # Sonora — especificação vigente e contrato do rework da Busca
 
-**Status:** contratos e motor mergeados; integração por fonte em andamento nesta branch (não homologada)
+**Status:** base documental para desenvolvimento paralelo; ainda sem implementação
 
 **Data da consolidação:** 10/11/2026
 
@@ -9,45 +9,6 @@
 **Destino canônico:** `nonstop`
 
 **Autoridade:** este documento prevalece, para a Busca, sobre planos históricos e experimentais. `AGENTS.md` e `docs/SONORA_CONSOLIDATION.md` continuam prevalecendo nas regras gerais do repositório.
-
-## Decisão de produto superveniente — 14/11/2026 (Spotify primeiro)
-
-Esta seção substitui os defaults históricos de lista mista, seleção de múltiplas fontes e YTM como catálogo pesquisável. As invariantes de identidade e reprodução permanecem válidas.
-
-- A Busca oferece exatamente **duas guias**: **Spotify** (inicial) e **YouTube convencional (WEB)**. Só a guia escolhida participa da consulta; o texto é compartilhado. **YTM não é uma fonte da Busca**.
-- YouTube significa explicitamente www.youtube.com / InnerTube WEB, não music.youtube.com. Slowed + reverb, lives, remixes, demos e covers precisam manter seu videoId original em todas as ações.
-- O alfinete grava a guia selecionada; desligado, a escolha dura apenas a sessão da Busca. Nova sessão sem pin começa em Spotify.
-- O motor universal continua a agregar e ordenar resultados normalizados, mas com `selection.enabled = setOf(guiaAtiva)` para não misturar fontes.
-- Paginação é independente por fonte e só pode anunciar continuidade que o provedor realmente forneceu. Não confundir falha com catálogo vazio.
-- Spotify é catálogo: música só reproduz após confirmar um áudio seguro por fonte existente; artistas/álbuns requerem rotas conscientes de identidade Spotify. Nunca usar spotifyId como videoId ou browseId YTM.
-- A integração nesta branch NÃO equivale à aprovação de dispositivos ou CI: estado, limites e testes devem ser conferidos antes do merge e do APK canônico.
-- A enumeração compartilhada pode manter `YOUTUBE_MUSIC` por compatibilidade interna, mas o novo fluxo da Busca bloqueia seleção, ações e consultas a essa fonte. Preferências YTM fixadas anteriormente passam a Spotify. A infraestrutura interna de áudio existente é preservada.
-
-## Correção de regressões observadas no APK experimental (14/11/2026)
-
-Capturas reais no Redmi mostraram: (1) a guia Spotify retornando limitação de serviço ao pesquisar "jota quest"; (2) campo de busca excessivamente alto porque o placeholder quebrava linha; (3) roxo herdado nos filtros, histórico muito espaçado e botões "Remover" dominantes; (4) títulos de vídeo importantes truncados.
-
-A resposta aprovada nesta branch deve:
-- Priorizar o mesmo `searchDesktop` GraphQL do Spotify Web Player que o projeto já utiliza, mantendo resultado **exclusivamente Spotify**; usar `/v1/search` apenas como fallback, respeitando e memorizando 429/Retry-After, sem mascarar erros como ausência de resultados.
-- Reconhecer tracks, artists e albums tanto em `data.search` quanto `data.searchV2`, preservar suas URIs e os IDs sem substituição por vídeo. Paginação não pode repetir a mesma página indefinidamente.
-- Campo de Busca compacto de uma linha e dica curta; título em fonte sans-serif; guias Spotify/YouTube neutras, sem cor roxa herdada; alfinete com rótulo de estado; histórico denso com gesto de remover discreto e acessível.
-- Spotify com grupos Músicas/Artistas/Álbuns; YouTube convencional com miniaturas 16:9 e até duas linhas de título para preservar os nomes das versões.
-- Nenhuma alteração em player, miniplayer, assinatura, cache de biblioteca, autenticação, downloads, identidade de vídeo, nem nas escolhas anteriores de duas guias.
-- Validação: testes unitários de parsing/roteamento/cooldown, compilação integral e gate de identidade; aparência e busca live dependem de inspeção em aparelho, não apenas CI.
-
-## Correção de perfil e álbum — 14/11/2026 (PR #86)
-
-Relato do dispositivo: abrir artista Spotify (Slipknot) e álbum a partir da Busca falhava com "Serviço temporariamente limitado" apesar de a busca por artista e música funcionar.
-
-Causa no código: `searchArtistReleasesPage` e `searchAlbumTracksPage` consultavam diretamente `/v1/artists/{id}/albums` e `/v1/albums/{id}/tracks` com token web. Essas rotas não compartilhavam o caminho Partner-first da Busca e podiam receber HTTP 429. Outros usos REST da Home e fotos de artista tinham exposição semelhante.
-
-Correção implementada neste PR (homologação em aparelho ainda necessária):
-- Discografia pelo **Spotify ID real** do artista via operação Partner `queryArtistDiscographyAll`, com parsing estrito de lançamentos/edições/continuação; álbum via `getAlbum` e faixas `tracksV2`, com identidades Spotify.
-- Consulta REST apenas como alternativa, preferindo token público de metadados quando disponível. Todas as chamadas REST de detalhe compartilham um cooldown para 429/Retry-After e não repetem requisições durante o bloqueio. Falhas de schema não viram coleção vazia falsa.
-- Cancelar chamadas obsoletas ao entrar/sair de detalhe, impedir duplicação por duplo toque/scroll; preservar histórico, fonte selecionada, player e IDs.
-- Falha real de serviço expõe link "Abrir no Spotify" para o ID do item; não converte para catálogo YouTube e não inventa disco ou faixa.
-- Home, lançamentos recentes e fotos de artista passam a consultar primeiro o catálogo Partner. Foto exige correspondência inequívoca de nome/ID e URL de imagem Spotify.
-- Testes de roteamento Partner versus REST 429, parser de variantes/comemorativos/faixas, paginação, fallback, cooldown, foto e Home. CI e teste no Redmi são obrigatórios antes do merge e da homologação; hashes Partner rotativos não garantem disponibilidade contínua.
 
 ## 1. Registro da preparação
 
