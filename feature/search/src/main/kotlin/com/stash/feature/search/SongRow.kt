@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.PlaylistAddCheck
 import androidx.compose.material.icons.filled.PlaylistPlay
@@ -94,6 +95,8 @@ fun SongRow(
     editorialAlbum: Boolean = false,
     editorialSubtitle: String? = null,
     artistEditorial: Boolean = false,
+    /** Opens the official source for metadata-only Spotify catalog rows. */
+    onOpenCatalog: (() -> Unit)? = null,
 ) {
     var optionsOpen by remember(item.videoId, item.title, item.artist) { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
@@ -248,6 +251,7 @@ fun SongRow(
             onAddToQueue = onAddToQueue,
             onAddToPlaylist = onAddToPlaylist,
             onStartRadio = onStartRadio,
+            onOpenCatalog = onOpenCatalog,
             onDismiss = { optionsOpen = false },
         )
     }
@@ -267,6 +271,7 @@ private fun SearchTrackActionsSheet(
     onAddToQueue: (() -> Unit)?,
     onAddToPlaylist: (() -> Unit)?,
     onStartRadio: (() -> Unit)?,
+    onOpenCatalog: (() -> Unit)?,
     onDismiss: () -> Unit,
 ) {
     val role = LocalListenTogetherRole.current
@@ -325,6 +330,13 @@ private fun SearchTrackActionsSheet(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
+            }
+            onOpenCatalog?.let { callback ->
+                SheetOptionRow(
+                    icon = Icons.Default.OpenInNew,
+                    label = "Abrir no Spotify",
+                    onClick = { onDismiss(); callback() },
+                )
             }
             onAddToPlaylist?.let { callback ->
                 SheetOptionRow(

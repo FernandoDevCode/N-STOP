@@ -73,6 +73,9 @@ data class UniversalSearchResult(
     val providerRank: Int,
     val rankingScore: Double,
     val supportedActions: Set<SearchResultAction> = emptySet(),
+    /** Official catalog metadata, never interpreted as a YouTube browse ID. */
+    val releaseKind: String? = null,
+    val releaseDate: String? = null,
 ) {
     val stableKey: String = "${identity.source.name}:${type.name}:${identity.catalogId}"
 
