@@ -35,6 +35,20 @@ A resposta aprovada nesta branch deve:
 - Nenhuma alteração em player, miniplayer, assinatura, cache de biblioteca, autenticação, downloads, identidade de vídeo, nem nas escolhas anteriores de duas guias.
 - Validação: testes unitários de parsing/roteamento/cooldown, compilação integral e gate de identidade; aparência e busca live dependem de inspeção em aparelho, não apenas CI.
 
+## Correção de perfil e álbum — 14/11/2026 (PR #86)
+
+Relato do dispositivo: abrir artista Spotify (Slipknot) e álbum a partir da Busca falhava com "Serviço temporariamente limitado" apesar de a busca por artista e música funcionar.
+
+Causa no código: `searchArtistReleasesPage` e `searchAlbumTracksPage` consultavam diretamente `/v1/artists/{id}/albums` e `/v1/albums/{id}/tracks` com token web. Essas rotas não compartilhavam o caminho Partner-first da Busca e podiam receber HTTP 429. Outros usos REST da Home e fotos de artista tinham exposição semelhante.
+
+Correção implementada neste PR (homologação em aparelho ainda necessária):
+- Discografia pelo **Spotify ID real** do artista via operação Partner `queryArtistDiscographyAll`, com parsing estrito de lançamentos/edições/continuação; álbum via `getAlbum` e faixas `tracksV2`, com identidades Spotify.
+- Consulta REST apenas como alternativa, preferindo token público de metadados quando disponível. Todas as chamadas REST de detalhe compartilham um cooldown para 429/Retry-After e não repetem requisições durante o bloqueio. Falhas de schema não viram coleção vazia falsa.
+- Cancelar chamadas obsoletas ao entrar/sair de detalhe, impedir duplicação por duplo toque/scroll; preservar histórico, fonte selecionada, player e IDs.
+- Falha real de serviço expõe link "Abrir no Spotify" para o ID do item; não converte para catálogo YouTube e não inventa disco ou faixa.
+- Home, lançamentos recentes e fotos de artista passam a consultar primeiro o catálogo Partner. Foto exige correspondência inequívoca de nome/ID e URL de imagem Spotify.
+- Testes de roteamento Partner versus REST 429, parser de variantes/comemorativos/faixas, paginação, fallback, cooldown, foto e Home. CI e teste no Redmi são obrigatórios antes do merge e da homologação; hashes Partner rotativos não garantem disponibilidade contínua.
+
 ## 1. Registro da preparação
 
 O checkout auditado estava em `codex/search-checkpoint-0`, no commit `0ded5dbad41c967f603fe80f5cb14c4986718cff`. Na auditoria, `nonstop`, o merge-base e o HEAD apontavam para o mesmo commit; o remoto também declarava `nonstop` como branch padrão. A branch de trabalho não substitui a regra canônica: os futuros branches/worktrees devem nascer da `nonstop` atualizada e os PRs devem ter base `nonstop`.
