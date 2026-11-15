@@ -124,4 +124,58 @@ class SpotifyPartnerDetailsRoutingTest {
         }
         assertEquals(1, restCalls.get())
     }
+    @Test fun `artist photo uses exact Partner identity without REST 429`() = runBlocking {
+        val restCalls = AtomicInteger()
+        val partner = """
+            {"data":{"artistUnion":{
+                "uri":"spotify:artist:CCCCCCCCCCCCCCCCCCCCCC",
+                "profile":{"name":"Slipknot"},
+                "visuals":{"avatarImage":{"sources":[
+                  {"url":"https://i.scdn.co/image/verified","width":640,"height":640}
+                ]}}
+            }}}
+        """.trimIndent()
+        val http = OkHttpClient.Builder().addInterceptor { chain ->
+            val req = chain.request()
+            if (req.url.host == "api-partner.spotify.com") response(req, 200, partner)
+            else {
+                restCalls.incrementAndGet()
+                response(req, 429, "{}", "86400")
+            }
+        }.build()
+        val photo = SpotifyApiClient(http, user, auth)
+            .getArtistPhotoById("CCCCCCCCCCCCCCCCCCCCCC", "Slipknot")
+        assertEquals("https://i.scdn.co/image/verified", photo?.imageUrl)
+        assertEquals(0, restCalls.get())
+    }
+
+    @Test fun `Home recent albums come from Partner without querying REST`() = runBlocking {
+        val restCalls = AtomicInteger()
+        val partner = """
+            {"data":{"search":{
+              "tracks":{"items":[]},
+              "artists":{"items":[]},
+              "albums":{"items":[{"album":{
+                "uri":"spotify:album:AAAAAAAAAAAAAAAAAAAAAA",
+                "name":"Test New Album",
+                "artists":{"items":[{"profile":{"name":"Slipknot"}}]},
+                "date":{"isoString":"2026-11-12T00:00:00Z"}
+              }}]}
+            }}}
+        """.trimIndent()
+        val http = OkHttpClient.Builder().addInterceptor { chain ->
+            val req = chain.request()
+            if (req.url.host == "api-partner.spotify.com") response(req, 200, partner)
+            else {
+                restCalls.incrementAndGet()
+                response(req, 429, "{}", "86400")
+            }
+        }.build()
+        val albums = SpotifyApiClient(http, user, auth)
+            .searchRecentArtistAlbums("Slipknot", "2026-11-01")
+        assertEquals(1, albums.size)
+        assertEquals("Test New Album", albums.single().title)
+        assertEquals(0, restCalls.get())
+    }
+
 }
