@@ -313,6 +313,33 @@ class SonoraSearchViewModel @Inject constructor(
         loadSpotifyBrowse()
     }
 
+    /**
+     * Artist hero's Play action uses an actual Spotify release and its first
+     * track; it never treats a Spotify artist/album ID as a YouTube video ID.
+     * This does not silently select a random similarly named artist.
+     */
+    fun playSpotifyArtist() {
+        val frame = _browse.value.lastOrNull() ?: return
+        if (frame.entry.type != SearchResultType.ARTIST) return
+        val release = frame.items.firstOrNull { it.type == SearchResultType.ALBUM }
+        if (release == null) {
+            viewModelScope.launch { _messages.emit("Nenhum lançamento disponível para reproduzir.") }
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val firstTrack = sources.browseSpotify(release).items
+                    .firstOrNull { it.type == SearchResultType.TRACK }
+                if (firstTrack != null) onAction(firstTrack, SearchResultAction.PLAY)
+                else _messages.emit("Nenhuma faixa disponível neste lançamento.")
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (error: Exception) {
+                _messages.emit(describe(CatalogSource.SPOTIFY, error))
+            }
+        }
+    }
+
     fun closeSpotifyBrowse() {
         browseRequest?.cancel()
         if (_browse.value.isNotEmpty()) _browse.value = _browse.value.dropLast(1)
