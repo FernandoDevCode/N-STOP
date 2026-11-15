@@ -968,6 +968,41 @@ class SpotifyApiClient @Inject constructor(
      */
     suspend fun searchArtistPhoto(name: String): SpotifyArtistPhoto? = withContext(Dispatchers.IO) {
         if (name.isBlank()) return@withContext null
+        // Use the working Partner search first. REST /v1/search frequently
+        // returns 429 and must not hide an available official artist image.
+        try {
+            val variables = buildJsonObject {
+                put("searchTerm", name.trim())
+                put("offset", 0)
+                put("limit", 10)
+                put("numberOfTopResults", 5)
+                put("includeAudiobooks", false)
+                put("includePreReleases", false)
+            }.toString()
+            val partner = executeGraphQL(
+                operationName = "searchDesktop",
+                variables = variables,
+                seedHash = SpotifyAuthConfig.HASH_SEARCH_DESKTOP,
+            )
+            val options = partner?.let { parseSpotifyPartnerSearchPage(it, 0, 10) }
+                ?.items.orEmpty()
+                .filter { it.kind == SpotifyCatalogKind.ARTIST &&
+                    it.title.trim().equals(name.trim(), ignoreCase = true) &&
+                    it.id.matches(Regex("[A-Za-z0-9]{22}")) &&
+                    it.artworkUrl?.startsWith("https://i.scdn.co/image/") == true }
+                .distinctBy { it.id }
+            if (options.size == 1) {
+                return@withContext SpotifyArtistPhoto(
+                    options.single().artworkUrl!!,
+                    "https://open.spotify.com/artist/${options.single().id}",
+                )
+            }
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (error: Exception) {
+            Log.w(TAG, "Partner artist photo unavailable: ${error.javaClass.simpleName}")
+        }
+        if (catalogRestCooldownUntilMs > System.currentTimeMillis()) return@withContext null
         // Public client credentials are a best-effort alternative when Spotify
         // is not connected. The API may refuse /search with 429; in that case
         // caller falls back to the unique MusicBrainz -> official-ID route.
