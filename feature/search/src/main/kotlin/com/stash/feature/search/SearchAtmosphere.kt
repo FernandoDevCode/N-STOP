@@ -1,15 +1,11 @@
 package com.stash.feature.search
 
-import android.content.Context
-import android.os.PowerManager
 import android.provider.Settings
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -18,59 +14,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PointMode
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
-import coil3.SingletonImageLoader
-import coil3.request.ImageRequest
-import coil3.request.SuccessResult
-import coil3.request.allowHardware
-import coil3.size.Size
-import coil3.toBitmap
-import com.stash.core.ui.ambient.AmbientPalette
-import com.stash.core.ui.ambient.ambientPaletteFromBitmap
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlin.random.Random
 
-private val SONORA_BLUE = Color(0xFF19475B)
-
-/** Keep the default blue/graphite; photo hue is intentionally limited. */
-internal fun searchAtmosphereTint(artist: Color?): Color =
-    if (artist == null) SONORA_BLUE else lerp(SONORA_BLUE, artist, 0.38f)
-
-/** Sample the actual selected top artist photograph, not a song/album cover. */
-@Composable
-internal fun rememberSearchArtistTint(photoUrl: String?): Color? {
-    val context = LocalContext.current
-    val tint by produceState<Color?>(initialValue = null, key1 = photoUrl) {
-        if (photoUrl.isNullOrBlank()) return@produceState
-        try {
-            val loaded = withContext(Dispatchers.IO) {
-                SingletonImageLoader.get(context).execute(
-                    ImageRequest.Builder(context)
-                        .data(photoUrl)
-                        .size(Size(112, 112))
-                        .allowHardware(false)
-                        .build(),
-                )
-            }
-            if (loaded is SuccessResult) {
-                val palette = withContext(Dispatchers.Default) {
-                    ambientPaletteFromBitmap(loaded.image.toBitmap(), "search:" + photoUrl)
-                }
-                // The shared palette's fallback is purple; Search's is always blue.
-                value = palette.vib.takeUnless { palette.key == AmbientPalette.Default.key }
-            }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            // Offline or unreadable images simply use Sonora's default.
-        }
-    }
-    return tint
-}
+/** Approved fixed blue graphite, independent of search result photography. */
+internal val SONORA_SEARCH_BLUE = Color(0xFF19475B)
 
 /**
  * An endless seeded path, not a repeating easing loop. Each knot is a new
@@ -103,6 +53,14 @@ private fun smoothWander(seconds: Float, segmentSeconds: Float, seed: Int): Floa
     )
 }
 
+/**
+ * A portrait phone is taller than it is wide. v212 used screen height for
+ * radii, blurring all three fields across almost the whole screen.
+ * Width-relative radii reveal the flow without bright spots.
+ */
+internal fun searchHazeRadius(viewportWidthPx: Float, drift: SearchDrift): Float =
+    viewportWidthPx * (0.72f + drift.radius * 0.45f)
+
 internal fun searchDriftAt(seconds: Float): List<SearchDrift> =
     listOf(
         SearchDrift(
@@ -123,16 +81,15 @@ internal fun searchDriftAt(seconds: Float): List<SearchDrift> =
     )
 
 @Composable
-internal fun SonoraSearchAtmosphere(tint: Color, modifier: Modifier = Modifier) {
+fun SonoraSearchAtmosphere(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val reduceMotion = remember(context) {
-        val power = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
         val animationScale = runCatching {
             Settings.Global.getFloat(
                 context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f,
             )
         }.getOrDefault(1f)
-        animationScale == 0f || power?.isPowerSaveMode == true
+        animationScale == 0f
     }
     var seconds by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(reduceMotion) {
@@ -165,17 +122,17 @@ internal fun SonoraSearchAtmosphere(tint: Color, modifier: Modifier = Modifier) 
             ),
         )
         val drift = searchDriftAt(seconds)
-        val strength = listOf(.25f, .14f, .11f)
+        val strength = listOf(.38f, .28f, .23f)
         drift.forEachIndexed { index, v ->
             drawRect(
                 brush = Brush.radialGradient(
                     listOf(
-                        tint.copy(alpha = strength[index]),
-                        tint.copy(alpha = strength[index] * .34f),
+                        SONORA_SEARCH_BLUE.copy(alpha = strength[index]),
+                        SONORA_SEARCH_BLUE.copy(alpha = strength[index] * .28f),
                         Color.Transparent,
                     ),
                     center = Offset(w * v.x, h * v.y),
-                    radius = maxOf(w, h) * v.radius,
+                    radius = searchHazeRadius(w, v),
                 ),
             )
         }

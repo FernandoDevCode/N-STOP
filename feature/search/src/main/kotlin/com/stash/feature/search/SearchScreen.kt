@@ -1,8 +1,6 @@
 package com.stash.feature.search
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -134,21 +132,6 @@ fun SearchScreen(
     val selectedArtistPhotos by viewModel.artistPhotos.collectAsStateWithLifecycle()
     val currentPlayingYoutubeId by viewModel.currentPlayingYoutubeId.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
-    // Use the same top artist photograph as the existing card, not song art.
-    val primaryArtist = (state.status as? SearchStatus.Results)
-        ?.sections?.filterIsInstance<SearchResultSection.Top>()
-        ?.firstOrNull()?.item as? TopResultItem.ArtistTop
-    val featuredPhoto = primaryArtist?.artist?.let { artist ->
-        selectedArtistPhotoUrl(artist.id, artist.avatarUrl, selectedArtistPhotos)
-    }
-    val artistColor = rememberSearchArtistTint(featuredPhoto)
-    val atmosphereTint by animateColorAsState(
-        targetValue = searchAtmosphereTint(artistColor),
-        animationSpec = tween(durationMillis = 1400),
-        label = "sonora-search-artist-tint",
-    )
-    val showAtmosphere = LocalVisualDark.current && !LocalVisualAmoled.current
-
     LaunchedEffect(viewModel) {
         merge(
             viewModel.userMessages,
@@ -162,15 +145,8 @@ fun SearchScreen(
         snackbarHost = { SnackbarHost(snackbarHostState, Modifier.padding(bottom = bottomChromePadding())) },
         containerColor = Color.Transparent,
     ) { inner ->
-        Box(Modifier.fillMaxSize()) {
-            if (showAtmosphere) {
-                SonoraSearchAtmosphere(tint = atmosphereTint, modifier = Modifier.fillMaxSize())
-            }
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(inner)
-                ,
+            modifier = Modifier.fillMaxSize().padding(inner),
         ) {
             // This is a primary tab, not a settings entry point. A single
             // clear title keeps the search field visible above the fold.
@@ -203,7 +179,6 @@ fun SearchScreen(
                 is SearchStatus.Results -> SectionedResultsList(
                     sections = status.sections,
                     selectedArtistPhotos = selectedArtistPhotos,
-                    artistTint = atmosphereTint,
                     downloadingIds = downloadingIds,
                     downloadedIds = downloadedIds,
                     waitingForLosslessIds = waitingForLosslessIds,
@@ -244,7 +219,6 @@ fun SearchScreen(
                 onCreatePlaylist = viewModel::onCreatePlaylistAndAdd,
                 onDismiss = viewModel::onDismissPlaylistSheet,
             )
-        }
         }
     }
 }
@@ -424,7 +398,6 @@ private fun RecentSearchThumb(entry: RecentSearch, photoUrl: String?) {
 private fun SectionedResultsList(
     sections: List<SearchResultSection>,
     selectedArtistPhotos: Map<String, SelectedArtistPhoto>,
-    artistTint: Color,
     downloadingIds: Set<String>,
     downloadedIds: Set<String>,
     waitingForLosslessIds: Set<String>,
@@ -508,7 +481,6 @@ private fun SectionedResultsList(
                             artistPhotoUrl = selectedArtistPhotoUrl(
                                 top.artist.id, top.artist.avatarUrl, selectedArtistPhotos,
                             ),
-                            artistTint = artistTint,
                         )
                     }
                 }
@@ -610,7 +582,6 @@ internal fun selectedArtistPhotoUrl(
 private fun TopResultCard(
     item: TopResultItem.ArtistTop,
     artistPhotoUrl: String?,
-    artistTint: Color,
     onArtistClick: (ArtistSummary) -> Unit,
 ) {
     // A featured artist is an identity/navigational result, never a track
@@ -618,7 +589,7 @@ private fun TopResultCard(
     val contextualGlass = LocalVisualDark.current && !LocalVisualAmoled.current
     val cardFill = if (contextualGlass) {
         Brush.horizontalGradient(
-            listOf(Color(0xFF202833), lerp(Color(0xFF1B242D), artistTint, 0.26f)),
+            listOf(Color(0xFF202833), lerp(Color(0xFF1B242D), SONORA_SEARCH_BLUE, 0.26f)),
         )
     } else {
         // Restore the exact v208 card treatment in light and AMOLED themes.
@@ -636,7 +607,7 @@ private fun TopResultCard(
                     // Static tinted glass distinct from the moving atmosphere.
                     drawRect(
                         Brush.radialGradient(
-                            colors = listOf(artistTint.copy(alpha = 0.16f), Color.Transparent),
+                            colors = listOf(SONORA_SEARCH_BLUE.copy(alpha = 0.16f), Color.Transparent),
                             center = androidx.compose.ui.geometry.Offset(
                                 size.width * 0.80f, size.height * 0.30f,
                             ),
