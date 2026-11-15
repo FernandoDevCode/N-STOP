@@ -133,6 +133,8 @@ class LiveSearchSources @Inject constructor(
                 isExplicit = item.explicit,
                 providerRank = rank,
                 rankingScore = ordinalScore(rank),
+                releaseKind = item.releaseGroup,
+                releaseDate = item.releaseDate,
                 supportedActions = if (kind == SearchResultType.TRACK)
                     setOf(SearchResultAction.PLAY)
                     else setOf(SearchResultAction.NAVIGATE),
