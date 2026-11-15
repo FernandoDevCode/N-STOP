@@ -86,20 +86,6 @@ object SpotifyAuthConfig {
      */
     const val HASH_SEARCH_DESKTOP = "75bbf6bfcfdf85b8fc828417bfad92b7cd66bf7f556d85670f4da8292373ebec"
 
-    // Partner API seed hashes verified against an observed Spotify Web Player
-    // request inventory published 2026-11-12 (Orpheon/docs/api/SESSION.md).
-    // The existing persisted-query refresh path is still used when Spotify
-    // rotates a seed. Artist-discography hashes may live in page-specific
-    // bundles not downloaded by the generic scraper; use fresh seeds here.
-    const val HASH_ARTIST_DISCOGRAPHY_ALL =
-        "5e07d323febb57b4a56a42abbf781490e58764aa45feb6e3dc0591564fc56599"
-    const val HASH_GET_ALBUM =
-        "11c9cad9cb24c4f9e25ef9456f68621cfd6006a90f679e729c1d2f2fd70dfe16"
-
-    const val HASH_ARTIST_OVERVIEW =
-        "9f8134ef565e78621f1e1793555bd6633c5ac144ae0f89604ed3ae3f80b3c8e6"
-
-
     /**
      * Persisted query hash for the `addToLibrary` / `removeFromLibrary`
      * mutations — the heart button in the Spotify web player. One

@@ -68,31 +68,9 @@ internal fun ArtistFeaturedAlbum(
     artworkTint: Color?,
     onOpen: (AlbumSummary) -> Unit,
     modifier: Modifier = Modifier,
-) = ArtistFeaturedReleaseCard(
-    title = album.title,
-    thumbnailUrl = album.thumbnailUrl,
-    year = album.year,
-    trackCount = album.trackCount,
-    artworkTint = artworkTint,
-    onOpen = { onOpen(album) },
-    modifier = modifier,
-)
-
-/** Original Sonora feature card, shared by YTM and Spotify identities.
- * The primitive-only UI adapter never constructs a fake YouTube AlbumSummary.
- */
-@Composable
-internal fun ArtistFeaturedReleaseCard(
-    title: String,
-    thumbnailUrl: String?,
-    year: String?,
-    trackCount: Int?,
-    artworkTint: Color?,
-    onOpen: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
     Surface(
-        onClick = onOpen,
+        onClick = { onOpen(album) },
         modifier = modifier.fillMaxWidth(),
         color = artistFeaturedAlbumGlassFill(artworkTint),
         shape = RoundedCornerShape(22.dp),
@@ -108,10 +86,10 @@ internal fun ArtistFeaturedReleaseCard(
                     .background(Color(0xFF232831), RoundedCornerShape(8.dp)),
                 contentAlignment = Alignment.Center,
             ) {
-                if (thumbnailUrl != null) {
+                if (album.thumbnailUrl != null) {
                     AsyncImage(
-                        model = thumbnailUrl,
-                        contentDescription = "Capa de ${title}",
+                        model = album.thumbnailUrl,
+                        contentDescription = "Capa de ${album.title}",
                         modifier = Modifier.size(62.dp),
                         contentScale = ContentScale.Crop,
                     )
@@ -131,7 +109,7 @@ internal fun ArtistFeaturedReleaseCard(
                     maxLines = 1,
                 )
                 Text(
-                    text = title,
+                    text = album.title,
                     style = MaterialTheme.typography.titleSmall,
                     color = Color(0xFFF4F5F7),
                     maxLines = 2,
@@ -139,8 +117,8 @@ internal fun ArtistFeaturedReleaseCard(
                     lineHeight = MaterialTheme.typography.titleSmall.lineHeight,
                 )
                 val details = listOfNotNull(
-                    BrazilianDisplayFormat.releaseDate(year),
-                    trackCount?.takeIf { it > 0 }?.let { if (it == 1) "1 música" else "$it músicas" },
+                    BrazilianDisplayFormat.releaseDate(album.year),
+                    album.trackCount?.takeIf { it > 0 }?.let { if (it == 1) "1 música" else "$it músicas" },
                 ).joinToString(" • ")
                 if (details.isNotBlank()) {
                     Text(
@@ -160,7 +138,7 @@ internal fun ArtistFeaturedReleaseCard(
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         Icons.Default.ChevronRight,
-                        contentDescription = "Abrir álbum ${title}",
+                        contentDescription = "Abrir álbum ${album.title}",
                         tint = Color.White,
                         modifier = Modifier.size(21.dp),
                     )

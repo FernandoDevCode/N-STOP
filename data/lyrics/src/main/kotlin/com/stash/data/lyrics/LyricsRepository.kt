@@ -436,25 +436,16 @@ class LyricsRepository @Inject constructor(
             if (!fresh) remembered(key)?.let { return WalkOutcome(it.result, it.appleCleanMiss, it.degraded) }
             inFlight[flightKey] ?: run {
                 val startedIn = generation
-                walkScope.async(start = CoroutineStart.LAZY) {
-                    val answer = walkSourcesNotingApple(query)
-                    // Publish the completed result BEFORE the deferred completes.
-                    // invokeOnCompletion callbacks can run after await() resumes;
-                    // the previous implementation occasionally returned a result
-                    // while cached(query) was still null (CI LyricsRepositoryCacheTest).
-                    synchronized(walkLock) {
-                        if (startedIn == generation) {
-                            recent[key] = CachedLyrics(
-                                answer.result, answer.appleCleanMiss, answer.degraded, clock.now()
-                            )
-                        }
-                    }
-                    answer
-                }.also { deferred ->
+                walkScope.async(start = CoroutineStart.LAZY) { walkSourcesNotingApple(query) }.also { deferred ->
+                    // Registered before the walk starts, so even an instant answer is filed correctly.
                     inFlight[flightKey] = deferred
-                    deferred.invokeOnCompletion {
+                    deferred.invokeOnCompletion { failure ->
                         synchronized(walkLock) {
                             if (inFlight[flightKey] === deferred) inFlight.remove(flightKey)
+                            if (failure == null && startedIn == generation) {
+                                val o = deferred.getCompleted()
+                                recent[key] = CachedLyrics(o.result, o.appleCleanMiss, o.degraded, clock.now())
+                            }
                         }
                     }
                 }
