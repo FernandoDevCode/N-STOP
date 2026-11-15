@@ -86,17 +86,18 @@ object SpotifyAuthConfig {
      */
     const val HASH_SEARCH_DESKTOP = "75bbf6bfcfdf85b8fc828417bfad92b7cd66bf7f556d85670f4da8292373ebec"
 
-    // Legacy Partner API seed hashes. Both are automatically re-scraped when
-    // Spotify rotates the web-player persisted queries, like searchDesktop.
-    // Album hash from a public Partner API implementation (2026); discography
-    // from published Spicetify client metadata (2024).
+    // Partner API seed hashes verified against an observed Spotify Web Player
+    // request inventory published 2026-11-12 (Orpheon/docs/api/SESSION.md).
+    // The existing persisted-query refresh path is still used when Spotify
+    // rotates a seed. Artist-discography hashes may live in page-specific
+    // bundles not downloaded by the generic scraper; use fresh seeds here.
     const val HASH_ARTIST_DISCOGRAPHY_ALL =
-        "9380995a9d4663cbcb5113fef3c6aabf70ae6d407ba61793fd01e2a1dd6929b0"
+        "5e07d323febb57b4a56a42abbf781490e58764aa45feb6e3dc0591564fc56599"
     const val HASH_GET_ALBUM =
-        "b9bfabef66ed756e5e13f68a942deb60bd4125ec1f1be8cc42769dc0259b4b10"
+        "11c9cad9cb24c4f9e25ef9456f68621cfd6006a90f679e729c1d2f2fd70dfe16"
 
     const val HASH_ARTIST_OVERVIEW =
-        "35648a112beb1794e39ab931365f6ae4a8d45e65396d641eeda94e4003d41497"
+        "9f8134ef565e78621f1e1793555bd6633c5ac144ae0f89604ed3ae3f80b3c8e6"
 
 
     /**
