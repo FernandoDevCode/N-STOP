@@ -110,7 +110,15 @@ fun StashScaffold(
     // statusBarsPadding; do not inset the entire screen above the artwork.
     val onArtistProfile = navBackStackEntry?.destination?.hasRoute<SearchArtistRoute>() == true
     val onOnlineAlbum = navBackStackEntry?.destination?.hasRoute<SearchAlbumRoute>() == true
-    val fullBleedTop = onMusicNowPlaying || onArtistProfile || onOnlineAlbum
+    // These library detail pages already keep their back controls below the
+    // status bar. Let their cover/gradient heroes continue into that region.
+    val onLibraryHero = navBackStackEntry?.destination?.let { destination ->
+        destination.hasRoute<AlbumDetailRoute>() ||
+            destination.hasRoute<PlaylistDetailRoute>() ||
+            destination.hasRoute<ArtistDetailRoute>() ||
+            destination.hasRoute<LikedSongsDetailRoute>()
+    } == true
+    val fullBleedTop = onMusicNowPlaying || onArtistProfile || onOnlineAlbum || onLibraryHero
     val onNowPlaying = onMusicNowPlaying ||
         currentRoute == PodcastNowPlayingRoute::class.qualifiedName
     val onSearchTab = navBackStackEntry?.destination?.hasRoute<SearchRoute>() == true
