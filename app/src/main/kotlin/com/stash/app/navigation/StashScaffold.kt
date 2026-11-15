@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
@@ -108,6 +109,16 @@ fun StashScaffold(
     // The artist hero is edge-to-edge too. Its own controls already apply
     // statusBarsPadding; do not inset the entire screen above the artwork.
     val onArtistProfile = navBackStackEntry?.destination?.hasRoute<SearchArtistRoute>() == true
+    val onOnlineAlbum = navBackStackEntry?.destination?.hasRoute<SearchAlbumRoute>() == true
+    // These library detail pages already keep their back controls below the
+    // status bar. Let their cover/gradient heroes continue into that region.
+    val onLibraryHero = navBackStackEntry?.destination?.let { destination ->
+        destination.hasRoute<AlbumDetailRoute>() ||
+            destination.hasRoute<PlaylistDetailRoute>() ||
+            destination.hasRoute<ArtistDetailRoute>() ||
+            destination.hasRoute<LikedSongsDetailRoute>()
+    } == true
+    val fullBleedTop = onMusicNowPlaying || onArtistProfile || onOnlineAlbum || onLibraryHero
     val onNowPlaying = onMusicNowPlaying ||
         currentRoute == PodcastNowPlayingRoute::class.qualifiedName
     val onSearchTab = navBackStackEntry?.destination?.hasRoute<SearchRoute>() == true
@@ -259,12 +270,12 @@ fun StashScaffold(
         // Search consumes its own IME insets, keeping the global NavHost/chrome stable.
         modifier = if (onSearchTab) Modifier else Modifier.imePadding(),
         containerColor = Color.Transparent,
-        // Use Scaffold's default safe-drawing insets so screens automatically
-        // avoid the status bar (top) and gesture / 3-button nav (bottom).
-        // The previous `WindowInsets(0.dp)` override was leaking content under
-        // the system status bar — Pixel 6 Pro and similar devices on Android
-        // 15+ where edge-to-edge is enforced. Reported via Twitter
-        // (https://x.com/tekno_deha1/status/...).
+        // The window is edge-to-edge. Reserve horizontal/bottom safe areas here,
+        // but never shift the entire background/artwork below the status bar.
+        // Screens without a full-bleed hero receive the safe top inset below.
+        contentWindowInsets = WindowInsets.safeDrawing.only(
+            WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom,
+        ),
         bottomBar = {
             // While a screen is selecting, render no bottom chrome at all — the
             // screen's own selection action bar (which handles its own nav insets)
@@ -342,19 +353,25 @@ fun StashScaffold(
         // player and tab bar float over it and blur it. Screens pad their scrolling content
         // by LocalBottomChromeInset (the bottom chrome's height, system bar included) so the
         // last row scrolls clear; a screen that doesn't scroll is padded by its destination
-        // in StashNavHost. Now Playing's ambient runs under the (gesture or 3-button) system
-        // bar and the screen pads its own controls above it. The status bar inset stays.
-        // While a screen is selecting there's no glass to draw under: it keeps the system
-        // bar inset as padding, so its own selection bar sits above the system bar as before.
+        // in StashNavHost. Full-bleed artist/album/player imagery starts at y=0;
+        // ordinary screens still keep their controls below the system icons.
         val layoutDirection = LocalLayoutDirection.current
         val bottomChrome = innerPadding.calculateBottomPadding()
+        val safeTop = WindowInsets.safeDrawing.asPaddingValues().calculateTopPadding()
         val contentPadding = PaddingValues(
             start = innerPadding.calculateStartPadding(layoutDirection),
-            // The music player draws artwork under the system clock and pads its
-            // controls with statusBarsPadding(). Podcast controls keep their inset.
-            top = if (onMusicNowPlaying || onArtistProfile) 0.dp else innerPadding.calculateTopPadding(),
+            top = if (fullBleedTop) 0.dp else safeTop,
             end = innerPadding.calculateEndPadding(layoutDirection),
             bottom = if (selectionActive) bottomChrome else 0.dp,
+        )
+        // Consume only the padding actually owned by the host. Full-bleed
+        // screens must still see statusBarsPadding() for their floating buttons.
+        // Other screens must NOT get a duplicate top inset from child modifiers.
+        val consumedPadding = PaddingValues(
+            start = contentPadding.calculateStartPadding(layoutDirection),
+            top = contentPadding.calculateTopPadding(),
+            end = contentPadding.calculateEndPadding(layoutDirection),
+            bottom = if (fullBleedTop) contentPadding.calculateBottomPadding() else bottomChrome,
         )
         CompositionLocalProvider(LocalBottomChromeInset provides if (selectionActive) 0.dp else bottomChrome) {
         StashNavHost(
@@ -362,9 +379,9 @@ fun StashScaffold(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(contentPadding)
-                // Off Now Playing the bottom chrome owns the system bar inset, so screens'
-                // own Scaffolds don't pad it again; Now Playing still reads it.
-                .consumeWindowInsets(if (onNowPlaying || onArtistProfile) contentPadding else innerPadding)
+                // The host consumes its own safe padding; artwork screens retain
+                // the unconsumed top inset for their overlaid actions.
+                .consumeWindowInsets(consumedPadding)
                 .hazeSource(hazeState),
             onSelectionModeChanged = { selectionActive = it },
             onNavigateToTab = ::navigateToTab,

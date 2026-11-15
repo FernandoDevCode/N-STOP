@@ -211,12 +211,17 @@ class MainActivity : ComponentActivity() {
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
         window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)
         window.statusBarColor = android.graphics.Color.TRANSPARENT
-        // Some OEMs letterbox the full status-bar band around the punch-hole
-        // unless the activity explicitly opts into drawing behind the cutout.
+        // The artwork must reach behind the status bar AND camera cutout.
+        // SHORT_EDGES is insufficient on some OEMs when bars are visible.
+        // ALWAYS is available on API 30+; keep the older fallback on API 28–29.
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
             val attrs = window.attributes
             attrs.layoutInDisplayCutoutMode =
-                android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                    android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                } else {
+                    android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                }
             window.attributes = attrs
         }
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
