@@ -1,6 +1,8 @@
 package com.stash.feature.search
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -140,7 +142,11 @@ fun SearchScreen(
         selectedArtistPhotoUrl(artist.id, artist.avatarUrl, selectedArtistPhotos)
     }
     val artistColor = rememberSearchArtistTint(featuredPhoto)
-    val atmosphereTint = searchAtmosphereTint(artistColor)
+    val atmosphereTint by animateColorAsState(
+        targetValue = searchAtmosphereTint(artistColor),
+        animationSpec = tween(durationMillis = 1400),
+        label = "sonora-search-artist-tint",
+    )
     val showAtmosphere = LocalVisualDark.current && !LocalVisualAmoled.current
 
     LaunchedEffect(viewModel) {
