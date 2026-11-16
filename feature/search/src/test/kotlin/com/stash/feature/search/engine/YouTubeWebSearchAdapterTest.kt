@@ -6,7 +6,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class YouTubeWebSearchAdapterTest {
-    @Test fun preservesSelectedVersionsAndOrdinalPositionWithoutActions() {
+    @Test fun preservesSelectedVersionsAndOrdinalPositionWithExactPlayback() {
         listOf("JOvAJJI2Ui8" to "Demo", "JQ2pTamaqQ4" to "Live", "MoL0u4fxUW4" to "Cover").forEachIndexed { index, (id, title) ->
             val result = YouTubeWebVideo(id, title, "Channel", "https://img/art", 1234L, index + 5).toUniversalSearchResult()
             assertEquals(CatalogIdentity(CatalogSource.YOUTUBE, id), result.identity)
@@ -16,8 +16,14 @@ class YouTubeWebSearchAdapterTest {
             assertEquals(1.0 / (index + 6.0), result.rankingScore, 0.0)
             assertEquals("Channel", result.subtitle)
             assertEquals(1234L, result.durationMs)
-            assertTrue(result.supportedActions.isEmpty())
-            assertNull(result.audioIdentity)
+            assertEquals(setOf(SearchResultAction.PLAY), result.supportedActions)
+            assertEquals(AudioIdentity("youtube", id), result.audioIdentity)
         }
+    }
+
+    @Test fun invalidVideoIdDoesNotOfferPlayback() {
+        val result = YouTubeWebVideo("bad-id", "Title", "Channel", null, null, 0).toUniversalSearchResult()
+        assertTrue(result.supportedActions.isEmpty())
+        assertNull(result.audioIdentity)
     }
 }

@@ -582,3 +582,11 @@ Testes locais usam fixture JSON e MockWebServer para metadados, campos ausentes,
 
 Validação: `:data:ytmusic:testDebugUnitTest`, `:feature:search:testDebugUnitTest`, `:data:ytmusic:compileDebugKotlin` e `:feature:search:compileDebugKotlin` concluíram com `BUILD SUCCESSFUL`. Os cinco testes novos do cliente passaram. Esta implementação foi validada com rede local simulada; a evidência de rede externa continua sendo o spike acima. Limitações: a configuração WEB é descoberta a cada página (uma requisição adicional), o timeout é por chamada HTTP e a continuidade da consulta/offset é responsabilidade do chamador. Memória, latência e reprodução em Android permanecem sem validação nesta etapa.
 
+
+## Checkpoint de reprodução exata na Busca universal
+
+Esta etapa sucede as decisões históricas de somente navegação. Resultados `TRACK` e `VIDEO` do YouTube Music e `VIDEO` do YouTube WEB oferecem `PLAY` quando o catálogo fornece um `videoId` válido. O filtro visual Spotify continua consultando o YouTube Music. A identidade de catálogo e `AudioIdentity("youtube", videoId)` mantêm o identificador original, inclusive em lives, demos, remixes e covers.
+
+O toque chama `PlayerRepository.playExactSearchResult`. A persistência usa somente o identificador YouTube, confirma a linha retornada e encaminha o ID ao resolvedor YouTube existente. O cache de URLs por ID de biblioteca é ignorado para esse fluxo, inclusive na renovação da URL durante a reprodução. Se a linha mudar de identidade ou o vídeo selecionado estiver indisponível, o fluxo falha sem procurar outra gravação. O item mantém o ID persistido para o mini-player e a fila de um item. A última solicitação da Busca prevalece e os toques repetidos durante a preparação são ignorados.
+
+A precisão se aplica ao toque na Busca e às renovações do item que permanece carregado. O estado persistido de retomada após encerramento do processo guarda apenas o ID de biblioteca e reconstitui o item pelas regras gerais da biblioteca. Estender a garantia de identidade à retomada fria exigiria persistir o modo de resolução junto à fila e propagá-lo pelas entradas de retomada, inclusive comandos de mídia do sistema.

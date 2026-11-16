@@ -298,4 +298,7 @@ interface PlayerRepository {
      * the Search ViewModel can render the same set of snackbars.
      */
     suspend fun playFromStream(item: TrackItem): StreamRoutingResult
+
+    /** Plays only the original YouTube video ID of a universal Search result. */
+    suspend fun playExactSearchResult(item: TrackItem): StreamRoutingResult
 }

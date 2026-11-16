@@ -110,7 +110,9 @@ class StashMediaSourceFactory(
      */
     fun dataSourceFactoryFor(mediaItem: MediaItem): DataSource.Factory {
         if (mediaItem.localConfiguration?.uri?.scheme == STASH_RESOLVE_SCHEME) return lazyDataSourceFactory
-        streamingTrackId(mediaItem)?.let { return streamingFactory.createUncachedDataSourceFactory(it) }
+        streamingTrackId(mediaItem)?.let {
+            return streamingFactory.createUncachedDataSourceFactory(it, mediaItem.exactYouTubeId())
+        }
         if (isJioSaavnOrigin(mediaItem)) return jioSaavnDataSourceFactory
         return localDataSourceFactory
     }
@@ -125,11 +127,14 @@ class StashMediaSourceFactory(
         // Order matches existing precedence: YouTube-trackId refresh chain first,
         // then JioSaavn authed-HTTP, then local/default.
         streamingTrackId(mediaItem)?.let { trackId ->
-            return streamingFactory.create(trackId).createMediaSource(mediaItem)
+            return streamingFactory.create(trackId, mediaItem.exactYouTubeId()).createMediaSource(mediaItem)
         }
         if (isJioSaavnOrigin(mediaItem)) {
             return jioSaavnFactory.createMediaSource(mediaItem)
         }
         return localFactory.createMediaSource(mediaItem)
     }
+
+    private fun MediaItem.exactYouTubeId(): String? =
+        mediaMetadata.extras?.getString(StreamingMediaSourceFactory.EXTRA_EXACT_YOUTUBE_ID)
 }

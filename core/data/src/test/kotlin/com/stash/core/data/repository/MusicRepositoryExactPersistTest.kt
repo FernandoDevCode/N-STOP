@@ -90,6 +90,24 @@ class MusicRepositoryExactPersistTest {
         assertThat(inserted.captured.canonicalArtist).isEqualTo("aphex twin")
     }
 
+    @Test fun `a YouTube-only search result inserts its own row when the same title belongs to another ID`() = runTest {
+        val selected = SharedTrack("Avril 14th", "Aphex Twin", youtubeId = "ABCDEFGHIJK")
+        val other = row(7).copy(youtubeId = "ABCDEFGHIJL")
+        coEvery { trackDao.findByYoutubeId(selected.youtubeId!!) } returns null
+        coEvery { trackDao.findByCanonicalIdentity(any(), any()) } returns other
+        val inserted = slot<TrackEntity>()
+        coEvery { trackDao.insert(capture(inserted)) } returns 44
+
+        assertThat(repo().ensureExactTrackPersisted(selected)).isEqualTo(44)
+
+        assertThat(inserted.captured.youtubeId).isEqualTo(selected.youtubeId)
+        assertThat(inserted.captured.spotifyUri).isNull()
+        assertThat(inserted.captured.isrc).isNull()
+        coVerify(exactly = 0) { trackDao.findByCanonicalIdentity(any(), any()) }
+        coVerify(exactly = 0) { trackDao.findBySpotifyUri(any()) }
+        coVerify(exactly = 0) { trackDao.findByIsrc(any()) }
+    }
+
     @Test fun `blank ids are neither looked up nor stored`() = runTest {
         coEvery { trackDao.findByIsrc(any()) } returns null
         val inserted = slot<TrackEntity>()

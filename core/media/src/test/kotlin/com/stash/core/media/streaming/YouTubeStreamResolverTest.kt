@@ -18,6 +18,21 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class YouTubeStreamResolverTest {
 
+    @Test
+    fun `failed extraction of a valid video ID does not search for another recording`() = runTest {
+        val extractor: PreviewUrlExtractor = mockk()
+        val ytMusic: YTMusicApiClient = mockk()
+        val videoId = "ABCDEFGHIJK"
+        coEvery { extractor.extractStreamUrl(videoId, true, false) } throws java.io.IOException("Unavailable")
+        val resolver = YouTubeStreamResolver(extractor, ytMusic, policy())
+
+        org.junit.Assert.assertNull(resolver.resolve(trackWithYoutubeId(videoId)))
+
+        coVerify(exactly = 1) { extractor.extractStreamUrl(videoId, true, false) }
+        coVerify(exactly = 0) { ytMusic.searchCanonicalVideoId(any(), any()) }
+        coVerify(exactly = 0) { ytMusic.searchAll(any()) }
+    }
+
     /**
      * Regression: structural-concurrency bug — `runCatching` inside
      * `resolve()` used to catch `CancellationException` (a Throwable)

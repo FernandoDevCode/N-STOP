@@ -57,9 +57,10 @@ class UniversalSearchSessionFactory @Inject internal constructor(
         scope: CoroutineScope,
         onNavigate: (UniversalSearchResult) -> Unit,
         onOpenRecent: (RecentSearchItem) -> Unit,
+        onPlay: (UniversalSearchResult, String?) -> Unit,
     ): UniversalSearchSession = UniversalSearchSession(
         scope, providers, preferences.read(), preferences::save, history,
-        onNavigate, onOpenRecent, artwork = artwork::find,
+        onNavigate, onOpenRecent, artwork = artwork::find, play = onPlay,
     )
 }
 
@@ -78,6 +79,7 @@ class UniversalSearchSession internal constructor(
     private val debounceMs: Long = 300,
     private val timeoutMs: Long = 15_000,
     private val artwork: suspend (UniversalSearchResult) -> String? = { null },
+    private val play: (UniversalSearchResult, String?) -> Unit = { _, _ -> },
 ) : UniversalSearchActions {
     private val mutableState = MutableStateFlow(UniversalSearchEngine.aggregate("", initialSelection, emptyMap()))
     val state = mutableState.asStateFlow()
@@ -165,15 +167,18 @@ class UniversalSearchSession internal constructor(
     ) {
         val current = state.value
         if (!result.supports(action) || result !in current.orderedResults) return
-        if (action == SearchResultAction.NAVIGATE) {
-            val artworkUrl = displayedArtworkUrl?.takeIf {
-                result.type == SearchResultType.ALBUM && current.artworkOverrides[result.stableKey] == it
-            } ?: result.artworkUrl
+        val artworkUrl = displayedArtworkUrl?.takeIf {
+            current.artworkOverrides[result.stableKey] == it
+        } ?: result.artworkUrl
+        if (action == SearchResultAction.PLAY && result.exactPlaybackVideoId() != null) {
+            play(result, artworkUrl)
+        } else if (action == SearchResultAction.NAVIGATE) {
+            val routeArtwork = if (result.type == SearchResultType.ALBUM) artworkUrl else result.artworkUrl
             val item = resultHistoryItem(
-                result.title, result.subtitle, result.identity, result.type, artworkUrl,
+                result.title, result.subtitle, result.identity, result.type, routeArtwork,
             )
             writeHistory { record(item) }
-            navigate(result.copy(artworkUrl = artworkUrl))
+            navigate(result.copy(artworkUrl = routeArtwork))
         }
     }
 

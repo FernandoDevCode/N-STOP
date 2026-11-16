@@ -59,6 +59,7 @@ class RefreshingDataSourceFactoryTest {
     private fun newSource(
         trackId: Long = 42L,
         lastRefreshed: AtomicReference<String?> = AtomicReference(null),
+        exactYouTubeId: String? = null,
     ): RefreshingDataSource =
         RefreshingDataSource(
             inner = fakeInner,
@@ -67,6 +68,7 @@ class RefreshingDataSourceFactoryTest {
             trackId = trackId,
             trackDao = fakeTrackDao,
             lastRefreshed = lastRefreshed,
+            exactYouTubeId = exactYouTubeId,
         )
 
     private fun staleSpec(): DataSpec = DataSpec.Builder()
@@ -263,6 +265,36 @@ class RefreshingDataSourceFactoryTest {
         }
 
         assertThrows403 { newSource().open(youTubeSpec("stale-url", position = 500L)) }
+    }
+
+    @Test
+    fun exactSearchRefresh_usesPinnedIdAndSkipsTheSharedCache() {
+        val exactTrack = track.copy(youtubeId = "ABCDEFGHIJK")
+        coEvery { fakeTrackDao.getById(42L) } returns exactTrack
+        val spec = youTubeSpec("stale-url", position = 500L)
+        val fresh = youTubeSpec("exact-url", position = 500L).uri.toString()
+        val conflict = youTubeSpec("wrong-url", position = 500L).uri.toString()
+        every { fakeCache.get(42L) } returns StreamUrl(conflict, 60_000L, origin = "youtube")
+        coEvery { fakeResolver.resolveYouTubeRefresh(exactTrack) } returns StreamUrl(fresh, 60_000L, origin = "youtube")
+        val opens = mutableListOf<DataSpec>()
+        every { fakeInner.open(capture(opens)) } throws invalidResponseCodeException(403) andThen 123L
+
+        assertThat(newSource(exactYouTubeId = exactTrack.youtubeId).open(spec)).isEqualTo(123L)
+        assertThat(opens.map { it.uri.toString() }).containsExactly(spec.uri.toString(), fresh).inOrder()
+        assertThat(opens.map { it.position }).containsExactly(500L, 500L)
+        verify(exactly = 0) { fakeCache.get(any()) }
+        verify(exactly = 0) { fakeCache.put(any(), any()) }
+        coVerify(exactly = 1) { fakeResolver.resolveYouTubeRefresh(exactTrack) }
+    }
+
+    @Test
+    fun exactSearchRefresh_stopsIfTheLibraryMappingChanged() {
+        coEvery { fakeTrackDao.getById(42L) } returns track.copy(youtubeId = "ABCDEFGHIJL")
+        every { fakeInner.open(any()) } throws invalidResponseCodeException(403)
+
+        assertThrows403 { newSource(exactYouTubeId = "ABCDEFGHIJK").open(staleSpec()) }
+        coVerify(exactly = 0) { fakeResolver.resolveYouTubeRefresh(any()) }
+        verify(exactly = 0) { fakeCache.get(any()) }
     }
 
     private fun youTubeSpec(host: String, position: Long): DataSpec = DataSpec.Builder()

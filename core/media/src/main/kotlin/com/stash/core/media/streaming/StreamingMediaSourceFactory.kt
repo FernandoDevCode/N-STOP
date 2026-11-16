@@ -63,10 +63,10 @@ class StreamingMediaSourceFactory @Inject constructor(
     private val urlCache: StreamUrlCache,
     private val trackDao: TrackDao,
 ) {
-    fun create(trackId: Long): MediaSource.Factory {
+    fun create(trackId: Long, exactYouTubeId: String? = null): MediaSource.Factory {
         val cachedFactory = CacheDataSource.Factory()
             .setCache(streamCache)
-            .setUpstreamDataSourceFactory(createUncachedDataSourceFactory(trackId))
+            .setUpstreamDataSourceFactory(createUncachedDataSourceFactory(trackId, exactYouTubeId))
             .setCacheWriteDataSinkFactory(
                 CacheDataSink.Factory().setCache(streamCache),
             )
@@ -84,7 +84,7 @@ class StreamingMediaSourceFactory @Inject constructor(
      * and [CacheDataSource.FLAG_BLOCK_ON_CACHE] would make the new request
      * wait on the old one's span lock (cast spec 2026-10-06 §4).
      */
-    fun createUncachedDataSourceFactory(trackId: Long): DataSource.Factory {
+    fun createUncachedDataSourceFactory(trackId: Long, exactYouTubeId: String? = null): DataSource.Factory {
         val httpFactory = DefaultHttpDataSource.Factory()
             .setUserAgent("Stash/0.9.26")
             .setConnectTimeoutMs(10_000)
@@ -95,6 +95,11 @@ class StreamingMediaSourceFactory @Inject constructor(
             cache = urlCache,
             trackDao = trackDao,
             trackId = trackId,
+            exactYouTubeId = exactYouTubeId,
         )
+    }
+
+    internal companion object {
+        const val EXTRA_EXACT_YOUTUBE_ID = "stash_exact_youtube_id"
     }
 }

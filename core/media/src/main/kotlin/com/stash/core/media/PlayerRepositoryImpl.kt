@@ -26,6 +26,7 @@ import com.stash.core.media.streaming.ConnectivityMonitor
 import com.stash.core.media.streaming.StreamSourceRegistry
 import com.stash.core.media.streaming.StreamUrl
 import com.stash.core.media.streaming.StreamUrlCache
+import com.stash.core.media.streaming.StreamingMediaSourceFactory
 import com.stash.core.media.streaming.YouTubeStreamResolver
 import com.stash.core.media.streaming.stashResolveUri
 import com.stash.core.model.PlayerState
@@ -42,6 +43,8 @@ import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_I
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_IS_STREAMABLE
 import com.stash.core.media.service.StashPlaybackService.Companion.EXTRA_TRACK_YOUTUBE_ID
 import com.stash.core.model.TrackItem
+import com.stash.core.model.YouTubeVideoId
+import com.stash.core.model.share.SharedTrack
 import com.stash.core.model.isUnavailableForDisplay
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -2207,6 +2210,61 @@ class PlayerRepositoryImpl @Inject constructor(
 
     private val inFlightStreamingTaps = mutableSetOf<String>()
 
+    private class ExactSearchRequest(val videoId: String, val job: Job?)
+    private val exactSearchLock = Any()
+    private var latestExactSearchRequest: ExactSearchRequest? = null
+
+    override suspend fun playExactSearchResult(item: TrackItem): StreamRoutingResult {
+        if (!YouTubeVideoId.isValid(item.videoId)) return StreamRoutingResult.NotAvailable
+        val caller = currentCoroutineContext()
+        caller.ensureActive()
+        val request = synchronized(exactSearchLock) {
+            val previous = latestExactSearchRequest
+            if (previous?.videoId == item.videoId && previous.job?.isActive != false) {
+                return StreamRoutingResult.Deduped
+            }
+            ExactSearchRequest(item.videoId, caller[Job]).also { latestExactSearchRequest = it }
+        }
+        try {
+            checkStreamingAccess()?.let { return it }
+            val trackId = musicRepository.ensureExactTrackPersisted(
+                SharedTrack(
+                    title = item.title,
+                    artist = item.artist,
+                    album = item.album,
+                    durationMs = (item.durationSeconds * 1000).toLong(),
+                    youtubeId = request.videoId,
+                    artUrl = item.thumbnailUrl,
+                ),
+            )
+            val track = trackDao.getById(trackId)?.takeIf { it.youtubeId == request.videoId }
+                ?: return StreamRoutingResult.NotAvailable
+            caller.ensureActive()
+            streamUrlCache.invalidate(trackId)
+            val stream = streamResolver.resolveYouTubeRefresh(track)
+                ?: return checkStreamingAccess() ?: StreamRoutingResult.NotAvailable
+            caller.ensureActive()
+            val controller = checkNotNull(ensureController()) { "Playback controller unavailable" }
+            if (trackDao.getById(trackId)?.youtubeId != request.videoId) {
+                return StreamRoutingResult.NotAvailable
+            }
+            val result = streamingMediaItem(item.toSearchEntity(trackId), stream, item.thumbnailUrl, exactYouTube = true)
+            synchronized(exactSearchLock) {
+                caller.ensureActive()
+                if (latestExactSearchRequest !== request) return StreamRoutingResult.Deduped
+                currentQueueTracks = emptyList()
+                currentSource = com.stash.core.model.PlaybackSource.Search
+                resetSingleItemQueueModes()
+                startSingleMediaItem(controller, result.mediaItem)
+            }
+            return result
+        } finally {
+            synchronized(exactSearchLock) {
+                if (latestExactSearchRequest === request) latestExactSearchRequest = null
+            }
+        }
+    }
+
     /** The library-shaped view of a Search result, id 0 until [MusicRepository.ensureTrackPersisted] answers. */
     private fun TrackItem.toSearchTrack(): Track = Track(
         id = 0L,
@@ -2222,33 +2280,7 @@ class PlayerRepositoryImpl @Inject constructor(
     )
 
     private suspend fun playFromStreamInner(item: TrackItem, trackId: Long): StreamRoutingResult {
-
-        // Search-tab tap: no library row yet, so synthesize a transient
-        // TrackEntity carrying only the fields buildMediaItemForTrack
-        // reads. isDownloaded = false routes us straight into the
-        // streaming branch.
-        // Synthetic stable ID derived from videoId so the StreamUrlCache key
-        // and the MediaItem.mediaId both differ between tracks. The previous
-        // id=0L collapsed every search-tap stream onto a single cache key:
-        // first tap cached, second tap returned the FIRST track's URL and
-        // Media3 no-op'd setMediaItem on the matching mediaId. Repeat taps
-        // of the same videoId still hit the cache (intended TTL behaviour).
-        val transient = TrackEntity(
-            id = trackId,
-            title = item.title,
-            artist = item.artist,
-            album = item.album ?: "",
-            durationMs = (item.durationSeconds * 1000).toLong(),
-            isDownloaded = false,
-            isStreamable = true,
-            albumArtUrl = item.thumbnailUrl,
-            // Search results carry a YT videoId — propagate it so the
-            // YouTube fallback resolver can extract directly when Qobuz
-            // doesn't have the track. Without this the transient row's
-            // youtubeId stays null and YouTubeStreamResolver bails.
-            youtubeId = item.videoId,
-        )
-        val result = buildMediaItemForTrack(transient)
+        val result = buildMediaItemForTrack(item.toSearchEntity(trackId))
         if (result is StreamRoutingResult.Item) {
             // Single-item replacement: drop the stale logical queue so the
             // queue display falls back to the (one-item) timeline.
@@ -2257,6 +2289,24 @@ class PlayerRepositoryImpl @Inject constructor(
             playSingleMediaItem(result.mediaItem)
         }
         return result
+    }
+
+    private fun TrackItem.toSearchEntity(trackId: Long) = TrackEntity(
+        id = trackId,
+        title = title,
+        artist = artist,
+        album = album.orEmpty(),
+        durationMs = (durationSeconds * 1000).toLong(),
+        isDownloaded = false,
+        isStreamable = true,
+        albumArtUrl = thumbnailUrl,
+        youtubeId = videoId,
+    )
+
+    private suspend fun checkStreamingAccess(): StreamRoutingResult? = when {
+        !connectivity.isConnected() -> StreamRoutingResult.NoConnectivity
+        connectivity.isCellular() && !streamingPreference.streamOnCellular.first() -> StreamRoutingResult.CellularRefused
+        else -> null
     }
 
     /**
@@ -2321,10 +2371,7 @@ class PlayerRepositoryImpl @Inject constructor(
                     .build()
             )
         }
-        if (!connectivity.isConnected()) return StreamRoutingResult.NoConnectivity
-        if (connectivity.isCellular() && !streamingPreference.streamOnCellular.first()) {
-            return StreamRoutingResult.CellularRefused
-        }
+        checkStreamingAccess()?.let { return it }
 
         val cached = streamUrlCache.get(track.id)
         val stream = cached ?: streamResolver.resolve(
@@ -2372,7 +2419,16 @@ class PlayerRepositoryImpl @Inject constructor(
             track.albumArtPath ?: currentArt
         }
 
-        return StreamRoutingResult.Item(
+        return streamingMediaItem(track, stream, displayArtUrl)
+    }
+
+    private fun streamingMediaItem(
+        track: TrackEntity,
+        stream: StreamUrl,
+        displayArtUrl: String?,
+        exactYouTube: Boolean = false,
+    ): StreamRoutingResult.Item =
+        StreamRoutingResult.Item(
             MediaItem.Builder()
                 .setMediaId(track.id.toString())
                 .setUri(Uri.parse(stream.url))
@@ -2387,6 +2443,9 @@ class PlayerRepositoryImpl @Inject constructor(
                         .setExtras(Bundle().apply {
                             putLong(EXTRA_TRACK_ID, track.id)
                             track.youtubeId?.let { putString(EXTRA_TRACK_YOUTUBE_ID, it) }
+                            if (exactYouTube) {
+                                putString(StreamingMediaSourceFactory.EXTRA_EXACT_YOUTUBE_ID, track.youtubeId)
+                            }
                             if (track.durationMs > 0) putLong(EXTRA_TRACK_DURATION_MS, track.durationMs)
                             putBoolean(EXTRA_TRACK_IS_STREAMABLE, track.isStreamable)
                             // Surface the actual format Qobuz served so Now Playing
@@ -2402,7 +2461,6 @@ class PlayerRepositoryImpl @Inject constructor(
                 )
                 .build()
         )
-    }
 
     /**
      * Helper used by [playTrack] and [playFromStream]: replace the queue
@@ -2416,12 +2474,20 @@ class PlayerRepositoryImpl @Inject constructor(
      * under a stale "Radio: X" label.
      */
     private suspend fun playSingleMediaItem(mediaItem: MediaItem) {
+        resetSingleItemQueueModes()
+        val controller = ensureController() ?: return
+        startSingleMediaItem(controller, mediaItem)
+    }
+
+    private fun resetSingleItemQueueModes() {
         libraryShuffleActive = false
         librarySnapshot = emptyList()
         radioActive = false
         radioSession = null
         _radioSeedLabel.value = null
-        val controller = ensureController() ?: return
+    }
+
+    private fun startSingleMediaItem(controller: MediaController, mediaItem: MediaItem) {
         resetPlayHistory()
         controller.setMediaItem(mediaItem)
         controller.prepare()
