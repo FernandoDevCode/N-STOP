@@ -38,7 +38,6 @@ class SearchViewModel @Inject constructor(
         viewModelScope.launch {
             val session = factory.open(
                 scope = viewModelScope,
-                onConnectSpotify = { navigation.tryEmit(SearchNavigation.ConnectSpotify) },
                 onNavigate = { result ->
                     searchDestination(result.identity, result.type, result.title, result.subtitle, result.artworkUrl)
                         ?.let { navigation.tryEmit(it) }
@@ -57,7 +56,6 @@ class SearchViewModel @Inject constructor(
 }
 
 internal sealed interface SearchNavigation {
-    data object ConnectSpotify : SearchNavigation
     data class Artist(val id: String, val name: String, val artworkUrl: String?) : SearchNavigation
     data class Album(val album: AlbumSummary) : SearchNavigation
 }

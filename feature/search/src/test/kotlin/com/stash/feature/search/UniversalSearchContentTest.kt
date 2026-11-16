@@ -3,6 +3,7 @@ package com.stash.feature.search
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
@@ -19,6 +20,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.Density
@@ -33,17 +35,23 @@ import com.stash.feature.search.contract.SearchResultAction
 import com.stash.feature.search.contract.SearchResultType
 import com.stash.feature.search.contract.SearchSourceSelection
 import com.stash.feature.search.contract.SourceSearchState
-import com.stash.feature.search.contract.UnavailableReason
 import com.stash.feature.search.contract.UniversalSearchActions
 import com.stash.feature.search.contract.UniversalSearchResult
 import com.stash.feature.search.contract.UniversalSearchUiState
 import com.stash.feature.search.engine.queryHistoryItem
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.any
+import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.atLeastOnce
+import org.mockito.kotlin.clearInvocations
+import org.mockito.kotlin.eq
+import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -107,7 +115,7 @@ class UniversalSearchContentTest {
     }
 
     @Test
-    fun `partial results stay in motor order alongside auth and retry`() {
+    fun `partial results stay in motor order with a single retry`() {
         val demo = hit(YOUTUBE_MUSIC, "demoOriginal", "First (Demo)", SearchResultType.VIDEO)
         val live = hit(YOUTUBE_MUSIC, "liveOriginal", "Second (Live)", SearchResultType.VIDEO)
         val artist = hit(YOUTUBE_MUSIC, "artistOriginal", "Third", SearchResultType.ARTIST)
@@ -116,7 +124,6 @@ class UniversalSearchContentTest {
                 query = "rock",
                 selection = SearchSourceSelection(CatalogSource.entries.toSet()),
                 sourceStates = mapOf(
-                    SPOTIFY to SourceSearchState.Unavailable("rock", UnavailableReason.AUTHENTICATION_REQUIRED),
                     YOUTUBE to SourceSearchState.Error("rock", "Network failure", canRetry = true),
                     YOUTUBE_MUSIC to SourceSearchState.Data("rock", listOf(artist, live, demo)),
                 ),
@@ -124,14 +131,13 @@ class UniversalSearchContentTest {
             ),
         )
         compose.onNodeWithText("Search failed").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Connect Spotify").performClick()
+        compose.onNodeWithContentDescription("Connect Spotify").assertDoesNotExist()
         compose.onNodeWithContentDescription("Retry YouTube").performClick()
         compose.onNodeWithContentDescription("Clear search").performClick()
         val first = compose.onNodeWithTag(demo.stableKey).assertHasNoClickAction()
         val second = compose.onNodeWithTag(live.stableKey).assertHasNoClickAction()
         assertTrue(first.getUnclippedBoundsInRoot().top < second.getUnclippedBoundsInRoot().top)
         compose.onNodeWithTag(artist.stableKey).assertHasClickAction().performClick()
-        verify(actions).onConnectSource(SPOTIFY)
         verify(actions).onRetrySource(YOUTUBE)
         verify(actions).onClearQuery()
         verify(actions).onResultAction(artist, SearchResultAction.NAVIGATE)
@@ -141,11 +147,11 @@ class UniversalSearchContentTest {
     fun `loading defers the global error until selected sources settle`() {
         val error = SourceSearchState.Error("rock", "Network failure", true)
         val youtube = androidx.compose.runtime.mutableStateOf<SourceSearchState>(SourceSearchState.Loading("rock"))
-        val spotify = androidx.compose.runtime.mutableStateOf<SourceSearchState>(error)
+        val music = androidx.compose.runtime.mutableStateOf<SourceSearchState>(error)
         compose.setContent {
             VisualTheme {
                 UniversalSearchContent(
-                    UniversalSearchUiState(query = "rock", sourceStates = mapOf(SPOTIFY to spotify.value, YOUTUBE to youtube.value)),
+                    UniversalSearchUiState(query = "rock", sourceStates = mapOf(YOUTUBE_MUSIC to music.value, YOUTUBE to youtube.value)),
                     actions, autoFocus = false,
                 )
             }
@@ -155,9 +161,40 @@ class UniversalSearchContentTest {
         compose.runOnIdle { youtube.value = SourceSearchState.Empty("rock") }
         compose.onNodeWithText("Search failed").assertExists()
         compose.onNodeWithText("YouTube · No results").assertExists()
-        compose.runOnIdle { spotify.value = SourceSearchState.Empty("rock") }
+        compose.runOnIdle { music.value = SourceSearchState.Empty("rock") }
         compose.onNodeWithText("Search failed").assertDoesNotExist()
         compose.onNodeWithText("No results found").assertExists()
+    }
+
+    @Test
+    fun `lazy list reports result keys entering the viewport and ignores unrelated recomposition`() {
+        val hits = (1..30).map { hit(YOUTUBE_MUSIC, "id$it", "Song $it", SearchResultType.TRACK) }
+        val state = mutableStateOf(
+            UniversalSearchUiState(
+                query = "rock",
+                sourceStates = mapOf(YOUTUBE_MUSIC to SourceSearchState.Data("rock", hits)),
+                orderedResults = hits,
+            ),
+        )
+        compose.setContent { VisualTheme { UniversalSearchContent(state.value, actions, autoFocus = false) } }
+        compose.waitForIdle()
+        val initial = argumentCaptor<Set<String>>()
+        verify(actions, atLeastOnce()).onVisibleResultsChanged(eq("rock"), initial.capture())
+        assertTrue(hits.first().stableKey in initial.lastValue)
+        assertFalse(initial.allValues.any { hits.last().stableKey in it })
+        assertTrue(initial.allValues.flatten().all { key -> hits.any { it.stableKey == key } })
+
+        clearInvocations(actions)
+        compose.runOnIdle { state.value = state.value.copy(recentSearches = listOf(queryHistoryItem("demo"))) }
+        compose.waitForIdle()
+        verify(actions, never()).onVisibleResultsChanged(any(), any())
+
+        compose.onNodeWithTag("searchList").performScrollToKey(hits.last().stableKey)
+        compose.waitForIdle()
+        val scrolled = argumentCaptor<Set<String>>()
+        verify(actions, atLeastOnce()).onVisibleResultsChanged(eq("rock"), scrolled.capture())
+        assertTrue(hits.last().stableKey in scrolled.lastValue)
+        assertFalse(hits.first().stableKey in scrolled.lastValue)
     }
 
     private fun show(state: UniversalSearchUiState) {

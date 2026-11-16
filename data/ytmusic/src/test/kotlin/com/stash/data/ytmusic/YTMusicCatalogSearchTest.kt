@@ -40,6 +40,10 @@ class YTMusicCatalogSearchTest {
             assertEquals("Hangar 18 (Demo)", hits[0].title)
             assertNull(hits[0].durationMs)
             assertEquals(215000L, hits[2].durationMs)
+            assertEquals("Rust in Peace", hits[2].releaseTitle)
+            assertEquals("UCArtist", hits[2].artistBrowseId)
+            assertEquals("1990", hits[3].releaseYear)
+            assertEquals("Album", hits[3].releaseType)
             val request = server.takeRequest(5, TimeUnit.SECONDS)!!
             assertTrue(request.path!!.startsWith("/youtubei/v1/search?"))
             assertTrue(request.body.readUtf8().contains("Hangar 18"))
@@ -113,12 +117,15 @@ class YTMusicCatalogSearchTest {
                   "text":{"runs":[{"text":"Megadeth"}]}}}]
               }},
               ${row("ATVtrackAB1", "Hangar 18", "MUSIC_VIDEO_TYPE_ATV",
-                  """{"text":"Megadeth"},{"text":" • "},{"text":"3:35"}""")},
+                  """{"text":"Megadeth","navigationEndpoint":{"browseEndpoint":{"browseId":"UCArtist"}}},
+                    {"text":" • "},{"text":"Rust in Peace","navigationEndpoint":{"browseEndpoint":{"browseId":"MPREb_release"}}},
+                    {"text":" • "},{"text":"3:35"}""")},
               ${row("PodcastAB12", "Episode", "MUSIC_VIDEO_TYPE_PODCAST_EPISODE", "")}
             ]}},
             {"musicShelfRenderer":{"title":{"runs":[{"text":"Albums"}]},"contents":[
               {"musicTwoRowItemRenderer":{"navigationEndpoint":{"browseEndpoint":{"browseId":"MPREb_release"}},
-                "title":{"runs":[{"text":"Rust in Peace"}]},"subtitle":{"runs":[{"text":"Megadeth"}]}}}
+                "title":{"runs":[{"text":"Rust in Peace"}]},
+                "subtitle":{"runs":[{"text":"Album"},{"text":" • "},{"text":"Megadeth"},{"text":" • "},{"text":"1990"}]}}}
             ]}}
           ]}
         }}}]}}}

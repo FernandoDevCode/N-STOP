@@ -1,6 +1,6 @@
 # Sonora — especificação vigente e contrato do rework da Busca
 
-**Status:** base documental para desenvolvimento paralelo; ainda sem implementação
+**Status:** Busca universal integrada pelo PR #95. Roteamento simbólico e prioridade visual atualizados em 16/11/2026.
 
 **Data da consolidação:** 10/11/2026
 
@@ -38,11 +38,11 @@ Este trabalho documental só pode alterar `AGENTS.md` e este arquivo. Não cria 
 ## 2. Decisões de produto consolidadas
 
 1. A Busca é **universal**: uma consulta produz **uma lista única de resultados**, sem abas e sem seções obrigatórias por serviço.
-2. As fontes de catálogo são selecionadas individualmente por filtros. **Spotify** e **YouTube convencional** começam ativos; **YouTube Music** começa inativo.
+2. Os três filtros visuais são independentes. **Spotify** e **YouTube convencional** começam ativos; **YouTube Music** começa inativo. O filtro Spotify é um atalho visual para o catálogo do YouTube Music.
 3. O alfinete fica no cabeçalho e é um controle separado dos filtros.
 4. Com o alfinete ativo, a seleção atual é persistida, restaurada entre sessões e atualizada a cada alteração. Com o alfinete inativo, a seleção só vale para a sessão atual.
 5. “Restaurar padrão” é uma ação explícita. O padrão é `{SPOTIFY, YOUTUBE}`; YTM permanece desligado.
-6. Spotify sem autenticação fica `unavailable` com explicação clara e ação de conexão já existente. Não se inventa fallback, resultado ou identidade Spotify.
+6. A Busca musical funciona sem sessão Spotify. O Spotify fornece somente imagens e metadados usados para verificação visual. Sua indisponibilidade conserva as imagens originais.
 7. Cada linha identifica discretamente sua fonte de catálogo. A origem não depende somente de cor.
 8. Vídeos raros, demos, covers, lives, remixes e versões escolhidas pelo usuário são resultados legítimos. Não substituir silenciosamente um vídeo selecionado por uma gravação “canônica” e não deduplicar agressivamente versões alternativas.
 9. A seleção de fontes visíveis na Busca não controla nem descreve, por si só, a infraestrutura interna usada posteriormente para resolver áudio. Fonte de catálogo e fonte/ID de áudio são identidades diferentes.
@@ -99,6 +99,16 @@ enum class SearchResultType {
 
 ### 4.2 Seleção de fontes e persistência
 
+`SearchSourceSelection.enabled` guarda os filtros visuais com os nomes já persistidos. `activeCatalogs` deriva o conjunto de catálogos reais.
+
+| Filtro visual | Catálogo consultado |
+| --- | --- |
+| Spotify | YouTube Music |
+| YouTube | YouTube WEB |
+| YouTube Music | YouTube Music |
+
+Com um ou ambos os filtros musicais ativos, há uma consulta e um estado para YouTube Music. Alternar um filtro sem mudar o conjunto efetivo preserva a requisição e seus resultados. Desativar o último filtro musical cancela essa consulta e seu enriquecimento. YouTube WEB é independente. A identificação, a navegação e o histórico usam sempre a fonte real.
+
 ```kotlin
 data class SearchSourceSelection(
     val enabled: Set<CatalogSource>,
@@ -114,7 +124,7 @@ val DefaultSearchSources = setOf(
 Regras de transição:
 
 - início sem preferência fixada: `enabled = DefaultSearchSources`, `isPinned = false`;
-- cada filtro alterna somente a sua fonte; os demais não mudam;
+- cada filtro alterna somente o seu estado visual; consultas são iniciadas ou canceladas quando o conjunto de catálogos efetivos muda;
 - seleção vazia é permitida e mostra um estado orientando o usuário a ativar ao menos uma fonte, sem disparar provedores;
 - ao ativar o alfinete, persistir imediatamente o conjunto atual e `isPinned = true`;
 - enquanto fixado, toda mudança de filtro atualiza a preferência persistida;
@@ -208,6 +218,7 @@ data class UniversalSearchUiState(
     val sourceStates: Map<CatalogSource, SourceSearchState>,
     val orderedResults: List<UniversalSearchResult>,
     val recentSearches: List<RecentSearchItem>,
+    val artworkOverrides: Map<String, String>,
 )
 ```
 
@@ -217,10 +228,10 @@ Semântica:
 - `loading`: consulta em andamento; `previous` só pode ser não vazio em retry explícito da mesma `query` (`isRetry = true`);
 - `data`: um ou mais itens válidos;
 - `empty`: a fonte respondeu sem itens;
-- `unavailable`: a consulta não pode ser feita nas condições atuais, por exemplo Spotify sem autenticação;
+- `unavailable`: a consulta não pode ser feita nas condições atuais, por exemplo quando o serviço está desabilitado;
 - `error`: tentativa falhou; contém retry somente quando seguro.
 
-Cada fonte selecionada evolui de forma independente. Uma fonte indisponível ou com erro não derruba dados das outras. A lista universal contém resultados `data` das fontes bem-sucedidas; a UI mostra aviso discreto e ação por fonte para falhas parciais. Só existe erro de página inteira quando nenhuma fonte selecionada fornece dados e pelo menos uma falha; só existe vazio global quando todas as fontes selecionadas concluíram como `empty`. Fontes desmarcadas não são consultadas e seus resultados não aparecem.
+Cada catálogo efetivamente selecionado evolui de forma independente. Uma fonte indisponível ou com erro não derruba dados das outras. A lista universal contém resultados `data` das fontes bem-sucedidas; a UI mostra aviso discreto e ação por fonte para falhas parciais. Só existe erro de página inteira quando nenhuma fonte selecionada fornece dados e pelo menos uma falha; só existe vazio global quando todas as fontes selecionadas concluíram como `empty`. Um catálogo é desativado quando nenhum filtro marcado aponta para ele.
 
 Todos os estados não ociosos carregam a consulta que os produziu. `UniversalSearchUiState` só aceita estados cuja `query` coincide com sua consulta atual. Ao mudar a consulta, resultados anteriores são removidos da lista universal; eles não podem ser publicados como dados nem como `Loading.previous` da nova consulta. Reutilização de `previous` é exclusiva de retry da mesma consulta.
 
@@ -232,7 +243,7 @@ O Motor entrega `orderedResults`; a Interface renderiza a ordem recebida.
 
 1. ordenar por `rankingScore` decrescente;
 2. em empate, preservar `providerRank` crescente;
-3. persistindo o empate, usar a ordem estável `SPOTIFY`, `YOUTUBE`, `YOUTUBE_MUSIC` e depois `stableKey`;
+3. persistindo o empate, usar a ordem estável `YOUTUBE`, `YOUTUBE_MUSIC` e depois `stableKey`;
 4. não criar blocos por fonte ou tipo;
 5. chegada tardia de uma fonte pode recalcular a lista, mas itens com a mesma identidade e score mantêm desempate determinístico.
 
@@ -246,7 +257,17 @@ A normalização de relevância entre provedores precisa de teste com consultas 
 - Um eventual detector pode marcar candidatos a duplicata para telemetria/teste, mas não escondê-los sem identidade forte e aprovação de produto.
 - Demos, covers, lives, remixes, remasters, edits, versões acústicas e vídeos raros permanecem visíveis e selecionáveis.
 
-### 4.8 Histórico de pesquisas
+### 4.8 Imagens e histórico
+
+`artworkOverrides` contém somente URLs de apresentação indexadas pela chave estável do resultado. As imagens do catálogo são publicadas primeiro. O enriquecimento resulta em atualização visual, preservando as identidades, a ordem, as ações e os metadados usados para navegação.
+
+- **Faixas YouTube Music:** título e artista completos, incluindo qualificadores, lançamento explícito, duração e marcação de conteúdo quando disponíveis. O Spotify precisa oferecer uma correspondência única.
+- **Álbuns YouTube Music:** título completo, artista, ano e tipo compatível. Versões disputadas ou metadados insuficientes conservam as capas de origem.
+- **Fotografias de artistas:** escolha manual, foto Spotify validada e imagem original, conforme o repositório compartilhado. O perfil continua responsável por verificar a referência via `SpotifyArtistPhotoLookup` e por procurar a mesma fotografia em resolução superior.
+- **Vídeos:** conservam o thumbnail de origem. Quando ausente, usam o thumbnail do ID de vídeo exato, se válido.
+- **Orçamento:** uma consulta Spotify de capas por vez para resultados elegíveis visíveis. Cada resultado é tentado uma vez por consulta ativa, e a troca de consulta cancela o trabalho anterior. Cache em memória de até 256 entradas, com 24 horas para acertos, 30 minutos para ausência de correspondência e espera curta para falhas transitórias. Resposta 429 respeita `Retry-After`.
+- **Abertura de álbum:** navegação e histórico levam a capa exibida na hora do toque, com o ID original do YouTube Music.
+
 
 ```kotlin
 data class RecentSearchItem(
@@ -277,7 +298,6 @@ interface UniversalSearchActions {
     fun onPinToggled()
     fun onRestoreDefaultSources()
     fun onRetrySource(source: CatalogSource)
-    fun onConnectSource(source: CatalogSource)
     fun onResultAction(result: UniversalSearchResult, action: SearchResultAction)
     fun onRecentSelected(item: RecentSearchItem)
     fun onRecentRemoved(item: RecentSearchItem)
@@ -296,7 +316,7 @@ interface UniversalSearchActions {
 O Codex Visual deve conseguir demonstrar, sem integração real:
 
 - consulta vazia com e sem histórico;
-- Spotify `unavailable` por autenticação, YouTube com `data` e YTM desmarcado;
+- filtro Spotify ativo e YouTube Music desmarcado, com resultados do catálogo YouTube Music e YouTube WEB independente;
 - duas fontes em `loading` e uma com dados anteriores;
 - dados intercalados de faixa, vídeo, artista e álbum;
 - falha parcial com resultados preservados;
@@ -381,8 +401,8 @@ Não encadear PR B sobre branch A. Ambos os PRs têm base `nonstop`; B é atuali
 - [ ] seleção temporária não reaparece em nova sessão;
 - [ ] ativar alfinete persiste imediatamente; alteração fixada atualiza persistência; desativar volta ao padrão na sessão seguinte;
 - [ ] restaurar padrão só ocorre por ação explícita e respeita o estado fixado/temporário;
-- [ ] uma chamada por fonte selecionada e nenhuma por fonte desmarcada;
-- [ ] Spotify sem autenticação resulta em `Unavailable(AUTHENTICATION_REQUIRED)`, sem fallback fictício;
+- [ ] uma chamada por catálogo efetivo. Spotify visual e YouTube Music ativos compartilham chamada, estado e retry;
+- [ ] com Spotify indisponível, a busca musical mantém resultados e capas de origem;
 - [ ] sucesso parcial preserva e ordena resultados; retry afeta só a fonte pedida;
 - [ ] query nova não publica resposta antiga; cancelamento e erro não misturam consultas;
 - [ ] lista universal segue score e desempates definidos, sem seções por serviço;
@@ -398,7 +418,7 @@ Não encadear PR B sobre branch A. Ambos os PRs têm base `nonstop`; B é atuali
 - [ ] fonte discreta em cada resultado sem depender apenas de cor;
 - [ ] todos os seis estados por fonte e falha parcial representados;
 - [ ] lista mista de faixa, vídeo, artista e álbum usa keys estáveis e a ordem recebida;
-- [ ] seleção vazia, histórico, limpar, IME Search, retry, conexão e restauração funcionam;
+- [ ] seleção vazia, histórico, limpar, IME Search, retry e restauração funcionam;
 - [ ] live/demo/cover/remix aparecem sem aviso de substituição ou canonicalização;
 - [ ] texto 150%, 280/390/480 dp, teclado aberto, artwork ausente e tema AMOLED não quebram layout;
 - [ ] animações não escondem mudanças de fonte/estado e respeitam redução de movimento;
@@ -407,7 +427,7 @@ Não encadear PR B sobre branch A. Ambos os PRs têm base `nonstop`; B é atuali
 ### Integração
 
 - [ ] fixtures e estado real usam os mesmos DTOs e callbacks, sem adaptador paralelo de produto;
-- [ ] Spotify + YouTube podem aparecer juntos na lista; YTM só aparece quando selecionado;
+- [ ] YouTube Music e YouTube WEB podem aparecer juntos. YouTube Music participa quando Spotify visual ou YouTube Music está ativo;
 - [ ] indisponibilidade de uma fonte não apaga resultados das demais;
 - [ ] tocar um vídeo conserva exatamente seu `catalogId` e sua versão até a fronteira existente;
 - [ ] mecanismo de reprodução, fila, downloads e Media3 não tiveram diff;
@@ -418,12 +438,12 @@ Não encadear PR B sobre branch A. Ambos os PRs têm base `nonstop`; B é atuali
 
 1. **YouTube convencional:** InnerTube WEB aprovado; validar disponibilidade regional, SafeSearch, manutenção e comportamento Android antes da integração. Apenas vídeos são expostos nesta versão.
 2. **Reprodução de item YouTube:** confirmar, sem mudar o player nesta tarefa, quais IDs a fronteira atual aceita e quais limitações existem. Catálogo disponível não significa áudio reproduzível.
-3. **Spotify:** confirmar comportamento real sem sessão, refresh de 401, 429/`Retry-After`, artwork e cobertura de tipos além de faixa antes de prometer esses tipos.
+3. **Capas Spotify:** verificar cobertura com sessão conectada e consultas reais. A disponibilidade do enriquecimento é independente da busca de catálogo.
 4. **YouTube Music:** confirmar se a implementação atual distingue com segurança faixa e vídeo e quais IDs de artista/álbum abrem as rotas preservadas.
 5. **Normalização de ranking:** medir escalas dos provedores e validar consultas conhecidas antes de fixar pesos. A ordem estrutural está definida; a calibração não está provada.
 6. **Cancelamento HTTP:** verificar se cancelar a coroutine encerra cada request real, em vez de apenas ignorar a resposta tardia.
 7. **Performance e jank:** não há baseline numérica suficiente para abertura, digitação, primeira linha e rolagem da lista universal.
-8. **Autenticação e disponibilidade:** definir copy e ação de conexão usando as rotas existentes, sem expandir o escopo de auth.
+8. **Disponibilidade visual:** quando o Spotify estiver indisponível ou sem sessão, o enriquecimento conserva a capa de origem em silêncio.
 9. **Contrato de tipos do YouTube:** se a integração não fornecer `TRACK`, `ARTIST` ou `ALBUM` confiáveis, retornar apenas tipos comprovados; não inferir por heurística visual.
 10. **Fronteira de reprodução:** validar se `PlayerRepository.playTrack(Track)` pode ser reaproveitado sem perda de identidade ou mudança de player. Até essa prova, nenhuma ação `PLAY` deve ser anunciada como disponível por uma integração nova.
 

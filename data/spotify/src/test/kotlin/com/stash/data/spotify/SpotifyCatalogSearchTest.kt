@@ -46,6 +46,10 @@ class SpotifyCatalogSearchTest {
         assertEquals("spotify:track:trackA", results.first().uri)
         assertEquals("Hangar 18 (Demo)", results.first().title)
         assertEquals("https://img.test/art.jpg", results.first().artworkUrl)
+        assertEquals(listOf("artistA"), results.first().artistIds)
+        assertEquals("Rust in Peace", results.first().albumTitle)
+        assertEquals("1990", results.first().releaseYear)
+        assertEquals("album", results.first().releaseType)
         assertEquals(123000L, results.first().durationMs)
         assertNull(results.last().durationMs)
         assertTrue(results.first().isExplicit)
@@ -80,8 +84,9 @@ class SpotifyCatalogSearchTest {
         {
           "tracks":{"items":[
             {"id":"trackA","uri":"spotify:track:trackA","name":"Hangar 18 (Demo)",
-             "explicit":true,"duration_ms":123000,"artists":[{"name":"Megadeth"}],
-             "album":{"images":[{"url":"https://img.test/art.jpg"}]}},
+             "explicit":true,"duration_ms":123000,"artists":[{"id":"artistA","name":"Megadeth"}],
+             "album":{"name":"Rust in Peace","release_date":"1990-09-24","album_type":"album",
+                      "images":[{"url":"https://img.test/art.jpg"}]}},
             {"id":"trackB","name":"Hangar 18 (Live)"}
           ]},
           "artists":{"items":[{"id":"artistA","name":"Megadeth"}]},

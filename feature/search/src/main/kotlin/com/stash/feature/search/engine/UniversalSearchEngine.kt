@@ -21,11 +21,12 @@ object UniversalSearchEngine {
         sourceStates: Map<CatalogSource, SourceSearchState>,
         recentSearches: List<RecentSearchItem> = emptyList(),
     ): UniversalSearchUiState {
+        val activeCatalogs = selection.activeCatalogs
         val currentStates = CatalogSource.entries.associateWith { source ->
             val state = sourceStates[source]
             val stateQuery = state?.queryOrNull()
             when {
-                source !in selection.enabled -> SourceSearchState.Idle
+                source !in activeCatalogs -> SourceSearchState.Idle
                 state == null -> SourceSearchState.Idle
                 stateQuery != null && stateQuery != query -> SourceSearchState.Idle
                 else -> state.also { requireItemsBelongTo(source, it) }
@@ -34,7 +35,6 @@ object UniversalSearchEngine {
 
         val orderedResults = currentStates
             .asSequence()
-            .filter { (source, _) -> source in selection.enabled }
             .flatMap { (_, state) -> state.visibleItems().asSequence() }
             .distinctBy(UniversalSearchResult::stableKey)
             .sortedWith(resultComparator)

@@ -947,9 +947,14 @@ class SpotifyApiClient @Inject constructor(
             .build()
 
     /** User-authorized catalog search. The matching-only searchTracks API keeps its own contract. */
-    suspend fun searchCatalog(query: String, limit: Int = 8): List<SpotifyCatalogItem> =
+    suspend fun searchCatalog(
+        query: String,
+        limit: Int = 8,
+        kind: SpotifyCatalogItem.Kind? = null,
+    ): List<SpotifyCatalogItem> =
         withContext(Dispatchers.IO) {
-            val url = "$WEB_API_BASE/search?type=track,artist,album&limit=$limit" +
+            val type = kind?.name?.lowercase() ?: "track,artist,album"
+            val url = "$WEB_API_BASE/search?type=$type&limit=$limit" +
                 "&q=${URLEncoder.encode(query, "UTF-8")}"
             val token = tokenManager.getSpotifyAccessToken()
                 ?: throw SpotifyApiException(0, url, "Spotify search requires a connected account")

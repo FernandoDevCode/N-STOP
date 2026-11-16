@@ -7,6 +7,7 @@ import com.stash.data.ytmusic.model.MusicVideoType
 import com.stash.data.ytmusic.model.TopResultItem
 import com.stash.data.ytmusic.model.TrackSummary
 import java.io.IOException
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlin.math.roundToLong
 
@@ -19,6 +20,10 @@ data class YTMusicCatalogItem(
     val durationMs: Long?,
     val isExplicit: Boolean,
     val rank: Int,
+    val releaseTitle: String? = null,
+    val releaseYear: String? = null,
+    val releaseType: String? = null,
+    val artistBrowseId: String? = null,
 ) {
     enum class Kind { TRACK, VIDEO, ARTIST, ALBUM }
 }
@@ -52,16 +57,16 @@ internal fun parseYTMusicCatalog(response: JsonObject): List<YTMusicCatalogItem>
 }
 
 private fun parseTop(card: JsonObject, rank: Int): YTMusicCatalogItem? {
-    val label = card.navigatePath("subtitle", "runs")?.asArray()
-        ?.firstOrNull()?.asObject()?.get("text")?.asString()
+    val subtitle = card.navigatePath("subtitle", "runs")?.asArray()
+    val label = subtitle?.firstOrNull()?.asObject()?.get("text")?.asString()
     val watch = card.navigatePath("title", "runs")?.asArray()?.firstOrNull()?.asObject()
         ?.navigatePath("navigationEndpoint", "watchEndpoint")?.asObject()
     return when (val top = parseTopResultCard(card)) {
         is TopResultItem.ArtistTop -> top.artist.catalogItem(rank)
         is TopResultItem.TrackTop -> mediaKind(watch, label)?.let {
-            top.track.catalogItem(it, rank, card.hasExplicitBadge())
+            top.track.catalogItem(it, rank, card.hasExplicitBadge(), top.track.album, subtitle.artistBrowseId())
         }
-        null -> parseAlbumTopCard(card)?.catalogItem(rank)
+        null -> parseAlbumTopCard(card)?.catalogItem(rank, subtitle.artistBrowseId())
     }
 }
 
@@ -71,21 +76,24 @@ private fun parseRow(entry: JsonObject, category: String?, rank: Int): YTMusicCa
         if (twoRow.pageType() == "MUSIC_PAGE_TYPE_ALBUM" ||
             (twoRow.pageType() == null && category == "Albums")
         ) {
-            return parseAlbumFromTwoRowItem(twoRow)?.catalogItem(rank)
+            return parseAlbumFromTwoRowItem(twoRow)?.catalogItem(
+                rank, twoRow.navigatePath("subtitle", "runs")?.asArray().artistBrowseId(),
+            )
         }
         return null
     }
 
     val row = entry["musicResponsiveListItemRenderer"]?.asObject() ?: return null
+    val columns = row["flexColumns"]?.asArray()
+    val subtitle = columns?.getOrNull(1)?.asObject()
+        ?.navigatePath("musicResponsiveListItemFlexColumnRenderer", "text", "runs")?.asArray()
     when (row.pageType()) {
         "MUSIC_PAGE_TYPE_ARTIST" -> return parseArtistFromListItem(row)?.catalogItem(rank)
-        "MUSIC_PAGE_TYPE_ALBUM" -> return parseAlbumFromListItem(row)?.catalogItem(rank)
+        "MUSIC_PAGE_TYPE_ALBUM" -> return parseAlbumFromListItem(row)?.catalogItem(rank, subtitle.artistBrowseId())
         null -> if (category == "Artists") return parseArtistFromListItem(row)?.catalogItem(rank)
         else -> return null
     }
-    val columns = row["flexColumns"]?.asArray()
-    val label = columns?.getOrNull(1)?.asObject()
-        ?.navigatePath("musicResponsiveListItemFlexColumnRenderer", "text", "runs")?.asArray()
+    val label = subtitle
         ?.takeIf { it.getOrNull(1)?.asObject()?.get("text")?.asString() == " • " }
         ?.firstOrNull()?.asObject()?.get("text")?.asString()
     val endpoints = listOfNotNull(
@@ -111,8 +119,15 @@ private fun parseRow(entry: JsonObject, category: String?, rank: Int): YTMusicCa
         else -> label
     }
     val kind = mediaKind(watch, fallback) ?: return null
-    return track.catalogItem(kind, rank, row.hasExplicitBadge())
+    return track.catalogItem(
+        kind, rank, row.hasExplicitBadge(), parseListItemSubtitle(subtitle).album, subtitle.artistBrowseId(),
+    )
 }
+
+private fun JsonArray?.artistBrowseId(): String? = orEmpty()
+    .mapNotNull { it.asObject()?.navigatePath("navigationEndpoint", "browseEndpoint", "browseId")?.asString() }
+    .filter { it.startsWith("UC") || it.startsWith("MPLAUC") }
+    .distinct().singleOrNull()
 
 private fun JsonObject.pageType(): String? = navigatePath(
     "navigationEndpoint", "browseEndpoint", "browseEndpointContextSupportedConfigs",
@@ -146,12 +161,14 @@ private fun TrackSummary.catalogItem(
     kind: YTMusicCatalogItem.Kind,
     rank: Int,
     explicit: Boolean,
+    releaseTitle: String?,
+    artistBrowseId: String?,
 ): YTMusicCatalogItem? {
     if (!YouTubeVideoId.isValid(videoId) || title.isBlank()) return null
     return YTMusicCatalogItem(
         kind, videoId, title, artist.takeIf { it.isNotBlank() }, thumbnailUrl,
         durationSeconds.takeIf { it.isFinite() && it > 0 }?.let { (it * 1000).roundToLong() },
-        explicit, rank,
+        explicit, rank, releaseTitle = releaseTitle?.takeIf { it.isNotBlank() }, artistBrowseId = artistBrowseId,
     )
 }
 
@@ -160,10 +177,10 @@ private fun ArtistSummary.catalogItem(rank: Int): YTMusicCatalogItem? {
     return YTMusicCatalogItem(YTMusicCatalogItem.Kind.ARTIST, id, name, null, avatarUrl, null, false, rank)
 }
 
-private fun AlbumSummary.catalogItem(rank: Int): YTMusicCatalogItem? {
+private fun AlbumSummary.catalogItem(rank: Int, artistBrowseId: String?): YTMusicCatalogItem? {
     if (id.isBlank() || title.isBlank()) return null
     return YTMusicCatalogItem(
         YTMusicCatalogItem.Kind.ALBUM, id, title, artist.takeIf { it.isNotBlank() },
-        thumbnailUrl, null, false, rank,
+        thumbnailUrl, null, false, rank, title, year, releaseType, artistBrowseId,
     )
 }

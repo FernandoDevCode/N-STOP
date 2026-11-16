@@ -13,44 +13,41 @@ import org.junit.Test
 class UniversalSearchEngineTest {
     @Test
     fun aggregate_interleavesProviderDataIntoOneList() {
-        val spotify = result(CatalogSource.SPOTIFY, "spotify-track", score = 0.82)
+        val music = result(CatalogSource.YOUTUBE_MUSIC, "ytm-track", score = 0.82)
         val youtube = result(CatalogSource.YOUTUBE, "youtube-video", score = 0.91)
 
         val state = aggregate(
             states = mapOf(
-                CatalogSource.SPOTIFY to data(spotify),
+                CatalogSource.YOUTUBE_MUSIC to data(music),
                 CatalogSource.YOUTUBE to data(youtube),
             ),
         )
 
-        assertThat(state.orderedResults).containsExactly(youtube, spotify).inOrder()
-        assertThat(state.sourceStates[CatalogSource.YOUTUBE_MUSIC])
+        assertThat(state.orderedResults).containsExactly(youtube, music).inOrder()
+        assertThat(state.sourceStates[CatalogSource.SPOTIFY])
             .isEqualTo(SourceSearchState.Idle)
     }
 
     @Test
     fun ordering_usesScoreRankSourceThenStableKey() {
-        val lowerScore = result(CatalogSource.SPOTIFY, "lower", score = 0.7, rank = 0)
+        val lowerScore = result(CatalogSource.YOUTUBE_MUSIC, "lower", score = 0.7, rank = 0)
         val higherRank = result(CatalogSource.YOUTUBE, "higher-rank", score = 0.8, rank = 2)
-        val spotifyZ = result(CatalogSource.SPOTIFY, "z", score = 0.8, rank = 1)
-        val spotifyA = result(CatalogSource.SPOTIFY, "a", score = 0.8, rank = 1)
+        val musicZ = result(CatalogSource.YOUTUBE_MUSIC, "z", score = 0.8, rank = 1)
+        val musicA = result(CatalogSource.YOUTUBE_MUSIC, "a", score = 0.8, rank = 1)
         val youtube = result(CatalogSource.YOUTUBE, "a", score = 0.8, rank = 1)
-        val youtubeMusic = result(CatalogSource.YOUTUBE_MUSIC, "a", score = 0.8, rank = 1)
 
         val state = aggregate(
             enabled = CatalogSource.entries.toSet(),
             states = mapOf(
-                CatalogSource.SPOTIFY to data(lowerScore, spotifyZ, spotifyA),
+                CatalogSource.YOUTUBE_MUSIC to data(lowerScore, musicZ, musicA),
                 CatalogSource.YOUTUBE to data(higherRank, youtube),
-                CatalogSource.YOUTUBE_MUSIC to data(youtubeMusic),
             ),
         )
 
         assertThat(state.orderedResults).containsExactly(
-            spotifyA,
-            spotifyZ,
             youtube,
-            youtubeMusic,
+            musicA,
+            musicZ,
             higherRank,
             lowerScore,
         ).inOrder()
@@ -66,11 +63,11 @@ class UniversalSearchEngineTest {
             type = SearchResultType.TRACK,
             title = "Track identity",
         )
-        val differentSource = result(CatalogSource.SPOTIFY, "same", title = "Spotify identity")
+        val differentSource = result(CatalogSource.YOUTUBE_MUSIC, "same", title = "YouTube Music identity")
 
         val state = aggregate(
             states = mapOf(
-                CatalogSource.SPOTIFY to data(differentSource),
+                CatalogSource.YOUTUBE_MUSIC to data(differentSource),
                 CatalogSource.YOUTUBE to data(first, repeatedIdentity, differentType),
             ),
         )
@@ -85,7 +82,7 @@ class UniversalSearchEngineTest {
 
         val state = aggregate(
             states = mapOf(
-                CatalogSource.SPOTIFY to SourceSearchState.Unavailable(
+                CatalogSource.YOUTUBE_MUSIC to SourceSearchState.Unavailable(
                     QUERY,
                     UnavailableReason.AUTHENTICATION_REQUIRED,
                 ),
@@ -102,7 +99,7 @@ class UniversalSearchEngineTest {
         val disabled = result(CatalogSource.YOUTUBE_MUSIC, "disabled")
 
         val state = aggregate(
-            enabled = setOf(CatalogSource.SPOTIFY),
+            enabled = setOf(CatalogSource.YOUTUBE),
             states = mapOf(CatalogSource.YOUTUBE_MUSIC to data(disabled)),
         )
 

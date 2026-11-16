@@ -44,7 +44,7 @@ class UniversalSearchPersistenceTest {
             return UniversalSearchSession(
                 scope,
                 CatalogSource.entries.associateWith { { _: String -> emptyList() } },
-                prefs.read(), prefs::save, UniversalSearchHistory(context, legacy), {}, {}, {},
+                prefs.read(), prefs::save, UniversalSearchHistory(context, legacy), {}, {},
             )
         }
         try {
@@ -54,6 +54,7 @@ class UniversalSearchPersistenceTest {
             assertEquals(SearchSourceSelection.Default, session().state.value.selection)
             first.onPinToggled()
             assertEquals(CatalogSource.entries.toSet(), session().state.value.selection.enabled)
+            assertEquals(setOf(YOUTUBE, YOUTUBE_MUSIC), session().state.value.selection.activeCatalogs)
             first.onSourceToggled(SPOTIFY)
             first.onSourceToggled(YOUTUBE)
             first.onSourceToggled(YOUTUBE_MUSIC)

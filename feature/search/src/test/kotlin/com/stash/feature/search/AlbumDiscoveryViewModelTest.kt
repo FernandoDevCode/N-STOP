@@ -86,13 +86,16 @@ class AlbumDiscoveryViewModelTest {
         delegate: TrackActionsDelegate = stubDelegate(),
         playerRepository: PlayerRepository = mock(),
         musicRepository: MusicRepository = mock(),
+        preserveSearchArtwork: Boolean = false,
+        initialThumb: String? = "url",
     ): AlbumDiscoveryViewModel = AlbumDiscoveryViewModel(
         savedStateHandle = SavedStateHandle(
             mapOf(
                 "browseId" to "MPREb_xxx",
                 "title" to "Curtains",
                 "artist" to "John Frusciante",
-                "thumbnailUrl" to "url",
+                "thumbnailUrl" to initialThumb,
+                "preserveSearchArtwork" to preserveSearchArtwork,
                 "year" to "2005",
             ),
         ),
@@ -184,6 +187,32 @@ class AlbumDiscoveryViewModelTest {
         // 3 tracks × 30s × 1000 = 90_000ms.
         assertEquals(90_000L, state.hero.totalDurationMs)
         verify(prefetcher).prefetch(eq(listOf("v1", "v2", "v3")))
+    }
+
+    @Test
+    fun `Search cover remains after album detail loads`() = runTest {
+        val cache = mock<AlbumCache>().also {
+            whenever(it.get(eq("MPREb_xxx"), any())).thenReturn(albumDetail())
+        }
+        val vm = vmWith(cache = cache, preserveSearchArtwork = true)
+        assertEquals("url", vm.uiState.value.hero.thumbnailUrl)
+        advanceUntilIdle()
+        assertEquals(AlbumDiscoveryStatus.Fresh, vm.uiState.value.status)
+        assertEquals("url", vm.uiState.value.hero.thumbnailUrl)
+    }
+
+    @Test
+    fun `other album routes and missing Search art use fetched detail cover`() = runTest {
+        val cache = mock<AlbumCache>().also {
+            whenever(it.get(eq("MPREb_xxx"), any())).thenReturn(albumDetail())
+        }
+        val ordinary = vmWith(cache = cache)
+        advanceUntilIdle()
+        assertEquals("u", ordinary.uiState.value.hero.thumbnailUrl)
+
+        val missingSearchArt = vmWith(cache = cache, preserveSearchArtwork = true, initialThumb = null)
+        advanceUntilIdle()
+        assertEquals("u", missingSearchArt.uiState.value.hero.thumbnailUrl)
     }
 
     @Test
