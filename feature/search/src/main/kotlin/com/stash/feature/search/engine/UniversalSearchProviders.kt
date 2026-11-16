@@ -1,0 +1,70 @@
+package com.stash.feature.search.engine
+
+import com.stash.data.spotify.SpotifyCatalogItem
+import com.stash.data.ytmusic.YTMusicCatalogItem
+import com.stash.feature.search.contract.CatalogIdentity
+import com.stash.feature.search.contract.CatalogSource
+import com.stash.feature.search.contract.SearchResultAction
+import com.stash.feature.search.contract.SearchResultType
+import com.stash.feature.search.contract.UniversalSearchResult
+
+internal fun SpotifyCatalogItem.toUniversalSearchResult() = UniversalSearchResult(
+    identity = CatalogIdentity(CatalogSource.SPOTIFY, id, uri),
+    type = when (kind) {
+        SpotifyCatalogItem.Kind.TRACK -> SearchResultType.TRACK
+        SpotifyCatalogItem.Kind.ARTIST -> SearchResultType.ARTIST
+        SpotifyCatalogItem.Kind.ALBUM -> SearchResultType.ALBUM
+    },
+    title = title,
+    subtitle = artists,
+    artworkUrl = artworkUrl,
+    durationMs = durationMs,
+    isExplicit = isExplicit,
+    versionLabel = if (kind == SpotifyCatalogItem.Kind.TRACK) versionFromTitle(title) else null,
+    providerRank = rank,
+    rankingScore = ordinalSearchScore(rank),
+)
+
+internal fun YTMusicCatalogItem.toUniversalSearchResult(): UniversalSearchResult {
+    val type = when (kind) {
+        YTMusicCatalogItem.Kind.TRACK -> SearchResultType.TRACK
+        YTMusicCatalogItem.Kind.VIDEO -> SearchResultType.VIDEO
+        YTMusicCatalogItem.Kind.ARTIST -> SearchResultType.ARTIST
+        YTMusicCatalogItem.Kind.ALBUM -> SearchResultType.ALBUM
+    }
+    val canNavigate = type == SearchResultType.ARTIST || type == SearchResultType.ALBUM
+    return UniversalSearchResult(
+        identity = CatalogIdentity(CatalogSource.YOUTUBE_MUSIC, id),
+        type = type,
+        title = title,
+        subtitle = subtitle?.takeIf { it.isNotBlank() },
+        artworkUrl = artworkUrl?.takeIf { it.isNotBlank() },
+        durationMs = durationMs,
+        isExplicit = isExplicit,
+        versionLabel = if (canNavigate) null else versionFromTitle(title),
+        providerRank = rank,
+        rankingScore = ordinalSearchScore(rank),
+        supportedActions = if (canNavigate) setOf(SearchResultAction.NAVIGATE) else emptySet(),
+    )
+}
+
+/** Provisional ordinal score shared by all three catalogs. */
+internal fun ordinalSearchScore(rank: Int): Double = 1.0 / (rank + 1.0)
+
+private const val VERSION_WORDS = "live|demo|cover|remix|remaster(?:ed)?|acoustic|edit|version|ao vivo"
+private val versionSegments = Regex("""\(([^()]+)\)|\[([^\[\]]+)]""")
+private val versionWords = Regex("""\b($VERSION_WORDS)\b""", RegexOption.IGNORE_CASE)
+private val versionSuffix = Regex(
+    """\s[-–—]\s((?:\d{4}\s+)?(?:$VERSION_WORDS)\b[^()\[\]]*)$""",
+    RegexOption.IGNORE_CASE,
+)
+
+/** Copy only qualifiers already present in the source title, leaving the title intact. */
+internal fun versionFromTitle(title: String): String? =
+    versionSegments.findAll(title)
+        .map { it.groupValues.drop(1).first(String::isNotEmpty).trim() }
+        .filter(versionWords::containsMatchIn)
+        .plus(listOfNotNull(versionSuffix.find(title)?.groupValues?.get(1)?.trim()))
+        .distinct()
+        .joinToString(" · ")
+        .ifEmpty { null }

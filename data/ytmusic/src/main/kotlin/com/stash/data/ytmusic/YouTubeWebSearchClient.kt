@@ -2,7 +2,6 @@ package com.stash.data.ytmusic
 
 import java.io.IOException
 import java.util.concurrent.TimeUnit
-import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.Dispatchers
@@ -69,25 +68,9 @@ class YouTubeWebSearchClient(
     private fun String.toHttpUrlBuilder(key: String): String =
         this + "?key=" + java.net.URLEncoder.encode(key, "UTF-8") + "&prettyPrint=false"
 
-    private suspend fun request(request: Request): String = suspendCancellableCoroutine { continuation ->
-        val call = http.newCall(request)
-        continuation.invokeOnCancellation { call.cancel() }
-        call.enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) {
-                if (continuation.isActive) continuation.resumeWithException(e)
-            }
-            override fun onResponse(call: Call, response: Response) {
-                try {
-                    val body = response.use {
-                        if (!it.isSuccessful) throw YouTubeWebHttpException(it.code)
-                        it.body?.string() ?: throw IOException("Empty YouTube response body")
-                    }
-                    if (continuation.isActive) continuation.resume(body)
-                } catch (e: Exception) {
-                    if (continuation.isActive) continuation.resumeWithException(e)
-                }
-            }
-        })
+    private suspend fun request(request: Request): String = http.newCall(request).awaitSearchResponse {
+        if (!it.isSuccessful) throw YouTubeWebHttpException(it.code)
+        it.body?.string() ?: throw IOException("Empty YouTube response body")
     }
 
     internal fun parse(raw: String, rankOffset: Int = 0): YouTubeWebSearchPage {
@@ -155,3 +138,18 @@ class YouTubeWebSearchClient(
             .let { Math.multiplyExact(it, 1000) } } catch (_: ArithmeticException) { null }
     }
 }
+
+/** Keep cancellation connected to the call until the response body has been consumed. */
+internal suspend fun <T> Call.awaitSearchResponse(read: (Response) -> T): T =
+    suspendCancellableCoroutine { continuation ->
+        continuation.invokeOnCancellation { cancel() }
+        enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                continuation.resumeWithException(e)
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                continuation.resumeWith(runCatching { response.use(read) })
+            }
+        })
+    }

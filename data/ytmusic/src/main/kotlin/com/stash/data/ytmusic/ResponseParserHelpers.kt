@@ -158,6 +158,7 @@ fun parseListItemSubtitle(runs: JsonArray?): ListItemSubtitle {
 internal fun parseTrackSummaryFromListItem(
     renderer: JsonObject,
     fallbackArtist: String? = null,
+    fallbackVideoId: String? = null,
 ): TrackSummary? {
     val videoId = renderer["playlistItemData"]?.asObject()
         ?.get("videoId")?.asString()
@@ -166,6 +167,7 @@ internal fun parseTrackSummaryFromListItem(
             "musicPlayButtonRenderer", "playNavigationEndpoint",
             "watchEndpoint", "videoId",
         )?.asString()
+        ?: fallbackVideoId
         ?: return null
 
     val flexColumns = renderer["flexColumns"]?.asArray() ?: return null

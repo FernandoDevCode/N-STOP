@@ -935,14 +935,36 @@ class SpotifyApiClient @Inject constructor(
 
     /** Builds and executes a single authenticated GET against the search endpoint. */
     private fun executeSearchRequest(url: String, token: String): okhttp3.Response {
-        val request = Request.Builder()
+        return okHttpClient.newCall(searchRequest(url, token)).execute()
+    }
+
+    private fun searchRequest(url: String, token: String): Request =
+        Request.Builder()
             .url(url)
             .get()
             .header("Authorization", "Bearer $token")
             .header("Accept", "application/json")
             .build()
-        return okHttpClient.newCall(request).execute()
-    }
+
+    /** User-authorized catalog search. The matching-only searchTracks API keeps its own contract. */
+    suspend fun searchCatalog(query: String, limit: Int = 8): List<SpotifyCatalogItem> =
+        withContext(Dispatchers.IO) {
+            val url = "$WEB_API_BASE/search?type=track,artist,album&limit=$limit" +
+                "&q=${URLEncoder.encode(query, "UTF-8")}"
+            val token = tokenManager.getSpotifyAccessToken()
+                ?: throw SpotifyApiException(0, url, "Spotify search requires a connected account")
+            var response = okHttpClient.newCall(searchRequest(url, token)).awaitCatalogResponse()
+            if (response.code == 401) {
+                val refreshed = tokenManager.forceRefreshSpotifyAccessToken()
+                    ?: throw SpotifyApiException(401, url, "Spotify session could not be refreshed")
+                response = okHttpClient.newCall(searchRequest(url, refreshed)).awaitCatalogResponse()
+            }
+            when (response.code) {
+                429 -> throw SpotifyRateLimitException(response.retryAfterSeconds)
+                !in 200..299 -> throw SpotifyApiException(response.code, url, "Spotify search failed")
+            }
+            parseSpotifyCatalog(response.body ?: throw java.io.IOException("Empty Spotify search response"))
+        }
 
     /**
      * Search tracks via the web player's `searchDesktop` GraphQL operation

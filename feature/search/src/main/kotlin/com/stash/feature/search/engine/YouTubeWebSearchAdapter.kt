@@ -11,7 +11,8 @@ fun YouTubeWebVideo.toUniversalSearchResult(): UniversalSearchResult = Universal
     subtitle = channel,
     artworkUrl = thumbnailUrl,
     durationMs = durationMs,
+    versionLabel = versionFromTitle(title),
     providerRank = providerRank,
-    rankingScore = 1.0 / (providerRank + 1.0),
+    rankingScore = ordinalSearchScore(providerRank),
     supportedActions = emptySet(),
 )
