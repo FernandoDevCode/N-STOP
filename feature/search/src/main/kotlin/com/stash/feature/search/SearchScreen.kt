@@ -298,13 +298,16 @@ private fun SearchHeader(state: UniversalSearchUiState, actions: UniversalSearch
 @Composable
 private fun SourceFilters(selection: SearchSourceSelection, actions: UniversalSearchActions) {
     Column(Modifier.fillMaxWidth().padding(horizontal = VisualDesign.Gutter, vertical = 6.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(
                 stringResource(R.string.universal_search_sources),
-                Modifier.weight(1f).semantics { heading() },
+                Modifier.align(Alignment.CenterVertically).semantics { heading() },
                 style = VisualDesign.Body,
             )
-            TextButton(onClick = actions::onRestoreDefaultSources) {
+            TextButton(
+                onClick = actions::onRestoreDefaultSources,
+                contentPadding = PaddingValues(horizontal = 4.dp),
+            ) {
                 Text(stringResource(R.string.universal_search_restore), style = VisualDesign.Body)
             }
         }

@@ -1,5 +1,12 @@
 package com.stash.feature.search
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsOff
@@ -12,7 +19,10 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import com.stash.core.ui.visual.VisualTheme
 import com.stash.feature.search.contract.CatalogIdentity
 import com.stash.feature.search.contract.CatalogSource
@@ -29,6 +39,7 @@ import com.stash.feature.search.contract.UniversalSearchResult
 import com.stash.feature.search.contract.UniversalSearchUiState
 import com.stash.feature.search.engine.queryHistoryItem
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -62,6 +73,24 @@ class UniversalSearchContentTest {
         verify(actions).onRestoreDefaultSources()
         verify(actions).onQueryChanged("a")
         verify(actions).onSearchSubmitted()
+    }
+
+    @Test
+    fun `sources heading fits at 280 dp and 150 percent font scale`() {
+        compose.setContent {
+            val density = LocalDensity.current.density
+            CompositionLocalProvider(LocalDensity provides Density(density, fontScale = 1.5f)) {
+                Box(Modifier.width(280.dp)) {
+                    VisualTheme { UniversalSearchContent(UniversalSearchUiState(), actions, autoFocus = false) }
+                }
+            }
+        }
+        val layouts = mutableListOf<TextLayoutResult>()
+        compose.onNodeWithText("Sources").performSemanticsAction(SemanticsActions.GetTextLayoutResult) { read ->
+            assertTrue(read(layouts))
+        }
+        assertEquals(1, layouts.single().lineCount)
+        compose.onNodeWithText("Restore defaults").assertHasClickAction()
     }
 
     @Test
