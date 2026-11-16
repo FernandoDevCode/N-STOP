@@ -13,6 +13,7 @@ import com.stash.feature.search.contract.CatalogSource.SPOTIFY
 import com.stash.feature.search.contract.CatalogSource.YOUTUBE
 import com.stash.feature.search.contract.CatalogSource.YOUTUBE_MUSIC
 import com.stash.feature.search.contract.SearchSourceSelection
+import com.stash.feature.search.contract.SearchResultType
 import com.stash.feature.search.recentSearchesDataStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -98,5 +99,23 @@ class UniversalSearchPersistenceTest {
         history.clear()
         assertTrue(history.recent.first().isEmpty())
         assertEquals(2, legacy.recent.first().size)
+    }
+
+    @Test
+    fun `history keeps new route metadata and restores old YouTube Music destinations`() = runBlocking {
+        val historyKey = stringPreferencesKey("universal_entries")
+        context.recentSearchesDataStore.edit {
+            it[historyKey] = """[{"label":"Old artist","source":"YOUTUBE_MUSIC","catalogId":"MPLAUClegacy"}]"""
+        }
+        val history = UniversalSearchHistory(context, legacy)
+        val old = history.recent.first().single()
+        assertEquals(SearchResultType.ARTIST, old.resultType)
+        assertEquals("MPLAUClegacy", old.resultIdentity?.catalogId)
+        val release = resultHistoryItem(
+            "Rare edition", "Artist", CatalogIdentity(YOUTUBE_MUSIC, "opaque-id"),
+            SearchResultType.ALBUM, "https://example.test/rare.jpg",
+        )
+        history.record(release)
+        assertEquals(listOf(release, old), UniversalSearchHistory(context, legacy).recent.first())
     }
 }

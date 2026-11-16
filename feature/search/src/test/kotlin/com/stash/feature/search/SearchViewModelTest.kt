@@ -1,523 +1,187 @@
 package com.stash.feature.search
 
 import androidx.lifecycle.SavedStateHandle
-import app.cash.turbine.test
-import com.stash.core.data.prefs.StreamingPreference
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
+import com.stash.feature.search.contract.CatalogIdentity
+import com.stash.feature.search.contract.CatalogSource
+import com.stash.feature.search.contract.CatalogSource.YOUTUBE
+import com.stash.feature.search.contract.CatalogSource.YOUTUBE_MUSIC
+import com.stash.feature.search.contract.RecentSearchItem
+import com.stash.feature.search.contract.SearchResultAction
+import com.stash.feature.search.contract.SearchResultType
+import com.stash.feature.search.contract.SearchSourceSelection
+import com.stash.feature.search.contract.UniversalSearchResult
+import com.stash.feature.search.engine.UniversalSearchHistory
+import com.stash.feature.search.engine.UniversalSearchSession
+import com.stash.feature.search.engine.UniversalSearchSessionFactory
+import com.stash.feature.search.engine.resultHistoryItem
 import com.stash.core.data.artistphotos.SelectedArtistPhotoRepository
 import com.stash.core.data.artistphotos.SelectedArtistPhoto
-import com.stash.core.media.PlayerRepository
-import com.stash.core.media.StreamRoutingResult
-import com.stash.core.media.actions.TrackActionsDelegate
-import com.stash.core.media.preview.PreviewState
-import com.stash.core.model.TrackItem
-import com.stash.data.ytmusic.YTMusicApiClient
-import com.stash.data.ytmusic.model.SearchAllResults
-import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
-import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
-import kotlinx.coroutines.flow.first
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
-import org.mockito.kotlin.atLeastOnce
-import org.mockito.kotlin.doReturn
-import org.mockito.kotlin.doSuspendableAnswer
-import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
-import org.mockito.kotlin.never
-import org.mockito.kotlin.verify
-import org.mockito.kotlin.verifyBlocking
 import org.mockito.kotlin.whenever
 
-/**
- * Unit tests for [SearchViewModel] — pin the search-query pipeline.
- *
- * The preview/download paths were extracted to
- * [com.stash.core.media.actions.TrackActionsDelegate] in the Album Discovery
- * phase-1 migration; coverage for cache hits, extractor misses, yt-dlp retry,
- * download success/failure, refresh, etc. lives in `TrackActionsDelegateTest`.
- * This file only exercises the parts still owned by the VM:
- *
- *  1. Blank / below-min-length queries emit [SearchStatus.Idle] without a
- *     [YTMusicApiClient.searchAll] call.
- *  2. A typed-past-the-minimum query triggers `searchAll` after the 300 ms
- *     debounce window.
- *  3. A new keystroke mid-search cancels the previous in-flight call
- *     ([flatMapLatest]).
- *  4. A thrown `searchAll` surfaces a snackbar message on
- *     [SearchViewModel.userMessages].
- */
 @OptIn(ExperimentalCoroutinesApi::class)
 class SearchViewModelTest {
-
-    private val dispatcher = StandardTestDispatcher()
-
-    @Before fun setUp() { Dispatchers.setMain(dispatcher) }
-    @After fun tearDown() { Dispatchers.resetMain() }
+    @Before fun setMain() = Dispatchers.setMain(StandardTestDispatcher())
+    @After fun resetMain() = Dispatchers.resetMain()
 
     @Test
-    fun `blank or short query emits Idle without calling searchAll`() = runTest {
-        val api = mock<YTMusicApiClient>()
-        val vm = newVm(api = api)
-
-        vm.onQueryChanged("")
-        advanceUntilIdle()
-        assertEquals(SearchStatus.Idle, vm.uiState.value.status)
-
-        vm.onQueryChanged("a") // below MIN_QUERY_LENGTH (2)
-        advanceUntilIdle()
-        assertEquals(SearchStatus.Idle, vm.uiState.value.status)
-
-        verify(api, never()).searchAll(any())
-    }
-
-    @Test
-    fun `onQueryChanged triggers searchAll after debounce`() = runTest {
-        val api = mock<YTMusicApiClient>()
-        whenever(api.searchAll(eq("abc"))).doReturn(SearchAllResults(emptyList()))
-        val vm = newVm(api = api)
-
-        vm.onQueryChanged("abc")
-        // Before the debounce, no call should have gone out yet.
-        advanceTimeBy(100)
-        verify(api, never()).searchAll(any())
-
-        advanceUntilIdle()
-        verify(api, atLeastOnce()).searchAll(eq("abc"))
-    }
-
-    @Test
-    fun `flatMapLatest cancels prior query on new keystroke`() = runTest {
-        val api = mock<YTMusicApiClient>()
-        val neverCompletes = CompletableDeferred<SearchAllResults>()
-        // First query: suspend forever so flatMapLatest has something to cancel.
-        whenever(api.searchAll(eq("foo"))).doSuspendableAnswer {
-            neverCompletes.await()
-        }
-        whenever(api.searchAll(eq("foobar"))).doReturn(SearchAllResults(emptyList()))
-
-        val vm = newVm(api = api)
-
-        vm.onQueryChanged("foo")
-        // Drive past the 300 ms debounce so the first search actually launches,
-        // but not past its completion (it never completes).
-        advanceTimeBy(400)
-        vm.onQueryChanged("foobar")
-        advanceUntilIdle()
-
-        // The second query resolved — i.e. the first one was cancelled.
-        verify(api, atLeastOnce()).searchAll(eq("foobar"))
-    }
-
-    @Test
-    fun `an error shows plain words on the error screen, without a second snackbar`() = runTest {
-        val api = mock<YTMusicApiClient>()
-        whenever(api.searchAll(any())).doSuspendableAnswer {
-            throw RuntimeException("boom")
-        }
-        val vm = newVm(api = api)
-        vm.userMessages.test {
-            vm.onQueryChanged("abc")
-            advanceUntilIdle()
-            assertEquals(SearchStatus.Error(SearchErrorCopy.NO_ANSWER), vm.uiState.value.status)
-            expectNoEvents()
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    /**
-     * YouTube Music not answering used to come back as an empty answer, so an
-     * offline search showed "No results" with no Retry.
-     */
-    @Test
-    fun `a search YouTube never answered is an offline error, not No results`() = runTest {
-        val api = mock<YTMusicApiClient>()
-        whenever(api.searchAll(any())).doSuspendableAnswer {
-            throw com.stash.data.ytmusic.SearchUnavailableException(statusCode = -1)
-        }
-        val vm = newVm(api = api)
-
-        vm.onQueryChanged("abc")
-        advanceUntilIdle()
-
-        assertEquals(SearchStatus.Error(SearchErrorCopy.OFFLINE), vm.uiState.value.status)
-    }
-
-    /**
-     * A failed search was a dead end: no Retry, and the same text typed again
-     * was dropped by distinctUntilChanged. Retry and the keyboard Search key
-     * now run it again.
-     */
-    @Test
-    fun `retry and the Search key re-run a failed query`() = runTest {
-        val api = mock<YTMusicApiClient>()
-        whenever(api.searchAll(any())).doSuspendableAnswer {
-            throw java.net.UnknownHostException("Unable to resolve host music.youtube.com")
-        }
-        val vm = newVm(api = api)
-        vm.onQueryChanged("abc")
-        advanceUntilIdle()
-        val error = vm.uiState.value.status as SearchStatus.Error
-        assertEquals("You're offline, or YouTube Music can't be reached.", error.message)
-
-        vm.retry()
-        advanceUntilIdle()
-        verify(api, org.mockito.kotlin.times(2)).searchAll(eq("abc"))
-
-        vm.onSearchCommitted()
-        advanceUntilIdle()
-        verify(api, org.mockito.kotlin.times(3)).searchAll(eq("abc"))
-    }
-
-    /**
-     * After process death the Search tab came back blank. The query now lives
-     * in SavedStateHandle: typing writes it, and a restored ViewModel shows it
-     * and searches it again.
-     */
-    @Test
-    fun `typing saves the query for process death`() = runTest {
-        val handle = SavedStateHandle()
-        val vm = newVm(savedStateHandle = handle)
-
-        vm.onQueryChanged("radiohead")
-
-        assertEquals("radiohead", handle.get<String>(SearchViewModel.KEY_QUERY))
-    }
-
-    @Test
-    fun `a restored query is shown and searched again`() = runTest {
-        val api = mock<YTMusicApiClient>()
-        whenever(api.searchAll(eq("radiohead"))).doReturn(SearchAllResults(emptyList()))
-        val vm = newVm(
-            api = api,
-            savedStateHandle = SavedStateHandle(mapOf(SearchViewModel.KEY_QUERY to "radiohead")),
-        )
-
-        assertEquals("radiohead", vm.uiState.value.query)
-        advanceUntilIdle()
-        verify(api, atLeastOnce()).searchAll(eq("radiohead"))
-        assertEquals(SearchStatus.Empty, vm.uiState.value.status)
-    }
-
-    // ------------------------------------------------------------------
-    // Task 20: onResultTap — streaming on vs off
-    // ------------------------------------------------------------------
-
-    @Test
-    fun `onResultTap in Download mode still plays the full stream, never the preview`() = runTest {
-        // The Download switch decides what sync writes to disk, never what
-        // plays. (Until 2026-09-17 a tap with streaming off played a 30 s
-        // preview instead.)
-        val delegate = stubDelegate()
-        val playerRepository = mock<PlayerRepository> {
-            onBlocking { playFromStream(any()) } doReturn StreamRoutingResult.Item(
-                androidx.media3.common.MediaItem.fromUri("https://example/song"),
+    fun `same back stack store retains session and new entry starts at defaults`() = runTest {
+        val handle = SavedStateHandle(mapOf(SearchViewModel.KEY_QUERY to "restored"))
+        val entry = Entry()
+        val newEntry = Entry()
+        var sessionsOpened = 0
+        var youtubeStarted = false
+        var youtubeCanceled = false
+        val factory = factory { scope, connect, navigate, open ->
+            sessionsOpened++
+            UniversalSearchSession(
+                scope,
+                CatalogSource.entries.associateWith { source ->
+                    {
+                        if (source == YOUTUBE) {
+                            youtubeStarted = true
+                            try {
+                                awaitCancellation()
+                            } finally {
+                                youtubeCanceled = true
+                            }
+                        }
+                        emptyList()
+                    }
+                },
+                SearchSourceSelection.Default, {}, history(), connect, navigate, open,
             )
         }
-        val streamingPreference = mock<StreamingPreference> {
-            onBlocking { current() } doReturn false
-        }
-        val vm = newVm(
-            delegate = delegate,
-            playerRepository = playerRepository,
-            streamingPreference = streamingPreference,
-        )
-
-        vm.onResultTap(sampleTrack())
-        advanceUntilIdle()
-
-        verifyBlocking(playerRepository) { playFromStream(any()) }
-        verify(delegate, never()).previewTrack(any())
-    }
-
-    @Test
-    fun `onResultTap streaming on calls playFromStream not preview`() = runTest {
-        val delegate = stubDelegate()
-        val playerRepository = mock<PlayerRepository> {
-            onBlocking { playFromStream(any()) } doReturn StreamRoutingResult.Item(
-                androidx.media3.common.MediaItem.fromUri("https://example/song"),
-            )
-        }
-        val streamingPreference = mock<StreamingPreference> {
-            onBlocking { current() } doReturn true
-        }
-        val vm = newVm(
-            delegate = delegate,
-            playerRepository = playerRepository,
-            streamingPreference = streamingPreference,
-        )
-
-        vm.onResultTap(sampleTrack())
-        advanceUntilIdle()
-
-        verifyBlocking(playerRepository) { playFromStream(any()) }
-        verify(delegate, never()).previewTrack(any())
-    }
-
-    @Test
-    fun `onResultTap streaming on but no connectivity emits snackbar`() = runTest {
-        val playerRepository = mock<PlayerRepository> {
-            onBlocking { playFromStream(any()) } doReturn StreamRoutingResult.NoConnectivity
-        }
-        val streamingPreference = mock<StreamingPreference> {
-            onBlocking { current() } doReturn true
-        }
-        val vm = newVm(
-            playerRepository = playerRepository,
-            streamingPreference = streamingPreference,
-        )
-
-        vm.userMessages.test {
-            vm.onResultTap(sampleTrack())
-            val msg = awaitItem()
-            assertTrue(msg.contains("offline", ignoreCase = true))
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `onResultTap streaming on but cellular refused emits snackbar`() = runTest {
-        val playerRepository = mock<PlayerRepository> {
-            onBlocking { playFromStream(any()) } doReturn StreamRoutingResult.CellularRefused
-        }
-        val streamingPreference = mock<StreamingPreference> {
-            onBlocking { current() } doReturn true
-        }
-        val vm = newVm(
-            playerRepository = playerRepository,
-            streamingPreference = streamingPreference,
-        )
-
-        vm.userMessages.test {
-            vm.onResultTap(sampleTrack())
-            val msg = awaitItem()
-            assertTrue(msg.contains("cellular", ignoreCase = true))
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `onResultTap streaming on but not available emits snackbar`() = runTest {
-        val playerRepository = mock<PlayerRepository> {
-            onBlocking { playFromStream(any()) } doReturn StreamRoutingResult.NotAvailable
-        }
-        val streamingPreference = mock<StreamingPreference> {
-            onBlocking { current() } doReturn true
-        }
-        val vm = newVm(
-            playerRepository = playerRepository,
-            streamingPreference = streamingPreference,
-        )
-
-        vm.userMessages.test {
-            vm.onResultTap(sampleTrack())
-            val msg = awaitItem()
-            assertTrue(msg.contains("couldn't find", ignoreCase = true))
-            cancelAndIgnoreRemainingEvents()
-        }
-    }
-
-    @Test
-    fun `tappedTrackId emits on tap and clears after playFromStream returns`() = runTest {
-        val gate = CompletableDeferred<StreamRoutingResult>()
-        val playerRepo = mock<PlayerRepository> {
-            onBlocking { playFromStream(any()) } doSuspendableAnswer { gate.await() }
-        }
-        val streamingPref = mock<StreamingPreference> {
-            onBlocking { current() } doReturn true
-        }
-        val vm = newVm(
-            playerRepository = playerRepo,
-            streamingPreference = streamingPref,
-        )
-
-        val emissions = mutableListOf<Long?>()
-        val collectJob = backgroundScope.launch {
-            vm.tappedTrackId.collect { emissions.add(it) }
-        }
-
-        val item = sampleTrack()
-        vm.onResultTap(item)
+        val first = entry.viewModel(factory, handle)
         runCurrent()
-
-        val expectedId = item.videoId.hashCode().toLong()
-        assertTrue(expectedId in emissions)
-
-        gate.complete(StreamRoutingResult.Item(mock()))
+        val session = checkNotNull(first.session.value)
+        assertEquals("restored", session.state.value.query)
+        session.onSourceToggled(YOUTUBE_MUSIC)
+        session.onQueryChanged("live demo")
+        advanceTimeBy(300)
         runCurrent()
-        assertEquals(null, emissions.last())
+        assertTrue(youtubeStarted)
+        assertEquals("live demo", handle.get<String>(SearchViewModel.KEY_QUERY))
 
-        collectJob.cancel()
-    }
+        val returned = entry.viewModel(factory)
+        assertSame(first, returned)
+        assertSame(session, returned.session.value)
+        assertTrue(YOUTUBE_MUSIC in session.state.value.selection.enabled)
+        assertEquals(1, sessionsOpened)
 
-    // ------------------------------------------------------------------
-    // Helpers
-    // ------------------------------------------------------------------
+        entry.viewModelStore.clear()
+        runCurrent()
+        assertTrue(youtubeCanceled)
 
-    private fun newVm(
-        api: YTMusicApiClient = mock(),
-        prefetcher: PreviewPrefetcher = mock(),
-        delegate: TrackActionsDelegate = stubDelegate(),
-        // Every tap streams now, so the default player must answer
-        // playFromStream — a bare mock returns null and the tap coroutine dies.
-        playerRepository: PlayerRepository = mock {
-            onBlocking { playFromStream(any()) } doReturn StreamRoutingResult.Item(
-                androidx.media3.common.MediaItem.fromUri("https://example/song"),
-            )
-        },
-        streamingPreference: StreamingPreference = mock {
-            onBlocking { current() } doReturn false
-        },
-        recentSearchesStore: RecentSearchesStore = mock {
-            on { recent } doReturn kotlinx.coroutines.flow.flowOf(emptyList())
-        },
-        savedStateHandle: SavedStateHandle = SavedStateHandle(),
-        imageRepository: SelectedArtistPhotoRepository = mock {
-            on { photos } doReturn MutableStateFlow<Map<String, SelectedArtistPhoto>>(emptyMap()).asStateFlow()
-        },
-    ): SearchViewModel = SearchViewModel(
-        api = api,
-        prefetcher = prefetcher,
-        delegate = delegate,
-        losslessPrefetcher = mock(),
-        playerRepository = playerRepository,
-        streamingPreference = streamingPreference,
-        recentSearchesStore = recentSearchesStore,
-        selectedArtistPhotos = imageRepository,
-        savedStateHandle = savedStateHandle,
-    )
-
-    private fun sampleTrack(): TrackItem = TrackItem(
-        videoId = "vid123",
-        title = "Hit Song",
-        artist = "Hit Artist",
-        durationSeconds = 200.0,
-        thumbnailUrl = null,
-        album = null,
-    )
-
-    /**
-     * Returns a [TrackActionsDelegate] mock with all flows stubbed to their
-     * default initial values. The VM's `init` calls `bindToScope`; we ignore
-     * the scope (the mock is a no-op) and trust the delegate's own tests to
-     * cover the real bind semantics.
-     */
-    private fun stubDelegate(): TrackActionsDelegate = mock {
-        on { previewState } doReturn
-            MutableStateFlow(PreviewState.Idle as PreviewState).asStateFlow()
-        on { userMessages } doReturn MutableSharedFlow<String>().asSharedFlow()
-        on { downloadingIds } doReturn MutableStateFlow<Set<String>>(emptySet()).asStateFlow()
-        on { downloadedIds } doReturn MutableStateFlow<Set<String>>(emptySet()).asStateFlow()
-        on { previewLoadingId } doReturn MutableStateFlow<String?>(null).asStateFlow()
-        on { userPlaylists } doReturn kotlinx.coroutines.flow.flowOf(emptyList())
-    }
-
-    // ------------------------------------------------------------------
-    // Recent searches: record on commit, NOT on keystroke
-    // ------------------------------------------------------------------
-
-    @Test
-    fun `onQueryChanged does not record a recent search`() = runTest {
-        val store = mock<RecentSearchesStore> {
-            on { recent } doReturn kotlinx.coroutines.flow.flowOf(emptyList())
-        }
-        val vm = newVm(recentSearchesStore = store)
-
-        vm.onQueryChanged("beatles")
-        advanceUntilIdle()
-
-        verifyBlocking(store, never()) { record(any()) }
+        val fresh = newEntry.viewModel(factory)
+        runCurrent()
+        assertNotSame(session, fresh.session.value)
+        assertEquals(SearchSourceSelection.Default, fresh.session.value?.state?.value?.selection)
+        assertEquals(2, sessionsOpened)
+        newEntry.viewModelStore.clear()
     }
 
     @Test
-    fun `onSearchCommitted records the trimmed query`() = runTest {
-        val store = mock<RecentSearchesStore> {
-            on { recent } doReturn kotlinx.coroutines.flow.flowOf(emptyList())
-        }
-        val vm = newVm(recentSearchesStore = store)
-
-        vm.onQueryChanged("  beatles  ")
-        vm.onSearchCommitted()
-        advanceUntilIdle()
-
-        verifyBlocking(store) {
-            record(RecentSearch(RecentSearch.Type.QUERY, "beatles"))
-        }
-    }
-
-    @Test
-    fun `opening an artist profile records an artist entry with avatar`() = runTest {
-        // The reported bug: search an artist, open the profile, back out —
-        // nothing was saved, because artist taps were pure navigation.
-        val store = mock<RecentSearchesStore> {
-            on { recent } doReturn kotlinx.coroutines.flow.flowOf(emptyList())
-        }
-        val vm = newVm(recentSearchesStore = store)
-
-        vm.onArtistOpened(id = "UC123", name = "Lil Wayne", avatarUrl = "https://img/w.jpg")
-        advanceUntilIdle()
-
-        verifyBlocking(store) {
-            record(
-                RecentSearch(
-                    type = RecentSearch.Type.ARTIST,
-                    text = "Lil Wayne",
-                    thumbnailUrl = "https://img/w.jpg",
-                    artistId = "UC123",
-                ),
+    fun `result and recent route preserve original album and artist identities`() = runTest {
+        val entry = Entry()
+        val album = UniversalSearchResult(
+            identity = CatalogIdentity(YOUTUBE_MUSIC, "album-id-special"),
+            type = SearchResultType.ALBUM,
+            title = "Original (Deluxe)",
+            subtitle = "Original artist",
+            artworkUrl = "https://example.test/original-image.jpg",
+            providerRank = 0,
+            rankingScore = 1.0,
+            supportedActions = setOf(SearchResultAction.NAVIGATE),
+        )
+        val artist = resultHistoryItem(
+            "Original artist", null, CatalogIdentity(YOUTUBE_MUSIC, "MPLAUCoriginal"),
+            SearchResultType.ARTIST, "https://example.test/artist.jpg",
+        )
+        val factory = factory { scope, connect, navigate, open ->
+            UniversalSearchSession(
+                scope,
+                CatalogSource.entries.associateWith { source ->
+                    { if (source == YOUTUBE_MUSIC) listOf(album) else emptyList() }
+                },
+                SearchSourceSelection(setOf(YOUTUBE_MUSIC)), {}, history(listOf(artist)), connect, navigate, open,
             )
         }
+        val model = entry.viewModel(factory)
+        val received = mutableListOf<SearchNavigation>()
+        backgroundScope.launch { model.destinations.collect { received += it } }
+        runCurrent()
+        val session = checkNotNull(model.session.value)
+        session.onQueryChanged("original")
+        advanceTimeBy(300)
+        runCurrent()
+        session.onResultAction(album, SearchResultAction.PLAY)
+        runCurrent()
+        assertTrue(received.isEmpty())
+        session.onResultAction(album, SearchResultAction.NAVIGATE)
+        runCurrent()
+        session.onRecentSelected(artist)
+        runCurrent()
+        val opened = (received[0] as SearchNavigation.Album).album
+        assertEquals(album.identity.catalogId, opened.id)
+        assertEquals(album.title, opened.title)
+        assertEquals(album.subtitle, opened.artist)
+        assertEquals(album.artworkUrl, opened.thumbnailUrl)
+        assertEquals(SearchNavigation.Artist("MPLAUCoriginal", artist.label, artist.artworkUrl), received[1])
+        assertNull(searchDestination(CatalogIdentity(YOUTUBE, "same-id"), SearchResultType.ALBUM, "Title", null, null))
+        entry.viewModelStore.clear()
     }
 
-    @Test
-    fun `tapping a track result records a track entry with thumbnail`() = runTest {
-        val store = mock<RecentSearchesStore> {
-            on { recent } doReturn kotlinx.coroutines.flow.flowOf(emptyList())
-        }
-        val vm = newVm(recentSearchesStore = store)
-
-        vm.onResultTap(sampleTrack().copy(thumbnailUrl = "https://img/t.jpg"))
-        advanceUntilIdle()
-
-        verifyBlocking(store) {
-            record(
-                RecentSearch(
-                    type = RecentSearch.Type.TRACK,
-                    text = "Hit Song",
-                    subtitle = "Hit Artist",
-                    thumbnailUrl = "https://img/t.jpg",
-                ),
-            )
-        }
+    private fun history(items: List<RecentSearchItem> = emptyList()) = mock<UniversalSearchHistory>().apply {
+        whenever(recent).thenReturn(flowOf(items))
     }
 
-    @Test
-    fun `onSearchCommitted with blank query records nothing`() = runTest {
-        val store = mock<RecentSearchesStore> {
-            on { recent } doReturn kotlinx.coroutines.flow.flowOf(emptyList())
+    private suspend fun factory(
+        open: (CoroutineScope, () -> Unit, (UniversalSearchResult) -> Unit, (RecentSearchItem) -> Unit) -> UniversalSearchSession,
+    ): UniversalSearchSessionFactory {
+        val factory = mock<UniversalSearchSessionFactory>()
+        whenever(factory.open(any(), any(), any(), any())).thenAnswer { invocation ->
+            open(invocation.getArgument(0), invocation.getArgument(1), invocation.getArgument(2), invocation.getArgument(3))
         }
-        val vm = newVm(recentSearchesStore = store)
-
-        vm.onQueryChanged("   ")
-        vm.onSearchCommitted()
-        advanceUntilIdle()
-
-        verifyBlocking(store, never()) { record(any()) }
+        return factory
     }
 
+    private class Entry : ViewModelStoreOwner {
+        override val viewModelStore = ViewModelStore()
+        private val photoRepository = mock<SelectedArtistPhotoRepository>().apply {
+            whenever(photos).thenReturn(MutableStateFlow<Map<String, SelectedArtistPhoto>>(emptyMap()))
+        }
+
+        fun viewModel(factory: UniversalSearchSessionFactory, handle: SavedStateHandle = SavedStateHandle()) =
+            ViewModelProvider(this, object : ViewModelProvider.Factory {
+                override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                    requireNotNull(modelClass.cast(SearchViewModel(factory, handle, photoRepository)))
+            })[SearchViewModel::class.java]
+    }
 }

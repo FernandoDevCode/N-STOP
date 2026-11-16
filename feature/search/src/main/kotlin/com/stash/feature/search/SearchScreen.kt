@@ -1,27 +1,20 @@
 package com.stash.feature.search
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -29,760 +22,522 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.SearchOff
-import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.outlined.Album
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import coil3.compose.AsyncImage
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.merge
-import com.stash.core.media.preview.LosslessUrlPrefetcher
-import com.stash.core.media.preview.PreviewState
-import com.stash.core.model.TrackItem
-import com.stash.core.ui.components.AlbumSquareCard
-import com.stash.core.ui.components.ArtistAvatarCard
-import com.stash.core.ui.components.SectionHeader
-import com.stash.core.ui.components.ShimmerPlaceholder
-import com.stash.core.ui.theme.StashTheme
-import com.stash.data.ytmusic.model.AlbumSummary
-import com.stash.data.ytmusic.model.ArtistSummary
 import com.stash.core.data.artistphotos.SelectedArtistPhoto
-import com.stash.data.ytmusic.model.SearchResultSection
-import com.stash.data.ytmusic.model.TopResultItem
-import com.stash.data.ytmusic.model.TrackSummary
-import com.stash.core.ui.visual.*
 import com.stash.core.ui.components.bottomChromePadding
+import com.stash.core.ui.visual.VisualDesign
+import com.stash.data.ytmusic.model.AlbumSummary
+import com.stash.feature.search.contract.CatalogIdentity
+import com.stash.feature.search.contract.CatalogSource
+import com.stash.feature.search.contract.RecentSearchItem
+import com.stash.feature.search.contract.RecentSearchKind
+import com.stash.feature.search.contract.SearchResultAction
+import com.stash.feature.search.contract.SearchResultType
+import com.stash.feature.search.contract.SearchSourceSelection
+import com.stash.feature.search.contract.SourceSearchState
+import com.stash.feature.search.contract.UnavailableReason
+import com.stash.feature.search.contract.UniversalSearchActions
+import com.stash.feature.search.contract.UniversalSearchResult
+import com.stash.feature.search.contract.UniversalSearchUiState
+import java.text.NumberFormat
+import java.util.Locale
 
-/**
- * Top-level search screen composable.
- *
- * Task 9 rewired the body: results now render as four ordered sections
- * (Top / Songs / Artists / Albums) driven off [SearchStatus]. The
- * snackbar host listens for [SearchViewModel.userMessages] so search
- * failures surface as toasts without flipping the entire screen into an
- * error state.
- */
 @Composable
 fun SearchScreen(
+    viewModel: SearchViewModel,
     onNavigateToArtist: (artistId: String, name: String, avatarUrl: String?) -> Unit,
     onNavigateToAlbum: (album: AlbumSummary) -> Unit,
-    onSettings: () -> Unit = {},
-    viewModel: SearchViewModel = hiltViewModel(),
+    onConnectSpotify: () -> Unit,
 ) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val previewState by viewModel.delegate.previewState.collectAsStateWithLifecycle()
-    val downloadingIds by viewModel.delegate.downloadingIds.collectAsStateWithLifecycle()
-    val downloadedIds by viewModel.delegate.downloadedIds.collectAsStateWithLifecycle()
-    val waitingForLosslessIds by viewModel.delegate.waitingForLosslessIds.collectAsStateWithLifecycle()
-    val previewLoadingId by viewModel.delegate.previewLoadingId.collectAsStateWithLifecycle()
-    val tappedTrackId by viewModel.tappedTrackId.collectAsStateWithLifecycle()
-    val playlistSheetItem by viewModel.playlistSheetItem.collectAsStateWithLifecycle()
-    val userPlaylists by viewModel.userPlaylists.collectAsStateWithLifecycle()
-    val recentSearches by viewModel.recentSearches.collectAsStateWithLifecycle()
-    val selectedArtistPhotos by viewModel.artistPhotos.collectAsStateWithLifecycle()
-    val currentPlayingYoutubeId by viewModel.currentPlayingYoutubeId.collectAsStateWithLifecycle()
-    val snackbarHostState = remember { SnackbarHostState() }
-    LaunchedEffect(viewModel) {
-        merge(
-            viewModel.userMessages,
-            viewModel.delegate.userMessages,
-        ).collect { msg -> snackbarHostState.showSnackbar(msg) }
+    val session by viewModel.session.collectAsStateWithLifecycle()
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val keyboard = LocalSoftwareKeyboardController.current
+    val currentArtist by rememberUpdatedState(onNavigateToArtist)
+    val currentAlbum by rememberUpdatedState(onNavigateToAlbum)
+    val currentConnect by rememberUpdatedState(onConnectSpotify)
+    LaunchedEffect(viewModel, lifecycle, keyboard) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            viewModel.destinations.collect { destination ->
+                keyboard?.hide()
+                when (destination) {
+                    SearchNavigation.ConnectSpotify -> currentConnect()
+                    is SearchNavigation.Artist -> currentArtist(destination.id, destination.name, destination.artworkUrl)
+                    is SearchNavigation.Album -> currentAlbum(destination.album)
+                }
+            }
+        }
     }
 
-    // Search owns the keyboard insets, while the app chrome stays fixed.
-    Scaffold(
-        modifier = Modifier.imePadding(),
-        snackbarHost = { SnackbarHost(snackbarHostState, Modifier.padding(bottom = bottomChromePadding())) },
-        containerColor = Color.Transparent,
-    ) { inner ->
-        Column(
-            modifier = Modifier.fillMaxSize().padding(inner),
-        ) {
-            // This is a primary tab, not a settings entry point. A single
-            // clear title keeps the search field visible above the fold.
+    val activeSession = session
+    if (activeSession == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(Modifier.size(24.dp))
+        }
+    } else {
+        val state by activeSession.state.collectAsStateWithLifecycle()
+        val photos by viewModel.selectedArtistPhotos.collectAsStateWithLifecycle()
+        UniversalSearchContent(state, activeSession, artistPhotos = photos)
+    }
+}
+
+@Composable
+internal fun UniversalSearchContent(
+    state: UniversalSearchUiState,
+    actions: UniversalSearchActions,
+    autoFocus: Boolean = true,
+    artistPhotos: Map<String, SelectedArtistPhoto> = emptyMap(),
+) {
+    val list = rememberLazyListState()
+    var listQuery by rememberSaveable { mutableStateOf(state.query) }
+    LaunchedEffect(state.query) {
+        if (listQuery != state.query) {
+            listQuery = state.query
+            list.scrollToItem(0)
+        }
+    }
+    // Search consumes the IME insets. The existing app scaffold owns the atmosphere and chrome.
+    Scaffold(Modifier.imePadding(), containerColor = Color.Transparent) { insets ->
+        Column(Modifier.fillMaxSize().padding(insets)) {
+            SearchHeader(state, actions, autoFocus)
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().testTag("searchList"),
+                state = list,
+                contentPadding = PaddingValues(bottom = bottomChromePadding(12.dp)),
+            ) {
+                item("sources") { SourceFilters(state.selection, actions) }
+                if (state.selection.enabled.isEmpty()) {
+                    item("noSources") { SearchMessage(R.string.universal_search_select_source) }
+                }
+                if (state.query.isBlank()) {
+                    if (state.recentSearches.isEmpty()) {
+                        item("prompt") { SearchMessage(R.string.universal_search_prompt) }
+                    } else {
+                        item("recentHeader") {
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = VisualDesign.Gutter),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    stringResource(R.string.nostop_search_recent),
+                                    Modifier.weight(1f).semantics { heading() },
+                                    style = VisualDesign.Heading,
+                                )
+                                TextButton(onClick = actions::onRecentCleared) {
+                                    Text(stringResource(R.string.universal_search_clear_history))
+                                }
+                            }
+                        }
+                        items(state.recentSearches, key = { "recent:${it.id}" }) { item ->
+                            RecentSearchRow(item, actions, artistPhotos)
+                        }
+                    }
+                } else if (state.selection.enabled.isNotEmpty()) {
+                    val sources = CatalogSource.entries.filter { it in state.selection.enabled }
+                    val statuses = sources.map { state.sourceStates[it] ?: SourceSearchState.Idle }
+                    val finished = statuses.none { it is SourceSearchState.Loading || it == SourceSearchState.Idle }
+                    val noResults = state.orderedResults.isEmpty()
+                    if (noResults && statuses.all { it is SourceSearchState.Empty }) {
+                        item("empty") { SearchMessage(R.string.nostop_search_no_results) }
+                    } else if (noResults && finished && statuses.any { it is SourceSearchState.Error }) {
+                        item("error") { SearchMessage(R.string.nostop_search_failed) }
+                    }
+
+                    for (source in sources) {
+                        when (val status = state.sourceStates[source]) {
+                            null, SourceSearchState.Idle, is SourceSearchState.Data -> Unit
+                            else -> item("status:${source.name}") { SourceStatus(source, status, actions) }
+                        }
+                    }
+
+                    if (state.orderedResults.any { !it.supports(SearchResultAction.NAVIGATE) }) {
+                        item("catalogHint") { SearchMessage(R.string.universal_search_catalog_hint, compact = true) }
+                    }
+                    items(state.orderedResults, key = UniversalSearchResult::stableKey) { result ->
+                        ResultRow(result, actions, artistPhotos)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchHeader(state: UniversalSearchUiState, actions: UniversalSearchActions, autoFocus: Boolean) {
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    Column(Modifier.padding(horizontal = VisualDesign.Gutter)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = stringResource(R.string.nostop_search_title),
-                modifier = Modifier.padding(horizontal = VisualDesign.Gutter, vertical = 10.dp),
+                stringResource(R.string.nostop_search_title),
+                Modifier.weight(1f).semantics { heading() },
                 style = VisualDesign.PageTitle,
             )
-            SearchBar(state.query, viewModel::onQueryChanged, { viewModel.onQueryChanged("") }, viewModel::onSearchCommitted)
-
-            when (val status = state.status) {
-                SearchStatus.Idle -> RecentSearches(
-                    entries = recentSearches,
-                    selectedArtistPhotos = selectedArtistPhotos,
-                    onTap = { entry ->
-                        viewModel.onRecentSearchTapped(entry)
-                        // ARTIST recents navigate straight back to the profile.
-                        if (entry.type == RecentSearch.Type.ARTIST && entry.artistId != null) {
-                            onNavigateToArtist(
-                                entry.artistId,
-                                entry.text,
-                                selectedArtistPhotoUrl(entry.artistId, entry.thumbnailUrl, selectedArtistPhotos),
-                            )
-                        }
-                    },
-                    onRemove = viewModel::removeRecentSearch,
-                    onClearAll = viewModel::clearRecentSearches,
+            val pinned = state.selection.isPinned
+            val description = stringResource(
+                if (pinned) R.string.universal_search_pinned else R.string.universal_search_temporary,
+            )
+            IconToggleButton(
+                checked = pinned,
+                onCheckedChange = { actions.onPinToggled() },
+                modifier = Modifier.testTag("searchPin").semantics { stateDescription = description },
+            ) {
+                Icon(
+                    if (pinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
+                    stringResource(R.string.universal_search_pin_sources),
                 )
-                SearchStatus.Loading -> LoadingSkeletons()
-                is SearchStatus.Results -> SectionedResultsList(
-                    sections = status.sections,
-                    selectedArtistPhotos = selectedArtistPhotos,
-                    downloadingIds = downloadingIds,
-                    downloadedIds = downloadedIds,
-                    waitingForLosslessIds = waitingForLosslessIds,
-                    previewLoadingId = previewLoadingId,
-                    previewState = previewState,
-                    tappedTrackId = tappedTrackId,
-                    currentPlayingYoutubeId = currentPlayingYoutubeId,
-                    losslessPrefetcher = viewModel.losslessPrefetcher,
-                    onArtistClick = { a ->
-                        // Opening a profile IS the committed search — record the
-                        // artist (with avatar) so backing out still saved it.
-                        val selected = selectedArtistPhotoUrl(a.id, a.avatarUrl, selectedArtistPhotos)
-                        viewModel.onArtistOpened(a.id, a.name, selected)
-                        onNavigateToArtist(a.id, a.name, selected)
-                    },
-                    onAlbumClick = onNavigateToAlbum,
-                    onTopTrackClick = { t -> viewModel.onResultTap(t.toTrackItem()) },
-                    onPreview = { track -> viewModel.onResultTap(track) },
-                    onStopPreview = viewModel.delegate::stopPreview,
-                    onDownload = { t -> viewModel.onDownload(t.toTrackItem()) },
-                    onPlayNext = viewModel::onPlayNext,
-                    onAddToQueue = viewModel::onAddToQueue,
-                    onStartRadio = viewModel::onStartRadio,
-                    onRequestAddToPlaylist = viewModel::onRequestAddToPlaylist,
-                    onVisibleSongIdsChanged = viewModel::prefetchVisible,
-                )
-                SearchStatus.Empty -> NoResultsMessage()
-                is SearchStatus.Error -> ErrorMessage(status.message, onRetry = viewModel::retry)
             }
         }
-
-        if (playlistSheetItem != null) {
-            com.stash.core.ui.components.SaveToPlaylistSheet(
-                playlists = userPlaylists.map {
-                    com.stash.core.ui.components.PlaylistInfo(it.id, it.name, it.trackCount)
-                },
-                onSaveToPlaylist = viewModel::onSaveToPlaylist,
-                onCreatePlaylist = viewModel::onCreatePlaylistAndAdd,
-                onDismiss = viewModel::onDismissPlaylistSheet,
-            )
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Search bar
-// ---------------------------------------------------------------------------
-
-@Composable
-private fun SearchBar(
-    query: String,
-    onQueryChanged: (String) -> Unit,
-    onClear: () -> Unit,
-    onSearch: () -> Unit = {},
-) {
-    val focusRequester = remember { FocusRequester() }
-    val keyboardController = LocalSoftwareKeyboardController.current
-
-    VisualSearchField(query, onQueryChanged, { keyboardController?.hide(); onSearch() },
-        Modifier.padding(horizontal = VisualDesign.Gutter, vertical = 12.dp).focusRequester(focusRequester))
-
-    // Auto-focus the search field the first time the screen opens, with nothing
-    // typed yet. Saveable so it survives the back stack: focusing on every
-    // return (Back from an artist, switching back to the tab) popped the
-    // keyboard over the very results the user came back to.
-    var autoFocused by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        if (!autoFocused && query.isEmpty()) {
-            // Wait for the initial layouts rather than animating the entire screen at once.
-            withFrameNanos { }
-            withFrameNanos { }
-            focusRequester.requestFocus()
-        }
-        autoFocused = true
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Recent searches (empty-state)
-// ---------------------------------------------------------------------------
-
-/**
- * Shown in the idle/empty state: the user's recent searches, most-recent-
- * first. Plain queries show a clock glyph; ARTIST entries show the circular
- * avatar and navigate straight back to the profile; TRACK entries show the
- * square art and re-run "artist title". The ✕ removes one; "Clear all"
- * empties the list. Falls back to [EmptySearchPrompt] when there are none.
- */
-@Composable
-private fun RecentSearches(
-    entries: List<RecentSearch>,
-    selectedArtistPhotos: Map<String, SelectedArtistPhoto>,
-    onTap: (RecentSearch) -> Unit,
-    onRemove: (RecentSearch) -> Unit,
-    onClearAll: () -> Unit,
-) {
-    if (entries.isEmpty()) {
-        EmptySearchPrompt()
-        return
-    }
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = bottomChromePadding()),
-    ) {
-        item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 20.dp, end = 8.dp, top = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+        val queryLabel = stringResource(R.string.universal_search_query)
+        OutlinedTextField(
+            value = state.query,
+            onValueChange = actions::onQueryChanged,
+            modifier = Modifier.fillMaxWidth().focusRequester(focusRequester).testTag("searchQuery")
+                .semantics { contentDescription = queryLabel },
+            singleLine = true,
+            textStyle = VisualDesign.Body,
+            placeholder = {
                 Text(
-                    text = stringResource(R.string.nostop_search_recent),
-                    style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.2.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
+                    stringResource(R.string.nostop_search_placeholder),
+                    style = VisualDesign.Body,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                TextButton(onClick = onClearAll) { Text(stringResource(R.string.nostop_search_clear_short)) }
-            }
-        }
-        // By identity: two songs called "Intro" are two rows now, so the title alone would collide.
-        items(entries, key = { it.identityKey }) { entry ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onTap(entry) }
-                    .padding(horizontal = 20.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                RecentSearchThumb(
-                    entry,
-                    if (entry.type == RecentSearch.Type.ARTIST)
-                        selectedArtistPhotoUrl(entry.artistId, entry.thumbnailUrl, selectedArtistPhotos)
-                    else entry.thumbnailUrl,
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = entry.text,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    // TRACK keeps its artist line; ARTIST/QUERY need none —
-                    // the thumb shape already carries the kind (circle=artist,
-                    // square=song, clock=plain query).
-                    if (entry.type == RecentSearch.Type.TRACK && entry.subtitle != null) {
-                        Text(
-                            text = entry.subtitle,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+            },
+            leadingIcon = { Icon(Icons.Outlined.Search, null) },
+            trailingIcon = if (state.query.isNotEmpty()) {
+                {
+                    IconButton(onClick = actions::onClearQuery) {
+                        Icon(Icons.Filled.Close, stringResource(R.string.nostop_search_clear))
                     }
                 }
-                IconButton(onClick = { onRemove(entry) }) {
-                    Icon(
-                        imageVector = Icons.Default.Clear,
-                        contentDescription = "Remove",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+            } else null,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = {
+                keyboard?.hide()
+                actions.onSearchSubmitted()
+            }),
+            shape = RoundedCornerShape(24.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = VisualDesign.Surface,
+                unfocusedContainerColor = VisualDesign.Surface,
+            ),
+        )
+    }
+    var focused by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(autoFocus) {
+        if (autoFocus && !focused) {
+            focused = true
+            if (state.query.isEmpty()) {
+                withFrameNanos { }
+                withFrameNanos { }
+                focusRequester.requestFocus()
             }
         }
     }
 }
 
-
-/**
- * Leading visual for a recents row: circular avatar for artists, rounded-
- * square art for tracks, and the clock glyph for plain queries (also the
- * fallback when an entry has no thumbnail URL).
- */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun RecentSearchThumb(entry: RecentSearch, photoUrl: String?) {
-    val size = 44.dp
-    if (photoUrl != null) {
-        AsyncImage(
-            model = photoUrl,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .size(size)
-                .clip(
-                    if (entry.type == RecentSearch.Type.ARTIST) CircleShape
-                    else RoundedCornerShape(8.dp),
-                ),
-        )
-    } else {
-        Box(
-            modifier = Modifier.size(size),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.Schedule,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+private fun SourceFilters(selection: SearchSourceSelection, actions: UniversalSearchActions) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = VisualDesign.Gutter, vertical = 6.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                stringResource(R.string.universal_search_sources),
+                Modifier.weight(1f).semantics { heading() },
+                style = VisualDesign.Body,
             )
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Sectioned results list
-// ---------------------------------------------------------------------------
-
-/**
- * Renders the four-section Search result body — Top / Songs / Artists /
- * Albums, in that fixed order. Empty sections are simply skipped by the
- * backing [YTMusicApiClient.searchAll] parser, so this composable only
- * needs to pattern-match the kinds it actually receives.
- */
-@OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
-@Composable
-private fun SectionedResultsList(
-    sections: List<SearchResultSection>,
-    selectedArtistPhotos: Map<String, SelectedArtistPhoto>,
-    downloadingIds: Set<String>,
-    downloadedIds: Set<String>,
-    waitingForLosslessIds: Set<String>,
-    previewLoadingId: String?,
-    previewState: PreviewState,
-    tappedTrackId: Long?,
-    currentPlayingYoutubeId: String?,
-    losslessPrefetcher: LosslessUrlPrefetcher,
-    onArtistClick: (ArtistSummary) -> Unit,
-    onAlbumClick: (AlbumSummary) -> Unit,
-    onTopTrackClick: (TrackSummary) -> Unit,
-    onPreview: (TrackItem) -> Unit,
-    onStopPreview: () -> Unit,
-    onDownload: (TrackSummary) -> Unit,
-    onPlayNext: (TrackItem) -> Unit = {},
-    onAddToQueue: (TrackItem) -> Unit = {},
-    onStartRadio: (TrackItem) -> Unit = {},
-    onRequestAddToPlaylist: (TrackItem) -> Unit = {},
-    onVisibleSongIdsChanged: (List<String>) -> Unit = {},
-) {
-    val listState = rememberLazyListState()
-
-    // Scroll-driven preview prefetch. Keys are set as "song_<videoId>" on
-    // each Songs row below, so we can derive visible video ids directly
-    // from layoutInfo without ferrying a flat tracks list into this
-    // composable. 200ms debounce absorbs fast scroll without spamming
-    // the extractor; distinctUntilChanged filters no-op emissions when
-    // the visible set hasn't changed since the last tick.
-    LaunchedEffect(listState, sections) {
-        snapshotFlow {
-            listState.layoutInfo.visibleItemsInfo.mapNotNull { info ->
-                (info.key as? String)?.takeIf { it.startsWith("song_") }
-                    ?.removePrefix("song_")
+            TextButton(onClick = actions::onRestoreDefaultSources) {
+                Text(stringResource(R.string.universal_search_restore), style = VisualDesign.Body)
             }
         }
-            .debounce(200)
-            .distinctUntilChanged()
-            .collect { ids ->
-                if (ids.isNotEmpty()) onVisibleSongIdsChanged(ids)
-            }
-    }
-
-    LazyColumn(
-        state = listState,
-        contentPadding = PaddingValues(bottom = bottomChromePadding(96.dp)),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        sections.forEach { section ->
-            when (section) {
-                is SearchResultSection.Top -> item(key = "top") {
-                    val top = section.item
-                    if (top is TopResultItem.TrackTop) {
-                        val videoId = top.track.videoId
-                        // Warm the lossless URL cache for the top-result track as
-                        // soon as the card enters composition.
-                        LaunchedEffect(videoId) {
-                            losslessPrefetcher.warmUp(top.track.toTrackItem())
-                        }
-                        SongRow(
-                            item = top.track.toSearchResultItem(),
-                            isDownloading = videoId in downloadingIds,
-                            isDownloaded = videoId in downloadedIds,
-                            isPreviewLoading = previewLoadingId == videoId,
-                            isPreviewPlaying = previewState is PreviewState.Playing &&
-                                previewState.videoId == videoId,
-                            isResolving = videoId.hashCode().toLong() == tappedTrackId,
-                            isPlaying = isRowPlaying(videoId, currentPlayingYoutubeId),
-                            onPlay = { onTopTrackClick(top.track) },
-                            onStopPreview = onStopPreview,
-                            onDownload = { onDownload(top.track) },
-                            onPlayNext = { onPlayNext(top.track.toTrackItem()) },
-                            onAddToQueue = { onAddToQueue(top.track.toTrackItem()) },
-                            onAddToPlaylist = { onRequestAddToPlaylist(top.track.toTrackItem()) },
-                            onStartRadio = { onStartRadio(top.track.toTrackItem()) },
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                        )
-                    } else if (top is TopResultItem.ArtistTop) {
-                        TopResultCard(
-                            item = top,
-                            onArtistClick = onArtistClick,
-                            artistPhotoUrl = selectedArtistPhotoUrl(
-                                top.artist.id, top.artist.avatarUrl, selectedArtistPhotos,
-                            ),
-                        )
-                    }
-                }
-                is SearchResultSection.Songs -> {
-                    item(key = "songs_header") {
-                        VisualSectionTitle(stringResource(R.string.nostop_search_songs))
-                        Text(
-                            text = stringResource(R.string.sonora_search_hold_hint),
-                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    items(section.tracks, key = { "song_" + it.videoId }) { t ->
-                        val item = t.toSearchResultItem()
-                        // Warm the lossless URL cache for each song row as it
-                        // scrolls into view — idempotent, safe to call on every
-                        // recomposition (LosslessUrlPrefetcher dedupes by videoId).
-                        LaunchedEffect(t.videoId) {
-                            losslessPrefetcher.warmUp(t.toTrackItem())
-                        }
-                        SongRow(
-                            item = item,
-                            isDownloading = t.videoId in downloadingIds,
-                            isDownloaded = t.videoId in downloadedIds,
-                            isWaitingForLossless = t.videoId in waitingForLosslessIds,
-                            isPreviewLoading = previewLoadingId == t.videoId,
-                            isPreviewPlaying = previewState is PreviewState.Playing &&
-                                previewState.videoId == t.videoId,
-                            isResolving = (t.videoId.hashCode().toLong() == tappedTrackId),
-                            isPlaying = isRowPlaying(t.videoId, currentPlayingYoutubeId),
-                            onPlay = { onPreview(t.toTrackItem()) },
-                            onStopPreview = onStopPreview,
-                            onDownload = { onDownload(t) },
-                            onPlayNext = { onPlayNext(t.toTrackItem()) },
-                            onAddToQueue = { onAddToQueue(t.toTrackItem()) },
-                            onStartRadio = { onStartRadio(t.toTrackItem()) },
-                            onAddToPlaylist = { onRequestAddToPlaylist(t.toTrackItem()) },
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                        )
-                    }
-                }
-                is SearchResultSection.Artists -> {
-                    item(key = "artists_header") { VisualSectionTitle(stringResource(R.string.nostop_search_artists)) }
-                    item(key = "artists_row") {
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            contentPadding = PaddingValues(horizontal = 16.dp),
-                        ) {
-                            items(section.artists, key = { it.id }) { a ->
-                                ArtistAvatarCard(
-                                    name = a.name,
-                                    avatarUrl = selectedArtistPhotoUrl(a.id, a.avatarUrl, selectedArtistPhotos),
-                                    onClick = { onArtistClick(a) },
-                                )
-                            }
-                        }
-                    }
-                }
-                is SearchResultSection.Albums -> {
-                    item(key = "albums_header") { VisualSectionTitle(stringResource(R.string.nostop_search_albums)) }
-                    item(key = "albums_row") {
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            contentPadding = PaddingValues(horizontal = 16.dp),
-                        ) {
-                            items(section.albums, key = { it.id }) { a ->
-                                VisualRailCard(VisualCard(a.id, a.title, a.artist, a.thumbnailUrl), { onAlbumClick(a) }, plain = true)
-                            }
-                        }
-                    }
-                }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            for (source in CatalogSource.entries) {
+                val selected = source in selection.enabled
+                FilterChip(
+                    selected = selected,
+                    onClick = { actions.onSourceToggled(source) },
+                    label = { Text(stringResource(source.nameRes), style = VisualDesign.Body) },
+                    leadingIcon = if (selected) {
+                        { Icon(Icons.Filled.Check, null, Modifier.size(16.dp)) }
+                    } else null,
+                    shape = RoundedCornerShape(VisualDesign.Radius.Filter),
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = .15f),
+                        selectedLabelColor = VisualDesign.Ink,
+                        labelColor = VisualDesign.Muted,
+                    ),
+                )
             }
         }
     }
 }
 
-// ---------------------------------------------------------------------------
-// Top-result card
-// ---------------------------------------------------------------------------
-
-/** One catalog browse ID selects one persistent image; names never join records. */
-internal fun selectedArtistPhotoUrl(
-    artistBrowseId: String?,
-    catalogAvatarUrl: String?,
-    selections: Map<String, SelectedArtistPhoto>,
-): String? = artistBrowseId?.let { selections[it]?.photoUrl } ?: catalogAvatarUrl
-
-
-/**
- * Tall "Top result" card — mirrors the InnerTube musicCardShelfRenderer.
- *
- * The card's kind is discriminated by [TopResultItem]: artist tops show
- * an avatar + name + "Artist" chip and navigate to the artist profile,
- * track tops show the thumbnail + title + artist + "Song" chip and start
- * a preview when tapped. Polish + proper animations ship in Task 11.
- */
 @Composable
-private fun TopResultCard(
-    item: TopResultItem.ArtistTop,
-    artistPhotoUrl: String?,
-    onArtistClick: (ArtistSummary) -> Unit,
-) {
-    // A featured artist is an identity/navigational result, never a track
-    // download/queue surface. Keep it distinct from compact track rows.
-    val contextualGlass = LocalVisualDark.current && !LocalVisualAmoled.current
-    val cardFill = if (contextualGlass) {
-        Brush.horizontalGradient(
-            listOf(Color(0xFF202833), lerp(Color(0xFF1B242D), SONORA_SEARCH_BLUE, 0.26f)),
-        )
-    } else {
-        // Restore the exact v208 card treatment in light and AMOLED themes.
-        VisualDesign.cardSurface()
+private fun SourceStatus(source: CatalogSource, state: SourceSearchState, actions: UniversalSearchActions) {
+    val sourceName = stringResource(source.nameRes)
+    val statusRes = when (state) {
+        is SourceSearchState.Loading -> R.string.universal_search_loading_source
+        is SourceSearchState.Empty -> R.string.universal_search_empty_source
+        is SourceSearchState.Error -> R.string.universal_search_error_source
+        is SourceSearchState.Unavailable -> if (state.reason == UnavailableReason.AUTHENTICATION_REQUIRED) {
+            R.string.universal_search_sign_in_source
+        } else R.string.universal_search_unavailable_source
+        else -> return
     }
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .testTag("TopResultCard")
-            .clip(RoundedCornerShape(14.dp))
-            .background(cardFill)
-            .drawBehind {
-                if (contextualGlass) {
-                    // Static tinted glass distinct from the moving atmosphere.
-                    drawRect(
-                        Brush.radialGradient(
-                            colors = listOf(SONORA_SEARCH_BLUE.copy(alpha = 0.16f), Color.Transparent),
-                            center = androidx.compose.ui.geometry.Offset(
-                                size.width * 0.80f, size.height * 0.30f,
-                            ),
-                            radius = size.width * 0.74f,
-                        ),
-                    )
-                }
-            }
-            .border(
-                if (contextualGlass) 0.6.dp else 0.dp,
-                Color.White.copy(alpha = 0.10f), RoundedCornerShape(14.dp),
-            )
-            .clickable { onArtistClick(item.artist) }
-            .padding(12.dp),
+        Modifier.fillMaxWidth().padding(horizontal = VisualDesign.Gutter).heightIn(min = 30.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        val photo = artistPhotoUrl ?: item.artist.avatarUrl
-        Box(
-            Modifier.size(80.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center,
+        if (state is SourceSearchState.Loading) {
+            CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+        }
+        Text(
+            stringResource(statusRes, sourceName),
+            Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite },
+            color = VisualDesign.Muted,
+            style = VisualDesign.Caption,
+        )
+        if (state is SourceSearchState.Error && state.canRetry) {
+            SourceStatusAction(
+                R.string.universal_search_retry_short,
+                stringResource(R.string.universal_search_retry_source, sourceName),
+            ) { actions.onRetrySource(source) }
+        } else if (source == CatalogSource.SPOTIFY && state is SourceSearchState.Unavailable &&
+            state.reason == UnavailableReason.AUTHENTICATION_REQUIRED
         ) {
-            if (photo != null) {
-                AsyncImage(
-                    model = photo,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                )
-            } else {
-                Icon(
-                    imageVector = Icons.Default.Person,
-                    contentDescription = null,
-                    modifier = Modifier.size(32.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            SourceStatusAction(
+                R.string.universal_search_connect_short,
+                stringResource(R.string.universal_search_connect_spotify),
+            ) { actions.onConnectSource(source) }
         }
-        Spacer(Modifier.width(14.dp))
+    }
+}
+
+@Composable
+private fun SourceStatusAction(label: Int, description: String, onClick: () -> Unit) {
+    TextButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 8.dp)) {
+        Text(
+            stringResource(label),
+            Modifier.clearAndSetSemantics { contentDescription = description },
+            style = VisualDesign.Body,
+        )
+    }
+}
+
+@Composable
+private fun SearchMessage(res: Int, compact: Boolean = false) {
+    Text(
+        stringResource(res),
+        Modifier.padding(horizontal = VisualDesign.Gutter, vertical = 8.dp)
+            .semantics { liveRegion = LiveRegionMode.Polite },
+        color = VisualDesign.Muted,
+        style = if (compact) VisualDesign.Caption else VisualDesign.Body,
+    )
+}
+
+@Composable
+private fun ResultRow(
+    result: UniversalSearchResult,
+    actions: UniversalSearchActions,
+    artistPhotos: Map<String, SelectedArtistPhoto>,
+) {
+    val destination = result.supports(SearchResultAction.NAVIGATE)
+    val unavailable = stringResource(R.string.universal_search_catalog_only)
+    val interaction = if (destination) {
+        Modifier.clickable(role = Role.Button, onClickLabel = stringResource(R.string.universal_search_open_details)) {
+            actions.onResultAction(result, SearchResultAction.NAVIGATE)
+        }
+    } else {
+        Modifier.semantics(mergeDescendants = true) { stateDescription = unavailable }
+    }
+    Row(
+        Modifier.fillMaxWidth().testTag(result.stableKey).then(interaction)
+            .heightIn(min = 64.dp).padding(horizontal = VisualDesign.Gutter, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SearchArtwork(
+            displayedSearchArtwork(result.identity, result.type, result.artworkUrl, artistPhotos),
+            result.type.icon,
+            result.type == SearchResultType.ARTIST,
+        )
         Column(Modifier.weight(1f)) {
-            Text(
-                text = stringResource(R.string.nostop_search_kind_artist),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = item.artist.name,
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            SearchRowTitle(result.title)
+            val detail = listOfNotNull(result.subtitle, result.versionLabel).joinToString(" · ")
+            if (detail.isNotEmpty()) SearchRowDetail(detail, maxLines = 1)
+            val source = stringResource(result.identity.source.nameRes)
+            val type = stringResource(result.type.labelRes)
+            val duration = result.durationMs?.takeIf { it >= 1_000 }?.let { formatSearchDuration(it) }
+            val explicit = if (result.isExplicit) stringResource(R.string.universal_search_explicit) else null
+            SearchRowDetail(listOfNotNull(source, type, duration, explicit).joinToString(" · "))
         }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Loading / empty / error views
-// ---------------------------------------------------------------------------
-
-/**
- * Six stacked shimmer placeholders standing in for song rows while a
- * `searchAll` call is in flight.
- */
-@Composable
-private fun LoadingSkeletons() {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        repeat(6) {
-            ShimmerPlaceholder(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(64.dp),
-                shape = RoundedCornerShape(12.dp),
-            )
-        }
+        if (destination) Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = VisualDesign.Muted)
     }
 }
 
 @Composable
-private fun ErrorMessage(message: String, onRetry: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        contentAlignment = Alignment.Center,
+private fun RecentSearchRow(
+    item: RecentSearchItem,
+    actions: UniversalSearchActions,
+    artistPhotos: Map<String, SelectedArtistPhoto>,
+) {
+    val canOpen = item.kind == RecentSearchKind.QUERY || item.destination() != null
+    val detail = listOfNotNull(item.subtitle, item.resultIdentity?.let { stringResource(it.source.nameRes) })
+        .joinToString(" · ")
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 64.dp)
+            .padding(start = VisualDesign.Gutter, end = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(
-                imageVector = Icons.Default.SearchOff,
-                contentDescription = null,
-                modifier = Modifier.size(48.dp),
-                tint = MaterialTheme.colorScheme.error,
+        val unavailable = stringResource(R.string.universal_search_catalog_only)
+        val interaction = if (canOpen) Modifier.clickable(role = Role.Button) { actions.onRecentSelected(item) }
+            else Modifier.semantics(mergeDescendants = true) { stateDescription = unavailable }
+        Row(
+            Modifier.weight(1f).heightIn(min = 64.dp).then(interaction).padding(vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SearchArtwork(
+                displayedSearchArtwork(item.resultIdentity, item.resultType, item.artworkUrl, artistPhotos),
+                item.resultType?.icon ?: Icons.Outlined.History,
+                item.resultType == SearchResultType.ARTIST,
             )
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = stringResource(R.string.nostop_search_failed),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            TextButton(onClick = onRetry) {
-                Text(stringResource(R.string.nostop_search_retry))
+            Column(Modifier.weight(1f)) {
+                SearchRowTitle(item.label)
+                if (detail.isNotEmpty()) SearchRowDetail(detail)
             }
         }
-    }
-}
-
-@Composable
-private fun NoResultsMessage() {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(
-                imageVector = Icons.Default.SearchOff,
-                contentDescription = null,
-                modifier = Modifier.size(48.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = stringResource(R.string.nostop_search_no_results),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = stringResource(R.string.nostop_search_try_another),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        IconButton(onClick = { actions.onRecentRemoved(item) }) {
+            Icon(Icons.Filled.Close, stringResource(R.string.universal_search_remove_recent, item.label))
         }
     }
 }
 
+internal fun displayedSearchArtwork(
+    identity: CatalogIdentity?,
+    type: SearchResultType?,
+    artworkUrl: String?,
+    selections: Map<String, SelectedArtistPhoto>,
+): String? =
+    if (identity?.source == CatalogSource.YOUTUBE_MUSIC && type == SearchResultType.ARTIST) {
+        selections[identity.catalogId]?.photoUrl ?: artworkUrl
+    } else artworkUrl
+
 @Composable
-private fun EmptySearchPrompt() {
-    // No giant placeholder illustration or provider-specific marketing.
-    // An empty library/history is an honest, quiet state.
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 42.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+private fun SearchArtwork(url: String?, fallback: ImageVector, circle: Boolean) {
+    Box(
+        Modifier.size(52.dp)
+            .clip(if (circle) CircleShape else RoundedCornerShape(VisualDesign.Radius.Card))
+            .background(VisualDesign.Surface),
+        contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            imageVector = Icons.Default.Search,
-            contentDescription = null,
-            modifier = Modifier.size(28.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            text = stringResource(R.string.sonora_search_idle_title),
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Text(
-            text = stringResource(R.string.sonora_search_idle_subtitle),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Icon(fallback, null, tint = VisualDesign.Muted)
+        if (url != null) AsyncImage(url, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
     }
+}
+
+@Composable
+private fun SearchRowTitle(text: String) {
+    Text(text, style = VisualDesign.CardTitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+}
+
+@Composable
+private fun SearchRowDetail(text: String, maxLines: Int = 2) {
+    Text(text, color = VisualDesign.Muted, style = VisualDesign.Caption, maxLines = maxLines,
+        overflow = TextOverflow.Ellipsis)
+}
+
+@Composable
+private fun formatSearchDuration(ms: Long): String {
+    val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0] ?: Locale.getDefault()
+    return remember(ms, locale) {
+        val wholeSeconds = ms / 1000
+        val hours = wholeSeconds / 3600
+        val minutes = wholeSeconds / 60 % 60
+        val seconds = wholeSeconds % 60
+        val numbers = NumberFormat.getIntegerInstance(locale).apply { isGroupingUsed = false }
+        val first = numbers.format(if (hours == 0L) minutes else hours)
+        numbers.minimumIntegerDigits = 2
+        if (hours == 0L) "$first:${numbers.format(seconds)}"
+        else "$first:${numbers.format(minutes)}:${numbers.format(seconds)}"
+    }
+}
+
+private val CatalogSource.nameRes: Int get() = when (this) {
+    CatalogSource.SPOTIFY -> R.string.universal_search_spotify
+    CatalogSource.YOUTUBE -> R.string.universal_search_youtube
+    CatalogSource.YOUTUBE_MUSIC -> R.string.universal_search_youtube_music
+}
+
+private val SearchResultType.labelRes: Int get() = when (this) {
+    SearchResultType.TRACK -> R.string.nostop_search_kind_song
+    SearchResultType.VIDEO -> R.string.universal_search_video
+    SearchResultType.ARTIST -> R.string.nostop_search_kind_artist
+    SearchResultType.ALBUM -> R.string.universal_search_album
+}
+
+private val SearchResultType.icon: ImageVector get() = when (this) {
+    SearchResultType.TRACK -> Icons.Outlined.MusicNote
+    SearchResultType.VIDEO -> Icons.Outlined.VideoLibrary
+    SearchResultType.ARTIST -> Icons.Outlined.Person
+    SearchResultType.ALBUM -> Icons.Outlined.Album
 }
