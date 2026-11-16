@@ -95,6 +95,7 @@ class AlbumDiscoveryViewModel @Inject constructor(
     private val initialTitle: String = savedStateHandle["title"] ?: ""
     private val initialArtist: String = savedStateHandle["artist"] ?: ""
     private val initialThumb: String? = savedStateHandle["thumbnailUrl"]
+    private val preserveSearchArtwork: Boolean = savedStateHandle["preserveSearchArtwork"] ?: false
     private val initialYear: String? = savedStateHandle["year"]
 
     /**
@@ -463,7 +464,11 @@ class AlbumDiscoveryViewModel @Inject constructor(
                     hero = AlbumHeroState(
                         title = detail.title,
                         artist = detail.artist,
-                        thumbnailUrl = detail.thumbnailUrl ?: it.hero.thumbnailUrl,
+                        thumbnailUrl = if (preserveSearchArtwork && !initialThumb.isNullOrBlank()) {
+                            initialThumb
+                        } else {
+                            detail.thumbnailUrl ?: it.hero.thumbnailUrl
+                        },
                         year = detail.year ?: it.hero.year,
                         trackCount = detail.tracks.size,
                         totalDurationMs = totalMs,

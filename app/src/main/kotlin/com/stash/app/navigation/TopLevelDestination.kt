@@ -92,6 +92,9 @@ data class SearchAlbumRoute(
     // rows, the artist page's Qobuz albums). Qobuz sends no release type, so this
     // tells a single from an album. Defaulted like [source].
     val qobuzTrackCount: Int? = null,
+    // Search keeps the cover the user actually saw; other routes still prefer loaded detail art.
+    // Default preserves navigation saved state created before this field existed.
+    val preserveSearchArtwork: Boolean = false,
 )
 
 /** "See all" Qobuz-playlist browse, filtered by the [genre] chip label ("All" = none). */

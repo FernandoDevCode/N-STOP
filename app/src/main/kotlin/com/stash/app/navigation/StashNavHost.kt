@@ -322,6 +322,7 @@ private fun StashNavGraph(
                             thumbnailUrl = album.thumbnailUrl,
                             year = album.year,
                             source = album.source,
+                            preserveSearchArtwork = true,
                         ),
                     )
                 },
