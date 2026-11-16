@@ -8,7 +8,6 @@ interface UniversalSearchActions {
     fun onPinToggled()
     fun onRestoreDefaultSources()
     fun onRetrySource(source: CatalogSource)
-    fun onConnectSource(source: CatalogSource)
     fun onResultAction(result: UniversalSearchResult, action: SearchResultAction)
     fun onRecentSelected(item: RecentSearchItem)
     fun onRecentRemoved(item: RecentSearchItem)

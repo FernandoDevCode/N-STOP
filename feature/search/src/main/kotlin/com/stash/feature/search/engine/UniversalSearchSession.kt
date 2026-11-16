@@ -1,13 +1,7 @@
 package com.stash.feature.search.engine
 
-import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.MainThread
-import com.stash.core.auth.TokenManager
-import com.stash.core.auth.model.AuthState
-import com.stash.data.spotify.SpotifyApiClient
-import com.stash.data.spotify.SpotifyApiException
-import com.stash.data.spotify.SpotifyRateLimitException
 import com.stash.data.ytmusic.SearchUnavailableException
 import com.stash.data.ytmusic.YTMusicApiClient
 import com.stash.data.ytmusic.YouTubeWebHttpException
@@ -20,11 +14,9 @@ import com.stash.feature.search.contract.RecentSearchKind
 import com.stash.feature.search.contract.SearchResultAction
 import com.stash.feature.search.contract.SearchSourceSelection
 import com.stash.feature.search.contract.SourceSearchState
-import com.stash.feature.search.contract.UnavailableReason
 import com.stash.feature.search.contract.UniversalSearchActions
 import com.stash.feature.search.contract.UniversalSearchResult
 import java.io.IOException
-import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -36,27 +28,20 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 
 class UniversalSearchSessionFactory @Inject internal constructor(
-    spotify: SpotifyApiClient,
     music: YTMusicApiClient,
     http: OkHttpClient,
-    private val tokens: TokenManager,
+    private val artwork: SearchArtworkLookup,
     private val preferences: SearchSourcePreferences,
     private val history: UniversalSearchHistory,
 ) {
     private val youtube = YouTubeWebSearchClient(http)
     private val providers: Map<CatalogSource, CatalogSearch> = mapOf(
-        CatalogSource.SPOTIFY to { query ->
-            spotify.searchCatalog(query).map { it.toUniversalSearchResult() }
-        },
         CatalogSource.YOUTUBE to { query ->
             youtube.search(query).videos.map { it.toUniversalSearchResult() }
         },
@@ -69,20 +54,12 @@ class UniversalSearchSessionFactory @Inject internal constructor(
     @MainThread
     suspend fun open(
         scope: CoroutineScope,
-        onConnectSpotify: () -> Unit,
         onNavigate: (UniversalSearchResult) -> Unit,
         onOpenRecent: (RecentSearchItem) -> Unit,
-    ): UniversalSearchSession {
-        val session = UniversalSearchSession(
-            scope, providers, preferences.read(), preferences::save, history,
-            onConnectSpotify, onNavigate, onOpenRecent,
-        )
-        scope.launch(start = CoroutineStart.UNDISPATCHED) {
-            tokens.spotifyAuthState.map { it is AuthState.Connected }.distinctUntilChanged().drop(1)
-                .collect { connected -> if (connected) session.onSpotifyConnected() }
-        }
-        return session
-    }
+    ): UniversalSearchSession = UniversalSearchSession(
+        scope, providers, preferences.read(), preferences::save, history,
+        onNavigate, onOpenRecent, artwork = artwork::find,
+    )
 }
 
 internal typealias CatalogSearch = suspend (String) -> List<UniversalSearchResult>
@@ -95,19 +72,18 @@ class UniversalSearchSession internal constructor(
     initialSelection: SearchSourceSelection,
     private val saveSelection: (SearchSourceSelection) -> Unit,
     private val history: UniversalSearchHistory,
-    private val connectSpotify: () -> Unit,
     private val navigate: (UniversalSearchResult) -> Unit,
     private val openRecent: (RecentSearchItem) -> Unit,
     private val debounceMs: Long = 300,
     private val timeoutMs: Long = 15_000,
-    private val nowMs: () -> Long = SystemClock::elapsedRealtime,
+    private val artwork: suspend (UniversalSearchResult) -> String? = { null },
 ) : UniversalSearchActions {
     private val mutableState = MutableStateFlow(UniversalSearchEngine.aggregate("", initialSelection, emptyMap()))
     val state = mutableState.asStateFlow()
 
     private var pendingQuery: Job? = null
     private val jobs = mutableMapOf<CatalogSource, Job>()
-    private var spotifyRetryAt = 0L
+    private var artworkJob: Job? = null
 
     init {
         scope.launch {
@@ -127,12 +103,13 @@ class UniversalSearchSession internal constructor(
         pendingQuery = null
         jobs.values.forEach { it.cancel() }
         jobs.clear()
+        artworkJob?.cancel()
         publish(query, current.selection, emptyMap())
-        if (eligible(query) && current.selection.enabled.isNotEmpty()) {
+        if (eligible(query) && current.selection.activeCatalogs.isNotEmpty()) {
             pendingQuery = scope.launch {
                 delay(debounceMs)
                 pendingQuery = null
-                state.value.selection.enabled.forEach { start(it) }
+                state.value.selection.activeCatalogs.forEach { start(it) }
             }
         }
     }
@@ -144,7 +121,7 @@ class UniversalSearchSession internal constructor(
         if (pendingQuery != null) {
             pendingQuery?.cancel()
             pendingQuery = null
-            state.value.selection.enabled.forEach { start(it) }
+            state.value.selection.activeCatalogs.forEach { start(it) }
         }
     }
 
@@ -164,28 +141,18 @@ class UniversalSearchSession internal constructor(
         val current = state.value
         if (selection == current.selection) return
         if (selection.isPinned || current.selection.isPinned) saveSelection(selection)
-        (current.selection.enabled - selection.enabled).forEach { jobs.remove(it)?.cancel() }
+        val removed = current.selection.activeCatalogs - selection.activeCatalogs
+        removed.forEach { jobs.remove(it)?.cancel() }
+        if (CatalogSource.YOUTUBE_MUSIC in removed) artworkJob?.cancel()
         publish(current.query, selection, current.sourceStates)
         if (pendingQuery == null && eligible(current.query)) {
-            (selection.enabled - current.selection.enabled).forEach { start(it) }
+            (selection.activeCatalogs - current.selection.activeCatalogs).forEach { start(it) }
         }
     }
 
     override fun onRetrySource(source: CatalogSource) {
         val failure = state.value.sourceStates[source] as? SourceSearchState.Error ?: return
         if (failure.canRetry) start(source, isRetry = true)
-    }
-
-    override fun onConnectSource(source: CatalogSource) {
-        val status = state.value.sourceStates[source] as? SourceSearchState.Unavailable
-        if (source == CatalogSource.SPOTIFY && status?.reason == UnavailableReason.AUTHENTICATION_REQUIRED) {
-            connectSpotify()
-        }
-    }
-
-    internal fun onSpotifyConnected() {
-        val status = state.value.sourceStates[CatalogSource.SPOTIFY] as? SourceSearchState.Unavailable
-        if (status?.reason == UnavailableReason.AUTHENTICATION_REQUIRED) start(CatalogSource.SPOTIFY)
     }
 
     override fun onResultAction(result: UniversalSearchResult, action: SearchResultAction) {
@@ -228,13 +195,6 @@ class UniversalSearchSession internal constructor(
         update(source, SourceSearchState.Loading(query, isRetry = isRetry))
         jobs[source] = scope.launch {
             val status = try {
-                val retryWait = if (source == CatalogSource.SPOTIFY) spotifyRetryAt - nowMs() else 0
-                if (retryWait > 0) {
-                    update(source, rateLimitState(query, canRetry = false))
-                    delay(retryWait)
-                    update(source, rateLimitState(query, canRetry = true))
-                    return@launch
-                }
                 val search = providers.getValue(source)
                 val items = withTimeoutOrNull(timeoutMs) {
                     search(query.trim()).distinctBy(UniversalSearchResult::stableKey)
@@ -248,34 +208,33 @@ class UniversalSearchSession internal constructor(
                 }
             } catch (error: CancellationException) {
                 throw error
-            } catch (error: SpotifyRateLimitException) {
-                ensureActive()
-                val now = nowMs()
-                val wait = TimeUnit.SECONDS.toMillis(error.retryAfterSeconds?.coerceAtLeast(0) ?: 0)
-                    .coerceAtMost(Long.MAX_VALUE - now)
-                spotifyRetryAt = now + wait
-                if (wait > 0) {
-                    update(source, rateLimitState(query, canRetry = false))
-                    delay(wait)
-                }
-                rateLimitState(query, canRetry = true)
             } catch (error: Exception) {
                 failure(query, error)
             }
             ensureActive()
             update(source, status)
+            if (source == CatalogSource.YOUTUBE_MUSIC && status is SourceSearchState.Data) {
+                enrichArtwork(status.items)
+            }
         }
     }
 
-    private fun rateLimitState(query: String, canRetry: Boolean) =
-        SourceSearchState.Error(query, "Spotify search rate limit reached", canRetry)
+    private fun enrichArtwork(items: List<UniversalSearchResult>) {
+        artworkJob?.cancel()
+        artworkJob = scope.launch {
+            for (result in items.asSequence().filter { it.artworkKind() != null }.take(4)) {
+                val url = artwork(result) ?: continue
+                ensureActive()
+                val current = state.value
+                if (result in current.orderedResults) {
+                    mutableState.value = current.copy(artworkOverrides = current.artworkOverrides + (result.stableKey to url))
+                }
+            }
+        }
+    }
 
     private fun failure(query: String, error: Exception): SourceSearchState {
-        if (error is SpotifyApiException && error.httpCode in setOf(0, 401)) {
-            return SourceSearchState.Unavailable(query, UnavailableReason.AUTHENTICATION_REQUIRED)
-        }
         val status = when (error) {
-            is SpotifyApiException -> error.httpCode
             is YouTubeWebHttpException -> error.statusCode
             is SearchUnavailableException -> error.statusCode
             else -> null
@@ -295,7 +254,12 @@ class UniversalSearchSession internal constructor(
         selection: SearchSourceSelection,
         sourceStates: Map<CatalogSource, SourceSearchState>,
     ) {
-        mutableState.value = UniversalSearchEngine.aggregate(query, selection, sourceStates, state.value.recentSearches)
+        val current = state.value
+        val aggregated = UniversalSearchEngine.aggregate(query, selection, sourceStates, current.recentSearches)
+        mutableState.value = if (query == current.query && current.artworkOverrides.isNotEmpty()) {
+            val visibleKeys = aggregated.orderedResults.mapTo(hashSetOf()) { it.stableKey }
+            aggregated.copy(artworkOverrides = current.artworkOverrides.filterKeys { it in visibleKeys })
+        } else aggregated
     }
 
     private fun eligible(query: String): Boolean = query.trim().length >= 2

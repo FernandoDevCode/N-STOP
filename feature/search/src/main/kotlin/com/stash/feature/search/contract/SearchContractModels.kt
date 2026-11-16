@@ -32,6 +32,12 @@ data class SearchSourceSelection(
     val enabled: Set<CatalogSource> = DefaultSearchSources,
     val isPinned: Boolean = false,
 ) {
+    // Persist the visual choices by their existing enum names. Route requests by catalog.
+    val activeCatalogs: Set<CatalogSource>
+        get() = enabled.mapTo(linkedSetOf()) { filter ->
+            if (filter == CatalogSource.SPOTIFY) CatalogSource.YOUTUBE_MUSIC else filter
+        }
+
     companion object {
         val Default = SearchSourceSelection()
     }
@@ -60,6 +66,13 @@ data class AudioIdentity(
     }
 }
 
+data class SearchReleaseMetadata(
+    val title: String,
+    val year: String? = null,
+    val type: String? = null,
+    val artistBrowseId: String? = null,
+)
+
 data class UniversalSearchResult(
     val identity: CatalogIdentity,
     val audioIdentity: AudioIdentity? = null,
@@ -73,6 +86,7 @@ data class UniversalSearchResult(
     val providerRank: Int,
     val rankingScore: Double,
     val supportedActions: Set<SearchResultAction> = emptySet(),
+    val release: SearchReleaseMetadata? = null,
 ) {
     val stableKey: String = "${identity.source.name}:${type.name}:${identity.catalogId}"
 
@@ -194,6 +208,7 @@ data class UniversalSearchUiState(
         .associateWith { SourceSearchState.Idle },
     val orderedResults: List<UniversalSearchResult> = emptyList(),
     val recentSearches: List<RecentSearchItem> = emptyList(),
+    val artworkOverrides: Map<String, String> = emptyMap(),
 ) {
     init {
         sourceStates.forEach { (source, state) ->
@@ -206,7 +221,7 @@ data class UniversalSearchUiState(
                 "$source state may contain only results from that source"
             }
         }
-        require(orderedResults.all { it.identity.source in selection.enabled }) {
+        require(orderedResults.all { it.identity.source in selection.activeCatalogs }) {
             "orderedResults may contain only enabled sources"
         }
         require(orderedResults.map { it.stableKey }.distinct().size == orderedResults.size) {
@@ -223,7 +238,7 @@ data class UniversalSearchUiState(
     }
 
     val hasPartialSuccess: Boolean
-        get() = orderedResults.isNotEmpty() && selection.enabled.any { source ->
+        get() = orderedResults.isNotEmpty() && selection.activeCatalogs.any { source ->
             sourceStates[source] is SourceSearchState.Error ||
                 sourceStates[source] is SourceSearchState.Unavailable
         }

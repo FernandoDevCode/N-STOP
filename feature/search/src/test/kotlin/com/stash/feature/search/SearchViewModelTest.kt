@@ -58,7 +58,7 @@ class SearchViewModelTest {
         var sessionsOpened = 0
         var youtubeStarted = false
         var youtubeCanceled = false
-        val factory = factory { scope, connect, navigate, open ->
+        val factory = factory { scope, navigate, open ->
             sessionsOpened++
             UniversalSearchSession(
                 scope,
@@ -75,7 +75,7 @@ class SearchViewModelTest {
                         emptyList()
                     }
                 },
-                SearchSourceSelection.Default, {}, history(), connect, navigate, open,
+                SearchSourceSelection.Default, {}, history(), navigate, open,
             )
         }
         val first = entry.viewModel(factory, handle)
@@ -124,13 +124,13 @@ class SearchViewModelTest {
             "Original artist", null, CatalogIdentity(YOUTUBE_MUSIC, "MPLAUCoriginal"),
             SearchResultType.ARTIST, "https://example.test/artist.jpg",
         )
-        val factory = factory { scope, connect, navigate, open ->
+        val factory = factory { scope, navigate, open ->
             UniversalSearchSession(
                 scope,
                 CatalogSource.entries.associateWith { source ->
                     { if (source == YOUTUBE_MUSIC) listOf(album) else emptyList() }
                 },
-                SearchSourceSelection(setOf(YOUTUBE_MUSIC)), {}, history(listOf(artist)), connect, navigate, open,
+                SearchSourceSelection(setOf(YOUTUBE_MUSIC)), {}, history(listOf(artist)), navigate, open,
             )
         }
         val model = entry.viewModel(factory)
@@ -163,11 +163,11 @@ class SearchViewModelTest {
     }
 
     private suspend fun factory(
-        open: (CoroutineScope, () -> Unit, (UniversalSearchResult) -> Unit, (RecentSearchItem) -> Unit) -> UniversalSearchSession,
+        open: (CoroutineScope, (UniversalSearchResult) -> Unit, (RecentSearchItem) -> Unit) -> UniversalSearchSession,
     ): UniversalSearchSessionFactory {
         val factory = mock<UniversalSearchSessionFactory>()
-        whenever(factory.open(any(), any(), any(), any())).thenAnswer { invocation ->
-            open(invocation.getArgument(0), invocation.getArgument(1), invocation.getArgument(2), invocation.getArgument(3))
+        whenever(factory.open(any(), any(), any())).thenAnswer { invocation ->
+            open(invocation.getArgument(0), invocation.getArgument(1), invocation.getArgument(2))
         }
         return factory
     }

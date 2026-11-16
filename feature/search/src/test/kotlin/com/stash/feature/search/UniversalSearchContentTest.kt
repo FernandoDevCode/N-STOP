@@ -33,7 +33,6 @@ import com.stash.feature.search.contract.SearchResultAction
 import com.stash.feature.search.contract.SearchResultType
 import com.stash.feature.search.contract.SearchSourceSelection
 import com.stash.feature.search.contract.SourceSearchState
-import com.stash.feature.search.contract.UnavailableReason
 import com.stash.feature.search.contract.UniversalSearchActions
 import com.stash.feature.search.contract.UniversalSearchResult
 import com.stash.feature.search.contract.UniversalSearchUiState
@@ -107,7 +106,7 @@ class UniversalSearchContentTest {
     }
 
     @Test
-    fun `partial results stay in motor order alongside auth and retry`() {
+    fun `partial results stay in motor order with a single retry`() {
         val demo = hit(YOUTUBE_MUSIC, "demoOriginal", "First (Demo)", SearchResultType.VIDEO)
         val live = hit(YOUTUBE_MUSIC, "liveOriginal", "Second (Live)", SearchResultType.VIDEO)
         val artist = hit(YOUTUBE_MUSIC, "artistOriginal", "Third", SearchResultType.ARTIST)
@@ -116,7 +115,6 @@ class UniversalSearchContentTest {
                 query = "rock",
                 selection = SearchSourceSelection(CatalogSource.entries.toSet()),
                 sourceStates = mapOf(
-                    SPOTIFY to SourceSearchState.Unavailable("rock", UnavailableReason.AUTHENTICATION_REQUIRED),
                     YOUTUBE to SourceSearchState.Error("rock", "Network failure", canRetry = true),
                     YOUTUBE_MUSIC to SourceSearchState.Data("rock", listOf(artist, live, demo)),
                 ),
@@ -124,14 +122,13 @@ class UniversalSearchContentTest {
             ),
         )
         compose.onNodeWithText("Search failed").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Connect Spotify").performClick()
+        compose.onNodeWithContentDescription("Connect Spotify").assertDoesNotExist()
         compose.onNodeWithContentDescription("Retry YouTube").performClick()
         compose.onNodeWithContentDescription("Clear search").performClick()
         val first = compose.onNodeWithTag(demo.stableKey).assertHasNoClickAction()
         val second = compose.onNodeWithTag(live.stableKey).assertHasNoClickAction()
         assertTrue(first.getUnclippedBoundsInRoot().top < second.getUnclippedBoundsInRoot().top)
         compose.onNodeWithTag(artist.stableKey).assertHasClickAction().performClick()
-        verify(actions).onConnectSource(SPOTIFY)
         verify(actions).onRetrySource(YOUTUBE)
         verify(actions).onClearQuery()
         verify(actions).onResultAction(artist, SearchResultAction.NAVIGATE)
@@ -141,11 +138,11 @@ class UniversalSearchContentTest {
     fun `loading defers the global error until selected sources settle`() {
         val error = SourceSearchState.Error("rock", "Network failure", true)
         val youtube = androidx.compose.runtime.mutableStateOf<SourceSearchState>(SourceSearchState.Loading("rock"))
-        val spotify = androidx.compose.runtime.mutableStateOf<SourceSearchState>(error)
+        val music = androidx.compose.runtime.mutableStateOf<SourceSearchState>(error)
         compose.setContent {
             VisualTheme {
                 UniversalSearchContent(
-                    UniversalSearchUiState(query = "rock", sourceStates = mapOf(SPOTIFY to spotify.value, YOUTUBE to youtube.value)),
+                    UniversalSearchUiState(query = "rock", sourceStates = mapOf(YOUTUBE_MUSIC to music.value, YOUTUBE to youtube.value)),
                     actions, autoFocus = false,
                 )
             }
@@ -155,7 +152,7 @@ class UniversalSearchContentTest {
         compose.runOnIdle { youtube.value = SourceSearchState.Empty("rock") }
         compose.onNodeWithText("Search failed").assertExists()
         compose.onNodeWithText("YouTube · No results").assertExists()
-        compose.runOnIdle { spotify.value = SourceSearchState.Empty("rock") }
+        compose.runOnIdle { music.value = SourceSearchState.Empty("rock") }
         compose.onNodeWithText("Search failed").assertDoesNotExist()
         compose.onNodeWithText("No results found").assertExists()
     }

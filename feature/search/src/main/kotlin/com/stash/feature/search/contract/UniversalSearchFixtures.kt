@@ -7,17 +7,16 @@ package com.stash.feature.search.contract
 object UniversalSearchFixtures {
     const val Query = "echoes"
 
-    fun spotifyTrack(
-        catalogId: String = "spotify-track-echoes",
+    fun youtubeMusicTrack(
+        catalogId: String = "ytm-track-echoes",
         versionLabel: String? = null,
         supportedActions: Set<SearchResultAction> = emptySet(),
         providerRank: Int = 0,
         rankingScore: Double = 0.95,
     ) = UniversalSearchResult(
         identity = CatalogIdentity(
-            source = CatalogSource.SPOTIFY,
+            source = CatalogSource.YOUTUBE_MUSIC,
             catalogId = catalogId,
-            catalogUri = "spotify:track:$catalogId",
         ),
         type = SearchResultType.TRACK,
         title = "Echoes",
@@ -73,8 +72,7 @@ object UniversalSearchFixtures {
     )
 
     fun partialSuccessState(): UniversalSearchUiState {
-        val spotify = spotifyTrack()
-        val youtube = youtubeVideo()
+        val music = youtubeMusicTrack()
         return UniversalSearchUiState(
             query = Query,
             selection = SearchSourceSelection(
@@ -86,15 +84,14 @@ object UniversalSearchFixtures {
                 isPinned = false,
             ),
             sourceStates = mapOf(
-                CatalogSource.SPOTIFY to SourceSearchState.Data(Query, listOf(spotify)),
-                CatalogSource.YOUTUBE to SourceSearchState.Data(Query, listOf(youtube)),
-                CatalogSource.YOUTUBE_MUSIC to SourceSearchState.Error(
+                CatalogSource.YOUTUBE_MUSIC to SourceSearchState.Data(Query, listOf(music)),
+                CatalogSource.YOUTUBE to SourceSearchState.Error(
                     query = Query,
                     message = "Fixture failure",
                     canRetry = true,
                 ),
             ),
-            orderedResults = listOf(spotify, youtube),
+            orderedResults = listOf(music),
         )
     }
 }

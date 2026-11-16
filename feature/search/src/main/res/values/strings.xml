@@ -62,11 +62,8 @@
     <string name="universal_search_empty_source">%1$s · No results</string>
     <string name="universal_search_error_source">%1$s · Search failed</string>
     <string name="universal_search_unavailable_source">%1$s · Unavailable</string>
-    <string name="universal_search_sign_in_source">%1$s · Sign-in required</string>
     <string name="universal_search_retry_source">Retry %1$s</string>
     <string name="universal_search_retry_short">Retry</string>
-    <string name="universal_search_connect_spotify">Connect Spotify</string>
-    <string name="universal_search_connect_short">Connect</string>
     <string name="universal_search_catalog_only">Catalog only. Actions unavailable.</string>
     <string name="universal_search_catalog_hint">Playback and media actions are unavailable in Search.</string>
     <string name="universal_search_open_details">Open details</string>

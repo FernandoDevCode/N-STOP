@@ -1,29 +1,14 @@
 package com.stash.feature.search.engine
 
-import com.stash.data.spotify.SpotifyCatalogItem
+import com.stash.core.common.ArtUrlUpgrader
+import com.stash.core.model.YouTubeVideoId
 import com.stash.data.ytmusic.YTMusicCatalogItem
 import com.stash.feature.search.contract.CatalogIdentity
 import com.stash.feature.search.contract.CatalogSource
+import com.stash.feature.search.contract.SearchReleaseMetadata
 import com.stash.feature.search.contract.SearchResultAction
 import com.stash.feature.search.contract.SearchResultType
 import com.stash.feature.search.contract.UniversalSearchResult
-
-internal fun SpotifyCatalogItem.toUniversalSearchResult() = UniversalSearchResult(
-    identity = CatalogIdentity(CatalogSource.SPOTIFY, id, uri),
-    type = when (kind) {
-        SpotifyCatalogItem.Kind.TRACK -> SearchResultType.TRACK
-        SpotifyCatalogItem.Kind.ARTIST -> SearchResultType.ARTIST
-        SpotifyCatalogItem.Kind.ALBUM -> SearchResultType.ALBUM
-    },
-    title = title,
-    subtitle = artists,
-    artworkUrl = artworkUrl,
-    durationMs = durationMs,
-    isExplicit = isExplicit,
-    versionLabel = if (kind == SpotifyCatalogItem.Kind.TRACK) versionFromTitle(title) else null,
-    providerRank = rank,
-    rankingScore = ordinalSearchScore(rank),
-)
 
 internal fun YTMusicCatalogItem.toUniversalSearchResult(): UniversalSearchResult {
     val type = when (kind) {
@@ -33,22 +18,27 @@ internal fun YTMusicCatalogItem.toUniversalSearchResult(): UniversalSearchResult
         YTMusicCatalogItem.Kind.ALBUM -> SearchResultType.ALBUM
     }
     val canNavigate = type == SearchResultType.ARTIST || type == SearchResultType.ALBUM
+    val originalArtwork = artworkUrl?.takeIf { it.isNotBlank() }
     return UniversalSearchResult(
         identity = CatalogIdentity(CatalogSource.YOUTUBE_MUSIC, id),
         type = type,
         title = title,
         subtitle = subtitle?.takeIf { it.isNotBlank() },
-        artworkUrl = artworkUrl?.takeIf { it.isNotBlank() },
+        artworkUrl = if (type == SearchResultType.VIDEO) videoArtwork(id, originalArtwork) else originalArtwork,
         durationMs = durationMs,
         isExplicit = isExplicit,
         versionLabel = if (canNavigate) null else versionFromTitle(title),
         providerRank = rank,
         rankingScore = ordinalSearchScore(rank),
         supportedActions = if (canNavigate) setOf(SearchResultAction.NAVIGATE) else emptySet(),
+        release = releaseTitle?.let { SearchReleaseMetadata(it, releaseYear, releaseType, artistBrowseId) },
     )
 }
 
-/** Provisional ordinal score shared by all three catalogs. */
+internal fun videoArtwork(id: String, original: String?): String? =
+    original ?: id.takeIf(YouTubeVideoId::isValid)?.let(ArtUrlUpgrader::youTubeThumbnail)
+
+/** Provisional ordinal score shared by both catalogs. */
 internal fun ordinalSearchScore(rank: Int): Double = 1.0 / (rank + 1.0)
 
 private const val VERSION_WORDS = "live|demo|cover|remix|remaster(?:ed)?|acoustic|edit|version|ao vivo"

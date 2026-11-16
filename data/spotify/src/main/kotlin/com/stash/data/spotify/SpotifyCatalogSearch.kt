@@ -26,6 +26,10 @@ data class SpotifyCatalogItem(
     val durationMs: Long?,
     val isExplicit: Boolean,
     val rank: Int,
+    val artistIds: List<String> = emptyList(),
+    val albumTitle: String? = null,
+    val releaseYear: String? = null,
+    val releaseType: String? = null,
 ) {
     enum class Kind { TRACK, ARTIST, ALBUM }
 }
@@ -50,14 +54,14 @@ internal fun parseSpotifyCatalog(body: String): List<SpotifyCatalogItem> {
                 } else {
                     item
                 }
+                val artists = (item["artists"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
                 add(
                     SpotifyCatalogItem(
                         kind = kind,
                         id = id,
                         uri = item.text("uri"),
                         title = title,
-                        artists = (item["artists"] as? JsonArray).orEmpty()
-                            .mapNotNull { (it as? JsonObject)?.text("name") }
+                        artists = artists.mapNotNull { it.text("name") }
                             .joinToString(", ").takeIf { it.isNotBlank() },
                         artworkUrl = (artwork?.get("images") as? JsonArray).orEmpty()
                             .firstNotNullOfOrNull { (it as? JsonObject)?.text("url") },
@@ -65,6 +69,10 @@ internal fun parseSpotifyCatalog(body: String): List<SpotifyCatalogItem> {
                             ?.takeIf { it >= 0 },
                         isExplicit = (item["explicit"] as? JsonPrimitive)?.booleanOrNull == true,
                         rank = index * buckets.size + kind.ordinal,
+                        artistIds = artists.mapNotNull { it.text("id") },
+                        albumTitle = artwork?.text("name"),
+                        releaseYear = artwork?.text("release_date")?.take(4),
+                        releaseType = artwork?.text("album_type"),
                     ),
                 )
             }

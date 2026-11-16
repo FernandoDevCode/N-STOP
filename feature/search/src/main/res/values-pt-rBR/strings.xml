@@ -62,11 +62,8 @@
     <string name="universal_search_empty_source">%1$s · Sem resultados</string>
     <string name="universal_search_error_source">%1$s · Falha na busca</string>
     <string name="universal_search_unavailable_source">%1$s · Indisponível</string>
-    <string name="universal_search_sign_in_source">%1$s · Conexão necessária</string>
     <string name="universal_search_retry_source">Tentar %1$s novamente</string>
     <string name="universal_search_retry_short">Repetir</string>
-    <string name="universal_search_connect_spotify">Conectar Spotify</string>
-    <string name="universal_search_connect_short">Conectar</string>
     <string name="universal_search_catalog_only">Somente catálogo. Ações indisponíveis.</string>
     <string name="universal_search_catalog_hint">Reprodução e ações de mídia estão indisponíveis na Busca.</string>
     <string name="universal_search_open_details">Abrir detalhes</string>

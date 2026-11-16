@@ -93,7 +93,6 @@ import com.stash.feature.search.contract.SearchResultAction
 import com.stash.feature.search.contract.SearchResultType
 import com.stash.feature.search.contract.SearchSourceSelection
 import com.stash.feature.search.contract.SourceSearchState
-import com.stash.feature.search.contract.UnavailableReason
 import com.stash.feature.search.contract.UniversalSearchActions
 import com.stash.feature.search.contract.UniversalSearchResult
 import com.stash.feature.search.contract.UniversalSearchUiState
@@ -105,20 +104,17 @@ fun SearchScreen(
     viewModel: SearchViewModel,
     onNavigateToArtist: (artistId: String, name: String, avatarUrl: String?) -> Unit,
     onNavigateToAlbum: (album: AlbumSummary) -> Unit,
-    onConnectSpotify: () -> Unit,
 ) {
     val session by viewModel.session.collectAsStateWithLifecycle()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val keyboard = LocalSoftwareKeyboardController.current
     val currentArtist by rememberUpdatedState(onNavigateToArtist)
     val currentAlbum by rememberUpdatedState(onNavigateToAlbum)
-    val currentConnect by rememberUpdatedState(onConnectSpotify)
     LaunchedEffect(viewModel, lifecycle, keyboard) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             viewModel.destinations.collect { destination ->
                 keyboard?.hide()
                 when (destination) {
-                    SearchNavigation.ConnectSpotify -> currentConnect()
                     is SearchNavigation.Artist -> currentArtist(destination.id, destination.name, destination.artworkUrl)
                     is SearchNavigation.Album -> currentAlbum(destination.album)
                 }
@@ -190,7 +186,7 @@ internal fun UniversalSearchContent(
                         }
                     }
                 } else if (state.selection.enabled.isNotEmpty()) {
-                    val sources = CatalogSource.entries.filter { it in state.selection.enabled }
+                    val sources = CatalogSource.entries.filter { it in state.selection.activeCatalogs }
                     val statuses = sources.map { state.sourceStates[it] ?: SourceSearchState.Idle }
                     val finished = statuses.none { it is SourceSearchState.Loading || it == SourceSearchState.Idle }
                     val noResults = state.orderedResults.isEmpty()
@@ -211,7 +207,7 @@ internal fun UniversalSearchContent(
                         item("catalogHint") { SearchMessage(R.string.universal_search_catalog_hint, compact = true) }
                     }
                     items(state.orderedResults, key = UniversalSearchResult::stableKey) { result ->
-                        ResultRow(result, actions, artistPhotos)
+                        ResultRow(result, actions, artistPhotos, state.artworkOverrides[result.stableKey])
                     }
                 }
             }
@@ -340,9 +336,7 @@ private fun SourceStatus(source: CatalogSource, state: SourceSearchState, action
         is SourceSearchState.Loading -> R.string.universal_search_loading_source
         is SourceSearchState.Empty -> R.string.universal_search_empty_source
         is SourceSearchState.Error -> R.string.universal_search_error_source
-        is SourceSearchState.Unavailable -> if (state.reason == UnavailableReason.AUTHENTICATION_REQUIRED) {
-            R.string.universal_search_sign_in_source
-        } else R.string.universal_search_unavailable_source
+        is SourceSearchState.Unavailable -> R.string.universal_search_unavailable_source
         else -> return
     }
     Row(
@@ -364,13 +358,6 @@ private fun SourceStatus(source: CatalogSource, state: SourceSearchState, action
                 R.string.universal_search_retry_short,
                 stringResource(R.string.universal_search_retry_source, sourceName),
             ) { actions.onRetrySource(source) }
-        } else if (source == CatalogSource.SPOTIFY && state is SourceSearchState.Unavailable &&
-            state.reason == UnavailableReason.AUTHENTICATION_REQUIRED
-        ) {
-            SourceStatusAction(
-                R.string.universal_search_connect_short,
-                stringResource(R.string.universal_search_connect_spotify),
-            ) { actions.onConnectSource(source) }
         }
     }
 }
@@ -402,6 +389,7 @@ private fun ResultRow(
     result: UniversalSearchResult,
     actions: UniversalSearchActions,
     artistPhotos: Map<String, SelectedArtistPhoto>,
+    preferredArtwork: String?,
 ) {
     val destination = result.supports(SearchResultAction.NAVIGATE)
     val unavailable = stringResource(R.string.universal_search_catalog_only)
@@ -419,9 +407,10 @@ private fun ResultRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         SearchArtwork(
-            displayedSearchArtwork(result.identity, result.type, result.artworkUrl, artistPhotos),
+            displayedSearchArtwork(result.identity, result.type, preferredArtwork ?: result.artworkUrl, artistPhotos),
             result.type.icon,
             result.type == SearchResultType.ARTIST,
+            fallbackUrl = result.artworkUrl?.takeIf { preferredArtwork != null && it != preferredArtwork },
         )
         Column(Modifier.weight(1f)) {
             SearchRowTitle(result.title)
@@ -486,7 +475,8 @@ internal fun displayedSearchArtwork(
     } else artworkUrl
 
 @Composable
-private fun SearchArtwork(url: String?, fallback: ImageVector, circle: Boolean) {
+private fun SearchArtwork(url: String?, fallback: ImageVector, circle: Boolean, fallbackUrl: String? = null) {
+    var preferredLoaded by remember(url, fallbackUrl) { mutableStateOf(false) }
     Box(
         Modifier.size(52.dp)
             .clip(if (circle) CircleShape else RoundedCornerShape(VisualDesign.Radius.Card))
@@ -494,7 +484,19 @@ private fun SearchArtwork(url: String?, fallback: ImageVector, circle: Boolean) 
         contentAlignment = Alignment.Center,
     ) {
         Icon(fallback, null, tint = VisualDesign.Muted)
-        if (url != null) AsyncImage(url, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        if (fallbackUrl != null && !preferredLoaded) {
+            // Keep the original visible while the replacement loads, including on CDN failure.
+            AsyncImage(fallbackUrl, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        }
+        if (url != null) {
+            AsyncImage(
+                model = url,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                onSuccess = { if (fallbackUrl != null) preferredLoaded = true },
+            )
+        }
     }
 }
 
