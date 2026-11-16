@@ -53,6 +53,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -142,6 +143,30 @@ internal fun UniversalSearchContent(
     artistPhotos: Map<String, SelectedArtistPhoto> = emptyMap(),
 ) {
     val list = rememberLazyListState()
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val query by rememberUpdatedState(state.query)
+    val resultKeys by rememberUpdatedState(remember(state.orderedResults) {
+        state.orderedResults.mapTo(hashSetOf()) { it.stableKey }
+    })
+    LaunchedEffect(list, actions, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            try {
+                snapshotFlow {
+                    val layout = list.layoutInfo
+                    val visibleEnd = layout.viewportEndOffset - layout.afterContentPadding
+                    val visibleKeys = layout.visibleItemsInfo.mapNotNullTo(linkedSetOf()) { item ->
+                        (item.key as? String)?.takeIf {
+                            it in resultKeys && item.offset < visibleEnd &&
+                                item.offset + item.size > layout.viewportStartOffset
+                        }
+                    }
+                    query to visibleKeys
+                }.collect { (visibleQuery, keys) -> actions.onVisibleResultsChanged(visibleQuery, keys) }
+            } finally {
+                actions.onVisibleResultsChanged(query, emptySet())
+            }
+        }
+    }
     var listQuery by rememberSaveable { mutableStateOf(state.query) }
     LaunchedEffect(state.query) {
         if (listQuery != state.query) {
@@ -392,10 +417,11 @@ private fun ResultRow(
     preferredArtwork: String?,
 ) {
     val destination = result.supports(SearchResultAction.NAVIGATE)
+    var preferredLoaded by remember(preferredArtwork) { mutableStateOf(false) }
     val unavailable = stringResource(R.string.universal_search_catalog_only)
     val interaction = if (destination) {
         Modifier.clickable(role = Role.Button, onClickLabel = stringResource(R.string.universal_search_open_details)) {
-            actions.onResultAction(result, SearchResultAction.NAVIGATE)
+            actions.onResultAction(result, SearchResultAction.NAVIGATE, preferredArtwork.takeIf { preferredLoaded })
         }
     } else {
         Modifier.semantics(mergeDescendants = true) { stateDescription = unavailable }
@@ -410,7 +436,10 @@ private fun ResultRow(
             displayedSearchArtwork(result.identity, result.type, preferredArtwork ?: result.artworkUrl, artistPhotos),
             result.type.icon,
             result.type == SearchResultType.ARTIST,
-            fallbackUrl = result.artworkUrl?.takeIf { preferredArtwork != null && it != preferredArtwork },
+            fallbackUrl = result.artworkUrl?.takeIf {
+                preferredArtwork != null && it != preferredArtwork && !preferredLoaded
+            },
+            onLoaded = { if (preferredArtwork != null) preferredLoaded = true },
         )
         Column(Modifier.weight(1f)) {
             SearchRowTitle(result.title)
@@ -475,8 +504,13 @@ internal fun displayedSearchArtwork(
     } else artworkUrl
 
 @Composable
-private fun SearchArtwork(url: String?, fallback: ImageVector, circle: Boolean, fallbackUrl: String? = null) {
-    var preferredLoaded by remember(url, fallbackUrl) { mutableStateOf(false) }
+private fun SearchArtwork(
+    url: String?,
+    fallback: ImageVector,
+    circle: Boolean,
+    fallbackUrl: String? = null,
+    onLoaded: () -> Unit = {},
+) {
     Box(
         Modifier.size(52.dp)
             .clip(if (circle) CircleShape else RoundedCornerShape(VisualDesign.Radius.Card))
@@ -484,7 +518,7 @@ private fun SearchArtwork(url: String?, fallback: ImageVector, circle: Boolean, 
         contentAlignment = Alignment.Center,
     ) {
         Icon(fallback, null, tint = VisualDesign.Muted)
-        if (fallbackUrl != null && !preferredLoaded) {
+        if (fallbackUrl != null) {
             // Keep the original visible while the replacement loads, including on CDN failure.
             AsyncImage(fallbackUrl, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         }
@@ -494,7 +528,7 @@ private fun SearchArtwork(url: String?, fallback: ImageVector, circle: Boolean, 
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
-                onSuccess = { if (fallbackUrl != null) preferredLoaded = true },
+                onSuccess = { onLoaded() },
             )
         }
     }

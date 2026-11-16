@@ -10,6 +10,7 @@ import com.stash.feature.search.contract.CatalogSource
 import com.stash.feature.search.contract.CatalogSource.YOUTUBE
 import com.stash.feature.search.contract.CatalogSource.YOUTUBE_MUSIC
 import com.stash.feature.search.contract.RecentSearchItem
+import com.stash.feature.search.contract.SearchReleaseMetadata
 import com.stash.feature.search.contract.SearchResultAction
 import com.stash.feature.search.contract.SearchResultType
 import com.stash.feature.search.contract.SearchSourceSelection
@@ -43,6 +44,7 @@ import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -108,8 +110,9 @@ class SearchViewModelTest {
     }
 
     @Test
-    fun `result and recent route preserve original album and artist identities`() = runTest {
+    fun `album route and history use the loaded cover without changing catalogue identity`() = runTest {
         val entry = Entry()
+        val spotifyCover = "https://i.scdn.co/image/verified"
         val album = UniversalSearchResult(
             identity = CatalogIdentity(YOUTUBE_MUSIC, "album-id-special"),
             type = SearchResultType.ALBUM,
@@ -119,18 +122,21 @@ class SearchViewModelTest {
             providerRank = 0,
             rankingScore = 1.0,
             supportedActions = setOf(SearchResultAction.NAVIGATE),
+            release = SearchReleaseMetadata("Original (Deluxe)", "2020", "album"),
         )
         val artist = resultHistoryItem(
             "Original artist", null, CatalogIdentity(YOUTUBE_MUSIC, "MPLAUCoriginal"),
             SearchResultType.ARTIST, "https://example.test/artist.jpg",
         )
+        val history = history(listOf(artist))
         val factory = factory { scope, navigate, open ->
             UniversalSearchSession(
                 scope,
                 CatalogSource.entries.associateWith { source ->
                     { if (source == YOUTUBE_MUSIC) listOf(album) else emptyList() }
                 },
-                SearchSourceSelection(setOf(YOUTUBE_MUSIC)), {}, history(listOf(artist)), navigate, open,
+                SearchSourceSelection(setOf(YOUTUBE_MUSIC)), {}, history, navigate, open,
+                artwork = { spotifyCover },
             )
         }
         val model = entry.viewModel(factory)
@@ -144,16 +150,29 @@ class SearchViewModelTest {
         session.onResultAction(album, SearchResultAction.PLAY)
         runCurrent()
         assertTrue(received.isEmpty())
+
+        session.onVisibleResultsChanged("original", setOf(album.stableKey))
+        runCurrent()
+        assertEquals(spotifyCover, session.state.value.artworkOverrides[album.stableKey])
+        assertEquals(listOf(album), session.state.value.orderedResults)
+
+        // A validated URL can still be loading or have failed at the time of the tap.
         session.onResultAction(album, SearchResultAction.NAVIGATE)
+        runCurrent()
+        session.onResultAction(album, SearchResultAction.NAVIGATE, displayedArtworkUrl = spotifyCover)
         runCurrent()
         session.onRecentSelected(artist)
         runCurrent()
-        val opened = (received[0] as SearchNavigation.Album).album
+        val fallback = (received[0] as SearchNavigation.Album).album
+        assertEquals(album.artworkUrl, fallback.thumbnailUrl)
+        val opened = (received[1] as SearchNavigation.Album).album
         assertEquals(album.identity.catalogId, opened.id)
         assertEquals(album.title, opened.title)
         assertEquals(album.subtitle, opened.artist)
-        assertEquals(album.artworkUrl, opened.thumbnailUrl)
-        assertEquals(SearchNavigation.Artist("MPLAUCoriginal", artist.label, artist.artworkUrl), received[1])
+        assertEquals(spotifyCover, opened.thumbnailUrl)
+        verify(history).record(resultHistoryItem(album.title, album.subtitle, album.identity, album.type, album.artworkUrl))
+        verify(history).record(resultHistoryItem(album.title, album.subtitle, album.identity, album.type, spotifyCover))
+        assertEquals(SearchNavigation.Artist("MPLAUCoriginal", artist.label, artist.artworkUrl), received[2])
         assertNull(searchDestination(CatalogIdentity(YOUTUBE, "same-id"), SearchResultType.ALBUM, "Title", null, null))
         entry.viewModelStore.clear()
     }

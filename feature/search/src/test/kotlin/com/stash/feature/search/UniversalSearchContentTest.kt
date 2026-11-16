@@ -3,6 +3,7 @@ package com.stash.feature.search
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
@@ -19,6 +20,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.Density
@@ -39,10 +41,17 @@ import com.stash.feature.search.contract.UniversalSearchUiState
 import com.stash.feature.search.engine.queryHistoryItem
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.any
+import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.atLeastOnce
+import org.mockito.kotlin.clearInvocations
+import org.mockito.kotlin.eq
+import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -155,6 +164,37 @@ class UniversalSearchContentTest {
         compose.runOnIdle { music.value = SourceSearchState.Empty("rock") }
         compose.onNodeWithText("Search failed").assertDoesNotExist()
         compose.onNodeWithText("No results found").assertExists()
+    }
+
+    @Test
+    fun `lazy list reports result keys entering the viewport and ignores unrelated recomposition`() {
+        val hits = (1..30).map { hit(YOUTUBE_MUSIC, "id$it", "Song $it", SearchResultType.TRACK) }
+        val state = mutableStateOf(
+            UniversalSearchUiState(
+                query = "rock",
+                sourceStates = mapOf(YOUTUBE_MUSIC to SourceSearchState.Data("rock", hits)),
+                orderedResults = hits,
+            ),
+        )
+        compose.setContent { VisualTheme { UniversalSearchContent(state.value, actions, autoFocus = false) } }
+        compose.waitForIdle()
+        val initial = argumentCaptor<Set<String>>()
+        verify(actions, atLeastOnce()).onVisibleResultsChanged(eq("rock"), initial.capture())
+        assertTrue(hits.first().stableKey in initial.lastValue)
+        assertFalse(initial.allValues.any { hits.last().stableKey in it })
+        assertTrue(initial.allValues.flatten().all { key -> hits.any { it.stableKey == key } })
+
+        clearInvocations(actions)
+        compose.runOnIdle { state.value = state.value.copy(recentSearches = listOf(queryHistoryItem("demo"))) }
+        compose.waitForIdle()
+        verify(actions, never()).onVisibleResultsChanged(any(), any())
+
+        compose.onNodeWithTag("searchList").performScrollToKey(hits.last().stableKey)
+        compose.waitForIdle()
+        val scrolled = argumentCaptor<Set<String>>()
+        verify(actions, atLeastOnce()).onVisibleResultsChanged(eq("rock"), scrolled.capture())
+        assertTrue(hits.last().stableKey in scrolled.lastValue)
+        assertFalse(hits.first().stableKey in scrolled.lastValue)
     }
 
     private fun show(state: UniversalSearchUiState) {

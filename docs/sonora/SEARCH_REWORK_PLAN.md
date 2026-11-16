@@ -265,7 +265,8 @@ A normalização de relevância entre provedores precisa de teste com consultas 
 - **Álbuns YouTube Music:** título completo, artista, ano e tipo compatível. Versões disputadas ou metadados insuficientes conservam as capas de origem.
 - **Fotografias de artistas:** escolha manual, foto Spotify validada e imagem original, conforme o repositório compartilhado. O perfil continua responsável por verificar a referência via `SpotifyArtistPhotoLookup` e por procurar a mesma fotografia em resolução superior.
 - **Vídeos:** conservam o thumbnail de origem. Quando ausente, usam o thumbnail do ID de vídeo exato, se válido.
-- **Orçamento:** até quatro resultados elegíveis por resposta do YouTube Music, uma consulta Spotify de capas por vez, com cancelamento por troca de consulta. Cache em memória de até 256 entradas, com 24 horas para acertos, 30 minutos para ausência de correspondência e espera curta para falhas transitórias. Resposta 429 respeita `Retry-After`.
+- **Orçamento:** uma consulta Spotify de capas por vez para resultados elegíveis visíveis. Cada resultado é tentado uma vez por consulta ativa, e a troca de consulta cancela o trabalho anterior. Cache em memória de até 256 entradas, com 24 horas para acertos, 30 minutos para ausência de correspondência e espera curta para falhas transitórias. Resposta 429 respeita `Retry-After`.
+- **Abertura de álbum:** navegação e histórico levam a capa exibida na hora do toque, com o ID original do YouTube Music.
 
 
 ```kotlin

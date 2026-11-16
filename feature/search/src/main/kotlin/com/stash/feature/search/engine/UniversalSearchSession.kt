@@ -12,6 +12,7 @@ import com.stash.feature.search.contract.DefaultSearchSources
 import com.stash.feature.search.contract.RecentSearchItem
 import com.stash.feature.search.contract.RecentSearchKind
 import com.stash.feature.search.contract.SearchResultAction
+import com.stash.feature.search.contract.SearchResultType
 import com.stash.feature.search.contract.SearchSourceSelection
 import com.stash.feature.search.contract.SourceSearchState
 import com.stash.feature.search.contract.UniversalSearchActions
@@ -84,6 +85,8 @@ class UniversalSearchSession internal constructor(
     private var pendingQuery: Job? = null
     private val jobs = mutableMapOf<CatalogSource, Job>()
     private var artworkJob: Job? = null
+    private var visibleResultKeys = emptySet<String>()
+    private val attemptedArtwork = mutableSetOf<String>()
 
     init {
         scope.launch {
@@ -103,7 +106,7 @@ class UniversalSearchSession internal constructor(
         pendingQuery = null
         jobs.values.forEach { it.cancel() }
         jobs.clear()
-        artworkJob?.cancel()
+        resetArtworkWork()
         publish(query, current.selection, emptyMap())
         if (eligible(query) && current.selection.activeCatalogs.isNotEmpty()) {
             pendingQuery = scope.launch {
@@ -143,7 +146,7 @@ class UniversalSearchSession internal constructor(
         if (selection.isPinned || current.selection.isPinned) saveSelection(selection)
         val removed = current.selection.activeCatalogs - selection.activeCatalogs
         removed.forEach { jobs.remove(it)?.cancel() }
-        if (CatalogSource.YOUTUBE_MUSIC in removed) artworkJob?.cancel()
+        if (CatalogSource.YOUTUBE_MUSIC in removed) resetArtworkWork()
         publish(current.query, selection, current.sourceStates)
         if (pendingQuery == null && eligible(current.query)) {
             (selection.activeCatalogs - current.selection.activeCatalogs).forEach { start(it) }
@@ -155,14 +158,22 @@ class UniversalSearchSession internal constructor(
         if (failure.canRetry) start(source, isRetry = true)
     }
 
-    override fun onResultAction(result: UniversalSearchResult, action: SearchResultAction) {
-        if (!result.supports(action) || result !in state.value.orderedResults) return
+    override fun onResultAction(
+        result: UniversalSearchResult,
+        action: SearchResultAction,
+        displayedArtworkUrl: String?,
+    ) {
+        val current = state.value
+        if (!result.supports(action) || result !in current.orderedResults) return
         if (action == SearchResultAction.NAVIGATE) {
+            val artworkUrl = displayedArtworkUrl?.takeIf {
+                result.type == SearchResultType.ALBUM && current.artworkOverrides[result.stableKey] == it
+            } ?: result.artworkUrl
             val item = resultHistoryItem(
-                result.title, result.subtitle, result.identity, result.type, result.artworkUrl,
+                result.title, result.subtitle, result.identity, result.type, artworkUrl,
             )
             writeHistory { record(item) }
-            navigate(result)
+            navigate(result.copy(artworkUrl = artworkUrl))
         }
     }
 
@@ -213,20 +224,32 @@ class UniversalSearchSession internal constructor(
             }
             ensureActive()
             update(source, status)
-            if (source == CatalogSource.YOUTUBE_MUSIC && status is SourceSearchState.Data) {
-                enrichArtwork(status.items)
-            }
         }
     }
 
-    private fun enrichArtwork(items: List<UniversalSearchResult>) {
+    private fun resetArtworkWork() {
         artworkJob?.cancel()
+        artworkJob = null
+        visibleResultKeys = emptySet()
+        attemptedArtwork.clear()
+    }
+
+    override fun onVisibleResultsChanged(query: String, stableKeys: Set<String>) {
+        if (query != state.value.query || stableKeys == visibleResultKeys) return
+        visibleResultKeys = stableKeys
+        if (stableKeys.isEmpty() || artworkJob?.isActive == true) return
+
         artworkJob = scope.launch {
-            for (result in items.asSequence().filter { it.artworkKind() != null }.take(4)) {
-                val url = artwork(result) ?: continue
+            // Keep one request in flight and take the next candidate from the latest viewport.
+            while (true) {
+                val result = state.value.orderedResults.firstOrNull {
+                    it.stableKey in visibleResultKeys && it.stableKey !in attemptedArtwork && it.artworkKind() != null
+                } ?: break
+                val url = artwork(result)
                 ensureActive()
+                attemptedArtwork += result.stableKey
                 val current = state.value
-                if (result in current.orderedResults) {
+                if (url != null && result in current.orderedResults) {
                     mutableState.value = current.copy(artworkOverrides = current.artworkOverrides + (result.stableKey to url))
                 }
             }

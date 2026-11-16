@@ -8,7 +8,12 @@ interface UniversalSearchActions {
     fun onPinToggled()
     fun onRestoreDefaultSources()
     fun onRetrySource(source: CatalogSource)
-    fun onResultAction(result: UniversalSearchResult, action: SearchResultAction)
+    fun onVisibleResultsChanged(query: String, stableKeys: Set<String>)
+    fun onResultAction(
+        result: UniversalSearchResult,
+        action: SearchResultAction,
+        displayedArtworkUrl: String? = null,
+    )
     fun onRecentSelected(item: RecentSearchItem)
     fun onRecentRemoved(item: RecentSearchItem)
     fun onRecentCleared()

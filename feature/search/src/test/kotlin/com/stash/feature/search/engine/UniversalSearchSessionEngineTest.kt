@@ -115,32 +115,78 @@ class UniversalSearchSessionEngineTest {
     @Test
     fun `stale work cannot update a newer query even for the same catalog ID`() = runTest {
         val stale = CompletableDeferred<Unit>()
+        var attempts = 0
         val hit = result(YOUTUBE_MUSIC, "same").copy(release = SearchReleaseMetadata("Verified album"))
         val session = session(setOf(SPOTIFY), music = { listOf(hit) }, artwork = {
+            attempts++
             withContext(NonCancellable) { stale.await() }
             "https://i.scdn.co/image/old"
         })
         query(session, "old")
         assertEquals(listOf(hit), session.state.value.orderedResults)
+        session.onVisibleResultsChanged("old", setOf(hit.stableKey))
+        runCurrent()
+        assertEquals(1, attempts)
         assertTrue(session.state.value.artworkOverrides.isEmpty())
         session.onQueryChanged("new")
         assertTrue(session.state.value.orderedResults.isEmpty())
+        advanceTimeBy(300)
+        runCurrent()
+        assertEquals(listOf(hit), session.state.value.orderedResults)
+        session.onVisibleResultsChanged("old", setOf(hit.stableKey))
         stale.complete(Unit)
         runCurrent()
         assertTrue(session.state.value.artworkOverrides.isEmpty())
+        assertEquals(1, attempts)
     }
 
     @Test
-    fun `artwork leaves the ordered results intact and spends at most four lookups`() = runTest {
+    fun `only visible results are enriched and revisits reuse the positive and negative outcomes`() = runTest {
         val hits = (1..6).map {
             result(YOUTUBE_MUSIC, "id$it").copy(release = SearchReleaseMetadata("Verified album"))
         }
+        val attempts = mutableListOf<UniversalSearchResult>()
         val session = session(setOf(SPOTIFY), music = { hits }, artwork = {
-            "https://i.scdn.co/image/" + it.identity.catalogId
+            attempts += it
+            if (it == hits[1]) null else "https://i.scdn.co/image/" + it.identity.catalogId
         })
         query(session, "echoes")
+        assertTrue(attempts.isEmpty())
+        val initial = setOf(hits[0].stableKey, hits[1].stableKey)
+        session.onVisibleResultsChanged("echoes", initial)
+        runCurrent()
+        assertEquals(hits.take(2), attempts)
+        session.onVisibleResultsChanged("echoes", setOf(hits[5].stableKey))
+        runCurrent()
+        session.onVisibleResultsChanged("echoes", initial)
+        session.onVisibleResultsChanged("echoes", initial)
+        runCurrent()
+        assertEquals(listOf(hits[0], hits[1], hits[5]), attempts)
         assertEquals(hits, session.state.value.orderedResults)
-        assertEquals(hits.take(4).map { it.stableKey }.toSet(), session.state.value.artworkOverrides.keys)
+        assertEquals(setOf(hits[0].stableKey, hits[5].stableKey), session.state.value.artworkOverrides.keys)
+    }
+
+    @Test
+    fun `one in flight lookup takes the next candidate from the latest viewport`() = runTest {
+        val hits = (1..6).map {
+            result(YOUTUBE_MUSIC, "id$it").copy(release = SearchReleaseMetadata("Verified album"))
+        }
+        val release = CompletableDeferred<Unit>()
+        val attempts = mutableListOf<UniversalSearchResult>()
+        val session = session(setOf(SPOTIFY), music = { hits }, artwork = {
+            attempts += it
+            if (it == hits[0]) release.await()
+            null
+        })
+        query(session, "echoes")
+        session.onVisibleResultsChanged("echoes", setOf(hits[0].stableKey, hits[1].stableKey))
+        runCurrent()
+        session.onVisibleResultsChanged("echoes", setOf(hits[5].stableKey))
+        runCurrent()
+        assertEquals(listOf(hits[0]), attempts)
+        release.complete(Unit)
+        runCurrent()
+        assertEquals(listOf(hits[0], hits[5]), attempts)
     }
 
     @Test
@@ -152,6 +198,8 @@ class UniversalSearchSessionEngineTest {
         )
         val session = session(setOf(SPOTIFY), music = { listOf(hit) }, artwork = lookup::find)
         query(session, "echoes")
+        session.onVisibleResultsChanged("echoes", setOf(hit.stableKey))
+        runCurrent()
         assertEquals(listOf(hit), session.state.value.orderedResults)
         assertTrue(session.state.value.artworkOverrides.isEmpty())
         assertEquals(SourceSearchState.Data("echoes", listOf(hit)), session.state.value.sourceStates[YOUTUBE_MUSIC])
