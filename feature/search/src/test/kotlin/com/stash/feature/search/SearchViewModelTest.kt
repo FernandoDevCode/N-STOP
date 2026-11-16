@@ -21,6 +21,12 @@ import com.stash.feature.search.engine.UniversalSearchSessionFactory
 import com.stash.feature.search.engine.resultHistoryItem
 import com.stash.core.data.artistphotos.SelectedArtistPhotoRepository
 import com.stash.core.data.artistphotos.SelectedArtistPhoto
+import com.stash.core.media.PlayerRepository
+import com.stash.core.media.StreamRoutingResult
+import com.stash.core.model.TrackItem
+import com.stash.data.ytmusic.YouTubeWebVideo
+import com.stash.data.ytmusic.YTMusicCatalogItem
+import com.stash.feature.search.engine.toUniversalSearchResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -60,7 +66,7 @@ class SearchViewModelTest {
         var sessionsOpened = 0
         var youtubeStarted = false
         var youtubeCanceled = false
-        val factory = factory { scope, navigate, open ->
+        val factory = factory { scope, navigate, open, _ ->
             sessionsOpened++
             UniversalSearchSession(
                 scope,
@@ -129,7 +135,7 @@ class SearchViewModelTest {
             SearchResultType.ARTIST, "https://example.test/artist.jpg",
         )
         val history = history(listOf(artist))
-        val factory = factory { scope, navigate, open ->
+        val factory = factory { scope, navigate, open, _ ->
             UniversalSearchSession(
                 scope,
                 CatalogSource.entries.associateWith { source ->
@@ -177,16 +183,103 @@ class SearchViewModelTest {
         entry.viewModelStore.clear()
     }
 
+    @Test
+    fun `symbolic Spotify routes real music results and each supported row plays only its catalog id`() = runTest {
+        val entry = Entry()
+        val player = mock<PlayerRepository>()
+        whenever(player.playExactSearchResult(any())).thenReturn(StreamRoutingResult.Deduped)
+        val music = listOf(
+            catalogItem(YTMusicCatalogItem.Kind.TRACK, "ABCDEFGHIJK", "Track"),
+            catalogItem(YTMusicCatalogItem.Kind.VIDEO, "ABCDEFGHIJL", "Track (Live)"),
+            catalogItem(YTMusicCatalogItem.Kind.TRACK, "invalid", "Unavailable"),
+        )
+        val web = YouTubeWebVideo("ABCDEFGHIJM", "Track (Cover)", "Artist", null, null, 0).toUniversalSearchResult()
+        val factory = factory { scope, navigate, open, play ->
+            UniversalSearchSession(
+                scope, mapOf(YOUTUBE to { listOf(web) }, YOUTUBE_MUSIC to { music }),
+                SearchSourceSelection.Default, {}, history(), navigate, open, play = play,
+            )
+        }
+        val model = entry.viewModel(factory, player = player)
+        runCurrent()
+        val session = checkNotNull(model.session.value)
+        session.onQueryChanged("track")
+        advanceTimeBy(300)
+        runCurrent()
+        assertEquals(setOf(YOUTUBE_MUSIC, YOUTUBE), session.state.value.orderedResults.map { it.identity.source }.toSet())
+        val tracks = (music + web).filter { it.supports(SearchResultAction.PLAY) }
+        assertEquals(listOf("ABCDEFGHIJK", "ABCDEFGHIJL", "ABCDEFGHIJM"), tracks.map { it.audioIdentity?.audioId })
+        for (result in music + web) {
+            session.onResultAction(result, SearchResultAction.PLAY)
+            runCurrent()
+        }
+        val argument = org.mockito.kotlin.argumentCaptor<com.stash.core.model.TrackItem>()
+        verify(player, org.mockito.kotlin.times(3)).playExactSearchResult(argument.capture())
+        assertEquals(tracks.map { it.identity.catalogId }, argument.allValues.map { it.videoId })
+        assertEquals(tracks.map { it.title }, argument.allValues.map { it.title })
+        entry.viewModelStore.clear()
+    }
+
+    @Test
+    fun `duplicate taps are ignored and cancellation clears the old spinner without error`() = runTest {
+        val entry = Entry()
+        val first = catalogItem(YTMusicCatalogItem.Kind.TRACK, "ABCDEFGHIJK", "Track")
+        val second = catalogItem(YTMusicCatalogItem.Kind.VIDEO, "ABCDEFGHIJL", "Track (Remix)")
+        val selections = mutableListOf<String>()
+        val player = object : PlayerRepository by mock<PlayerRepository>() {
+            override suspend fun playExactSearchResult(item: TrackItem): StreamRoutingResult {
+                selections += item.videoId
+                if (item.videoId == first.identity.catalogId) awaitCancellation()
+                return StreamRoutingResult.CellularRefused
+            }
+        }
+        val factory = factory { scope, navigate, open, play ->
+            UniversalSearchSession(
+                scope, mapOf(YOUTUBE_MUSIC to { listOf(first, second) }),
+                SearchSourceSelection(setOf(YOUTUBE_MUSIC)), {}, history(), navigate, open, play = play,
+            )
+        }
+        val model = entry.viewModel(factory, player = player)
+        val errors = mutableListOf<Int>()
+        backgroundScope.launch { model.playErrors.collect { errors += it } }
+        runCurrent()
+        val session = checkNotNull(model.session.value)
+        session.onQueryChanged("track")
+        advanceTimeBy(300)
+        runCurrent()
+        session.onResultAction(first, SearchResultAction.PLAY)
+        runCurrent()
+        assertEquals(first, model.playingRequest.value)
+        session.onResultAction(first, SearchResultAction.PLAY)
+        runCurrent()
+        assertEquals(listOf(first.identity.catalogId), selections)
+        session.onResultAction(second, SearchResultAction.PLAY)
+        assertEquals(second, model.playingRequest.value)
+        runCurrent()
+        assertNull(model.playingRequest.value)
+        assertEquals(listOf(first.identity.catalogId, second.identity.catalogId), selections)
+        assertEquals(listOf(R.string.universal_search_play_cellular), errors)
+        entry.viewModelStore.clear()
+    }
+
+    private fun catalogItem(kind: YTMusicCatalogItem.Kind, id: String, title: String) =
+        YTMusicCatalogItem(kind, id, title, "Artist", null, 120_000, false, 0).toUniversalSearchResult()
+
     private fun history(items: List<RecentSearchItem> = emptyList()) = mock<UniversalSearchHistory>().apply {
         whenever(recent).thenReturn(flowOf(items))
     }
 
     private suspend fun factory(
-        open: (CoroutineScope, (UniversalSearchResult) -> Unit, (RecentSearchItem) -> Unit) -> UniversalSearchSession,
+        open: (
+            CoroutineScope,
+            (UniversalSearchResult) -> Unit,
+            (RecentSearchItem) -> Unit,
+            (UniversalSearchResult, String?) -> Unit,
+        ) -> UniversalSearchSession,
     ): UniversalSearchSessionFactory {
         val factory = mock<UniversalSearchSessionFactory>()
-        whenever(factory.open(any(), any(), any())).thenAnswer { invocation ->
-            open(invocation.getArgument(0), invocation.getArgument(1), invocation.getArgument(2))
+        whenever(factory.open(any(), any(), any(), any())).thenAnswer { invocation ->
+            open(invocation.getArgument(0), invocation.getArgument(1), invocation.getArgument(2), invocation.getArgument(3))
         }
         return factory
     }
@@ -197,10 +290,14 @@ class SearchViewModelTest {
             whenever(photos).thenReturn(MutableStateFlow<Map<String, SelectedArtistPhoto>>(emptyMap()))
         }
 
-        fun viewModel(factory: UniversalSearchSessionFactory, handle: SavedStateHandle = SavedStateHandle()) =
+        fun viewModel(
+            factory: UniversalSearchSessionFactory,
+            handle: SavedStateHandle = SavedStateHandle(),
+            player: PlayerRepository = mock(),
+        ) =
             ViewModelProvider(this, object : ViewModelProvider.Factory {
                 override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                    requireNotNull(modelClass.cast(SearchViewModel(factory, handle, photoRepository)))
+                    requireNotNull(modelClass.cast(SearchViewModel(factory, handle, photoRepository, player)))
             })[SearchViewModel::class.java]
     }
 }

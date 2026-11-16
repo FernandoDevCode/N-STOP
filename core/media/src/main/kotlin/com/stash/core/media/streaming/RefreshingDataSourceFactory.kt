@@ -8,6 +8,7 @@ import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.HttpDataSource
 import com.stash.core.data.db.dao.TrackDao
+import com.stash.core.model.YouTubeVideoId
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicReference
@@ -61,6 +62,7 @@ class RefreshingDataSource(
      * same [RefreshingDataSourceFactory] creates. See [open].
      */
     private val lastRefreshed: AtomicReference<String?> = AtomicReference(null),
+    private val exactYouTubeId: String? = null,
 ) : DataSource by inner {
 
     /**
@@ -94,11 +96,11 @@ class RefreshingDataSource(
         // A URL another open already refreshed (the cast server's previous request,
         // the next-up prefetch) costs nothing to try. Same origin and file only: the
         // cache is keyed by track id alone and may hold another source's URL.
-        val cached = cache.get(trackId)?.takeIf {
+        val cached = if (exactYouTubeId == null) cache.get(trackId)?.takeIf {
             it.origin == YouTubeStreamResolver.ORIGIN &&
                 it.url != first.toString() &&
                 sameUrlFileParams(spec.uri.toString(), it.url)
-        }
+        } else null
         if (cached != null) {
             try {
                 return openRefreshed(spec, cached.url)
@@ -114,7 +116,7 @@ class RefreshingDataSource(
             Log.w(TAG, "refresh for track $trackId returned a different file; failing the load")
             throw dead
         }
-        cache.put(trackId, fresh)
+        if (exactYouTubeId == null) cache.put(trackId, fresh)
         return openRefreshed(spec, fresh.url)
     }
 
@@ -137,6 +139,9 @@ class RefreshingDataSource(
         runBlocking {
             withTimeoutOrNull(LazyResolvingDataSource.RESOLVE_DEADLINE_MS) {
                 val track = trackDao.getById(trackId) ?: return@withTimeoutOrNull null
+                if (exactYouTubeId != null && (!YouTubeVideoId.isValid(exactYouTubeId) || track.youtubeId != exactYouTubeId)) {
+                    return@withTimeoutOrNull null
+                }
                 resolver.resolveYouTubeRefresh(track)
             }
         }
@@ -169,6 +174,7 @@ class RefreshingDataSourceFactory(
     private val cache: StreamUrlCache,
     private val trackDao: TrackDao,
     private val trackId: Long,
+    private val exactYouTubeId: String? = null,
 ) : DataSource.Factory {
 
     /** One per item: every source for it starts from the last refreshed URL. */
@@ -181,5 +187,6 @@ class RefreshingDataSourceFactory(
         trackId = trackId,
         trackDao = trackDao,
         lastRefreshed = lastRefreshed,
+        exactYouTubeId = exactYouTubeId,
     )
 }

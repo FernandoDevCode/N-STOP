@@ -3,6 +3,7 @@ package com.stash.feature.search.engine
 import com.stash.core.common.ArtUrlUpgrader
 import com.stash.core.model.YouTubeVideoId
 import com.stash.data.ytmusic.YTMusicCatalogItem
+import com.stash.feature.search.contract.AudioIdentity
 import com.stash.feature.search.contract.CatalogIdentity
 import com.stash.feature.search.contract.CatalogSource
 import com.stash.feature.search.contract.SearchReleaseMetadata
@@ -18,9 +19,12 @@ internal fun YTMusicCatalogItem.toUniversalSearchResult(): UniversalSearchResult
         YTMusicCatalogItem.Kind.ALBUM -> SearchResultType.ALBUM
     }
     val canNavigate = type == SearchResultType.ARTIST || type == SearchResultType.ALBUM
+    val identity = CatalogIdentity(CatalogSource.YOUTUBE_MUSIC, id)
+    val audio = identity.exactYouTubeAudio(type)
     val originalArtwork = artworkUrl?.takeIf { it.isNotBlank() }
     return UniversalSearchResult(
-        identity = CatalogIdentity(CatalogSource.YOUTUBE_MUSIC, id),
+        identity = identity,
+        audioIdentity = audio,
         type = type,
         title = title,
         subtitle = subtitle?.takeIf { it.isNotBlank() },
@@ -30,10 +34,28 @@ internal fun YTMusicCatalogItem.toUniversalSearchResult(): UniversalSearchResult
         versionLabel = if (canNavigate) null else versionFromTitle(title),
         providerRank = rank,
         rankingScore = ordinalSearchScore(rank),
-        supportedActions = if (canNavigate) setOf(SearchResultAction.NAVIGATE) else emptySet(),
+        supportedActions = when {
+            canNavigate -> setOf(SearchResultAction.NAVIGATE)
+            audio != null -> setOf(SearchResultAction.PLAY)
+            else -> emptySet()
+        },
         release = releaseTitle?.let { SearchReleaseMetadata(it, releaseYear, releaseType, artistBrowseId) },
     )
 }
+
+internal fun CatalogIdentity.exactYouTubeAudio(type: SearchResultType): AudioIdentity? {
+    val playableType = when (source) {
+        CatalogSource.YOUTUBE -> type == SearchResultType.VIDEO
+        CatalogSource.YOUTUBE_MUSIC -> type == SearchResultType.TRACK || type == SearchResultType.VIDEO
+        CatalogSource.SPOTIFY -> false
+    }
+    return if (playableType && YouTubeVideoId.isValid(catalogId)) AudioIdentity("youtube", catalogId) else null
+}
+
+internal fun UniversalSearchResult.exactPlaybackVideoId(): String? =
+    audioIdentity?.takeIf {
+        supports(SearchResultAction.PLAY) && it == identity.exactYouTubeAudio(type)
+    }?.audioId
 
 internal fun videoArtwork(id: String, original: String?): String? =
     original ?: id.takeIf(YouTubeVideoId::isValid)?.let(ArtUrlUpgrader::youTubeThumbnail)

@@ -7,8 +7,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsSelected
@@ -18,6 +20,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollToKey
@@ -26,6 +29,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.stash.core.ui.visual.VisualTheme
+import com.stash.data.ytmusic.YouTubeWebVideo
 import com.stash.feature.search.contract.CatalogIdentity
 import com.stash.feature.search.contract.CatalogSource
 import com.stash.feature.search.contract.CatalogSource.SPOTIFY
@@ -39,6 +43,7 @@ import com.stash.feature.search.contract.UniversalSearchActions
 import com.stash.feature.search.contract.UniversalSearchResult
 import com.stash.feature.search.contract.UniversalSearchUiState
 import com.stash.feature.search.engine.queryHistoryItem
+import com.stash.feature.search.engine.toUniversalSearchResult
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -164,6 +169,31 @@ class UniversalSearchContentTest {
         compose.runOnIdle { music.value = SourceSearchState.Empty("rock") }
         compose.onNodeWithText("Search failed").assertDoesNotExist()
         compose.onNodeWithText("No results found").assertExists()
+    }
+
+    @Test
+    fun `only a valid playback row can be tapped and only the pending row is disabled`() {
+        val first = YouTubeWebVideo("ABCDEFGHIJK", "Track", "Artist", null, null, 0).toUniversalSearchResult()
+        val second = YouTubeWebVideo("ABCDEFGHIJL", "Track (Live)", "Artist", null, null, 1).toUniversalSearchResult()
+        val invalid = YouTubeWebVideo("invalid", "Unavailable", "Artist", null, null, 2).toUniversalSearchResult()
+        val results = listOf(first, second, invalid)
+        val state = UniversalSearchUiState(
+            query = "track",
+            sourceStates = mapOf(YOUTUBE to SourceSearchState.Data("track", results)),
+            orderedResults = results,
+        )
+        val preparing = mutableStateOf<String?>(null)
+        compose.setContent {
+            VisualTheme { UniversalSearchContent(state, actions, autoFocus = false, preparingKey = preparing.value) }
+        }
+        compose.onNodeWithTag(invalid.stableKey).assertHasNoClickAction()
+        compose.onNodeWithTag(first.stableKey).assertHasClickAction().performClick()
+        verify(actions).onResultAction(first, SearchResultAction.PLAY, null)
+        compose.runOnIdle { preparing.value = first.stableKey }
+        compose.onNodeWithTag(first.stableKey).assertIsNotEnabled()
+        compose.onNode(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Preparing playback")).assertExists()
+        compose.onNodeWithTag(second.stableKey).assertHasClickAction().performClick()
+        verify(actions).onResultAction(second, SearchResultAction.PLAY, null)
     }
 
     @Test

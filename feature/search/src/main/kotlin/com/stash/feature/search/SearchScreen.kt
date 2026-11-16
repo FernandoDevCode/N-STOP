@@ -43,6 +43,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -64,6 +66,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -97,8 +100,10 @@ import com.stash.feature.search.contract.SourceSearchState
 import com.stash.feature.search.contract.UniversalSearchActions
 import com.stash.feature.search.contract.UniversalSearchResult
 import com.stash.feature.search.contract.UniversalSearchUiState
+import com.stash.feature.search.engine.exactPlaybackVideoId
 import java.text.NumberFormat
 import java.util.Locale
+import kotlinx.coroutines.flow.collectLatest
 
 @Composable
 fun SearchScreen(
@@ -111,9 +116,21 @@ fun SearchScreen(
     val keyboard = LocalSoftwareKeyboardController.current
     val currentArtist by rememberUpdatedState(onNavigateToArtist)
     val currentAlbum by rememberUpdatedState(onNavigateToAlbum)
+    val snackbar = remember { SnackbarHostState() }
+    val context = LocalContext.current
+    LaunchedEffect(viewModel, lifecycle, context) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            try {
+                viewModel.playErrors.collectLatest { snackbar.showSnackbar(context.getString(it)) }
+            } finally {
+                viewModel.cancelPendingPlayback()
+            }
+        }
+    }
     LaunchedEffect(viewModel, lifecycle, keyboard) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             viewModel.destinations.collect { destination ->
+                viewModel.cancelPendingPlayback()
                 keyboard?.hide()
                 when (destination) {
                     is SearchNavigation.Artist -> currentArtist(destination.id, destination.name, destination.artworkUrl)
@@ -131,7 +148,11 @@ fun SearchScreen(
     } else {
         val state by activeSession.state.collectAsStateWithLifecycle()
         val photos by viewModel.selectedArtistPhotos.collectAsStateWithLifecycle()
-        UniversalSearchContent(state, activeSession, artistPhotos = photos)
+        val playingRequest by viewModel.playingRequest.collectAsStateWithLifecycle()
+        UniversalSearchContent(
+            state, activeSession, artistPhotos = photos, preparingKey = playingRequest?.stableKey,
+            snackbarHost = { SnackbarHost(snackbar, Modifier.padding(bottom = bottomChromePadding(0.dp))) },
+        )
     }
 }
 
@@ -141,6 +162,8 @@ internal fun UniversalSearchContent(
     actions: UniversalSearchActions,
     autoFocus: Boolean = true,
     artistPhotos: Map<String, SelectedArtistPhoto> = emptyMap(),
+    preparingKey: String? = null,
+    snackbarHost: @Composable () -> Unit = {},
 ) {
     val list = rememberLazyListState()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -175,7 +198,7 @@ internal fun UniversalSearchContent(
         }
     }
     // Search consumes the IME insets. The existing app scaffold owns the atmosphere and chrome.
-    Scaffold(Modifier.imePadding(), containerColor = Color.Transparent) { insets ->
+    Scaffold(Modifier.imePadding(), containerColor = Color.Transparent, snackbarHost = snackbarHost) { insets ->
         Column(Modifier.fillMaxSize().padding(insets)) {
             SearchHeader(state, actions, autoFocus)
             LazyColumn(
@@ -228,11 +251,17 @@ internal fun UniversalSearchContent(
                         }
                     }
 
-                    if (state.orderedResults.any { !it.supports(SearchResultAction.NAVIGATE) }) {
+                    if (state.orderedResults.any {
+                            !it.supports(SearchResultAction.NAVIGATE) && it.exactPlaybackVideoId() == null
+                        }
+                    ) {
                         item("catalogHint") { SearchMessage(R.string.universal_search_catalog_hint, compact = true) }
                     }
                     items(state.orderedResults, key = UniversalSearchResult::stableKey) { result ->
-                        ResultRow(result, actions, artistPhotos, state.artworkOverrides[result.stableKey])
+                        ResultRow(
+                            result, actions, artistPhotos, state.artworkOverrides[result.stableKey],
+                            preparing = preparingKey == result.stableKey,
+                        )
                     }
                 }
             }
@@ -415,13 +444,22 @@ private fun ResultRow(
     actions: UniversalSearchActions,
     artistPhotos: Map<String, SelectedArtistPhoto>,
     preferredArtwork: String?,
+    preparing: Boolean,
 ) {
     val destination = result.supports(SearchResultAction.NAVIGATE)
+    val action = when {
+        destination -> SearchResultAction.NAVIGATE
+        result.exactPlaybackVideoId() != null -> SearchResultAction.PLAY
+        else -> null
+    }
     var preferredLoaded by remember(preferredArtwork) { mutableStateOf(false) }
     val unavailable = stringResource(R.string.universal_search_catalog_only)
-    val interaction = if (destination) {
-        Modifier.clickable(role = Role.Button, onClickLabel = stringResource(R.string.universal_search_open_details)) {
-            actions.onResultAction(result, SearchResultAction.NAVIGATE, preferredArtwork.takeIf { preferredLoaded })
+    val interaction = if (action != null) {
+        val label = stringResource(
+            if (destination) R.string.universal_search_open_details else R.string.universal_search_play,
+        )
+        Modifier.clickable(enabled = !preparing, role = Role.Button, onClickLabel = label) {
+            actions.onResultAction(result, action, preferredArtwork.takeIf { preferredLoaded })
         }
     } else {
         Modifier.semantics(mergeDescendants = true) { stateDescription = unavailable }
@@ -452,6 +490,10 @@ private fun ResultRow(
             SearchRowDetail(listOfNotNull(source, type, duration, explicit).joinToString(" · "))
         }
         if (destination) Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = VisualDesign.Muted)
+        if (preparing) {
+            val loading = stringResource(R.string.universal_search_play_loading)
+            CircularProgressIndicator(Modifier.size(16.dp).semantics { stateDescription = loading }, strokeWidth = 2.dp)
+        }
     }
 }
 
