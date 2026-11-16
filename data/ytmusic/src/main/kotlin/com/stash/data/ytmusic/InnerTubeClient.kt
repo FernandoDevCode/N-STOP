@@ -4,6 +4,7 @@ import android.util.Log
 import com.stash.core.auth.TokenManager
 import com.stash.core.auth.youtube.YouTubeCookieHelper
 import com.stash.data.ytmusic.model.MusicVideoType
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import com.stash.data.ytmusic.potoken.PoTokenMinter
 import com.stash.data.ytmusic.potoken.PoTokenPair
@@ -435,6 +436,16 @@ class InnerTubeClient @Inject constructor(
      * fallback between "not available here" and "try again" (#481).
      */
     suspend fun searchWithStatus(query: String, params: String? = null): RequestOutcome =
+        searchWithStatus(query, params, cancellable = false)
+
+    internal suspend fun searchCatalogWithStatus(query: String): RequestOutcome =
+        searchWithStatus(query, params = null, cancellable = true)
+
+    private suspend fun searchWithStatus(
+        query: String,
+        params: String?,
+        cancellable: Boolean,
+    ): RequestOutcome =
         withContext(Dispatchers.IO) {
             val cookie = tokenManager.getYouTubeCookie()
             val variant = InnerTubeVariant.WEB_REMIX
@@ -443,7 +454,7 @@ class InnerTubeClient @Inject constructor(
                 put("query", query)
                 if (params != null) put("params", params)
             }
-            executeRequestWithStatus("$BASE_URL/search", body, cookie, variant)
+            executeRequestWithStatus("$BASE_URL/search", body, cookie, variant, cancellable)
         }
 
     /** ytmusicapi-derived filter selector that constrains search results to the
@@ -856,6 +867,7 @@ class InnerTubeClient @Inject constructor(
         body: JsonObject,
         cookie: String?,
         variant: InnerTubeVariant,
+        cancellable: Boolean = false,
     ): RequestOutcome = withContext(Dispatchers.IO) {
         val (effectiveCookie, sapiSid, authHeader) = resolveAuth(cookie, variant)
 
@@ -891,20 +903,23 @@ class InnerTubeClient @Inject constructor(
         }
 
         try {
-            okHttpClient.newCall(requestBuilder.build()).execute().use { resp ->
+            val call = okHttpClient.newCall(requestBuilder.build())
+            val readResponse: (okhttp3.Response) -> RequestOutcome = { resp ->
                 if (resp.code == 401) invalidateAuthCache()
                 if (!resp.isSuccessful) {
                     val errorBodyLen = resp.body?.string()?.length ?: 0
                     Log.e(TAG, "executeRequest: HTTP ${resp.code}, errorBodyLen=$errorBodyLen")
-                    return@use RequestOutcome(body = null, statusCode = resp.code)
+                    RequestOutcome(body = null, statusCode = resp.code)
+                } else {
+                    val responseBody = resp.body?.string()
+                    val parsed = responseBody?.let { json.parseToJsonElement(it).jsonObject }
+                    parsed?.let(::rememberVisitorData)
+                    RequestOutcome(parsed, resp.code)
                 }
-                val responseBody = resp.body?.string()
-                    ?: return@use RequestOutcome(body = null, statusCode = resp.code)
-                Log.d(TAG, "executeRequest: success, response length=${responseBody.length}")
-                val parsed = json.parseToJsonElement(responseBody).jsonObject
-                rememberVisitorData(parsed)
-                RequestOutcome(parsed, resp.code)
             }
+            if (cancellable) call.awaitSearchResponse(readResponse) else call.execute().use(readResponse)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.w(TAG, "executeRequest: threw ${e.javaClass.simpleName}: ${e.message}")
             RequestOutcome(body = null, statusCode = RequestOutcome.STATUS_NETWORK_ERROR)

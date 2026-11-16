@@ -18,6 +18,8 @@ import com.stash.data.ytmusic.model.SearchResultSection
 import com.stash.data.ytmusic.model.TrackSummary
 import com.stash.data.ytmusic.model.YTMusicPlaylist
 import com.stash.data.ytmusic.model.YTMusicTrack
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -511,6 +513,12 @@ class YTMusicApiClient @Inject constructor(
     /** [searchCanonicalVideoId] plus the matched song's square album art. */
     suspend fun searchCanonicalMatch(artist: String, title: String): CanonicalMatch? =
         innerTubeClient.searchCanonicalMatch(artist, title)
+
+    suspend fun searchCatalog(query: String): List<YTMusicCatalogItem> = withContext(Dispatchers.Default) {
+        val outcome = innerTubeClient.searchCatalogWithStatus(query)
+        val response = outcome.body ?: throw SearchUnavailableException(outcome.statusCode)
+        parseYTMusicCatalog(response)
+    }
 
     suspend fun searchAll(query: String): SearchAllResults {
         val outcome = innerTubeClient.searchWithStatus(query)
