@@ -191,7 +191,9 @@ class UniversalSearchSession internal constructor(
     override fun onResultAction(result: UniversalSearchResult, action: SearchResultAction) {
         if (!result.supports(action) || result !in state.value.orderedResults) return
         if (action == SearchResultAction.NAVIGATE) {
-            val item = resultHistoryItem(result.title, result.subtitle, result.identity)
+            val item = resultHistoryItem(
+                result.title, result.subtitle, result.identity, result.type, result.artworkUrl,
+            )
             writeHistory { record(item) }
             navigate(result)
         }

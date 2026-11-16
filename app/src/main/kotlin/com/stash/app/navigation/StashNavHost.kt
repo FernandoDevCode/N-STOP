@@ -307,9 +307,14 @@ private fun StashNavGraph(
                 },
             )
         }
-        composable<SearchRoute> {
+        composable<SearchRoute> { searchEntry ->
             SearchScreen(
-                onSettings = { navController.navigate(SettingsRoute) },
+                viewModel = hiltViewModel(searchEntry),
+                onConnectSpotify = {
+                    // Accounts shares the ViewModel owned by the Settings entry.
+                    navController.navigate(SettingsRoute) { launchSingleTop = true }
+                    navController.navigate(SettingsAccountsRoute) { launchSingleTop = true }
+                },
                 onNavigateToArtist = { id, name, avatar ->
                     navController.navigate(SearchArtistRoute(id, name, avatar))
                 },

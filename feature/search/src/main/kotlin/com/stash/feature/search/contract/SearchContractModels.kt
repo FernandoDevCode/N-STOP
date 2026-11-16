@@ -169,6 +169,8 @@ data class RecentSearchItem(
     val label: String,
     val subtitle: String? = null,
     val resultIdentity: CatalogIdentity? = null,
+    val resultType: SearchResultType? = null,
+    val artworkUrl: String? = null,
 ) {
     init {
         require(id.isNotBlank()) { "id must not be blank" }
@@ -178,6 +180,9 @@ data class RecentSearchItem(
         }
         require((kind == RecentSearchKind.QUERY) == (resultIdentity == null)) {
             "QUERY must not have resultIdentity and RESULT must have it"
+        }
+        require(kind == RecentSearchKind.RESULT || (resultType == null && artworkUrl == null)) {
+            "Only result entries carry route metadata"
         }
     }
 }

@@ -9,6 +9,7 @@ import com.stash.feature.search.contract.CatalogIdentity
 import com.stash.feature.search.contract.CatalogSource
 import com.stash.feature.search.contract.RecentSearchItem
 import com.stash.feature.search.contract.RecentSearchKind
+import com.stash.feature.search.contract.SearchResultType
 import com.stash.feature.search.recentSearchesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -48,6 +49,8 @@ internal class UniversalSearchHistory @Inject constructor(
                 JsonObject(buildMap {
                     put("label", JsonPrimitive(entry.label))
                     entry.subtitle?.let { put("subtitle", JsonPrimitive(it)) }
+                    entry.resultType?.let { put("resultType", JsonPrimitive(it.name)) }
+                    entry.artworkUrl?.let { put("artworkUrl", JsonPrimitive(it)) }
                     entry.resultIdentity?.let {
                         put("source", JsonPrimitive(it.source.name))
                         put("catalogId", JsonPrimitive(it.catalogId))
@@ -68,7 +71,10 @@ private fun decodeHistory(raw: String): List<RecentSearchItem> {
         val sourceName = field("source") ?: return@mapNotNull queryHistoryItem(label)
         val source = CatalogSource.entries.firstOrNull { it.name == sourceName } ?: return@mapNotNull null
         val id = field("catalogId") ?: return@mapNotNull null
-        resultHistoryItem(label, field("subtitle"), CatalogIdentity(source, id, field("catalogUri")))
+        val type = field("resultType")?.let { name -> SearchResultType.entries.find { it.name == name } }
+            ?: legacyNavigationType(source, id)
+        resultHistoryItem(label, field("subtitle"), CatalogIdentity(source, id, field("catalogUri")),
+            type, field("artworkUrl"))
     }
 }
 
@@ -77,7 +83,8 @@ private fun List<RecentSearch>.toUniversalHistory(): List<RecentSearchItem> = ma
     when (it.type) {
         RecentSearch.Type.QUERY -> queryHistoryItem(it.text)
         RecentSearch.Type.ARTIST -> it.artistId?.takeIf(String::isNotBlank)?.let { id ->
-            resultHistoryItem(it.text, it.subtitle, CatalogIdentity(CatalogSource.YOUTUBE_MUSIC, id))
+            resultHistoryItem(it.text, it.subtitle, CatalogIdentity(CatalogSource.YOUTUBE_MUSIC, id),
+                SearchResultType.ARTIST, it.thumbnailUrl)
         }
         // Legacy track rows carry only display text. There is no original ID to reopen.
         RecentSearch.Type.TRACK -> null
@@ -92,10 +99,26 @@ internal fun queryHistoryItem(query: String) = RecentSearchItem(
     label = query.trim(),
 )
 
-internal fun resultHistoryItem(label: String, subtitle: String?, identity: CatalogIdentity) = RecentSearchItem(
+// PR #94 stored only identities. Its only navigable rows were YouTube Music artists and albums.
+private fun legacyNavigationType(source: CatalogSource, id: String): SearchResultType? = when {
+    source != CatalogSource.YOUTUBE_MUSIC -> null
+    id.startsWith("UC") || id.startsWith("MPLAUC") -> SearchResultType.ARTIST
+    id.startsWith("MPREb_") || id.startsWith("OLAK5uy_") -> SearchResultType.ALBUM
+    else -> null
+}
+
+internal fun resultHistoryItem(
+    label: String,
+    subtitle: String?,
+    identity: CatalogIdentity,
+    type: SearchResultType? = null,
+    artworkUrl: String? = null,
+) = RecentSearchItem(
     id = "result:${identity.source.name}:${identity.catalogId}",
     kind = RecentSearchKind.RESULT,
     label = label,
     subtitle = subtitle?.takeIf { it.isNotBlank() },
     resultIdentity = identity,
+    resultType = type,
+    artworkUrl = artworkUrl,
 )
