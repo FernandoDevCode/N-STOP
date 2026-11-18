@@ -70,53 +70,84 @@ class UniversalSearchContentTest {
     private val actions = mock<UniversalSearchActions>()
 
     @Test
-    fun `empty query has independent filters pin restore and IME search`() {
+    fun `empty query shows history but no source controls`() {
         show(UniversalSearchUiState())
         compose.onNodeWithText("Search for a song, video, artist, or album.").assertExists()
-        compose.onNodeWithText("Spotify").assertIsSelected().performClick()
-        compose.onNodeWithText("YouTube").assertIsSelected()
-        compose.onNodeWithText("YouTube Music").assertIsNotSelected().performClick()
-        compose.onNodeWithTag("searchPin").assertIsOff().performClick()
-        compose.onNodeWithText("Restore defaults").performClick()
+        compose.onNodeWithText("Spotify").assertDoesNotExist()
+        compose.onNodeWithText("YouTube").assertDoesNotExist()
+        compose.onNodeWithText("YouTube Music").assertDoesNotExist()
+        compose.onNodeWithTag("searchPin").assertDoesNotExist()
+        compose.onNodeWithTag("searchRestoreDefaults").assertDoesNotExist()
+        compose.onNodeWithText("Sources").assertDoesNotExist()
         compose.onNodeWithTag("searchQuery").performTextInput("a")
         compose.onNodeWithTag("searchQuery").performImeAction()
-        verify(actions).onSourceToggled(SPOTIFY)
-        verify(actions).onSourceToggled(YOUTUBE_MUSIC)
-        verify(actions).onPinToggled()
-        verify(actions).onRestoreDefaultSources()
         verify(actions).onQueryChanged("a")
         verify(actions).onSearchSubmitted()
+        verify(actions, never()).onSourceToggled(any())
     }
 
     @Test
-    fun `sources heading fits at 280 dp and 150 percent font scale`() {
+    fun `active query shows exactly two compact source controls with pin`() {
+        show(UniversalSearchUiState(query = "rock"))
+        compose.onNodeWithTag("searchFilterSPOTIFY").assertIsSelected().performClick()
+        compose.onNodeWithTag("searchFilterYOUTUBE").assertIsSelected()
+        compose.onNodeWithText("YouTube Music").assertDoesNotExist()
+        compose.onNodeWithText("Sources").assertDoesNotExist()
+        compose.onNodeWithTag("searchRestoreDefaults").assertDoesNotExist()
+        compose.onNodeWithTag("searchPin").assertIsOff().performClick()
+        verify(actions).onSourceToggled(SPOTIFY)
+        verify(actions).onPinToggled()
+        verify(actions, never()).onSourceToggled(YOUTUBE_MUSIC)
+    }
+
+    @Test
+    fun `restore defaults appears only for a changed visible selection`() {
+        show(UniversalSearchUiState(query = "rock", selection = SearchSourceSelection(setOf(YOUTUBE))))
+        compose.onNodeWithTag("searchFilterSPOTIFY").assertIsNotSelected()
+        compose.onNodeWithTag("searchFilterYOUTUBE").assertIsSelected()
+        compose.onNodeWithTag("searchRestoreDefaults").assertHasClickAction().performClick()
+        compose.onNodeWithText("YouTube Music").assertDoesNotExist()
+        verify(actions).onRestoreDefaultSources()
+    }
+
+    @Test
+    fun `compact filters and pin remain accessible at 280 dp and 150 percent font scale`() {
         compose.setContent {
             val density = LocalDensity.current.density
             CompositionLocalProvider(LocalDensity provides Density(density, fontScale = 1.5f)) {
                 Box(Modifier.width(280.dp)) {
-                    VisualTheme { UniversalSearchContent(UniversalSearchUiState(), actions, autoFocus = false) }
+                    VisualTheme {
+                        UniversalSearchContent(UniversalSearchUiState(query = "rock"), actions, autoFocus = false)
+                    }
                 }
             }
         }
-        val layouts = mutableListOf<TextLayoutResult>()
-        compose.onNodeWithText("Sources").performSemanticsAction(SemanticsActions.GetTextLayoutResult) { read ->
-            assertTrue(read(layouts))
-        }
-        assertEquals(1, layouts.single().lineCount)
-        compose.onNodeWithText("Restore defaults").assertHasClickAction()
+        compose.onNodeWithTag("searchFilterSPOTIFY").assertHasClickAction()
+        compose.onNodeWithTag("searchFilterYOUTUBE").assertHasClickAction()
+        compose.onNodeWithTag("searchPin").assertHasClickAction()
+        compose.onNodeWithText("YouTube Music").assertDoesNotExist()
     }
 
     @Test
     fun `history supports open remove and clear even with no selected sources`() {
         val recent = queryHistoryItem("demo")
         show(UniversalSearchUiState(selection = SearchSourceSelection(emptySet()), recentSearches = listOf(recent)))
-        compose.onNodeWithText("Select at least one source to search.").assertExists()
+        compose.onNodeWithText("Select at least one source to search.").assertDoesNotExist()
+        compose.onNodeWithTag("searchPin").assertDoesNotExist()
         compose.onNodeWithText("demo").performClick()
         compose.onNodeWithContentDescription("Remove demo from history").performClick()
         compose.onNodeWithText("Clear history").performClick()
         verify(actions).onRecentSelected(recent)
         verify(actions).onRecentRemoved(recent)
         verify(actions).onRecentCleared()
+    }
+
+    @Test
+    fun `active query with no sources shows a recovery message and restore action`() {
+        show(UniversalSearchUiState(query = "demo", selection = SearchSourceSelection(emptySet())))
+        compose.onNodeWithText("Select at least one source to search.").assertExists()
+        compose.onNodeWithTag("searchRestoreDefaults").assertHasClickAction().performClick()
+        verify(actions).onRestoreDefaultSources()
     }
 
     @Test
