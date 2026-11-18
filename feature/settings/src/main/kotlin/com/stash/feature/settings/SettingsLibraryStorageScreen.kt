@@ -477,10 +477,10 @@ fun SettingsLibraryStorageScreen(
                 title = {
                     Text(
                         text = when (databaseBackupState) {
-                            DatabaseBackupState.Exporting -> "Exporting Database"
-                            DatabaseBackupState.Importing -> "Importing Backup"
-                            is DatabaseBackupState.Success -> "Success"
-                            is DatabaseBackupState.Error -> "Error"
+                            DatabaseBackupState.Exporting -> stringResource(R.string.sonora_storage_exporting)
+                            DatabaseBackupState.Importing -> stringResource(R.string.sonora_storage_importing)
+                            is DatabaseBackupState.Success -> stringResource(R.string.sonora_storage_success)
+                            is DatabaseBackupState.Error -> stringResource(R.string.sonora_storage_error)
                         },
                         style = MaterialTheme.typography.titleLarge,
                     )
@@ -1025,9 +1025,9 @@ private fun LibStorageMoveLibrarySection(
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = if (hasExternalFolder) {
-                    "Move $movableCount track${if (movableCount == 1) "" else "s"} still on your device into the folder above so they're accessible over USB too."
+                    stringResource(R.string.sonora_storage_move_to_selected_intro, movableCount)
                 } else {
-                    "Move $movableCount track${if (movableCount == 1) "" else "s"} on your device to an external folder (SD / USB) so you can access them over USB too. You'll pick the destination next."
+                    stringResource(R.string.sonora_storage_move_external_intro, movableCount)
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1042,9 +1042,9 @@ private fun LibStorageMoveLibrarySection(
             ) {
                 Text(
                     text = if (hasExternalFolder) {
-                        "Move $movableCount track${if (movableCount == 1) "" else "s"} to this folder"
+                        stringResource(R.string.sonora_storage_move_to_folder, movableCount)
                     } else {
-                        "Pick destination and move library"
+                        stringResource(R.string.sonora_storage_pick_move_destination)
                     },
                 )
             }
@@ -1074,13 +1074,8 @@ private fun LibStorageMoveLibrarySection(
         }
         is com.stash.data.download.files.MoveLibraryState.Done -> {
             Text(
-                text = buildString {
-                    append("Moved ${state.moved} track")
-                    if (state.moved != 1) append("s")
-                    if (state.failed > 0) {
-                        append(" • ${state.failed} failed")
-                    }
-                },
+                text = stringResource(R.string.sonora_storage_moved, state.moved) +
+                    if (state.failed > 0) stringResource(R.string.sonora_storage_failed_suffix, state.failed) else "",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
@@ -1152,9 +1147,7 @@ private fun LibStorageReorganizeSection(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "$misplacedCount downloaded track${if (misplacedCount == 1) "" else "s"} " +
-                    "don't follow the \"$layoutLabel\" structure yet. Move them now? New downloads " +
-                    "already use it.",
+                text = stringResource(R.string.sonora_storage_reorganize_intro, misplacedCount, layoutLabel),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1166,7 +1159,7 @@ private fun LibStorageReorganizeSection(
                     contentColor = MaterialTheme.colorScheme.primary,
                 ),
             ) {
-                Text("Move $misplacedCount track${if (misplacedCount == 1) "" else "s"} into \"$layoutLabel\"")
+                Text(stringResource(R.string.sonora_storage_reorganize_move, misplacedCount, layoutLabel))
             }
         }
         is com.stash.data.download.files.ReorganizeLibraryState.Running -> {
@@ -1194,12 +1187,9 @@ private fun LibStorageReorganizeSection(
         }
         is com.stash.data.download.files.ReorganizeLibraryState.Done -> {
             Text(
-                text = buildString {
-                    append("Moved ${state.moved} track")
-                    if (state.moved != 1) append("s")
-                    if (state.skipped > 0) append(" • ${state.skipped} already organized")
-                    if (state.failed > 0) append(" • ${state.failed} failed")
-                },
+                text = stringResource(R.string.sonora_storage_moved, state.moved) +
+                    (if (state.skipped > 0) stringResource(R.string.sonora_storage_skipped_suffix, state.skipped) else "") +
+                    (if (state.failed > 0) stringResource(R.string.sonora_storage_failed_suffix, state.failed) else ""),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
