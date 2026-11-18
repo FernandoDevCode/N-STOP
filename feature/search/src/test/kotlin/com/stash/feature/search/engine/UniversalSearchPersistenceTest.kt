@@ -34,7 +34,7 @@ class UniversalSearchPersistenceTest {
     private val legacy = RecentSearchesStore(context)
 
     @Test
-    fun `temporary filters die with the session and pinned empty selection round trips`() = runBlocking {
+    fun `two visible filters are transient by default and pinned empty selection round trips`() = runBlocking {
         val prefs = SearchSourcePreferences(context)
         prefs.save(SearchSourceSelection.Default)
         val scopes = mutableListOf<CoroutineScope>()
@@ -49,15 +49,13 @@ class UniversalSearchPersistenceTest {
         }
         try {
             val first = session()
-            first.onSourceToggled(YOUTUBE_MUSIC)
-            assertTrue(YOUTUBE_MUSIC in first.state.value.selection.enabled)
+            first.onSourceToggled(YOUTUBE)
+            assertEquals(setOf(SPOTIFY), first.state.value.selection.enabled)
             assertEquals(SearchSourceSelection.Default, session().state.value.selection)
             first.onPinToggled()
-            assertEquals(CatalogSource.entries.toSet(), session().state.value.selection.enabled)
-            assertEquals(setOf(YOUTUBE, YOUTUBE_MUSIC), session().state.value.selection.activeCatalogs)
+            assertEquals(SearchSourceSelection(setOf(SPOTIFY), true), session().state.value.selection)
+            assertEquals(setOf(YOUTUBE_MUSIC), session().state.value.selection.activeCatalogs)
             first.onSourceToggled(SPOTIFY)
-            first.onSourceToggled(YOUTUBE)
-            first.onSourceToggled(YOUTUBE_MUSIC)
             scopes.first().cancel()
             val reopened = session()
             assertEquals(SearchSourceSelection(emptySet(), true), reopened.state.value.selection)
@@ -71,6 +69,20 @@ class UniversalSearchPersistenceTest {
             assertEquals(SearchSourceSelection.Default, reopened.state.value.selection)
         } finally {
             scopes.forEach { it.cancel() }
+            prefs.save(SearchSourceSelection.Default)
+            prefs.read()
+        }
+    }
+
+    @Test
+    fun `legacy pinned YouTube Music filter is stored and loaded as Spotify`() = runBlocking {
+        val prefs = SearchSourcePreferences(context)
+        try {
+            prefs.save(SearchSourceSelection(setOf(YOUTUBE_MUSIC), true))
+            assertEquals(SearchSourceSelection(setOf(SPOTIFY), true), prefs.read())
+            prefs.save(SearchSourceSelection(setOf(YOUTUBE_MUSIC, YOUTUBE), true))
+            assertEquals(SearchSourceSelection(setOf(SPOTIFY, YOUTUBE), true), prefs.read())
+        } finally {
             prefs.save(SearchSourceSelection.Default)
             prefs.read()
         }
