@@ -1,6 +1,6 @@
 # Sonora — especificação vigente e contrato do rework da Busca
 
-**Status:** Busca universal integrada pelo PR #95. Roteamento simbólico e prioridade visual atualizados em 16/11/2026.
+**Status:** Busca universal integrada pelo PR #95; reprodução exata pelo PR #97. Contrato visual dos filtros corrigido em 18/11/2026 para duas opções contextuais.
 
 **Data da consolidação:** 10/11/2026
 
@@ -38,10 +38,10 @@ Este trabalho documental só pode alterar `AGENTS.md` e este arquivo. Não cria 
 ## 2. Decisões de produto consolidadas
 
 1. A Busca é **universal**: uma consulta produz **uma lista única de resultados**, sem abas e sem seções obrigatórias por serviço.
-2. Os três filtros visuais são independentes. **Spotify** e **YouTube convencional** começam ativos; **YouTube Music** começa inativo. O filtro Spotify é um atalho visual para o catálogo do YouTube Music.
-3. O alfinete fica no cabeçalho e é um controle separado dos filtros.
+2. Existem **somente dois filtros visuais: Spotify e YouTube**. Ambos começam ativos e aparecem exclusivamente quando a consulta tem texto não vazio. **YouTube Music não tem chip separado:** o filtro Spotify consulta o catálogo YouTube Music, mantendo o ID e a indicação de fonte real nos resultados.
+3. O alfinete é um controle separado de persistência, mas fica **na mesma linha compacta dos dois filtros**, visível somente durante uma pesquisa; não ocupa o cabeçalho ocioso.
 4. Com o alfinete ativo, a seleção atual é persistida, restaurada entre sessões e atualizada a cada alteração. Com o alfinete inativo, a seleção só vale para a sessão atual.
-5. “Restaurar padrão” é uma ação explícita. O padrão é `{SPOTIFY, YOUTUBE}`; YTM permanece desligado.
+5. “Restaurar padrão” permanece como ação explícita e acessível por ícone discreto **somente quando a seleção difere de `{SPOTIFY, YOUTUBE}`**. Não há um terceiro estado visual para YTM.
 6. A Busca musical funciona sem sessão Spotify. O Spotify fornece somente imagens e metadados usados para verificação visual. Sua indisponibilidade conserva as imagens originais.
 7. Cada linha identifica discretamente sua fonte de catálogo. A origem não depende somente de cor.
 8. Vídeos raros, demos, covers, lives, remixes e versões escolhidas pelo usuário são resultados legítimos. Não substituir silenciosamente um vídeo selecionado por uma gravação “canônica” e não deduplicar agressivamente versões alternativas.
@@ -105,9 +105,8 @@ enum class SearchResultType {
 | --- | --- |
 | Spotify | YouTube Music |
 | YouTube | YouTube WEB |
-| YouTube Music | YouTube Music |
 
-Com um ou ambos os filtros musicais ativos, há uma consulta e um estado para YouTube Music. Alternar um filtro sem mudar o conjunto efetivo preserva a requisição e seus resultados. Desativar o último filtro musical cancela essa consulta e seu enriquecimento. YouTube WEB é independente. A identificação, a navegação e o histórico usam sempre a fonte real.
+Spotify visual ativo gera uma consulta para YouTube Music, enquanto YouTube visual ativo consulta YouTube WEB de forma independente. Desativar Spotify cancela somente a consulta YouTube Music e seu enriquecimento. Alterar YouTube não muda o ID nem o estado do catálogo musical; identificação, navegação e histórico permanecem vinculados à fonte real. Seleções fixadas antigas contendo `CatalogSource.YOUTUBE_MUSIC` são normalizadas para `CatalogSource.SPOTIFY` na leitura e na gravação, sem migrar identidades de resultados.
 
 ```kotlin
 data class SearchSourceSelection(
@@ -124,13 +123,13 @@ val DefaultSearchSources = setOf(
 Regras de transição:
 
 - início sem preferência fixada: `enabled = DefaultSearchSources`, `isPinned = false`;
-- cada filtro alterna somente o seu estado visual; consultas são iniciadas ou canceladas quando o conjunto de catálogos efetivos muda;
-- seleção vazia é permitida e mostra um estado orientando o usuário a ativar ao menos uma fonte, sem disparar provedores;
+- somente Spotify/YouTube são alternáveis pela UI; consultas são iniciadas ou canceladas quando o conjunto de catálogos efetivos muda;
+- seleção vazia é permitida; com consulta ativa mostra orientação para ativar ao menos uma fonte, sem disparar provedores. Com consulta vazia, mostrar somente histórico ou prompt, nunca o controle de fontes;
 - ao ativar o alfinete, persistir imediatamente o conjunto atual e `isPinned = true`;
 - enquanto fixado, toda mudança de filtro atualiza a preferência persistida;
 - ao desativar o alfinete, manter a seleção atual apenas durante a sessão e persistir `isPinned = false`; na próxima sessão, usar o padrão;
 - navegar para um resultado e voltar à mesma instância da Busca conserva a seleção temporária em memória; criar uma nova instância da Busca inicia outra sessão e usa o padrão, salvo seleção fixada;
-- “Restaurar padrão” define explicitamente `{SPOTIFY, YOUTUBE}`. Se fixado, também atualiza o valor persistido; se temporário, altera somente a sessão atual;
+- “Restaurar padrão” define explicitamente `{SPOTIFY, YOUTUBE}`, disponível durante consulta ativa apenas para escolha diferente do padrão. Se fixado, atualiza o valor persistido; se temporário, altera somente a sessão atual;
 - não inferir seleção a partir de login, disponibilidade, erro ou infraestrutura de áudio. Uma fonte selecionada pode estar `unavailable`.
 
 ### 4.3 Identidades separadas
@@ -316,7 +315,7 @@ interface UniversalSearchActions {
 O Codex Visual deve conseguir demonstrar, sem integração real:
 
 - consulta vazia com e sem histórico;
-- filtro Spotify ativo e YouTube Music desmarcado, com resultados do catálogo YouTube Music e YouTube WEB independente;
+- dois filtros ativos (Spotify e YouTube), com resultados reais do YouTube Music e YouTube WEB independentes e sem terceiro chip;
 - duas fontes em `loading` e uma com dados anteriores;
 - dados intercalados de faixa, vídeo, artista e álbum;
 - falha parcial com resultados preservados;
@@ -397,11 +396,11 @@ Não encadear PR B sobre branch A. Ambos os PRs têm base `nonstop`; B é atuali
 
 ### Contrato e Motor
 
-- [ ] defaults: Spotify e YouTube ativos, YTM inativo, alfinete inativo;
+- [ ] defaults visuais: Spotify e YouTube ativos, nenhum chip YTM, alfinete inativo;
 - [ ] seleção temporária não reaparece em nova sessão;
 - [ ] ativar alfinete persiste imediatamente; alteração fixada atualiza persistência; desativar volta ao padrão na sessão seguinte;
 - [ ] restaurar padrão só ocorre por ação explícita e respeita o estado fixado/temporário;
-- [ ] uma chamada por catálogo efetivo. Spotify visual e YouTube Music ativos compartilham chamada, estado e retry;
+- [ ] uma chamada por catálogo efetivo. Spotify visual consulta YouTube Music; YouTube visual consulta YouTube WEB; preferências legadas YTM migradas para Spotify;
 - [ ] com Spotify indisponível, a busca musical mantém resultados e capas de origem;
 - [ ] sucesso parcial preserva e ordena resultados; retry afeta só a fonte pedida;
 - [ ] query nova não publica resposta antiga; cancelamento e erro não misturam consultas;
@@ -414,7 +413,7 @@ Não encadear PR B sobre branch A. Ambos os PRs têm base `nonstop`; B é atuali
 
 ### Interface
 
-- [ ] filtros individuais e alfinete separado no cabeçalho, com semântica acessível;
+- [ ] sem consulta: só título, campo e recentes/prompt; com texto de consulta: dois chips compactos e alfinete contextual, com semântica acessível; botão de restaurar apenas se seleção diferente do padrão;
 - [ ] fonte discreta em cada resultado sem depender apenas de cor;
 - [ ] todos os seis estados por fonte e falha parcial representados;
 - [ ] lista mista de faixa, vídeo, artista e álbum usa keys estáveis e a ordem recebida;
@@ -427,7 +426,7 @@ Não encadear PR B sobre branch A. Ambos os PRs têm base `nonstop`; B é atuali
 ### Integração
 
 - [ ] fixtures e estado real usam os mesmos DTOs e callbacks, sem adaptador paralelo de produto;
-- [ ] YouTube Music e YouTube WEB podem aparecer juntos. YouTube Music participa quando Spotify visual ou YouTube Music está ativo;
+- [ ] YouTube Music e YouTube WEB podem aparecer juntos. YouTube Music participa quando Spotify visual está ativo, sem terceiro chip;
 - [ ] indisponibilidade de uma fonte não apaga resultados das demais;
 - [ ] tocar um vídeo conserva exatamente seu `catalogId` e sua versão até a fronteira existente;
 - [ ] mecanismo de reprodução, fila, downloads e Media3 não tiveram diff;
@@ -590,3 +589,20 @@ Esta etapa sucede as decisões históricas de somente navegação. Resultados `T
 O toque chama `PlayerRepository.playExactSearchResult`. A persistência usa somente o identificador YouTube, confirma a linha retornada e encaminha o ID ao resolvedor YouTube existente. O cache de URLs por ID de biblioteca é ignorado para esse fluxo, inclusive na renovação da URL durante a reprodução. Se a linha mudar de identidade ou o vídeo selecionado estiver indisponível, o fluxo falha sem procurar outra gravação. O item mantém o ID persistido para o mini-player e a fila de um item. A última solicitação da Busca prevalece e os toques repetidos durante a preparação são ignorados.
 
 A precisão se aplica ao toque na Busca e às renovações do item que permanece carregado. O estado persistido de retomada após encerramento do processo guarda apenas o ID de biblioteca e reconstitui o item pelas regras gerais da biblioteca. Estender a garantia de identidade à retomada fria exigiria persistir o modo de resolução junto à fila e propagá-lo pelas entradas de retomada, inclusive comandos de mídia do sistema.
+
+## Contrato de interface atual — filtros contextuais (18/11/2026)
+
+Este contrato substitui especificamente as instruções históricas desta especificação que descreviam três chips, alfinete sempre visível e título “Fontes” no estado ocioso.
+
+| Estado | UI | Busca e dados |
+| --- | --- | --- |
+| **Idle** (consulta vazia ou só espaços) | Título, campo, histórico recente ou prompt neutro; nenhum filtro, alfinete ou restaurar | Não iniciar busca; ausência de fonte selecionada não esconde histórico |
+| **Digitando** (qualquer texto não vazio após trim) | Linha discreta imediatamente após o campo: chips **Spotify** e **YouTube** e ação de alfinete; nenhum título “Fontes” | Debounce, limite de caracteres elegíveis, cancelamento e estados do motor continuam como antes |
+| **Resultados / loading / erro parcial** | Mesma linha de dois filtros e uma lista universal; estados de falha por catálogo conservados | Spotify → catálogo YouTube Music; YouTube → YouTube WEB; preservar seleção, IDs, variantes e áudio exato |
+| **Escolha personalizada** | Ícone de restaurar aparece na linha; desaparece ao voltar ao padrão | Alterações persistem apenas quando alfinete ativo; seleção vazia mostra orientação se consulta ativa |
+
+**Geometria e estilo:** chips sem check, altura visual aproximada de 36 dp, cantos 12 dp, cores grafite com preenchimento translúcido apenas no selecionado e contorno discreto. Sem cartões de provedor, sem botão textual “Restaurar padrão” ocupando linha exclusiva e sem engrenagem. Controles permanecem acionáveis via toque e acessibilidade, inclusive em largura reduzida/150% de fonte (linha pode quebrar). Não introduzir uma segunda barra de navegação nem alterar mini-player/insets.
+
+**Compatibilidade:** o enum `CatalogSource.YOUTUBE_MUSIC` continua obrigatório como identidade de catálogo, histórico, retry e resultado. O que desaparece é apenas o terceiro **filtro visual**; seleções persistidas antigas com esse valor viram `SPOTIFY` sem perda da escolha. Um ícone de pin ativo indica seleção fixada entre sessões; inativo conserva apenas a sessão. O filtro Spotify **não** é promessa de áudio hospedado pelo Spotify.
+
+**Validação:** testes Compose idle/consulta ativa/seleção alterada/narrow 280 dp/150%, testes JVM de mapeamento legacy pinned, CI Android e teste visual real após APK. Sucesso de CI não comprova o refinamento visual no Redmi.
