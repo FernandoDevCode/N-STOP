@@ -1,6 +1,14 @@
-# Sonora — estado canônico e consolidação (atualizado em 2026-11-15)
+# Sonora — estado canônico e consolidação (atualizado em 2026-11-18)
 
-## Estado vigente (2026-11-15)
+## Estado vigente (2026-11-18)
+
+- **Branch canônica:** `nonstop`, SHA `33e6b03df562945eafc03627478eff7c30222a2f`, após merge do PR #98 (traduções de submenus).
+- **APK mais recente:** pré-release `sonora-preview-v214-30838d8949c8`, SHA `30838d8949c823900e07269d69e7807512302c8e`. Contém a Busca universal e reprodução exata (#94–#97), mas **não** contém o PR #98.
+- **Inventário atualizado de implementações, limites e fila sem duplicações:** [`docs/sonora/FEATURE_STATUS_2026-11-18.md`](sonora/FEATURE_STATUS_2026-11-18.md). Para novos objetivos, consultar este snapshot e revalidar o código na `nonstop`.
+- Os testes do PR #98 foram aprovados; homologação de UX, reprodução real, fotos, animações e performance no Android permanece adiada para a versão consolidada. Não publicar APK intermediário automaticamente.
+- O histórico de 15/11 e o V22.2 abaixo são registros anteriores, **não** o estado funcional presente.
+
+## Estado em 2026-11-15 (histórico)
 
 - **Sonora v213**, `versionCode 213`, commit `20a7f37a9e3f779a579e5b87721da08c3049736b`, na branch canônica `nonstop`.
 - A v211 restaurou a base UX da v208; v212 introduziu a atmosfera da Busca; v213 corrigiu a faixa da barra de status, deu maior legibilidade ao movimento orgânico e fixou a cor azul-grafite (sem amostragem de fotos de artistas).
