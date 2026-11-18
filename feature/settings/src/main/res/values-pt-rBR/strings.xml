@@ -409,4 +409,19 @@
     <string name="sonora_health_lyrics_not_found">Letras não encontradas: %1$d.</string>
     <string name="sonora_health_lyrics_stopped">A busca foi interrompida: o serviço de letras não respondeu. Tente novamente mais tarde.</string>
     <string name="sonora_health_lyrics_fetch_again">Buscar novamente</string>
+    <!-- Sonora: active storage feedback and Home layout accessibility. -->
+    <string name="sonora_storage_exporting">Exportando backup</string>
+    <string name="sonora_storage_importing">Importando backup</string>
+    <string name="sonora_storage_success">Concluído</string>
+    <string name="sonora_storage_error">Erro</string>
+    <string name="sonora_storage_move_to_selected_intro">Faixas no aparelho: %1$d. Mova-as para a pasta selecionada para também acessá-las por USB.</string>
+    <string name="sonora_storage_move_external_intro">Faixas no aparelho: %1$d. Escolha uma pasta externa (SD ou USB) para movê-las e acessá-las por USB.</string>
+    <string name="sonora_storage_move_to_folder">Mover faixas para esta pasta (%1$d)</string>
+    <string name="sonora_storage_pick_move_destination">Escolher destino e mover biblioteca</string>
+    <string name="sonora_storage_moved">Faixas movidas: %1$d</string>
+    <string name="sonora_storage_failed_suffix"> · Falhas: %1$d</string>
+    <string name="sonora_storage_skipped_suffix"> · Já organizadas: %1$d</string>
+    <string name="sonora_storage_reorganize_intro">Faixas fora da organização %2$s: %1$d. Deseja movê-las agora? Os novos downloads já utilizam essa organização.</string>
+    <string name="sonora_storage_reorganize_move">Mover %1$d faixas para %2$s</string>
+    <string name="sonora_home_section_show_accessibility">Exibir %1$s na tela Início</string>
 </resources>

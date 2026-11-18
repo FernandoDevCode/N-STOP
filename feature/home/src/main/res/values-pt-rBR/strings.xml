@@ -86,4 +86,7 @@
     <string name="nostop_home_resume_label">Sua trilha agora</string>
     <string name="podcast_preparing">Preparando download…</string>
     <string name="sonora_home_lossless_hint">Recurso legado indisponível no Sonora.</string>
+    <!-- Sonora: localized active destinations. -->
+    <string name="sonora_weekly_current">Na sua frequência</string>
+    <string name="sonora_weekly_forgotten">Fora do radar</string>
 </resources>

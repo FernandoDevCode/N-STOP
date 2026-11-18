@@ -333,11 +333,11 @@ fun HomeScreen(
             SonoraWeeklyAlbumRail(weeklyDiscovery.releases, onNavigateToAlbum)
         }
         if (weeklyDiscovery.current.isNotEmpty()) item(key = "weekly_current") {
-            SonoraWeeklySongRail("Na sua frequência", weeklyDiscovery.current,
+            SonoraWeeklySongRail(stringResource(R.string.sonora_weekly_current), weeklyDiscovery.current,
                 viewModel::playWeeklyDiscovery, viewModel::rejectWeeklySong)
         }
         if (weeklyDiscovery.forgotten.isNotEmpty()) item(key = "weekly_forgotten") {
-            SonoraWeeklySongRail("Fora do radar", weeklyDiscovery.forgotten,
+            SonoraWeeklySongRail(stringResource(R.string.sonora_weekly_forgotten), weeklyDiscovery.forgotten,
                 viewModel::playWeeklyDiscovery, viewModel::rejectWeeklySong)
         }
         // Retain Daily Discover actions without a second competing full-size

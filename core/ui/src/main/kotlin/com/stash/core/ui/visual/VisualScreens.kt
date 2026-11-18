@@ -372,7 +372,7 @@ typealias VisualArtwork = @Composable (String?, Modifier) -> Unit
 }
 
 @Composable fun VisualCover(url: String?, modifier: Modifier = Modifier) {
-    Box(modifier.background(Brush.linearGradient(if (LocalVisualDark.current) listOf(Color(0xFF3A354C), Color(0xFF20212D)) else listOf(VisualDesign.Surface, Color(0xFFD6CDDF))))) {
+    Box(modifier.background(Brush.linearGradient(if (LocalVisualDark.current) listOf(Color(0xFF2A2F38), Color(0xFF191D23)) else listOf(VisualDesign.Surface, Color(0xFFE4E7EB))))) {
         if (url != null && !url.startsWith("icon:")) AsyncImage(url, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         else {
             val symbol = when (url?.removePrefix("icon:")) {

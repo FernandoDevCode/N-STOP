@@ -413,4 +413,19 @@
     <string name="sonora_health_lyrics_not_found">Lyrics not found for %1$d tracks.</string>
     <string name="sonora_health_lyrics_stopped">Stopped early: the lyrics service is not responding. Try again later.</string>
     <string name="sonora_health_lyrics_fetch_again">Fetch again</string>
+    <!-- Sonora: active storage feedback and Home layout accessibility. -->
+    <string name="sonora_storage_exporting">Exporting backup</string>
+    <string name="sonora_storage_importing">Importing backup</string>
+    <string name="sonora_storage_success">Completed</string>
+    <string name="sonora_storage_error">Error</string>
+    <string name="sonora_storage_move_to_selected_intro">Tracks on the device: %1$d. Move them to the selected folder so you can access them over USB.</string>
+    <string name="sonora_storage_move_external_intro">Tracks on the device: %1$d. Choose an external folder (SD or USB) to move them and access them over USB.</string>
+    <string name="sonora_storage_move_to_folder">Move tracks to this folder (%1$d)</string>
+    <string name="sonora_storage_pick_move_destination">Choose destination and move library</string>
+    <string name="sonora_storage_moved">Tracks moved: %1$d</string>
+    <string name="sonora_storage_failed_suffix"> · Failed: %1$d</string>
+    <string name="sonora_storage_skipped_suffix"> · Already organized: %1$d</string>
+    <string name="sonora_storage_reorganize_intro">Tracks outside the %2$s folder layout: %1$d. Move them now? New downloads already use this layout.</string>
+    <string name="sonora_storage_reorganize_move">Move %1$d tracks to %2$s</string>
+    <string name="sonora_home_section_show_accessibility">Show %1$s on Home</string>
 </resources>

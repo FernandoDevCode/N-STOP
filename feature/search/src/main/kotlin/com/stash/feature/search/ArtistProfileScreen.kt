@@ -39,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.flow.collect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
@@ -388,27 +389,27 @@ fun ArtistProfileScreen(
         if (showPhotoEditor) {
             AlertDialog(
                 onDismissRequest = { showPhotoEditor = false },
-                title = { Text("Fotografia de " + state.hero.name) },
+                title = { Text(stringResource(R.string.sonora_artist_photo_title, state.hero.name)) },
                 text = {
                     Column {
-                        Text("A mudança ficará salva somente neste aparelho.")
+                        Text(stringResource(R.string.sonora_artist_photo_local_notice))
                         TextButton(onClick = {
                             showPhotoEditor = false
                             photoLink = ""
                             showPhotoLinkDialog = true
-                        }) { Text("Usar link de imagem") }
+                        }) { Text(stringResource(R.string.sonora_artist_photo_use_link)) }
                         TextButton(onClick = {
                             showPhotoEditor = false
                             pickPhoto.launch("image/*")
-                        }) { Text("Escolher imagem do celular") }
+                        }) { Text(stringResource(R.string.sonora_artist_photo_choose_local)) }
                         TextButton(onClick = {
                             showPhotoEditor = false
                             vm.restoreSpotifyPhoto()
-                        }) { Text("Restaurar fotografia padrão") }
+                        }) { Text(stringResource(R.string.sonora_artist_photo_restore)) }
                     }
                 },
                 confirmButton = {
-                    TextButton(onClick = { showPhotoEditor = false }) { Text("Fechar") }
+                    TextButton(onClick = { showPhotoEditor = false }) { Text(stringResource(R.string.sonora_artist_photo_close)) }
                 },
             )
         }
@@ -416,12 +417,12 @@ fun ArtistProfileScreen(
         if (showPhotoLinkDialog) {
             AlertDialog(
                 onDismissRequest = { showPhotoLinkDialog = false },
-                title = { Text("Usar imagem por link") },
+                title = { Text(stringResource(R.string.sonora_artist_photo_link_title)) },
                 text = {
                     OutlinedTextField(
                         value = photoLink,
                         onValueChange = { photoLink = it },
-                        label = { Text("URL HTTPS da fotografia") },
+                        label = { Text(stringResource(R.string.sonora_artist_photo_link_label)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -430,10 +431,10 @@ fun ArtistProfileScreen(
                     TextButton(onClick = {
                         vm.setPhotoLink(photoLink)
                         showPhotoLinkDialog = false
-                    }) { Text("Salvar") }
+                    }) { Text(stringResource(R.string.sonora_artist_photo_save)) }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showPhotoLinkDialog = false }) { Text("Cancelar") }
+                    TextButton(onClick = { showPhotoLinkDialog = false }) { Text(stringResource(R.string.sonora_artist_photo_cancel)) }
                 },
             )
         }

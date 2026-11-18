@@ -319,6 +319,7 @@ private fun HomeSectionRow(
     onMoveDown: () -> Unit,
     onShownChange: (Boolean) -> Unit,
 ) {
+    val showOnHomeDescription = stringResource(R.string.sonora_home_section_show_accessibility, label)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -364,7 +365,7 @@ private fun HomeSectionRow(
         androidx.compose.material3.Switch(
             checked = shown,
             onCheckedChange = onShownChange,
-            modifier = Modifier.semantics { contentDescription = "Show $label on Home" },
+            modifier = Modifier.semantics { contentDescription = showOnHomeDescription },
             colors = androidx.compose.material3.SwitchDefaults.colors(
                 checkedTrackColor = MaterialTheme.colorScheme.primary,
                 checkedThumbColor = MaterialTheme.colorScheme.onPrimary,

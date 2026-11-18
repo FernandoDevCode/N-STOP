@@ -86,4 +86,7 @@
     <string name="nostop_home_resume_label">Your soundtrack</string>
     <string name="podcast_preparing">Preparing download…</string>
     <string name="sonora_home_lossless_hint">Legacy feature unavailable in Sonora.</string>
+    <!-- Sonora: localized active destinations. -->
+    <string name="sonora_weekly_current">In your rotation</string>
+    <string name="sonora_weekly_forgotten">Off the radar</string>
 </resources>
