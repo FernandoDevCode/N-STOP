@@ -12,6 +12,7 @@
 ## Outras tarefas do repositório
 Estas instruções de v8 não substituem as regras técnicas gerais do projeto nem autorizam refatorações fora do escopo pedido.
 - Para tarefas da Busca Sonora, `docs/sonora/SEARCH_REWORK_PLAN.md` é a especificação vigente de produto e do contrato técnico.
+- Antes de reabrir objetivo funcional ou de UI, consulte `docs/sonora/FEATURE_STATUS_2026-11-18.md` para identificar o que já está integrado, o que está só aguardando validação e o que é histórico. Revalide sempre na `nonstop` atual: o inventário é um snapshot, não substitui o código nem os contratos específicos.
 
 ## Sonora — fluxo canônico (desde 2026-11-01)
 - Repositório `FernandoDevCode/N-STOP`: a branch padrão e única fonte integrada para trabalho futuro é `nonstop`. Não presuma `main`; confirme a branch padrão antes de atuar.
