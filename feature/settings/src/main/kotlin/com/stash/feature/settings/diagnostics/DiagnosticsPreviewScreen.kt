@@ -62,6 +62,9 @@ fun DiagnosticsPreviewScreen(
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val uriHandler = LocalUriHandler.current
+    val shareChooserTitle = stringResource(R.string.sonora_diagnostics_share_chooser)
+    val unavailableShareApp = stringResource(R.string.sonora_diagnostics_no_share_app)
+    val copiedMessage = stringResource(R.string.sonora_diagnostics_copied)
 
     SettingsPageSurface {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
@@ -93,22 +96,20 @@ fun DiagnosticsPreviewScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        text = state.error ?: "Failed to build diagnostics",
+                        text = state.error ?: stringResource(R.string.sonora_diagnostics_build_failed),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error,
                     )
                     Spacer(Modifier.height(12.dp))
                     Button(onClick = viewModel::rebuild) {
-                        Text("Retry")
+                        Text(stringResource(R.string.sonora_diagnostics_retry))
                     }
                 }
             }
 
             else -> {
                 Text(
-                    text = "Review what will be shared. No passwords or tokens are included. " +
-                        "Share sends a zip with this report plus the full recent log; " +
-                        "attach it to your GitHub issue.",
+                    text = stringResource(R.string.sonora_diagnostics_review),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 4.dp),
@@ -150,34 +151,34 @@ fun DiagnosticsPreviewScreen(
                                 putExtra(android.content.Intent.EXTRA_STREAM, uri)
                                 putExtra(
                                     android.content.Intent.EXTRA_SUBJECT,
-                                    "Sonora diagnostics",
+                                    context.getString(R.string.sonora_diagnostics_share_subject),
                                 )
                                 addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
-                            val chooser = android.content.Intent.createChooser(send, "Share diagnostics")
+                            val chooser = android.content.Intent.createChooser(send, shareChooserTitle)
                                 .apply { addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK) }
                             runCatching { context.startActivity(chooser) }
                                 .onFailure {
                                     Toast.makeText(
                                         context,
-                                        "No app available to share.",
+                                        unavailableShareApp,
                                         Toast.LENGTH_SHORT,
                                     ).show()
                                 }
                         },
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text("Share")
+                        Text(stringResource(R.string.sonora_diagnostics_share))
                     }
 
                     OutlinedButton(
                         onClick = {
                             clipboard.setText(AnnotatedString(state.text))
-                            Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, copiedMessage, Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text("Copy")
+                        Text(stringResource(R.string.sonora_diagnostics_copy))
                     }
                 }
 
@@ -187,7 +188,7 @@ fun DiagnosticsPreviewScreen(
                     onClick = { runCatching { uriHandler.openUri(ISSUE_TRACKER_URL) } },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Open a GitHub issue")
+                    Text(stringResource(R.string.sonora_diagnostics_open_issue))
                 }
 
                 Spacer(Modifier.height(8.dp))
