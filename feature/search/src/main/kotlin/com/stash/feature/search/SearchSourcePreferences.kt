@@ -41,6 +41,7 @@ class SearchSourcePreferences @Inject constructor(@ApplicationContext context: C
         if (prefs[pinnedKey] != true) return@withLock SearchSourceSelection.Default
         val names = prefs[sourcesKey] ?: return@withLock SearchSourceSelection.Default
         SearchSourceSelection(CatalogSource.entries.filter { it.name in names }.toSet(), isPinned = true)
+            .normalizedVisibleFilters()
     }
 
     internal fun save(selection: SearchSourceSelection) {
@@ -51,7 +52,7 @@ class SearchSourcePreferences @Inject constructor(@ApplicationContext context: C
                     store.edit { prefs ->
                         prefs[pinnedKey] = selection.isPinned
                         if (selection.isPinned) {
-                            prefs[sourcesKey] = selection.enabled.map(CatalogSource::name).toSet()
+                            prefs[sourcesKey] = selection.normalizedVisibleFilters().enabled.map(CatalogSource::name).toSet()
                         } else {
                             prefs.remove(sourcesKey)
                         }

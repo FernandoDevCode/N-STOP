@@ -1,5 +1,6 @@
 package com.stash.feature.search
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,8 +25,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Album
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.MusicNote
@@ -91,6 +92,7 @@ import com.stash.core.ui.visual.VisualDesign
 import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.feature.search.contract.CatalogIdentity
 import com.stash.feature.search.contract.CatalogSource
+import com.stash.feature.search.contract.DefaultSearchSources
 import com.stash.feature.search.contract.RecentSearchItem
 import com.stash.feature.search.contract.RecentSearchKind
 import com.stash.feature.search.contract.SearchResultAction
@@ -206,9 +208,11 @@ internal fun UniversalSearchContent(
                 state = list,
                 contentPadding = PaddingValues(bottom = bottomChromePadding(12.dp)),
             ) {
-                item("sources") { SourceFilters(state.selection, actions) }
-                if (state.selection.enabled.isEmpty()) {
-                    item("noSources") { SearchMessage(R.string.universal_search_select_source) }
+                if (state.query.isNotBlank()) {
+                    item("sources") { SourceFilters(state.selection, actions) }
+                    if (state.selection.enabled.isEmpty()) {
+                        item("noSources") { SearchMessage(R.string.universal_search_select_source) }
+                    }
                 }
                 if (state.query.isBlank()) {
                     if (state.recentSearches.isEmpty()) {
@@ -274,27 +278,11 @@ private fun SearchHeader(state: UniversalSearchUiState, actions: UniversalSearch
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     Column(Modifier.padding(horizontal = VisualDesign.Gutter)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                stringResource(R.string.nostop_search_title),
-                Modifier.weight(1f).semantics { heading() },
-                style = VisualDesign.PageTitle,
-            )
-            val pinned = state.selection.isPinned
-            val description = stringResource(
-                if (pinned) R.string.universal_search_pinned else R.string.universal_search_temporary,
-            )
-            IconToggleButton(
-                checked = pinned,
-                onCheckedChange = { actions.onPinToggled() },
-                modifier = Modifier.testTag("searchPin").semantics { stateDescription = description },
-            ) {
-                Icon(
-                    if (pinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
-                    stringResource(R.string.universal_search_pin_sources),
-                )
-            }
-        }
+        Text(
+            stringResource(R.string.nostop_search_title),
+            Modifier.fillMaxWidth().semantics { heading() },
+            style = VisualDesign.PageTitle,
+        )
         val queryLabel = stringResource(R.string.universal_search_query)
         OutlinedTextField(
             value = state.query,
@@ -347,38 +335,64 @@ private fun SearchHeader(state: UniversalSearchUiState, actions: UniversalSearch
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun SourceFilters(selection: SearchSourceSelection, actions: UniversalSearchActions) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = VisualDesign.Gutter, vertical = 6.dp)) {
-        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(
-                stringResource(R.string.universal_search_sources),
-                Modifier.align(Alignment.CenterVertically).semantics { heading() },
-                style = VisualDesign.Body,
+    // Source identity is still YOUTUBE_MUSIC internally; only its Spotify visual alias is exposed.
+    // Normalize historical pinned YTM selections so no third/hidden switch can survive migration.
+    val visibleSelection = selection.normalizedVisibleFilters()
+    val pinned = visibleSelection.isPinned
+    val pinStateDescription = stringResource(
+        if (pinned) R.string.universal_search_pinned else R.string.universal_search_temporary,
+    )
+    FlowRow(
+        modifier = Modifier.fillMaxWidth()
+            .padding(horizontal = VisualDesign.Gutter, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
+    ) {
+        for (source in listOf(CatalogSource.SPOTIFY, CatalogSource.YOUTUBE)) {
+            val selected = source in visibleSelection.enabled
+            FilterChip(
+                selected = selected,
+                onClick = { actions.onSourceToggled(source) },
+                modifier = Modifier.heightIn(min = 36.dp).testTag("searchFilter${source.name}"),
+                label = { Text(stringResource(source.nameRes), style = MaterialTheme.typography.labelMedium) },
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = if (selected) .22f else .09f),
+                ),
+                colors = FilterChipDefaults.filterChipColors(
+                    containerColor = Color.Transparent,
+                    selectedContainerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = .10f),
+                    selectedLabelColor = MaterialTheme.colorScheme.onSurface,
+                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
             )
-            TextButton(
-                onClick = actions::onRestoreDefaultSources,
-                contentPadding = PaddingValues(horizontal = 4.dp),
-            ) {
-                Text(stringResource(R.string.universal_search_restore), style = VisualDesign.Body)
-            }
         }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            for (source in CatalogSource.entries) {
-                val selected = source in selection.enabled
-                FilterChip(
-                    selected = selected,
-                    onClick = { actions.onSourceToggled(source) },
-                    label = { Text(stringResource(source.nameRes), style = VisualDesign.Body) },
-                    leadingIcon = if (selected) {
-                        { Icon(Icons.Filled.Check, null, Modifier.size(16.dp)) }
-                    } else null,
-                    shape = RoundedCornerShape(VisualDesign.Radius.Filter),
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = .15f),
-                        selectedLabelColor = VisualDesign.Ink,
-                        labelColor = VisualDesign.Muted,
-                    ),
+        if (visibleSelection.enabled != DefaultSearchSources) {
+            IconButton(
+                onClick = actions::onRestoreDefaultSources,
+                modifier = Modifier.size(40.dp).testTag("searchRestoreDefaults"),
+            ) {
+                Icon(
+                    Icons.Filled.Refresh,
+                    stringResource(R.string.universal_search_restore),
+                    Modifier.size(18.dp),
+                    tint = VisualDesign.Muted,
                 )
             }
+        }
+        IconToggleButton(
+            checked = pinned,
+            onCheckedChange = { actions.onPinToggled() },
+            modifier = Modifier.size(40.dp).testTag("searchPin")
+                .semantics { stateDescription = pinStateDescription },
+        ) {
+            Icon(
+                if (pinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
+                stringResource(R.string.universal_search_pin_sources),
+                Modifier.size(18.dp),
+                tint = if (pinned) MaterialTheme.colorScheme.onSurface else VisualDesign.Muted,
+            )
         }
     }
 }

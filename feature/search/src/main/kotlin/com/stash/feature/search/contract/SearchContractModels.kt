@@ -32,6 +32,15 @@ data class SearchSourceSelection(
     val enabled: Set<CatalogSource> = DefaultSearchSources,
     val isPinned: Boolean = false,
 ) {
+    // Historical pins can contain YOUTUBE_MUSIC as an independent visual filter.
+    // Keep the catalog identity, but migrate that visual choice to its Spotify alias.
+    fun normalizedVisibleFilters(): SearchSourceSelection =
+        if (CatalogSource.YOUTUBE_MUSIC in enabled) {
+            copy(enabled = (enabled - CatalogSource.YOUTUBE_MUSIC) + CatalogSource.SPOTIFY)
+        } else {
+            this
+        }
+
     // Persist the visual choices by their existing enum names. Route requests by catalog.
     val activeCatalogs: Set<CatalogSource>
         get() = enabled.mapTo(linkedSetOf()) { filter ->
