@@ -77,4 +77,15 @@
     <string name="universal_search_video">Vídeo</string>
     <string name="universal_search_album">Álbum</string>
     <string name="universal_search_explicit">Explícito</string>
+    <!-- Sonora: localized active destinations. -->
+    <string name="sonora_artist_photo_title">Fotografia de %1$s</string>
+    <string name="sonora_artist_photo_local_notice">A mudança ficará salva somente neste aparelho.</string>
+    <string name="sonora_artist_photo_use_link">Usar link de imagem</string>
+    <string name="sonora_artist_photo_choose_local">Escolher imagem do celular</string>
+    <string name="sonora_artist_photo_restore">Restaurar fotografia padrão</string>
+    <string name="sonora_artist_photo_close">Fechar</string>
+    <string name="sonora_artist_photo_link_title">Usar imagem por link</string>
+    <string name="sonora_artist_photo_link_label">URL HTTPS da fotografia</string>
+    <string name="sonora_artist_photo_save">Salvar</string>
+    <string name="sonora_artist_photo_cancel">Cancelar</string>
 </resources>
