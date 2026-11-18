@@ -17,6 +17,20 @@ class SearchContractTest {
         assertThat(selection.isPinned).isFalse()
     }
 
+    @Test fun `legacy third visual filter migrates to Spotify without touching catalog identity`() {
+        val legacy = SearchSourceSelection(
+            enabled = setOf(CatalogSource.YOUTUBE_MUSIC, CatalogSource.YOUTUBE),
+            isPinned = true,
+        )
+        val visible = legacy.normalizedVisibleFilters()
+        assertThat(visible.enabled).containsExactly(CatalogSource.SPOTIFY, CatalogSource.YOUTUBE)
+        assertThat(visible.activeCatalogs).containsExactly(CatalogSource.YOUTUBE_MUSIC, CatalogSource.YOUTUBE)
+        assertThat(visible.isPinned).isTrue()
+        assertThat(legacy.enabled).contains(CatalogSource.YOUTUBE_MUSIC)
+        assertThat(visible.normalizedVisibleFilters()).isEqualTo(visible)
+        assertThat(SearchSourceSelection(emptySet(), true).normalizedVisibleFilters().enabled).isEmpty()
+    }
+
     @Test fun `stable key is derived from source type and catalog id`() {
         val result = UniversalSearchFixtures.youtubeMusicTrack(catalogId = "track-42")
 
