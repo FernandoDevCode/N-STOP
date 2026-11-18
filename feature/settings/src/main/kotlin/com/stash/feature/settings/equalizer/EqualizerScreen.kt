@@ -66,7 +66,6 @@ import com.stash.feature.settings.components.SettingsPageSurface
 import com.stash.feature.settings.R
 import androidx.compose.ui.res.stringResource
 import com.stash.core.ui.components.bottomChromePadding
-import com.stash.core.ui.theme.StashTheme
 
 /** Frequency labels for the 5 EQ bands: 60 Hz, 230 Hz, 910 Hz, 3.6 kHz, 14 kHz. */
 private val BAND_LABELS = listOf("60", "230", "910", "3.6k", "14k")
@@ -105,12 +104,13 @@ fun EqualizerScreen(
     // false forever and the Snackbar never reappears.
     val snackbarHostState = remember { SnackbarHostState() }
     val showFirstRunNotice by viewModel.showFirstRunNotice.collectAsStateWithLifecycle()
-    LaunchedEffect(showFirstRunNotice) {
+    val loudnessNotice = stringResource(R.string.sonora_eq_loudness_notice)
+    val dismissLabel = stringResource(R.string.sonora_eq_dismiss)
+    LaunchedEffect(showFirstRunNotice, loudnessNotice, dismissLabel) {
         if (showFirstRunNotice) {
             val result = snackbarHostState.showSnackbar(
-                message = "Loudness normalization is on. Tracks will sound more " +
-                    "consistent as your library is measured in the background.",
-                actionLabel = "Dismiss",
+                message = loudnessNotice,
+                actionLabel = dismissLabel,
                 duration = SnackbarDuration.Indefinite,
             )
             if (
@@ -145,8 +145,7 @@ fun EqualizerScreen(
         val bitPerfect by hiRes.bitPerfectEngaged.collectAsStateWithLifecycle()
         if (bitPerfect) {
             Text(
-                text = "Bypassed: bit-perfect output is on, so your DAC gets the music untouched. " +
-                    "Switch Hi-Res output to \"Match USB DAC\" in Audio & Quality to use the EQ.",
+                text = stringResource(R.string.sonora_eq_bit_perfect_bypass),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(bottom = 12.dp),
@@ -168,7 +167,7 @@ fun EqualizerScreen(
                     .fillMaxWidth()
                     .alpha(if (state.enabled) 1f else 0.5f),
             ) {
-                SectionLabel("5-Band EQ")
+                SectionLabel(stringResource(R.string.sonora_eq_five_bands))
                 Spacer(Modifier.height(10.dp))
 
                 EqCurvePreview(
@@ -204,7 +203,7 @@ fun EqualizerScreen(
                     .fillMaxWidth()
                     .alpha(if (state.enabled) 1f else 0.5f),
             ) {
-                SectionLabel("Bass Boost")
+                SectionLabel(stringResource(R.string.sonora_eq_bass_boost))
                 Spacer(Modifier.height(8.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -239,7 +238,7 @@ fun EqualizerScreen(
         GlassCard {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    SectionLabel("Loudness Normalization")
+                    SectionLabel(stringResource(R.string.sonora_eq_loudness_title))
                     Spacer(Modifier.weight(1f))
                     com.stash.core.ui.components.StashSwitch(
                         checked = loudnessState.enabled,
@@ -255,7 +254,7 @@ fun EqualizerScreen(
                 }
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    text = "Plays every track at a consistent volume.",
+                    text = stringResource(R.string.sonora_eq_loudness_description),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -280,7 +279,7 @@ fun EqualizerScreen(
                     .fillMaxWidth()
                     .alpha(if (state.enabled) 1f else 0.5f),
             ) {
-                SectionLabel("Pre-amp")
+                SectionLabel(stringResource(R.string.sonora_eq_preamp))
                 Spacer(Modifier.height(8.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -543,14 +542,14 @@ private fun PresetChipRow(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Filled.Add,
-                            contentDescription = "Save preset",
+                            contentDescription = stringResource(R.string.sonora_eq_save_preset),
                             modifier = Modifier
                                 .height(16.dp)
                                 .width(16.dp),
                         )
                         Spacer(Modifier.width(2.dp))
                         Text(
-                            text = "Save",
+                            text = stringResource(R.string.sonora_eq_save),
                             style = MaterialTheme.typography.labelMedium,
                         )
                     }
@@ -589,7 +588,7 @@ private fun LoudnessBackfillBlock(
     val progress = if (total > 0) done.toFloat() / total.toFloat() else 0f
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
-            text = "$done of $total tracks",
+            text = stringResource(R.string.sonora_eq_backfill_progress, done, total),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurface,
         )
@@ -602,7 +601,7 @@ private fun LoudnessBackfillBlock(
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            text = "Continues automatically while charging.",
+            text = stringResource(R.string.sonora_eq_backfill_charging),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -625,7 +624,7 @@ fun CreatePresetDialog(
         shape = MaterialTheme.shapes.large,
         title = {
             Text(
-                text = "Save Preset",
+                text = stringResource(R.string.sonora_eq_save_preset),
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
             )
@@ -634,7 +633,7 @@ fun CreatePresetDialog(
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("Preset name") },
+                label = { Text(stringResource(R.string.sonora_eq_preset_name)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -644,12 +643,12 @@ fun CreatePresetDialog(
                 onClick = { if (name.isNotBlank()) onConfirm(name.trim()) },
                 enabled = name.isNotBlank(),
             ) {
-                Text("Save")
+                Text(stringResource(R.string.sonora_eq_save))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.sonora_eq_cancel))
             }
         },
     )
