@@ -37,7 +37,21 @@
 | Exclusão de vitrines Qobuz e sync web antigo da experiência ativa | **Barreiras em código verificadas** | `HomeViewModel.discoveryFlow` retorna dados vazios e filtra seções; `HomeScreen` também filtra; `WEB_LINK_ENABLED=false` em debug/release e o NavHost oculta o link. Símbolos internos legados não equivalem a produto exposto |
 | GitHub/release canônica | **Integrado** | `nonstop` é fonte de verdade; workflow de preview só publica APK do commit integrado. Novo APK pós-#98 está propositalmente adiado |
 
-## 2. Pendências reais e próximas ações
+## Checkpoint v215 (pós-PR #100)
+
+> Esta atualização só vale após o PR #100 ser aprovado e integrado à `nonstop`. O PR de publicação v215 depende dessa integração. A release v215 terá sua própria execução completa de CI.
+
+- **S-01 — implementado, sem duplicar o que já existia.** As opções de exportação/importação **já usavam** `exportBackupLabel/Description` e `importBackupLabel/Description/Confirm` com strings EN/PT-BR; os campos literais remanescentes nos objetos eram redundantes e **não eram usados na UI**. O PR #100 traduziu apenas os títulos ativos de status, mensagens de mover arquivos, resultados e reorganização. Não alterou importação, comportamento destrutivo ou permissões.
+- **S-02 — implementado.** Texto TalkBack do switch de seções da Home em EN/PT-BR, gerado fora da lambda semântica.
+- **S-03 — implementado.** Diálogos de edição da fotografia do artista e dois rótulos dos rails semanais localizados em EN/PT-BR; sem mudar fotografia, histórico ou algoritmo.
+- **S-04 — implementado no fallback produtivo.** Somente o gradiente de capa ausente em `VisualCover` tornou-se neutro; `V8PlayerSurface` utiliza `VisualCover(null)`. **Não** redesenhar `VisualMiniPlayer` ou `LikedArtwork` sem confirmar call site de produção.
+- **S-05 — continua decisão funcional fora da v215.** A retomada fria da Busca ainda não preserva contrato completo de reprodução exata após encerramento do processo.
+- **S-06 — continua ideia não aprovada.** Seguir artistas localmente e hero separado não devem ser implementados por reaproveitamento de #55/#56.
+- **S-07 — higiene condicionada.** Não limpar nomes de compatibilidade, branches ou fluxos inativos sem encontrar efeito visível real.
+
+**Próxima etapa após publicar a v215:** homologação Android da Busca, Home, fotos, mini-player, arquivos, dark/light, acessibilidade e FPS; corrigir apenas regressões concretas. Não abrir nova rodada de implementação a partir das seções históricas abaixo.
+
+## 2. Pendências reais e próximas ações (registro anterior ao PR #100)
 
 | ID | Prioridade | Problema/limite comprovado | Escopo aceitável para a próxima tarefa |
 | --- | --- | --- | --- |
