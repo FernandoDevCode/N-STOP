@@ -33,7 +33,6 @@ import com.stash.core.data.sync.workers.ArtistImageBackfillWorker
 import com.stash.core.data.sync.workers.AutoSaveScrobbler
 import com.stash.core.data.sync.workers.QualityInfoBackfillWorker
 import com.stash.core.data.sync.workers.LoudnessBackfillWorker
-import com.stash.core.data.sync.workers.StashDiscoveryWorker
 import com.stash.core.data.sync.workers.StashMixRefreshWorker
 import com.stash.core.data.sync.workers.UpdateCheckWorker
 import com.stash.core.media.streaming.KennyyHealthProbe
@@ -499,6 +498,8 @@ class StashApplication : Application(), Configuration.Provider {
             workManager.cancelUniqueWork("stash_tag_enrichment")
             workManager.cancelUniqueWork("stash_track_info_enrichment")
             workManager.cancelUniqueWork("stash_track_info_enrichment_oneshot")
+            workManager.cancelUniqueWork("stash_discovery")
+            workManager.cancelUniqueWork("stash_discovery_oneshot")
             val stashMixesEnabled = stashMixPreference.current()
             if (!stashMixesEnabled) {
                 // Best-effort cancel of any periodic work left over from an
@@ -528,8 +529,6 @@ class StashApplication : Application(), Configuration.Provider {
             // one-shots are safe (unique-work policy = REPLACE).
             StashMixRefreshWorker.enqueueOneTime(this@StashApplication)
             StashMixRefreshWorker.schedulePeriodic(this@StashApplication)
-            val mode = downloadNetworkPreference.current()
-            StashDiscoveryWorker.schedulePeriodic(this@StashApplication, mode)
         }
         // Repair missing album_art_url on tracks downloaded before 0.5.3 —
         // primarily Stash Discover candidates whose match pipeline surfaced

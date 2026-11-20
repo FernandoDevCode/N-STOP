@@ -23,7 +23,6 @@ import com.stash.core.data.prefs.YouTubeHistoryPreference
 import com.stash.core.data.youtube.YouTubeHistoryScrobbler
 import com.stash.core.data.youtube.YouTubeScrobblerHealth
 import com.stash.core.data.youtube.YouTubeScrobblerState
-import com.stash.core.data.sync.workers.StashDiscoveryWorker
 import com.stash.core.model.DownloadNetworkMode
 import com.stash.core.model.UiScale
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -1459,7 +1458,6 @@ class SettingsViewModel @Inject constructor(
     fun onDownloadNetworkModeChanged(mode: DownloadNetworkMode) {
         viewModelScope.launch {
             downloadNetworkPreference.setMode(mode)
-            StashDiscoveryWorker.schedulePeriodic(appContext, mode)
         }
     }
 

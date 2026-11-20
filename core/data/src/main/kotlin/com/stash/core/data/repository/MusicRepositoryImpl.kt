@@ -363,9 +363,7 @@ class MusicRepositoryImpl @Inject constructor(
             playlistDao.setActiveForBuiltinMixes(true)
             // Re-schedule the five periodic workers. Cheap idempotent operation —
             // KEEP-policy means duplicate enqueues no-op.
-            val mode = downloadNetworkPreference.current()
             com.stash.core.data.sync.workers.StashMixRefreshWorker.schedulePeriodic(context)
-            com.stash.core.data.sync.workers.StashDiscoveryWorker.schedulePeriodic(context, mode)
             // Fire a one-shot refresh so the surfaces repopulate immediately
             // rather than waiting for the next periodic cycle.
             com.stash.core.data.sync.workers.StashMixRefreshWorker.enqueueOneTime(context)
