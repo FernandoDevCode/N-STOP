@@ -60,7 +60,7 @@ import com.stash.app.RequestNotificationPermissionOnce
 import com.stash.data.download.lossless.squid.CaptchaExpiredNotifier
 import com.stash.feature.nowplaying.MiniPlayer
 import com.stash.feature.nowplaying.PlayerQueueSheet
-import com.stash.feature.search.SonoraSearchAtmosphere
+import com.stash.feature.search.searchWindowBackground
 import com.stash.feature.home.sonoraHomeBackground
 import com.stash.feature.home.podcasts.LocalPodcastViewModel
 import com.stash.feature.home.podcasts.PodcastMiniPlayer
@@ -250,17 +250,11 @@ fun StashScaffold(
     val windowBackground = when {
         currentRoute == HomeRoute::class.qualifiedName -> Modifier.sonoraHomeBackground()
         onMusicNowPlaying -> Modifier.sonoraPlayerWindowBackground(albumColors.palette)
+        onSearchTab -> Modifier.background(searchWindowBackground())
         else -> Modifier.background(MaterialTheme.colorScheme.background)
     }
     Box(Modifier.fillMaxSize().then(windowBackground)) {
-        // Paint Search once at WINDOW level, including behind the transparent
-        // system clock. Its screen remains inset to keep controls safe.
-        val searchAtmosphereVisible = onSearchTab &&
-            com.stash.core.ui.visual.LocalVisualDark.current &&
-            !com.stash.core.ui.visual.LocalVisualAmoled.current
-        if (searchAtmosphereVisible) {
-            SonoraSearchAtmosphere(Modifier.fillMaxSize())
-        } else if (currentRoute != HomeRoute::class.qualifiedName && !onMusicNowPlaying && !onArtistProfile) {
+        if (!onSearchTab && currentRoute != HomeRoute::class.qualifiedName && !onMusicNowPlaying && !onArtistProfile) {
             com.stash.core.ui.visual.VisualBackground(Modifier.fillMaxSize()) {}
         }
     Scaffold(
