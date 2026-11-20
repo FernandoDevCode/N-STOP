@@ -68,6 +68,7 @@ object NetworkModule {
             .connectTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .readTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .writeTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .addInterceptor(LegacyStashNetworkGuard)
             .addInterceptor(loggingInterceptor)
             .apply { appInterceptors.forEach { addInterceptor(it) } }
             .build()

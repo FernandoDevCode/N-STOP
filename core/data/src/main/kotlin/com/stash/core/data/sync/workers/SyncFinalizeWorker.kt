@@ -116,9 +116,7 @@ class SyncFinalizeWorker @AssistedInject constructor(
             // set) when nothing is new.
             ArtistImageBackfillWorker.enqueueAfterSync(applicationContext)
 
-            // Shared mixes (spec §5-6): republish what this phone shares, and pull what it follows.
-            com.stash.core.data.share.SharedMixPublishWorker.enqueue(applicationContext)
-            com.stash.core.data.share.SharedMixFollowWorker.enqueue(applicationContext, force = true)
+            // Legacy remote sharing is retired. Syncing the local library never schedules an upload.
 
             Log.i(
                 TAG,

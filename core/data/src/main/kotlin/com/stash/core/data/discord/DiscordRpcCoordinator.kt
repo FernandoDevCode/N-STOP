@@ -114,13 +114,13 @@ class DiscordRpcCoordinator @Inject constructor(
         active.requestActivity(
             DiscordActivity(
                 applicationId = DiscordRpcConfig.CLIENT_ID,
-                name = "Stash",
+                name = "Sonora",
                 platform = "android",
                 type = DiscordActivityType.Listening.value,
                 details = title,
                 state = artist,
                 assets = DiscordActivity.Assets(
-                    largeImage = albumArtUrl ?: FALLBACK_ICON_URL,
+                    largeImage = albumArtUrl,
                     largeText = album.takeIf { it.isNotBlank() },
                 ),
                 timestamps = if (durationMs > 0) {
@@ -136,8 +136,5 @@ class DiscordRpcCoordinator @Inject constructor(
         )
     }
 
-    companion object {
-        private const val FALLBACK_ICON_URL =
-            "https://raw.githubusercontent.com/rawnaldclark/Stash/refs/heads/master/app/src/main/res/drawable/ic_launcher_foreground.png"
-    }
+
 }

@@ -108,9 +108,7 @@ class HomeSectionsPreference @Inject constructor(
     }.distinctUntilChanged().catch { emit(emptySet()) }
 
     /** Community's own switch (spec 2026-09-26 §3): off until turned on in Settings ▸ Home layout. */
-    val communityOn: Flow<Boolean> = context.homeSectionsDataStore.data.map { prefs ->
-        prefs[communityOnKey] ?: false
-    }.distinctUntilChanged().catch { emit(false) }
+    val communityOn: Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false) // Retired remote community.
 
     // Open Stash on (#428) lives in SharedPreferences, not the DataStore: launch reads it
     // synchronously before the first frame. Waiting on a DataStore read there held the
@@ -139,7 +137,7 @@ class HomeSectionsPreference @Inject constructor(
      */
     val visibleSections: Flow<List<HomeSection>> = context.homeSectionsDataStore.data.map { prefs ->
         val hiddenSet = prefs[hiddenKey].toKeys().mapNotNull(HomeSection::fromKey).toSet()
-        visibleHomeSections(resolveHomeSectionOrder(prefs[orderKey].toKeys()), hiddenSet, prefs[communityOnKey] ?: false)
+        visibleHomeSections(resolveHomeSectionOrder(prefs[orderKey].toKeys()), hiddenSet, false)
     }.distinctUntilChanged().catch { emit(DEFAULT_HOME_SECTIONS) }
 
     /** Swap [section] one slot up or down in the full order. */
@@ -168,14 +166,9 @@ class HomeSectionsPreference @Inject constructor(
         context.homeSectionsDataStore.edit { prefs -> prefs[showLikedKey] = shown }
     }
 
-    /** Community's switch. The first time it's turned on, it moves to the top of the order. */
+    /** Legacy community cannot be re-enabled by saved preferences. */
     suspend fun setCommunityOn(on: Boolean) {
-        context.homeSectionsDataStore.edit { prefs ->
-            if (on && prefs[communityOnKey] == null) {
-                prefs[orderKey] = withCommunityFirst(resolveHomeSectionOrder(prefs[orderKey].toKeys())).joinToString(",") { it.key }
-            }
-            prefs[communityOnKey] = on
-        }
+        context.homeSectionsDataStore.edit { prefs -> prefs[communityOnKey] = false }
     }
 
     suspend fun setStartTab(tab: StartTab) {
