@@ -4,8 +4,6 @@ import android.util.Log
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.files.LocalFileOps
-import com.stash.core.data.lastfm.LastFmApiClient
-import com.stash.core.data.lastfm.LastFmCredentials
 import com.stash.core.data.mapper.toDomain
 import com.stash.core.model.MusicSource
 import com.stash.core.model.Track
@@ -111,8 +109,6 @@ class DownloadManager @Inject constructor(
     private val ytLibraryCanonicalizer: YtLibraryCanonicalizer,
     private val trackDao: TrackDao,
     private val playlistDao: PlaylistDao,
-    private val lastFmApiClient: LastFmApiClient,
-    private val lastFmCredentials: LastFmCredentials,
     private val losslessRegistry: LosslessSourceRegistry,
     private val losslessUrlDownloader: LosslessUrlDownloader,
     private val losslessPrefs: LosslessSourcePreferences,
@@ -1162,32 +1158,9 @@ class DownloadManager @Inject constructor(
         track: Track,
         best: com.stash.data.download.model.MatchResult,
     ) {
-        // Resolve the best-available album art URL via a three-tier fallback:
-        //   1. best.thumbnailUrl  — YouTube Music's search-shelf thumbnail.
-        //      Present for most InnerTube hits; absent for yt-dlp-fallback
-        //      results and for UGC / niche uploads where the response comes
-        //      back as a plain video renderer without the music thumbnail
-        //      path. Niche ambient / modern-classical + compilation uploads
-        //      land in this tier frequently.
-        //   2. Last.fm track.getInfo   — album art keyed to the canonical
-        //      (artist, title) identity rather than the YouTube video. When
-        //      Last.fm has the track, this is typically higher quality than
-        //      any YouTube thumbnail because it's actual album art, not a
-        //      video still. Skipped when credentials aren't configured.
-        //   3. i.ytimg.com/vi/<id>/maxresdefault.jpg — deterministic per
-        //      video id. maxresdefault (1280x720) is a clean 16:9 frame,
-        //      where hqdefault (480x360) pads 16:9 into 4:3 and wastes 24%
-        //      of the cropped square on black bars. It is NOT a stock
-        //      placeholder on non-HD uploads (150 probed 2026-09-10: every
-        //      hit a real 1280x720 frame; videos without one 404), and a
-        //      404 is walked down by ArtFallbackInterceptor. Only usable
-        //      when best.videoId is non-blank.
+        // Preserve YouTube Music's art when available; use a validated
+        // YouTube video thumbnail as the deterministic final fallback.
         val resolvedArtUrl: String? = best.thumbnailUrl
-            ?: (if (lastFmCredentials.isConfigured) {
-                runCatching {
-                    lastFmApiClient.getTrackInfo(track.artist, track.title).getOrNull()?.bestImageUrl
-                }.getOrNull()
-            } else null)
             ?: best.videoId.takeIf(YouTubeVideoId::isValid)?.let { vid ->
                 "https://i.ytimg.com/vi/$vid/maxresdefault.jpg"
             }
