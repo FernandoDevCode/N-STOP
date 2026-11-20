@@ -1,6 +1,6 @@
 # Sonora — especificação vigente e contrato do rework da Busca
 
-**Status:** Busca universal integrada pelo PR #95; reprodução exata pelo PR #97. Contrato visual dos filtros corrigido em 18/11/2026 para duas opções contextuais.
+**Status:** Busca universal integrada pelo PR #95; reprodução exata pelo PR #97. A V217 apresenta os resultados em categorias e concentra a configuração das fontes em um painel.
 
 **Data da consolidação:** 10/11/2026
 
@@ -37,18 +37,18 @@ Este trabalho documental só pode alterar `AGENTS.md` e este arquivo. Não cria 
 
 ## 2. Decisões de produto consolidadas
 
-1. A Busca é **universal**: uma consulta produz **uma lista única de resultados**, sem abas e sem seções obrigatórias por serviço.
-2. Existem **somente dois filtros visuais: Spotify e YouTube**. Ambos começam ativos e aparecem exclusivamente quando a consulta tem texto não vazio. **YouTube Music não tem chip separado:** o filtro Spotify consulta o catálogo YouTube Music, mantendo o ID e a indicação de fonte real nos resultados.
-3. O alfinete é um controle separado de persistência, mas fica **na mesma linha compacta dos dois filtros**, visível somente durante uma pesquisa; não ocupa o cabeçalho ocioso.
-4. Com o alfinete ativo, a seleção atual é persistida, restaurada entre sessões e atualizada a cada alteração. Com o alfinete inativo, a seleção só vale para a sessão atual.
-5. “Restaurar padrão” permanece como ação explícita e acessível por ícone discreto **somente quando a seleção difere de `{SPOTIFY, YOUTUBE}`**. Não há um terceiro estado visual para YTM.
+1. A Busca é **universal**. Uma consulta produz uma coleção ordenada pelo motor; a apresentação V217 deriva localmente Top, Artistas, Álbuns, YouTube e Músicas.
+2. Há duas opções de catálogo, **Spotify e YouTube**, ambas ativas por padrão. Spotify consulta o catálogo YouTube Music e preserva sua identidade. YouTube consulta o catálogo WEB independente.
+3. Um botão junto ao campo abre o painel de fontes com as duas opções, persistência e restauração. Os chips de categoria aparecem quando a consulta contém texto.
+4. Ao fixar a seleção, o conjunto atual é salvo imediatamente e atualizado a cada alteração. A seleção temporária dura a sessão atual.
+5. “Restaurar padrão” fica no painel e é acionável quando a seleção difere de `{SPOTIFY, YOUTUBE}`.
 6. A Busca musical funciona sem sessão Spotify. O Spotify fornece somente imagens e metadados usados para verificação visual. Sua indisponibilidade conserva as imagens originais.
-7. Cada linha identifica discretamente sua fonte de catálogo. A origem não depende somente de cor.
+7. A proveniência de cada resultado está disponível nas opções por pressão longa e na semântica da linha.
 8. Vídeos raros, demos, covers, lives, remixes e versões escolhidas pelo usuário são resultados legítimos. Não substituir silenciosamente um vídeo selecionado por uma gravação “canônica” e não deduplicar agressivamente versões alternativas.
 9. A seleção de fontes visíveis na Busca não controla nem descreve, por si só, a infraestrutura interna usada posteriormente para resolver áudio. Fonte de catálogo e fonte/ID de áudio são identidades diferentes.
 10. Mini-player, bottom navigation, perfis de artista e identidade visual Sonora são preservados. Este rework não redesenha chrome global nem perfis.
 11. O mecanismo de reprodução, Media3, downloads, fila e resolução de stream não mudam nesta tarefa. A Busca apenas entrega identidades separadas e aciona as fronteiras existentes.
-12. A busca do YouTube convencional usará InnerTube WEB independente, sem YouTube Data API v3, NewPipeExtractor ou yt-dlp na pesquisa. O cliente e o adaptador são isolados; integração com a UI e reprodução continuam pendentes.
+12. A busca do YouTube convencional usa InnerTube WEB independente, sem YouTube Data API v3, NewPipeExtractor ou yt-dlp na pesquisa. O cliente e o adaptador já alimentam a Busca universal e o toque aciona a reprodução exata quando há um ID elegível.
 13. Uma sessão temporária da Busca dura enquanto a mesma instância de navegação da Busca existir. A seleção não fixada é conservada ao abrir artista/álbum e voltar para essa instância; é descartada ao iniciar uma nova instância/sessão da Busca. A seleção fixada é restaurada em qualquer sessão futura.
 
 ## 3. Escopo e não escopo
@@ -67,7 +67,7 @@ Este trabalho documental só pode alterar `AGENTS.md` e este arquivo. Não cria 
 
 - mudança no player, Media3, extração de áudio, download, autenticação, mini-player, navegação global ou perfis;
 - substituição automática de versões, canonicalização de escolhas ou deduplicação sem identidade forte;
-- novas funcionalidades de recomendação, categorias, charts ou personalização;
+- novas funcionalidades de recomendação, charts, personalização ou suporte a novos tipos de resultado;
 - exceções por artista, álbum, faixa ou serviço;
 - uso de filtros de exibição como configuração do resolvedor de áudio.
 
@@ -238,12 +238,12 @@ Cada item de `Data.items` ou `Loading.previous` deve pertencer à `CatalogSource
 
 ### 4.6 Ordenação universal
 
-O Motor entrega `orderedResults`; a Interface renderiza a ordem recebida.
+O motor entrega `orderedResults` em ordem global. A interface usa essa ordem para escolher o destaque e mantém a ordem relativa de cada categoria.
 
 1. ordenar por `rankingScore` decrescente;
 2. em empate, preservar `providerRank` crescente;
 3. persistindo o empate, usar a ordem estável `YOUTUBE`, `YOUTUBE_MUSIC` e depois `stableKey`;
-4. não criar blocos por fonte ou tipo;
+4. manter uma única coleção ordenada no motor;
 5. chegada tardia de uma fonte pode recalcular a lista, mas itens com a mesma identidade e score mantêm desempate determinístico.
 
 A normalização de relevância entre provedores precisa de teste com consultas representativas antes de congelar pesos. O contrato de mocks deve incluir scores variados, mas não transforma pesos simulados em evidência de qualidade real.
@@ -297,7 +297,12 @@ interface UniversalSearchActions {
     fun onPinToggled()
     fun onRestoreDefaultSources()
     fun onRetrySource(source: CatalogSource)
-    fun onResultAction(result: UniversalSearchResult, action: SearchResultAction)
+    fun onVisibleResultsChanged(query: String, stableKeys: Set<String>)
+    fun onResultAction(
+        result: UniversalSearchResult,
+        action: SearchResultAction,
+        displayedArtworkUrl: String? = null,
+    )
     fun onRecentSelected(item: RecentSearchItem)
     fun onRecentRemoved(item: RecentSearchItem)
     fun onRecentCleared()
@@ -306,8 +311,8 @@ interface UniversalSearchActions {
 
 - A Interface não chama clientes de rede, DataStore ou resolvedores diretamente.
 - `onResultAction` só é executável quando `action in result.supportedActions`; preserva a identidade escolhida e delega à fronteira existente.
-- As ações existentes representadas são reprodução, tocar a seguir, adicionar à fila, rádio, adicionar à playlist, download e navegação. O contrato declara disponibilidade, mas não implementa essas integrações.
-- `PlayerRepository.playTrack(Track)` é candidato a reaproveitamento para reprodução após adaptação validada na integração. Isso ainda não foi comprovado e não autoriza alteração em `PlayerRepository`, `Track`, Media3 ou no mecanismo de reprodução.
+- A interface V217 oferece as ações conectadas nesta rota: reprodução exata, navegação e consulta aos metadados do item.
+- A reprodução de resultados elegíveis percorre `PlayerRepository.playExactSearchResult` pelo fluxo integrado.
 - As fixtures compartilhadas fornecem somente DTOs e estados puros. A implementação fake de `UniversalSearchActions`, com no-ops ou gravação de eventos, é responsabilidade do Codex Visual em seu componente isolado.
 
 ## 5. Comportamentos de referência para dados simulados
@@ -328,7 +333,7 @@ Fixtures não podem ser apresentadas como prova de integração, relevância, la
 
 Fixtures do YouTube convencional servem somente para renderização e invariantes do DTO. Elas não simulam cliente, rede, autenticação, disponibilidade ou reprodução e não permitem declarar a fonte pronta.
 
-## 5.1 Compatibilidade temporária durante o paralelo
+## 5.1 Compatibilidade temporária durante o paralelo (histórico)
 
 - O Motor implementa componentes isolados e não quebra nem substitui a `SearchScreen` atual durante seu workstream.
 - O Visual implementa um componente Compose isolado, alimentado exclusivamente pelos DTOs, callbacks e fixtures compartilhados; não depende do novo Motor nem altera o `SearchViewModel` atual.
@@ -336,7 +341,7 @@ Fixtures do YouTube convencional servem somente para renderização e invariante
 - A conexão definitiva entre Motor e Visual acontece somente após os dois workstreams, na ordem da seção 7.
 - O contrato usa um único tipo para cada conceito. Não criar enums de fase paralelos ao sealed state, modelos duplicados de seleção/resultado ou adapters que representem exatamente o mesmo estado sem necessidade de fronteira.
 
-## 6. Divisão de trabalho
+## 6. Divisão de trabalho da integração inicial (histórico)
 
 Antes de abrir os dois worktrees de implementação, materializar este contrato em um pequeno **bootstrap comum** na `nonstop`: somente DTOs/interfaces/fixtures-base acordados, sem rede ou UI. Os dois worktrees devem nascer do mesmo SHA após esse bootstrap. Esses arquivos ficam congelados durante o paralelo; qualquer mudança exige acordo explícito e atualização deste documento. Isso evita que os agentes criem cópias incompatíveis do contrato.
 
@@ -380,7 +385,7 @@ Não pode alterar ViewModel, clientes, persistência, ranking, matching, player,
 
 Nenhum agente pode, por iniciativa própria, mudar arquitetura, defaults, semântica do alfinete, ordenação, deduplicação, escopo ou ownership. Dúvidas retornam para decisão antes do código.
 
-## 7. Ordem de integração
+## 7. Ordem da integração inicial (histórico)
 
 1. Revisar e aprovar esta base documental.
 2. Atualizar `nonstop` por fast-forward, confirmar árvore limpa ou separar com segurança alterações locais e registrar o SHA.
@@ -396,7 +401,7 @@ Não encadear PR B sobre branch A. Ambos os PRs têm base `nonstop`; B é atuali
 
 ### Contrato e Motor
 
-- [ ] defaults visuais: Spotify e YouTube ativos, nenhum chip YTM, alfinete inativo;
+- [ ] padrão do painel: Spotify e YouTube ativos, persistência inativa;
 - [ ] seleção temporária não reaparece em nova sessão;
 - [ ] ativar alfinete persiste imediatamente; alteração fixada atualiza persistência; desativar volta ao padrão na sessão seguinte;
 - [ ] restaurar padrão só ocorre por ação explícita e respeita o estado fixado/temporário;
@@ -404,7 +409,7 @@ Não encadear PR B sobre branch A. Ambos os PRs têm base `nonstop`; B é atuali
 - [ ] com Spotify indisponível, a busca musical mantém resultados e capas de origem;
 - [ ] sucesso parcial preserva e ordena resultados; retry afeta só a fonte pedida;
 - [ ] query nova não publica resposta antiga; cancelamento e erro não misturam consultas;
-- [ ] lista universal segue score e desempates definidos, sem seções por serviço;
+- [ ] coleção agregada segue score e desempates definidos, e a apresentação preserva a ordem relativa em cada categoria;
 - [ ] dedupe remove só identidade idêntica na mesma fonte e preserva versões alternativas;
 - [ ] IDs de catálogo e áudio nunca são intercambiados;
 - [ ] histórico preserva consulta/resultado, fonte e remoções existentes;
@@ -413,10 +418,10 @@ Não encadear PR B sobre branch A. Ambos os PRs têm base `nonstop`; B é atuali
 
 ### Interface
 
-- [ ] sem consulta: só título, campo e recentes/prompt; com texto de consulta: dois chips compactos e alfinete contextual, com semântica acessível; botão de restaurar apenas se seleção diferente do padrão;
-- [ ] fonte discreta em cada resultado sem depender apenas de cor;
+- [ ] sem consulta: título, campo com botão de filtros e recentes/prompt; com texto: chips de categorias com semântica acessível e rolagem horizontal; painel com opções de catálogo, persistência e restauração;
+- [ ] proveniência disponível na semântica e na folha de opções do resultado;
 - [ ] todos os seis estados por fonte e falha parcial representados;
-- [ ] lista mista de faixa, vídeo, artista e álbum usa keys estáveis e a ordem recebida;
+- [ ] Top destaca o primeiro resultado uma vez; seções abrem a categoria completa, que mantém as chaves e a ordem recebida;
 - [ ] seleção vazia, histórico, limpar, IME Search, retry e restauração funcionam;
 - [ ] live/demo/cover/remix aparecem sem aviso de substituição ou canonicalização;
 - [ ] texto 150%, 280/390/480 dp, teclado aberto, artwork ausente e tema AMOLED não quebram layout;
@@ -590,19 +595,19 @@ O toque chama `PlayerRepository.playExactSearchResult`. A persistência usa some
 
 A precisão se aplica ao toque na Busca e às renovações do item que permanece carregado. O estado persistido de retomada após encerramento do processo guarda apenas o ID de biblioteca e reconstitui o item pelas regras gerais da biblioteca. Estender a garantia de identidade à retomada fria exigiria persistir o modo de resolução junto à fila e propagá-lo pelas entradas de retomada, inclusive comandos de mídia do sistema.
 
-## Contrato de interface atual — filtros contextuais (18/11/2026)
+## Contrato de interface V217
 
-Este contrato substitui especificamente as instruções históricas desta especificação que descreviam três chips, alfinete sempre visível e título “Fontes” no estado ocioso.
+| Estado | Apresentação |
+| --- | --- |
+| Consulta vazia ou apenas espaços | Título, campo, botão de filtros e histórico recente ou orientação. |
+| Consulta ativa | Chips horizontais Top → Artistas → Álbuns → YouTube → Músicas. A elegibilidade da busca e o debounce continuam sob responsabilidade do motor. |
+| Top | O primeiro item da coleção ordenada é a melhor correspondência. Abaixo, cada categoria com outros resultados mostra até três itens na ordem recebida e oferece “Ver tudo”. As seções seguem o primeiro item de cada grupo na coleção ordenada. |
+| Artistas e Álbuns | Cada categoria lista seu tipo de resultado na ordem recebida. Retratos circulares para artistas e capas quadradas para álbuns. |
+| YouTube | Vídeos do catálogo YouTube WEB. A categoria continua acessível com a fonte desligada e orienta a ativá-la nos filtros. |
+| Músicas | Faixas e vídeos musicais do YouTube Music, com o enriquecimento de capas já disponível. |
+| Falha parcial, carregamento ou ausência de resultados | Top considera as fontes ativas. As categorias consideram os catálogos pertinentes e oferecem retry por fonte quando disponível. |
+| Configuração | O botão do campo abre a folha de fontes. A seleção fixada, a migração de preferências legadas e a restauração continuam nas rotinas existentes. |
 
-| Estado | UI | Busca e dados |
-| --- | --- | --- |
-| **Idle** (consulta vazia ou só espaços) | Título, campo, histórico recente ou prompt neutro; nenhum filtro, alfinete ou restaurar | Não iniciar busca; ausência de fonte selecionada não esconde histórico |
-| **Digitando** (qualquer texto não vazio após trim) | Linha discreta imediatamente após o campo: chips **Spotify** e **YouTube** e ação de alfinete; nenhum título “Fontes” | Debounce, limite de caracteres elegíveis, cancelamento e estados do motor continuam como antes |
-| **Resultados / loading / erro parcial** | Mesma linha de dois filtros e uma lista universal; estados de falha por catálogo conservados | Spotify → catálogo YouTube Music; YouTube → YouTube WEB; preservar seleção, IDs, variantes e áudio exato |
-| **Escolha personalizada** | Ícone de restaurar aparece na linha; desaparece ao voltar ao padrão | Alterações persistem apenas quando alfinete ativo; seleção vazia mostra orientação se consulta ativa |
+A seleção de categoria e “Ver tudo” usam apenas a coleção disponível. Mudanças de fontes e retry continuam delegados à sessão. Playlists passam a ser elegíveis como categoria quando o motor expuser esse tipo de resultado. As linhas mantêm as ações declaradas pelo resultado e o ID original. A folha contextual mostra metadados, proveniência e ações executáveis.
 
-**Geometria e estilo:** chips sem check, altura visual aproximada de 36 dp, cantos 12 dp, cores grafite com preenchimento translúcido apenas no selecionado e contorno discreto. Sem cartões de provedor, sem botão textual “Restaurar padrão” ocupando linha exclusiva e sem engrenagem. Controles permanecem acionáveis via toque e acessibilidade, inclusive em largura reduzida/150% de fonte (linha pode quebrar). Não introduzir uma segunda barra de navegação nem alterar mini-player/insets.
-
-**Compatibilidade:** o enum `CatalogSource.YOUTUBE_MUSIC` continua obrigatório como identidade de catálogo, histórico, retry e resultado. O que desaparece é apenas o terceiro **filtro visual**; seleções persistidas antigas com esse valor viram `SPOTIFY` sem perda da escolha. Um ícone de pin ativo indica seleção fixada entre sessões; inativo conserva apenas a sessão. O filtro Spotify **não** é promessa de áudio hospedado pelo Spotify.
-
-**Validação:** testes Compose idle/consulta ativa/seleção alterada/narrow 280 dp/150%, testes JVM de mapeamento legacy pinned, CI Android e teste visual real após APK. Sucesso de CI não comprova o refinamento visual no Redmi.
+A janela da Busca usa uma base grafite no escuro, preto em AMOLED e neutra no claro. `StashScaffold` pinta essa base na rota Busca para cobrir também a área atrás da barra de status e deixa a própria tela consumir os insets do teclado. A navegação inferior e o mini-player continuam sob a composição do aplicativo.

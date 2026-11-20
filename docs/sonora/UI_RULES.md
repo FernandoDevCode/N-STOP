@@ -37,7 +37,7 @@ O Sonora deve manter superfícies grafite/neutral, arte como fonte de atmosfera 
 
 ### 3. Hierarquia por tela
 
-- **Busca:** título + campo no topo. Sem engrenagem ou cabeçalho de marca redundante. Busca vazia simples, sem publicidade do provedor nem ícone gigante. Um resultado de faixa usa a mesma linha das demais; resultados de artista e álbum usam identidades próprias.
+- **Busca:** título e campo compacto com botão de filtros no topo. Histórico com consulta vazia. Com texto, chips de categorias e Top editorial sobre fundo neutro. Faixas usam linhas de música; retratos, capas e miniaturas distinguem artistas, álbuns e vídeos.
 - **Álbum:** capa e atmosfera contextual são do cabeçalho; tracklist é neutra, numerada e escaneável. Não aplicar efeito da capa em cada faixa.
 - **Playlist:** contexto e ações da coleção no cabeçalho; músicas seguem a mesma geometria da Biblioteca.
 - **Home / Explorar / Rádio:** cards somente para descoberta/coleções, não para cada faixa. Seções devem comunicar algo diferente, não apenas repetir carrosséis.
@@ -66,4 +66,4 @@ Antes de aprovar alteração de frontend:
 
 **Validação que o CI não cobre:** capturas reais de cada rota em dark/light, PT-BR/EN, TalkBack, fontes grandes e Android 16; testes de gesto/contexto em aparelho. Esta cobertura de código não é homologação visual automática.
 
-**Nota de arquitetura:** a UI antiga da Busca ainda é YTM sectioned. A busca universal Spotify + YouTube + YTM segue a especificação `SEARCH_REWORK_PLAN.md`; esta alteração visual não a implementa nem muda fontes.
+**Nota de arquitetura:** as categorias da V217 são projeções locais da coleção ordenada pelo motor. O painel gerencia fontes e persistência conforme `SEARCH_REWORK_PLAN.md`.

@@ -8,13 +8,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsSelected
-import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -23,6 +22,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
@@ -45,7 +45,6 @@ import com.stash.feature.search.contract.UniversalSearchUiState
 import com.stash.feature.search.engine.queryHistoryItem
 import com.stash.feature.search.engine.toUniversalSearchResult
 import org.junit.Assert.assertTrue
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
@@ -70,7 +69,7 @@ class UniversalSearchContentTest {
     private val actions = mock<UniversalSearchActions>()
 
     @Test
-    fun `empty query shows history but no source controls`() {
+    fun `empty query shows history and source settings without category chips`() {
         show(UniversalSearchUiState())
         compose.onNodeWithText("Search for a song, video, artist, or album.").assertExists()
         compose.onNodeWithText("Spotify").assertDoesNotExist()
@@ -79,6 +78,8 @@ class UniversalSearchContentTest {
         compose.onNodeWithTag("searchPin").assertDoesNotExist()
         compose.onNodeWithTag("searchRestoreDefaults").assertDoesNotExist()
         compose.onNodeWithText("Sources").assertDoesNotExist()
+        compose.onNodeWithTag("searchCategories").assertDoesNotExist()
+        compose.onNodeWithTag("searchSourceSettings").assertHasClickAction()
         compose.onNodeWithTag("searchQuery").performTextInput("a")
         compose.onNodeWithTag("searchQuery").performImeAction()
         verify(actions).onQueryChanged("a")
@@ -87,13 +88,15 @@ class UniversalSearchContentTest {
     }
 
     @Test
-    fun `active query shows exactly two compact source controls with pin`() {
+    fun `sources are configured in the sheet with two independent toggles and a pin`() {
         show(UniversalSearchUiState(query = "rock"))
-        compose.onNodeWithTag("searchFilterSPOTIFY").assertIsSelected().performClick()
-        compose.onNodeWithTag("searchFilterYOUTUBE").assertIsSelected()
-        compose.onNodeWithText("YouTube Music").assertDoesNotExist()
-        compose.onNodeWithText("Sources").assertDoesNotExist()
-        compose.onNodeWithTag("searchRestoreDefaults").assertDoesNotExist()
+        compose.onNodeWithTag("searchCategoryTOP").assertIsSelected()
+        compose.onNodeWithTag("searchFilterSPOTIFY").assertDoesNotExist()
+        openSources()
+        compose.onNodeWithTag("searchFilterSPOTIFY").assertIsOn().performClick()
+        compose.onNodeWithTag("searchFilterYOUTUBE").assertIsOn()
+        compose.onNodeWithTag("searchFilterYOUTUBE_MUSIC").assertDoesNotExist()
+        compose.onNodeWithTag("searchRestoreDefaults").assertIsNotEnabled()
         compose.onNodeWithTag("searchPin").assertIsOff().performClick()
         verify(actions).onSourceToggled(SPOTIFY)
         verify(actions).onPinToggled()
@@ -101,17 +104,18 @@ class UniversalSearchContentTest {
     }
 
     @Test
-    fun `restore defaults appears only for a changed visible selection`() {
-        show(UniversalSearchUiState(query = "rock", selection = SearchSourceSelection(setOf(YOUTUBE))))
-        compose.onNodeWithTag("searchFilterSPOTIFY").assertIsNotSelected()
-        compose.onNodeWithTag("searchFilterYOUTUBE").assertIsSelected()
+    fun `restore defaults is enabled for a changed visible selection`() {
+        show(UniversalSearchUiState(query = "rock", selection = SearchSourceSelection(setOf(YOUTUBE), isPinned = true)))
+        openSources()
+        compose.onNodeWithTag("searchFilterSPOTIFY").assertIsOff()
+        compose.onNodeWithTag("searchFilterYOUTUBE").assertIsOn()
+        compose.onNodeWithTag("searchPin").assertIsOn()
         compose.onNodeWithTag("searchRestoreDefaults").assertHasClickAction().performClick()
-        compose.onNodeWithText("YouTube Music").assertDoesNotExist()
         verify(actions).onRestoreDefaultSources()
     }
 
     @Test
-    fun `compact filters and pin remain accessible at 280 dp and 150 percent font scale`() {
+    fun `categories scroll at 280 dp and 150 percent font scale`() {
         compose.setContent {
             val density = LocalDensity.current.density
             CompositionLocalProvider(LocalDensity provides Density(density, fontScale = 1.5f)) {
@@ -122,10 +126,59 @@ class UniversalSearchContentTest {
                 }
             }
         }
+        selectCategory("SONGS")
+        compose.onNodeWithTag("searchCategorySONGS").assertIsSelected()
+        selectCategory("TOP")
+        compose.onNodeWithTag("searchCategoryTOP").assertIsSelected()
+        openSources()
         compose.onNodeWithTag("searchFilterSPOTIFY").assertHasClickAction()
         compose.onNodeWithTag("searchFilterYOUTUBE").assertHasClickAction()
         compose.onNodeWithTag("searchPin").assertHasClickAction()
-        compose.onNodeWithText("YouTube Music").assertDoesNotExist()
+    }
+
+    @Test
+    fun `youtube category stays available with the source off and never toggles it`() {
+        show(UniversalSearchUiState(query = "rock", selection = SearchSourceSelection(setOf(SPOTIFY))))
+        selectCategory("YOUTUBE")
+        compose.onNodeWithTag("searchCategoryYOUTUBE").assertIsSelected()
+        compose.onNodeWithText("Open Search filters and turn on YouTube to see videos here.").assertExists()
+        verify(actions, never()).onSourceToggled(any())
+        verify(actions, never()).onQueryChanged(any())
+    }
+
+    @Test
+    fun `top leads with best ranked result once and see all opens its full category locally`() {
+        val artist = hit(YOUTUBE_MUSIC, "artist", "Best artist", SearchResultType.ARTIST)
+        val related = hit(YOUTUBE_MUSIC, "related", "Related artist", SearchResultType.ARTIST)
+        val album = hit(YOUTUBE_MUSIC, "album", "An album", SearchResultType.ALBUM)
+        val musicVideo = hit(YOUTUBE_MUSIC, "ytm", "Music video", SearchResultType.VIDEO)
+        val webVideo = hit(YOUTUBE, "web", "Web video", SearchResultType.VIDEO)
+        val ranked = listOf(artist, related, album, musicVideo, webVideo)
+        show(UniversalSearchUiState(
+            query = "rock",
+            sourceStates = mapOf(
+                YOUTUBE_MUSIC to SourceSearchState.Data("rock", ranked.dropLast(1)),
+                YOUTUBE to SourceSearchState.Data("rock", listOf(webVideo)),
+            ),
+            orderedResults = ranked,
+        ))
+        compose.onNodeWithText("Best match").assertExists()
+        compose.onNodeWithTag(artist.stableKey).assertExists()
+        compose.onNodeWithContentDescription("See all: Artists").performClick()
+        compose.onNodeWithText("Best match").assertDoesNotExist()
+        compose.onNodeWithTag("searchCategoryARTISTS").assertIsSelected()
+        compose.onNodeWithTag(artist.stableKey).assertExists()
+        compose.onNodeWithTag(related.stableKey).assertExists()
+        compose.onNodeWithTag(album.stableKey).assertDoesNotExist()
+        selectCategory("SONGS")
+        compose.onNodeWithTag(musicVideo.stableKey).assertExists()
+        compose.onNodeWithTag(webVideo.stableKey).assertDoesNotExist()
+        selectCategory("YOUTUBE")
+        compose.onNodeWithTag(webVideo.stableKey).assertExists()
+        compose.onNodeWithTag(musicVideo.stableKey).assertDoesNotExist()
+        verify(actions, never()).onQueryChanged(any())
+        verify(actions, never()).onSearchSubmitted()
+        verify(actions, never()).onSourceToggled(any())
     }
 
     @Test
@@ -146,6 +199,7 @@ class UniversalSearchContentTest {
     fun `active query with no sources shows a recovery message and restore action`() {
         show(UniversalSearchUiState(query = "demo", selection = SearchSourceSelection(emptySet())))
         compose.onNodeWithText("Select at least one source to search.").assertExists()
+        openSources()
         compose.onNodeWithTag("searchRestoreDefaults").assertHasClickAction().performClick()
         verify(actions).onRestoreDefaultSources()
     }
@@ -223,7 +277,9 @@ class UniversalSearchContentTest {
         compose.runOnIdle { preparing.value = first.stableKey }
         compose.onNodeWithTag(first.stableKey).assertIsNotEnabled()
         compose.onNode(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Preparing playback")).assertExists()
-        compose.onNodeWithTag(second.stableKey).assertHasClickAction().performClick()
+        compose.onNodeWithTag(second.stableKey).performSemanticsAction(SemanticsActions.OnLongClick)
+        compose.onNodeWithText("YouTube · Video").assertExists()
+        compose.onNodeWithText("Play").performClick()
         verify(actions).onResultAction(second, SearchResultAction.PLAY, null)
     }
 
@@ -238,6 +294,7 @@ class UniversalSearchContentTest {
             ),
         )
         compose.setContent { VisualTheme { UniversalSearchContent(state.value, actions, autoFocus = false) } }
+        selectCategory("SONGS")
         compose.waitForIdle()
         val initial = argumentCaptor<Set<String>>()
         verify(actions, atLeastOnce()).onVisibleResultsChanged(eq("rock"), initial.capture())
@@ -256,6 +313,14 @@ class UniversalSearchContentTest {
         verify(actions, atLeastOnce()).onVisibleResultsChanged(eq("rock"), scrolled.capture())
         assertTrue(hits.last().stableKey in scrolled.lastValue)
         assertFalse(hits.first().stableKey in scrolled.lastValue)
+    }
+
+    private fun openSources() {
+        compose.onNodeWithTag("searchSourceSettings").performClick()
+    }
+
+    private fun selectCategory(category: String) {
+        compose.onNodeWithTag("searchCategory$category").performScrollTo().performClick()
     }
 
     private fun show(state: UniversalSearchUiState) {
