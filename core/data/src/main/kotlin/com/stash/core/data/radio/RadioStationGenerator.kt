@@ -1,7 +1,5 @@
 package com.stash.core.data.radio
 
-import com.stash.core.data.lastfm.LastFmApiClient
-import com.stash.core.data.lastfm.LastFmSimilarArtist
 import com.stash.core.model.MusicSource
 import com.stash.core.model.Track
 import com.stash.core.model.YouTubeVideoId
@@ -15,14 +13,12 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Builds and extends a balanced radio station: Last.fm chooses the taste graph,
- * YouTube supplies real playable videoIds. Stateless across stations — all live
- * state lives in the returned [RadioSession]. Plain `@Inject` (both clients are
- * injectable); no Hilt module needed.
+ * Builds and extends a balanced radio station using YouTube Music related artists
+ * and its playable popular tracks. Stateless across stations — all live
+ * state lives in the returned [RadioSession].
  */
 @Singleton
 class RadioStationGenerator @Inject constructor(
-    private val lastFm: LastFmApiClient,
     private val yt: YTMusicApiClient,
 ) {
     /** Start a station: returns the session + the first playable batch. */
@@ -32,17 +28,15 @@ class RadioStationGenerator @Inject constructor(
     }
 
     private suspend fun startArtist(seed: RadioSeed.Artist): Pair<RadioSession, List<Track>> {
-        // Fetch the FULL ranked neighbor list once; use the first NEIGHBOR_POOL now
-        // and page the rest during widening (see widen()). Fetching the same top-N
-        // again later would only re-return already-played neighbors.
-        val allNeighbors = lastFm.getSimilarArtists(seed.name, limit = NEIGHBOR_MAX)
-            .getOrDefault(emptyList())
+        val id = seed.ytBrowseId ?: yt.resolveArtist(seed.name)?.id
+        val profile = id?.let { runCatching { yt.getArtist(it) }.getOrNull() }
+        val allNeighbors = profile?.related.orEmpty().take(NEIGHBOR_MAX)
+            .map { RadioNeighbor(it.name, 1f) }
         val neighbors = allNeighbors.take(NEIGHBOR_POOL)
-        // Resolve seed (via known browseId) + each neighbor's popular list, in parallel.
-        val artistTracks: Map<String, List<TrackSummary>> = coroutineScope {
-            val seedJob = async { seed.name to seedPopular(seed) }
-            val neighborJobs = neighbors.map { n ->
-                async { n.name to resolvePopular(n.name) }
+        val artistTracks = coroutineScope {
+            val seedJob = async { seed.name to (profile?.popular ?: emptyList()) }
+            val neighborJobs = neighbors.map { neighbor ->
+                async { neighbor.name to resolvePopular(neighbor.name) }
             }
             (listOf(seedJob) + neighborJobs).awaitAll().toMap()
         }
@@ -53,9 +47,12 @@ class RadioStationGenerator @Inject constructor(
         return session to drainBatch(session, FIRST_BATCH)
     }
 
-    private suspend fun seedPopular(seed: RadioSeed.Artist): List<TrackSummary> {
-        val browseId = seed.ytBrowseId ?: yt.resolveArtist(seed.name)?.id ?: return emptyList()
-        return runCatching { yt.getArtist(browseId).popular }.getOrDefault(emptyList())
+    private suspend fun relatedArtists(name: String, browseId: String? = null): List<RadioNeighbor> {
+        val id = browseId ?: yt.resolveArtist(name)?.id ?: return emptyList()
+        return runCatching { yt.getArtist(id).related }
+            .getOrDefault(emptyList())
+            .take(NEIGHBOR_MAX)
+            .map { RadioNeighbor(it.name, 1f) }
     }
 
     private suspend fun resolvePopular(name: String): List<TrackSummary> {
@@ -75,7 +72,7 @@ class RadioStationGenerator @Inject constructor(
      */
     private fun buildArtistPool(
         seedName: String,
-        neighbors: List<LastFmSimilarArtist>,
+        neighbors: List<RadioNeighbor>,
         tracks: Map<String, List<TrackSummary>>,
     ): List<RadioCandidate> {
         val neighborWeightSum = neighbors.sumOf { it.match.coerceAtLeast(0.05f).toDouble() }.toFloat()
@@ -181,13 +178,13 @@ class RadioStationGenerator @Inject constructor(
                 is RadioSeed.Song -> s.artist
             }
             session.remainingNeighbors.addAll(
-                lastFm.getSimilarArtists(seedArtistName, limit = NEIGHBOR_MAX).getOrDefault(emptyList()),
+                relatedArtists(seedArtistName, (session.seed as? RadioSeed.Artist)?.ytBrowseId),
             )
             session.neighborsLoaded = true
         }
         if (session.remainingNeighbors.isEmpty()) { session.exhausted = true; return }
         // Page the next slice of never-used neighbors.
-        val next = ArrayList<LastFmSimilarArtist>()
+        val next = ArrayList<RadioNeighbor>()
         while (next.size < NEIGHBOR_POOL && session.remainingNeighbors.isNotEmpty()) {
             next += session.remainingNeighbors.removeFirst()
         }
@@ -237,26 +234,29 @@ class RadioStationGenerator @Inject constructor(
         videoId.takeIf(YouTubeVideoId::isValid)?.let { "https://i.ytimg.com/vi/$it/maxresdefault.jpg" }
 
     private suspend fun startSong(seed: RadioSeed.Song): Pair<RadioSession, List<Track>> {
-        val similar = lastFm.getSimilarTracks(seed.artist, seed.title, limit = NEIGHBOR_LIMIT)
-            .getOrDefault(emptyList())
-            .take(SONG_SIMILAR_POOL)
-        val seedTop = lastFm.getArtistTopTracks(seed.artist, limit = TRACKS_PER_ARTIST)
-            .getOrDefault(emptyList())
-
-        val similarWeightSum = similar.sumOf { it.match.coerceAtLeast(0.05f).toDouble() }.toFloat()
-        val seedWeight = if (similarWeightSum <= 0f) 1f
-            else (SEED_SHARE / (1f - SEED_SHARE)) * similarWeightSum
-
+        val browseId = yt.resolveArtist(seed.artist)?.id
+        val profile = browseId?.let { runCatching { yt.getArtist(it) }.getOrNull() }
+        val related = profile?.related.orEmpty()
+        val neighbors = related.take(NEIGHBOR_POOL)
         val pool = ArrayList<RadioCandidate>()
-        // Seed share: the seeded track first, then the seed artist's top tracks.
+        val seedWeight = if (neighbors.isEmpty()) 1f else
+            (SEED_SHARE / (1f - SEED_SHARE)) * neighbors.size
         pool += RadioCandidate(seed.artist, seed.title, seed.ytVideoId, seedWeight)
-        seedTop.filterNot { it.title.equals(seed.title, ignoreCase = true) }
-            .forEach { pool += RadioCandidate(seed.artist, it.title, null, seedWeight) }
-        // Neighbors: each similar track, weighted by match; artist keyed for interleave.
-        for (s in similar) {
-            pool += RadioCandidate(s.artist, s.title, null, s.match.coerceAtLeast(0.05f))
+        profile?.popular.orEmpty()
+            .filterNot { it.title.equals(seed.title, ignoreCase = true) }
+            .take(TRACKS_PER_ARTIST)
+            .forEach { pool += RadioCandidate(seed.artist, it.title, it.videoId, seedWeight, it.thumbnailUrl) }
+        val relatedTracks = coroutineScope {
+            neighbors.map { n -> async { n.name to resolvePopular(n.name) } }.awaitAll()
+        }
+        for ((artist, songs) in relatedTracks) {
+            songs.take(TRACKS_PER_ARTIST).forEach {
+                pool += RadioCandidate(artist, it.title, it.videoId, 1f, it.thumbnailUrl)
+            }
         }
         val session = RadioSession(seed, RadioInterleaver.order(pool).toMutableList(), mutableSetOf())
+        session.remainingNeighbors.addAll(related.drop(NEIGHBOR_POOL).map { RadioNeighbor(it.name, 1f) })
+        session.neighborsLoaded = true
         return session to drainBatch(session, FIRST_BATCH)
     }
 
