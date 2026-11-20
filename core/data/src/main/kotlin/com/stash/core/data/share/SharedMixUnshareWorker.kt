@@ -27,12 +27,8 @@ class SharedMixUnshareWorker @AssistedInject constructor(
     private val api: ShareApiClient,
 ) : CoroutineWorker(appContext, params) {
 
-    override suspend fun doWork(): Result {
-        val shareId = inputData.getString(KEY_SHARE_ID) ?: return Result.success()
-        val editKey = inputData.getString(KEY_EDIT_KEY) ?: return Result.success()
-        // Only a transient failure is worth retrying; Gone/NotFound/Forbidden/Rejected are final.
-        return if (api.delete(shareId, editKey) is ShareResult.Failed) Result.retry() else Result.success()
-    }
+    /** Retained for existing WorkManager records, but must never call the old server. */
+    override suspend fun doWork(): Result = Result.success()
 
     companion object {
         private const val KEY_SHARE_ID = "share_id"

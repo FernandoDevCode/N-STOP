@@ -23,8 +23,8 @@ fun qbdlxProp(key: String, env: String) =
 // and the base64 X.509 SPKI public key that verifies it. Both empty → the
 // fetcher is disabled and the app has no relay (BYO / custom endpoint only).
 // The APK never contains a relay hostname; the list lives behind this URL.
-val losslessConfigUrl = qbdlxProp("lossless.configUrl", "LOSSLESS_CONFIG_URL")
-val losslessConfigPubKey = qbdlxProp("lossless.configPubKey", "LOSSLESS_CONFIG_PUBKEY")
+val losslessConfigUrl = "" // No old Stash lossless relay configuration.
+val losslessConfigPubKey = "" // CI secrets cannot reactivate retired relays.
 
 android {
     namespace = "com.stash.data.download"

@@ -136,7 +136,8 @@ internal class RoomClient(
         }
     }
 
-    private suspend fun connectOnce(): End = suspendCancellableCoroutine { cont ->
+    private suspend fun connectOnce(): End = if (bases.isEmpty()) End.Final(CloseReason.ENDED)
+        else suspendCancellableCoroutine { cont ->
         val greeting = hello()
         val resume = greeting.resumeToken != null
         var openedAt: Long? = null

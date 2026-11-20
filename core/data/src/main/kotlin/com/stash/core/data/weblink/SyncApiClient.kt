@@ -164,6 +164,7 @@ class SyncApiClient @Inject constructor(okHttpClient: OkHttpClient, private val 
     }
 
     private suspend fun exchange(method: String, path: String, auth: DeviceAuth?, body: String?, extra: Map<String, String> = emptyMap()): Raw {
+        if (!config.enabled || config.baseUrl.isBlank()) return Raw.Failed("Legacy web sync disabled")
         val req = Request.Builder()
             .url(config.baseUrl + path)
             .header("Accept", "application/json")

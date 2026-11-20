@@ -67,9 +67,8 @@ class ShareLinksTest {
         assertThat(ShareLinks.parse("https://www.stashfm.app/m/Kx7Qa2pL")).isNull() // the apex only, like the manifest
     }
 
-    @Test fun `api calls try stashfm-app first, then the old host, and links open from both`() {
-        assertThat(ShareConfig.API_BASE_URLS)
-            .containsExactly("https://stashfm.app", "https://stash-share.rawnaldclark.workers.dev").inOrder()
+    @Test fun `remote API routes are retired while old link formats remain parseable`() {
+        assertThat(ShareConfig.API_BASE_URLS).isEmpty()
         assertThat(ShareConfig.HOSTS).containsExactly("stashfm.app", "stash-share.rawnaldclark.workers.dev")
     }
 

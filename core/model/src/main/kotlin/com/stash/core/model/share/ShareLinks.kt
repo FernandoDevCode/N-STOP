@@ -17,13 +17,13 @@ object ShareConfig {
      * DNS answer, refused, TLS failed): DNS filters often block newly registered domains for weeks. Links are still
      * built on [BASE_URL], whichever host answered.
      */
-    val API_BASE_URLS: List<String> = listOf(BASE_URL, LEGACY_BASE_URL)
+    val API_BASE_URLS: List<String> = emptyList() // Historical links are parsed only; no Stash API calls.
 
     /**
      * Hosts whose links open in Stash: stashfm.app, and the workers.dev host older links use. Keep in sync with the
      * App Links filter in app/src/main/AndroidManifest.xml.
      */
-    val HOSTS: Set<String> = API_BASE_URLS.mapTo(LinkedHashSet()) { it.removePrefix("https://") }
+    val HOSTS: Set<String> = setOf(BASE_URL.removePrefix("https://"), LEGACY_BASE_URL.removePrefix("https://")) // Parse old local links only.
 
     /**
      * Album-art CDNs a shared mix's or song's covers may point at. Anything else could log recipients' IPs.

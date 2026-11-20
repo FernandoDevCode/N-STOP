@@ -76,8 +76,7 @@ val lastFmExtraApiKeys: String =
 // Optional Stash Last.fm proxy Worker base URL. When set, generic read lookups
 // route through it (the Worker holds the server key + shared cache), decoupling
 // Last.fm load from user count. Empty = app talks to Last.fm directly.
-val lastFmProxyUrl: String =
-    localProperties.getProperty("lastfm.proxyUrl") ?: System.getenv("LASTFM_PROXY_URL").orEmpty()
+val lastFmProxyUrl: String = "" // Retired Stash proxy cannot be re-enabled by local or CI secrets.
 
 // ── Link Stash on the web (sync-v1) ────────────────────────────────────────
 //
@@ -85,10 +84,8 @@ val lastFmProxyUrl: String =
 // Debug builds show it too, and can point at a local Worker with
 // `sync.baseUrl=http://192.168.137.1:8795` in local.properties; only that host gets cleartext, through a
 // debug-only network security config generated below.
-val syncReleaseBaseUrl = "https://sync.stashfm.app"
-val syncDebugBaseUrl: String =
-    (localProperties.getProperty("sync.baseUrl") ?: System.getenv("STASH_SYNC_BASE_URL")).orEmpty().trim().trimEnd('/')
-        .ifEmpty { syncReleaseBaseUrl }
+val syncReleaseBaseUrl = "" // Retired Stash web sync is not configured in Sonora.
+val syncDebugBaseUrl: String = "" // Debug cannot reconnect to the old sync server.
 val syncDebugCleartextHost: String? =
     syncDebugBaseUrl.takeIf { it.startsWith("http://") }?.removePrefix("http://")?.substringBefore('/')?.substringBefore(':')
 
