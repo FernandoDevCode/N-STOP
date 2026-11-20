@@ -18,7 +18,6 @@ import com.stash.core.data.diagnostics.CrashReporter
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.StashMixRecipeDao
 import com.stash.core.data.db.dao.TrackDao
-import com.stash.core.data.lastfm.LastFmScrobbler
 import com.stash.core.data.youtube.YouTubeHistoryScrobbler
 import com.stash.core.data.mix.StashMixDefaults
 import com.stash.core.data.prefs.DownloadNetworkPreference
@@ -93,9 +92,6 @@ class StashApplication : Application(), Configuration.Provider {
     lateinit var listeningRecorder: ListeningRecorder
 
     @Inject
-    lateinit var lastFmScrobbler: LastFmScrobbler
-
-    @Inject
     lateinit var discordRpcCoordinator: com.stash.core.data.discord.DiscordRpcCoordinator
 
     @Inject
@@ -127,14 +123,6 @@ class StashApplication : Application(), Configuration.Provider {
 
     @Inject
     lateinit var stashMixPreference: com.stash.core.data.prefs.StashMixPreference
-
-    /**
-     * Issue #255 — Last.fm-as-a-source lifecycle owner. Startup reconcile
-     * activates/deactivates the "Recommended by Last.fm" recipe to match
-     * the current session + preference state.
-     */
-    @Inject
-    lateinit var lastFmRecommendationSource: com.stash.core.data.mix.LastFmRecommendationSource
 
     @Inject
     lateinit var downloadNetworkPreference: DownloadNetworkPreference
