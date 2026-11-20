@@ -185,7 +185,7 @@ jobs:
         run: python3 tools/verify_sonora_launcher.py
 
       - name: Assemble debug APK
-       run: ./gradlew :app:assembleDebug --no-daemon
+        run: ./gradlew :app:assembleDebug --no-daemon
 
       - name: Locate debug APK
         id: find_apk
