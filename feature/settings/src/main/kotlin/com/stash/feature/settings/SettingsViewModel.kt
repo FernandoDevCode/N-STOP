@@ -24,7 +24,6 @@ import com.stash.core.data.youtube.YouTubeHistoryScrobbler
 import com.stash.core.data.youtube.YouTubeScrobblerHealth
 import com.stash.core.data.youtube.YouTubeScrobblerState
 import com.stash.core.data.sync.workers.StashDiscoveryWorker
-import com.stash.core.data.sync.workers.TagEnrichmentWorker
 import com.stash.core.model.DownloadNetworkMode
 import com.stash.core.model.UiScale
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -1452,7 +1451,7 @@ class SettingsViewModel @Inject constructor(
     /**
      * Persists a new download-network mode AND re-schedules the two
      * workers that depend on it ([StashDiscoveryWorker],
-     * [TagEnrichmentWorker]) so the updated `Constraints` take effect
+     * enrichment workers) so the updated `Constraints` take effect
      * immediately. WorkManager snapshots constraints at enqueue time —
      * without the re-schedule, the setting would only apply to future
      * installs, not the current one.
@@ -1461,7 +1460,6 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             downloadNetworkPreference.setMode(mode)
             StashDiscoveryWorker.schedulePeriodic(appContext, mode)
-            TagEnrichmentWorker.schedulePeriodic(appContext, mode)
         }
     }
 

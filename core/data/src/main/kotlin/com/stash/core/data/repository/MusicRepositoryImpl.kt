@@ -366,8 +366,6 @@ class MusicRepositoryImpl @Inject constructor(
             val mode = downloadNetworkPreference.current()
             com.stash.core.data.sync.workers.StashMixRefreshWorker.schedulePeriodic(context)
             com.stash.core.data.sync.workers.StashDiscoveryWorker.schedulePeriodic(context, mode)
-            com.stash.core.data.sync.workers.TagEnrichmentWorker.schedulePeriodic(context, mode)
-            com.stash.core.data.sync.workers.TrackInfoEnrichmentWorker.schedulePeriodic(context)
             // Fire a one-shot refresh so the surfaces repopulate immediately
             // rather than waiting for the next periodic cycle.
             com.stash.core.data.sync.workers.StashMixRefreshWorker.enqueueOneTime(context)
