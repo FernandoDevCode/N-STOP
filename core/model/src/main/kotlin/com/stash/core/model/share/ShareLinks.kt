@@ -23,7 +23,7 @@ object ShareConfig {
      * Hosts whose links open in Stash: stashfm.app, and the workers.dev host older links use. Keep in sync with the
      * App Links filter in app/src/main/AndroidManifest.xml.
      */
-    val HOSTS: Set<String> = API_BASE_URLS.mapTo(LinkedHashSet()) { it.removePrefix("https://") }
+    val HOSTS: Set<String> = setOf(BASE_URL.removePrefix("https://"), LEGACY_BASE_URL.removePrefix("https://")) // Parse old local links only.
 
     /**
      * Album-art CDNs a shared mix's or song's covers may point at. Anything else could log recipients' IPs.
