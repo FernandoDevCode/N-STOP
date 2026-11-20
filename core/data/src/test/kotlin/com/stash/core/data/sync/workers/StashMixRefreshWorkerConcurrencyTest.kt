@@ -6,16 +6,11 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.work.ListenableWorker
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
-import com.stash.core.data.blocklist.BlocklistGuard
 import com.stash.core.data.db.StashDatabase
 import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.TrackEntity
-import com.stash.core.data.lastfm.LastFmApiClient
-import com.stash.core.data.lastfm.LastFmCredentials
-import com.stash.core.data.lastfm.LastFmSessionPreference
 import com.stash.core.data.mix.MixGenerator
 import com.stash.core.data.mix.StashMixDefaults
-import com.stash.core.data.mix.TagPoolBuilder
 import com.stash.core.model.MusicSource
 import com.stash.core.model.PlaylistType
 import io.mockk.coEvery
@@ -24,7 +19,6 @@ import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
@@ -147,25 +141,13 @@ class StashMixRefreshWorkerConcurrencyTest {
             every { inputData } returns
                 if (recipeId == null) workDataOf() else workDataOf(StashMixRefreshWorker.KEY_RECIPE_ID to recipeId)
         }
-        val lastFmApiClient: LastFmApiClient = mockk(relaxed = true)
         return StashMixRefreshWorker(
             appContext = mockk<Context>(relaxed = true),
             params = params,
             recipeDao = db.stashMixRecipeDao(),
             playlistDao = db.playlistDao(),
-            discoveryQueueDao = mockk(relaxed = true),
-            listeningEventDao = mockk(relaxed = true),
             trackDao = mockk(relaxed = true),
             mixGenerator = mixGenerator,
-            seedGenerator = mockk(relaxed = true),
-            lastFmApiClient = lastFmApiClient,
-            lastFmCredentials = mockk<LastFmCredentials> { every { isConfigured } returns false },
-            sessionPreference = mockk<LastFmSessionPreference> { every { session } returns flowOf(null) },
-            blocklistGuard = mockk<BlocklistGuard>(relaxed = true),
-            trackSkipEventDao = mockk(relaxed = true),
-            tagPoolBuilder = TagPoolBuilder(lastFmApiClient),
-            trackMatcher = mockk(relaxed = true),
-            downloadNetworkPreference = mockk(relaxed = true),
         )
     }
 
