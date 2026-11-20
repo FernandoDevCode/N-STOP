@@ -61,33 +61,30 @@ class ArtFallbackInterceptorTest {
         override fun withWriteTimeout(timeout: Int, unit: java.util.concurrent.TimeUnit) = this
     }
 
-    private val jpg = "https://lastfm-img.freetls.fastly.net/i/u/770x0/abc.jpg"
-    private val png = "https://lastfm-img.freetls.fastly.net/i/u/770x0/abc.png"
-    private val stored = "https://lastfm-img.freetls.fastly.net/i/u/300x300/abc.png"
-
-    private fun run(codes: (String) -> Int): FakeChain {
-        val chain = FakeChain(Request.Builder().url(jpg).build(), codes)
-        ArtFallbackInterceptor().intercept(chain).close()
-        return chain
+    @Test
+    fun `retired hosts cannot initiate network calls even for cached legacy art`() {
+        listOf(
+            "https://lastfm-img.freetls.fastly.net/i/u/300x300/abc.png",
+            "https://lastfm.freetls.fastly.net/i/u/770x0/abc.jpg",
+            "https://www.last.fm/music/example",
+            "https://ws.audioscrobbler.last.fm/2.0/",
+        ).forEach { url ->
+            val chain = FakeChain(Request.Builder().url(url).build()) { 200 }
+            val response = ArtFallbackInterceptor().intercept(chain)
+            assertEquals(410, response.code)
+            assertTrue("network request escaped to $url", chain.tried.isEmpty())
+            response.close()
+        }
     }
 
     @Test
-    fun `a cover that exists is fetched once`() {
-        val chain = run { 200 }
-        assertEquals(listOf(jpg), chain.tried)
-    }
-
-    @Test
-    fun `a missing jpeg steps to the png of the same size`() {
-        val chain = run { if (it == jpg) 404 else 200 }
-        assertEquals(listOf(jpg, png), chain.tried)
-        assertTrue("the 404 body must be closed", jpg in chain.closed)
-    }
-
-    @Test
-    fun `both 770 variants missing falls all the way back to the stored url`() {
-        val chain = run { if (it == stored) 200 else 404 }
-        assertEquals(listOf(jpg, png, stored), chain.tried)
+    fun `non-retired artwork is fetched normally`() {
+        val url = "https://i.scdn.co/image/ab67616d0000b273aaaa"
+        val chain = FakeChain(Request.Builder().url(url).build()) { 200 }
+        val response = ArtFallbackInterceptor().intercept(chain)
+        assertEquals(200, response.code)
+        assertEquals(listOf(url), chain.tried)
+        response.close()
     }
 
     @Test
@@ -115,14 +112,6 @@ class ArtFallbackInterceptorTest {
 
     // The large variants ArtUrlSizer asks for on Now Playing: each walks back to a size that
     // always exists, so a big cover can never render worse than the stored one did.
-
-    @Test
-    fun `a lastfm original walks all three steps down to the size the api advertises`() {
-        val ar0 = "https://lastfm-img.freetls.fastly.net/i/u/ar0/abc.jpg"
-        val chain = FakeChain(Request.Builder().url(ar0).build()) { if (it == stored) 200 else 404 }
-        ArtFallbackInterceptor().intercept(chain).close()
-        assertEquals(listOf(ar0, jpg, png, stored), chain.tried)
-    }
 
     @Test
     fun `a missing qobuz max falls back to the 600 that was stored`() {
