@@ -99,9 +99,6 @@ object DatabaseModule {
     fun provideLyricsDao(db: StashDatabase): com.stash.core.data.db.dao.LyricsDao =
         db.lyricsDao()
 
-    @Provides
-    fun provideLastFmCacheDao(db: StashDatabase): com.stash.core.data.db.dao.LastFmCacheDao =
-        db.lastFmCacheDao()
 
     @Provides
     fun provideSpotifyResolutionDao(db: StashDatabase): com.stash.core.data.db.dao.SpotifyResolutionDao =
