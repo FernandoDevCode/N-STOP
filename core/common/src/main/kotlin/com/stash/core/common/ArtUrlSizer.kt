@@ -7,7 +7,7 @@ package com.stash.core.common
  * far smaller than the Now Playing cover, which is ~950px wide on a Pixel 5 and ~1270px on a
  * Pixel 6 Pro. Measured on a real library (2026-10-10): Qobuz covers are stored `_600`, some
  * YouTube Music covers `=w544` or even `=w60`, YouTube thumbnails `hqdefault?sqp=…` (400x225),
- * and Last.fm `770x0`. Every one of those hosts serves the same image larger.
+ *. Every one of those hosts serves the same image larger.
  *
  * [forSize] is applied per image request (see `ArtSizeInterceptor` in `:core:ui`), so a 48dp row
  * keeps its stored URL and only a surface that is really big, Now Playing first of all, asks for a
@@ -20,14 +20,14 @@ package com.stash.core.common
  * image than the stored one.
  *
  * **Never a broken cover.** Where a bigger variant is not guaranteed to exist (Qobuz `_max`,
- * Spotify's original, Last.fm's original, YouTube `maxresdefault`, iTunes above 600), the shared
+ * Spotify's original, YouTube `maxresdefault`, iTunes above 600), the shared
  * OkHttp client's `ArtFallbackInterceptor` walks a 404 back down through
  * [ArtUrlUpgrader.artFallback], ending on a variant that always exists; and `ArtSizeInterceptor`
  * draws the stored URL when the sized-up one fails for any other reason (offline, 5xx, timeout).
  *
  * **Data Saver.** [forSize]'s `maxVariantPx` caps the variants it may pick ([maxVariantPx]): with
  * Android's Data Saver on over a metered network, nothing above [DATA_SAVER_MAX_PX], so Qobuz stays
- * `_600`, Spotify 640 and Last.fm `770x0` (their next size up is an unbounded original, up to
+ * `_600`, Spotify 640 (their next size up is an unbounded original, up to
  * 2.2 MB measured for a Qobuz `_max`).
  *
  * Host by host, measured 2026-10-10 with the app's own headers:
@@ -61,7 +61,7 @@ object ArtUrlSizer {
 
     /**
      * Stand-in long side for a host's "original" variant, whose real size is unknown until it is
-     * fetched (Qobuz `_max`, Spotify `82c1`, Last.fm `ar0`): above any Data Saver cap, so a capped
+     * fetched (Qobuz `_max`, Spotify `82c1`): above any Data Saver cap, so a capped
      * request never picks one.
      */
     private const val UNBOUNDED_PX = 4000
@@ -107,15 +107,6 @@ object ArtUrlSizer {
     private val QOBUZ_TIERS = intArrayOf(50, 100, 150, 230, 300, 600)
     private const val QOBUZ_MAX = "max"
 
-    // ── Last.fm ────────────────────────────────────────────────────────────────────────────────
-    // `770x0` is upscaled by the CDN when the original is smaller (46% of a real library's
-    // covers), and downscaled when it is larger (32% are over 1024). `ar0` is the original. Every
-    // other token (1024x1024, 1200x0, …) silently returns the original too, so there is no
-    // bounded size above 770. Always JPEG: `ar0.png` of a 3000px cover is 11 MB.
-    private val LASTFM_PATH = Regex("""(/i/u/)([^/]+)/([0-9a-f]+)\.[A-Za-z]+""")
-    private val LASTFM_TOKEN = Regex("""^(\d+)(?:x(\d+))?s?$""")
-    private const val LASTFM_770 = 770
-
     // ── iTunes / Apple Music ───────────────────────────────────────────────────────────────────
     private val ITUNES_FILE = Regex("""/(\d+)x(\d+)([a-z]{2}(?:-\d+)?)\.(jpg|png|webp)$""")
     private val ITUNES_TIERS = intArrayOf(300, 600, 1200, 1600)
@@ -160,7 +151,6 @@ object ArtUrlSizer {
             host == "i.ytimg.com" || host.endsWith(".ytimg.com") -> youtube(url, px)
             host == "i.scdn.co" || host.endsWith(".spotifycdn.com") -> spotify(url, px, cap)
             host == "static.qobuz.com" -> qobuz(url, px, cap)
-            host.endsWith("freetls.fastly.net") && "lastfm" in host -> lastFm(url, px, cap)
             host.endsWith(".mzstatic.com") -> itunes(url, px, cap)
             host.endsWith("saavncdn.com") -> saavn(url, px, cap)
             host.endsWith(".dzcdn.net") -> deezer(url, px, cap)
@@ -172,7 +162,7 @@ object ArtUrlSizer {
      * [forSize], limited to variants that EVERY cover on its host has, for a consumer that can't
      * fall back when a bigger variant is missing: Android Auto's browse tiles, which the car fetches
      * itself from the item's artwork URI. A pick that [ArtUrlUpgrader.artFallback] would have to
-     * walk down from on a 404 (YouTube maxres, Last.fm 770/originals, Qobuz `_max`, Spotify's
+     * walk down from on a 404 (YouTube maxres, Qobuz `_max`, Spotify's
      * original, iTunes above 600) is not guaranteed, so [url] is kept. Google sizes, Qobuz up to
      * `_600`, Spotify up to 640, iTunes up to 600 and JioSaavn 500 always exist.
      */
@@ -182,23 +172,8 @@ object ArtUrlSizer {
         return if (ArtUrlUpgrader.artFallback(sized) == null) sized else url
     }
 
-    /**
-     * How many pixels [url] itself is known to deliver on its long side, for the one host where
-     * the bigger variant [forSize] picks can come back SMALLER: Last.fm. Its `770x0` is the CDN's
-     * own rendering, upscaled when the original is smaller (46% of a real library's covers), and
-     * `ar0` is that original, as small as 350px. When the original turns out smaller than this,
-     * the stored URL draws better (the CDN resamples it more cleanly than a phone stretches it),
-     * so `ArtSizeInterceptor` draws that instead. Null for every other host: there, a bigger
-     * variant is never smaller than the stored one (Google and iTunes cap at the original, and
-     * Qobuz `_max`, Spotify's original, YouTube maxres are at least the stored tier).
-     */
-    fun storedPx(url: String?): Int? {
-        if (url.isNullOrBlank() || !url.startsWith("http")) return null
-        val host = url.substringAfter("://").substringBefore('/').lowercase()
-        if (!(host.endsWith("freetls.fastly.net") && "lastfm" in host)) return null
-        val token = LASTFM_PATH.find(url)?.groupValues?.get(2) ?: return null
-        return lastFmTokenPx(token)?.takeIf { it < UNBOUNDED_PX }
-    }
+    /** Legacy compatibility API: no remaining source requires a pixel-floor probe. */
+    fun storedPx(@Suppress("UNUSED_PARAMETER") url: String?): Int? = null
 
     /** A size digit-run as an Int; null when it overflows (a malformed URL, left untouched). */
     private fun String.px(): Int? = toIntOrNull()
@@ -290,26 +265,6 @@ object ArtUrlSizer {
         }
         if (target != QOBUZ_MAX && target.toInt() <= stored) return url
         return url.replaceRange(m.groups[2]!!.range, target)
-    }
-
-    private fun lastFm(url: String, px: Int, cap: Int): String {
-        val m = LASTFM_PATH.find(url) ?: return url
-        val stored = lastFmTokenPx(m.groupValues[2]) ?: return url
-        if (bigEnough(stored, px)) return url
-        val size = when {
-            px > LASTFM_770 && UNBOUNDED_PX <= cap -> "ar0"
-            LASTFM_770 > stored && LASTFM_770 <= cap -> "770x0"
-            else -> return url
-        }
-        return url.replaceRange(m.range, "${m.groupValues[1]}$size/${m.groupValues[3]}.jpg")
-    }
-
-    /** The long side a Last.fm size token stands for: `300x300` 300, `174s` 174, `ar0` original. */
-    private fun lastFmTokenPx(token: String): Int? = when (token) {
-        "ar0" -> UNBOUNDED_PX
-        else -> LASTFM_TOKEN.find(token)?.let { m ->
-            maxOf(m.groupValues[1].px() ?: return null, m.groupValues[2].px() ?: 0)
-        }
     }
 
     private fun itunes(url: String, px: Int, cap: Int): String {

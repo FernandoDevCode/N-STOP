@@ -153,32 +153,6 @@ class ArtUrlSizerTest {
         assertEquals(url, sized(url, 495))
     }
 
-    // ── Last.fm ──────────────────────────────────────────────────────────────────────────────
-
-    @Test
-    fun `lastfm 770 goes to the original jpeg on now playing`() {
-        assertEquals(
-            "https://lastfm-img.freetls.fastly.net/i/u/ar0/c9ebed7e766b45dabedaa8ee759b5181.jpg",
-            sized("https://lastfm-img.freetls.fastly.net/i/u/770x0/c9ebed7e766b45dabedaa8ee759b5181.jpg", 950),
-        )
-    }
-
-    @Test
-    fun `lastfm small sizes go to 770 jpeg, which is lighter than the 300 png`() {
-        assertEquals(
-            "https://lastfm.freetls.fastly.net/i/u/770x0/abc.jpg",
-            sized("https://lastfm.freetls.fastly.net/i/u/174s/abc.png", 500),
-        )
-    }
-
-    @Test
-    fun `lastfm 770 in a grid and the original are untouched`() {
-        val grid = "https://lastfm-img.freetls.fastly.net/i/u/770x0/abc.jpg"
-        assertEquals(grid, sized(grid, 495))
-        val orig = "https://lastfm-img.freetls.fastly.net/i/u/ar0/abc.jpg"
-        assertEquals(orig, sized(orig, 3000))
-    }
-
     // ── iTunes / Apple Music ─────────────────────────────────────────────────────────────────
 
     @Test
@@ -248,23 +222,16 @@ class ArtUrlSizerTest {
             "https://lh3.googleusercontent.com",
             "https://lh3.googleusercontent.com/abc=w99999999999-h99999999999",
             "https://static.qobuz.com/images/covers/a/b/x_99999999999.jpg",
-            "https://lastfm.freetls.fastly.net/i/u/99999999999x0/abc.jpg",
             "https://i.scdn.co/image/ab67616d0000",
             "not a url at all",
         ).forEach { assertEquals(it, sized(it, 1024)) }
     }
 
-    // ── storedPx: the floor a sized Last.fm cover must not fall below ─────────────────────────
-
     @Test
-    fun `storedPx is the stored lastfm size, and null where a bigger variant cannot be smaller`() {
-        assertEquals(770, ArtUrlSizer.storedPx("https://lastfm-img.freetls.fastly.net/i/u/770x0/abc.jpg"))
-        assertEquals(300, ArtUrlSizer.storedPx("https://lastfm.freetls.fastly.net/i/u/300x300/abc.png"))
-        assertNull(ArtUrlSizer.storedPx("https://lastfm.freetls.fastly.net/i/u/ar0/abc.jpg"))
+    fun `storedPx returns null for the remaining catalog hosts`() {
         assertNull(ArtUrlSizer.storedPx("https://static.qobuz.com/images/covers/a/b/x_600.jpg"))
         assertNull(ArtUrlSizer.storedPx("https://lh3.googleusercontent.com/abc=w544-h544"))
         assertNull(ArtUrlSizer.storedPx(null))
-        assertNull(ArtUrlSizer.storedPx("/data/local/cover.jpg"))
     }
 
     // ── The 90% rule: a stored URL about as big as the target is left alone ───────────────────
@@ -283,8 +250,7 @@ class ArtUrlSizerTest {
     }
 
     @Test
-    fun `lastfm 770 and qobuz 600 are still sized up for a 948px cover`() {
-        assertEquals("https://lastfm.freetls.fastly.net/i/u/ar0/abc.jpg", sized("https://lastfm.freetls.fastly.net/i/u/770x0/abc.jpg", 948))
+    fun `qobuz 600 is still sized up for a 948px cover`() {
         assertEquals("https://static.qobuz.com/images/covers/a/b/x_max.jpg", sized("https://static.qobuz.com/images/covers/a/b/x_600.jpg", 948))
     }
 
@@ -328,8 +294,6 @@ class ArtUrlSizerTest {
         assertEquals(qobuz, ArtUrlSizer.forSize(qobuz, 948, cap))
         val spotify = "https://i.scdn.co/image/ab67616d0000b273abc"
         assertEquals(spotify, ArtUrlSizer.forSize(spotify, 948, cap))
-        val lastFm = "https://lastfm.freetls.fastly.net/i/u/770x0/abc.jpg"
-        assertEquals(lastFm, ArtUrlSizer.forSize(lastFm, 948, cap))
     }
 
     @Test
@@ -342,10 +306,6 @@ class ArtUrlSizerTest {
         assertEquals(
             "https://static.qobuz.com/images/covers/a/b/x_600.jpg",
             ArtUrlSizer.forSize("https://static.qobuz.com/images/covers/a/b/x_230.jpg", 948, cap),
-        )
-        assertEquals(
-            "https://lastfm.freetls.fastly.net/i/u/770x0/abc.jpg",
-            ArtUrlSizer.forSize("https://lastfm.freetls.fastly.net/i/u/300x300/abc.png", 948, cap),
         )
         assertEquals(
             "https://is1-ssl.mzstatic.com/image/thumb/x/1200x1200bb.jpg",
@@ -380,8 +340,6 @@ class ArtUrlSizerTest {
     fun `guaranteed sizing keeps the stored url where the bigger variant may be missing`() {
         val ytSqp = "https://i.ytimg.com/vi/abc/hqdefault.jpg?sqp=x"
         assertEquals(ytSqp, ArtUrlSizer.forSizeGuaranteed(ytSqp, 512)) // maxres: 18% missing
-        val lastFm = "https://lastfm.freetls.fastly.net/i/u/300x300/abc.png"
-        assertEquals(lastFm, ArtUrlSizer.forSizeGuaranteed(lastFm, 512)) // 770 jpg: a few % missing
         val qobuz = "https://static.qobuz.com/images/covers/a/b/x_600.jpg"
         assertEquals(qobuz, ArtUrlSizer.forSizeGuaranteed(qobuz, 1024)) // _max
         assertNull(ArtUrlSizer.forSizeGuaranteed(null, 512))
