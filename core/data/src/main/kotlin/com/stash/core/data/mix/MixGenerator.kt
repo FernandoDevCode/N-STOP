@@ -24,7 +24,7 @@ import kotlin.random.Random
  *
  *  - **Affinity** (`buildAffinityMap`): in-Stash plays in the last 180
  *    days, log-normalized and exponentially decayed (30-day half-life),
- *    plus a Last.fm cross-source playcount supplement. Recipe's
+ *    using local listening only. Recipe's
  *    [StashMixRecipeEntity.affinityBias] shifts the weight:
  *      - positive bias (+) → heavy rotation favorites bubble up
  *      - negative bias (−) → Rediscovery surfaces tracks you *have* liked
@@ -86,22 +86,9 @@ class MixGenerator @Inject constructor(
         private const val BASE_AFFINITY_WEIGHT = 0.40f      // was 0.50; tag-cosine takes some
         private const val BASE_TAG_WEIGHT      = 0.35f      // was 0.30
         private const val BASE_COMPLETION_W    = 0.10f      // NEW
-        private const val LOVED_BOOST          = 0.5f       // additive, not weight
         private const val SKIP_PENALTY_HEAVY   = 0.6f       // when skip-rate >= ramp
         private const val SKIP_PENALTY_RAMP    = 0.6f       // skip-rate above which heavy penalty kicks in
 
-        /**
-         * Scalar applied to the Last.fm-user-playcount term INSIDE
-         * buildAffinityMap, before the outer BASE_AFFINITY_WEIGHT
-         * multiplication. Intentionally lower than parity with local
-         * plays — Last.fm playcount counts every scrobble across every
-         * service the user ever connected, so a single track with 200
-         * lifetime LFM plays shouldn't outweigh a 30-play in-Stash
-         * track from this month. Net effect: LFM contributes ~12% of
-         * the affinity weight (0.3 * 0.40), local contributes ~40%.
-         * Rebalance only after on-device data shows the bias is wrong.
-         */
-        private const val LFM_PLAYCOUNT_W      = 0.3f
         private const val SORT_JITTER          = 0.10f      // was 0.05; ~12% of nominal score range
     }
 
@@ -193,12 +180,10 @@ class MixGenerator @Inject constructor(
             val aff = affinityMap[track.id] ?: 0f
             val tag = tagCosineMap[track.id] ?: 0f
             val cmp = completionMap[track.id] ?: 0.5f         // unknown -> neutral
-            val loved = if (track.lastfmUserLoved) LOVED_BOOST else 0f
             val skip = skipPenaltyMap[track.id] ?: 0f
             val score = aff * wAff +
                 tag * wTag +
-                cmp * wCmp +
-                loved -
+                cmp * wCmp -
                 skip +
                 jitterRng.nextFloat() * SORT_JITTER
             track to score
@@ -233,51 +218,22 @@ class MixGenerator @Inject constructor(
         return picked
     }
 
-    /**
-     * Build per-track affinity scores in the range [0, 1]. Combines two
-     * signals:
-     *  - In-Stash plays in the last 180 days, log-normalized by the
-     *    library's max count and exponentially decayed by recency
-     *    (30-day half-life from [AFFINITY_HALF_LIFE_MS]).
-     *  - Last.fm cross-source playcount (only present after Last.fm
-     *    track-info enrichment) scaled by [LFM_PLAYCOUNT_W].
-     *
-     * Tracks the user has neither played in-Stash nor scrobbled to
-     * Last.fm get a zero entry (omitted from the map).
-     */
+    /** Use only in-app listening events for affinity, never legacy service fields. */
     private suspend fun buildAffinityMap(pool: List<TrackEntity>): Map<Long, Float> {
         val now = System.currentTimeMillis()
-        val since = now - AFFINITY_WINDOW_MS
-        val rows = listeningEventDao.getPlayCountsSinceWithLatest(since)
-        val poolIds = pool.mapTo(HashSet(pool.size)) { it.id }
-
-        if (rows.isEmpty() && pool.none { (it.lastfmUserPlaycount ?: 0) > 0 }) {
-            return emptyMap()
-        }
-
-        val maxPlays = (rows.maxOfOrNull { it.plays } ?: 1).coerceAtLeast(1)
-        val maxLfmPlays = pool.maxOfOrNull { it.lastfmUserPlaycount ?: 0 }?.coerceAtLeast(1) ?: 1
-
+        val rows = listeningEventDao.getPlayCountsSinceWithLatest(now - AFFINITY_WINDOW_MS)
+        if (rows.isEmpty()) return emptyMap()
+        val maxPlays = rows.maxOf { it.plays }.coerceAtLeast(1)
         val byId = rows.associateBy { it.trackId }
         val result = HashMap<Long, Float>(pool.size)
         for (track in pool) {
-            if (track.id !in poolIds) continue
-            val row = byId[track.id]
-            // In-Stash plays with exponential decay
-            val localTerm = if (row != null) {
-                val logNorm = (ln(1f + row.plays.toFloat()) /
-                    ln(1f + maxPlays.toFloat())).coerceIn(0f, 1f)
-                val ageMs = (now - row.latestPlayedAt).coerceAtLeast(0)
-                val decay = 0.5f.pow(ageMs.toFloat() / AFFINITY_HALF_LIFE_MS)
-                logNorm * decay
-            } else 0f
-            // Last.fm cross-source playcount (only present after enrichment)
-            val lfmTerm = track.lastfmUserPlaycount?.let { lpc ->
-                (ln(1f + lpc.toFloat()) /
-                    ln(1f + maxLfmPlays.toFloat())).coerceIn(0f, 1f) * LFM_PLAYCOUNT_W
-            } ?: 0f
-            val combined = (localTerm + lfmTerm).coerceIn(0f, 1f)
-            if (combined > 0f) result[track.id] = combined
+            val row = byId[track.id] ?: continue
+            val logNorm = (ln(1f + row.plays.toFloat()) /
+                ln(1f + maxPlays.toFloat())).coerceIn(0f, 1f)
+            val ageMs = (now - row.latestPlayedAt).coerceAtLeast(0L)
+            val decay = 0.5f.pow(ageMs.toFloat() / AFFINITY_HALF_LIFE_MS)
+            val score = (logNorm * decay).coerceIn(0f, 1f)
+            if (score > 0f) result[track.id] = score
         }
         return result
     }
@@ -289,8 +245,7 @@ class MixGenerator @Inject constructor(
      * term against each candidate's own tag vector.
      *
      * Filters the `__untaggable__` sentinel rows that
-     * [com.stash.core.data.sync.workers.TagEnrichmentWorker] writes
-     * for tracks Last.fm couldn't tag.
+     * previous metadata enrichment could have written.
      */
     private suspend fun buildUserTagAffinityVector(): Map<String, Float> {
         val now = System.currentTimeMillis()
