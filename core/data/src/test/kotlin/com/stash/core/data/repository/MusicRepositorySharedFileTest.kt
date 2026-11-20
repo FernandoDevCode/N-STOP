@@ -230,7 +230,6 @@ class MusicRepositorySharedFileTest {
         localFileOps = mockk(relaxed = true),
         syncPreferencesManager = mockk(relaxed = true),
         singleTrackDownloadEnqueuer = mockk(relaxed = true),
-        lastFmRecommendationSource = mockk(relaxed = true),
         sharedMixDao = sharedMixDao,
         downloadJobs = com.stash.core.data.sync.DownloadJobRegistry(),
     )

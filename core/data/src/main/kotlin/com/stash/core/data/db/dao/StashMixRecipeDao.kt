@@ -65,10 +65,8 @@ interface StashMixRecipeDao {
     suspend fun findByPlaylistId(playlistId: Long): StashMixRecipeEntity?
 
     /**
-     * Find a recipe by its exact name — the lookup behind app-managed
-     * recipes (e.g. [com.stash.core.data.mix.LastFmRecommendationSource]'s
-     * "Recommended by Last.fm"), which are find-or-create by name because
-     * they're seeded lazily rather than shipped in [StashMixDefaults].
+     * Find a recipe by its exact name, including previously persisted
+     * legacy recipes that must be deactivated safely.
      */
     @Query("SELECT * FROM stash_mix_recipes WHERE name = :name LIMIT 1")
     suspend fun getByName(name: String): StashMixRecipeEntity?

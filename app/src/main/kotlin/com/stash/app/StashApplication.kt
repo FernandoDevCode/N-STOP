@@ -485,6 +485,17 @@ class StashApplication : Application(), Configuration.Provider {
         // first toggle), the built-in recipes/playlists stay inactive,
         // and Home/Library don't surface them.
         applicationScope.launch {
+            // Retire the legacy service-generated recipe without deleting personal library data.
+            try {
+                stashMixRecipeDao.getByName("Recommended by Last.fm")?.let { recipe ->
+                    stashMixRecipeDao.setActive(recipe.id, false)
+                    recipe.playlistId?.let { playlistDao.setActiveById(it, false) }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("StashStartup", "Could not retire legacy recommendation recipe", e)
+            }
             val stashMixesEnabled = stashMixPreference.current()
             if (!stashMixesEnabled) {
                 // Best-effort cancel of any periodic work left over from an
@@ -508,10 +519,6 @@ class StashApplication : Application(), Configuration.Provider {
             } catch (e: Exception) {
                 Log.w("StashStartup", "Stash Mix seed/retune failed", e)
             }
-            // Issue #255: activate/deactivate the "Recommended by Last.fm"
-            // recipe BEFORE the one-shot refresh below, so a freshly
-            // reconciled recipe is picked up by that same run instead of
-            // waiting for tomorrow's periodic cycle.
 
             // Fire a one-shot refresh on first launch so mixes populate
             // without waiting for the 24-hour periodic cycle. Subsequent

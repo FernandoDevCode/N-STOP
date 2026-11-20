@@ -31,7 +31,6 @@ import com.stash.core.data.lastfm.LastFmTopTrack
 import com.stash.core.data.mix.MixGenerator
 import com.stash.core.data.mix.MixSeedGenerator
 import com.stash.core.data.mix.MixSeedStrategy
-import com.stash.core.data.mix.LastFmRecommendationSource
 import com.stash.core.data.mix.RecipeTagResolver
 import com.stash.core.data.mix.StashMixDefaults
 import com.stash.core.data.mix.TagPoolBuilder
@@ -320,14 +319,14 @@ class StashMixRefreshWorker @AssistedInject constructor(
         val materializeOnly = inputData.getBoolean(KEY_MATERIALIZE_ONLY, false)
         val targetId = inputData.getLong(KEY_RECIPE_ID, -1L)
         val active = if (targetId > 0L) {
-            val one = recipeDao.getById(targetId)?.takeIf { it.isActive }
+            val one = recipeDao.getById(targetId)?.takeIf { it.isActive && it.name != "Recommended by Last.fm" }
             if (one == null) {
                 Log.d(TAG, "single-recipe refresh: recipe $targetId not found or inactive")
                 return Result.success()
             }
             listOf(one)
         } else {
-            recipeDao.getActive()
+            recipeDao.getActive().filterNot { it.name == "Recommended by Last.fm" }
         }
         if (active.isEmpty()) {
             Log.d(TAG, "no active recipes")
@@ -518,7 +517,6 @@ class StashMixRefreshWorker @AssistedInject constructor(
      */
     private fun recipeDedupPriority(recipe: StashMixRecipeEntity): Int = when (recipe.name) {
         "First Listen" -> 1
-        LastFmRecommendationSource.RECIPE_NAME -> 2
         "Deep Cuts" -> 3
         "Daily Discover" -> 4
         else -> 99

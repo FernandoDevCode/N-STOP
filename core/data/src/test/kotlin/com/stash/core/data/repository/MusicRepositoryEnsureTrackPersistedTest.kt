@@ -175,7 +175,6 @@ class MusicRepositoryEnsureTrackPersistedTest {
         localFileOps = mockk(relaxed = true),
         syncPreferencesManager = mockk(relaxed = true),
         singleTrackDownloadEnqueuer = mockk(relaxed = true),
-        lastFmRecommendationSource = mockk(relaxed = true),
         sharedMixDao = mockk(relaxed = true),
         downloadJobs = com.stash.core.data.sync.DownloadJobRegistry(),
     )
