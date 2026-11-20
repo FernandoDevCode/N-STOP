@@ -95,11 +95,6 @@ jobs:
         working-directory: infra/lossless-relay
         run: node --no-warnings --test test/*.test.js
 
-      # The Last.fm proxy (param allowlist, canonical cache key, per-network miss limit). Local imports only.
-      - name: Run the Last.fm proxy's tests
-        working-directory: infra/lastfm-proxy
-        run: node --no-warnings --test test/*.test.js
-
   # Keep the full Android test coverage, but shard independent Gradle tasks.
   # A single cold runner repeatedly reached the 20-minute safety cap before
   # Gradle finished the entire repository. Each shard retains that cap and
@@ -191,8 +186,6 @@ jobs:
 
       - name: Assemble debug APK
         env:
-          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
-          LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
         run: ./gradlew :app:assembleDebug --no-daemon
 
       - name: Locate debug APK

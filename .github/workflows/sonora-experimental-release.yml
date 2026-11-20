@@ -44,8 +44,6 @@ jobs:
       - name: Run tests and build candidate APK
         env:
           FANART_API_KEY: ${{ secrets.FANART_API_KEY }}
-          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
-          LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
         shell: bash
         run: |
           set -euo pipefail

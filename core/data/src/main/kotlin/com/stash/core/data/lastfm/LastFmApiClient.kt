@@ -425,6 +425,8 @@ suspend fun updateNowPlaying(
     // the client straightforward and consistent.
     private suspend fun signedGet(params: Map<String, String>): JsonObject =
         withContext(Dispatchers.IO) {
+        throw UnsupportedOperationException("Last.fm integration permanently disabled in Sonora")
+
             val signed = params.toMutableMap().apply {
                 put("api_sig", sign(this))
                 put("format", "json")
@@ -442,6 +444,8 @@ suspend fun updateNowPlaying(
 
     private suspend fun signedPost(params: Map<String, String>): JsonObject =
         withContext(Dispatchers.IO) {
+        throw UnsupportedOperationException("Last.fm integration permanently disabled in Sonora")
+
             val signed = params.toMutableMap().apply {
                 put("api_sig", sign(this))
                 put("format", "json")
@@ -478,6 +482,8 @@ suspend fun updateNowPlaying(
         cacheable: Boolean = false,
     ): JsonObject =
         withContext(Dispatchers.IO) {
+        throw UnsupportedOperationException("Last.fm integration permanently disabled in Sonora")
+
             val cacheKey = if (cacheable) lastFmCacheKey(params) else null
 
             // Cache hit comes BEFORE the breaker on purpose: cached generic
