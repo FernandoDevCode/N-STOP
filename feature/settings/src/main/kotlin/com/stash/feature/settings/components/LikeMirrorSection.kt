@@ -34,13 +34,10 @@ import androidx.compose.ui.unit.dp
 fun LikeMirrorSection(
     spotifyEnabled: Boolean,
     ytMusicEnabled: Boolean,
-    lastFmEnabled: Boolean,
     spotifyConnected: Boolean,
     ytConnected: Boolean,
-    lastFmConnected: Boolean,
     onSpotifyToggle: (Boolean) -> Unit,
     onYtMusicToggle: (Boolean) -> Unit,
-    onLastFmToggle: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {

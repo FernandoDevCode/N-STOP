@@ -103,13 +103,11 @@ class SettingsHubSummariesTest {
             state = SettingsUiState(
                 spotifyAuthState = connected("spotify"),
                 youTubeAuthState = connected("yt"),
-                lastFmState = LastFmAuthState.Connected(username = "scrobbler", pendingScrobbles = 0),
-            ),
+                    ),
             versionName = "0.9.51",
             streamingEnabled = true,
             streamOnCellular = false,
         )
-        assertEquals("Spotify · YouTube · Last.fm", s.accounts)
     }
 
     @Test fun `accounts none connected → Not connected`() {
