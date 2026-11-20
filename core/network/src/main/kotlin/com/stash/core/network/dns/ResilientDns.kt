@@ -41,6 +41,14 @@ class ResilientDns(
     private val locks = ConcurrentHashMap<String, Any>()
 
     override fun lookup(hostname: String): List<InetAddress> {
+        // Redirects can bypass application interceptors. Reject retired hosts
+        // at DNS resolution as a second boundary against legacy artwork URLs.
+        val host = hostname.lowercase()
+        if (host == "last.fm" || host.endsWith(".last.fm") ||
+            host == "lastfm.freetls.fastly.net" ||
+            host == "lastfm-img.freetls.fastly.net") {
+            throw UnknownHostException("Retired provider host blocked")
+        }
         fresh(hostname)?.let { return it }
 
         // Coalesce concurrent first-time lookups for this host: only one thread
