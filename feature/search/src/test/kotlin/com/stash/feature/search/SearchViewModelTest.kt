@@ -24,6 +24,8 @@ import com.stash.core.data.artistphotos.SelectedArtistPhoto
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.StreamRoutingResult
 import com.stash.core.model.TrackItem
+import com.stash.data.spotify.SpotifyCatalogItem
+import com.stash.data.spotify.SpotifyCatalogPage
 import com.stash.data.ytmusic.YouTubeWebVideo
 import com.stash.data.ytmusic.YTMusicCatalogItem
 import com.stash.feature.search.engine.toUniversalSearchResult
@@ -100,7 +102,7 @@ class SearchViewModelTest {
         val returned = entry.viewModel(factory)
         assertSame(first, returned)
         assertSame(session, returned.session.value)
-        assertTrue(YOUTUBE_MUSIC in session.state.value.selection.enabled)
+        assertEquals(SearchSourceSelection.Default, session.state.value.selection)
         assertEquals(1, sessionsOpened)
 
         entry.viewModelStore.clear()
@@ -184,13 +186,13 @@ class SearchViewModelTest {
     }
 
     @Test
-    fun `symbolic Spotify routes real music results and each supported row plays only its catalog id`() = runTest {
+    fun `music fallback and YouTube play only the selected result's own video id`() = runTest {
         val entry = Entry()
         val player = mock<PlayerRepository>()
         whenever(player.playExactSearchResult(any())).thenReturn(StreamRoutingResult.Deduped)
         val music = listOf(
             catalogItem(YTMusicCatalogItem.Kind.TRACK, "ABCDEFGHIJK", "Track"),
-            catalogItem(YTMusicCatalogItem.Kind.VIDEO, "ABCDEFGHIJL", "Track (Live)"),
+            catalogItem(YTMusicCatalogItem.Kind.TRACK, "ABCDEFGHIJL", "Track (Live)"),
             catalogItem(YTMusicCatalogItem.Kind.TRACK, "invalid", "Unavailable"),
         )
         val web = YouTubeWebVideo("ABCDEFGHIJM", "Track (Cover)", "Artist", null, null, 0).toUniversalSearchResult()
@@ -224,7 +226,7 @@ class SearchViewModelTest {
     fun `duplicate taps are ignored and cancellation clears the old spinner without error`() = runTest {
         val entry = Entry()
         val first = catalogItem(YTMusicCatalogItem.Kind.TRACK, "ABCDEFGHIJK", "Track")
-        val second = catalogItem(YTMusicCatalogItem.Kind.VIDEO, "ABCDEFGHIJL", "Track (Remix)")
+        val second = catalogItem(YTMusicCatalogItem.Kind.TRACK, "ABCDEFGHIJL", "Track (Remix)")
         val selections = mutableListOf<String>()
         val player = object : PlayerRepository by mock<PlayerRepository>() {
             override suspend fun playExactSearchResult(item: TrackItem): StreamRoutingResult {
@@ -259,6 +261,65 @@ class SearchViewModelTest {
         assertNull(model.playingRequest.value)
         assertEquals(listOf(first.identity.catalogId, second.identity.catalogId), selections)
         assertEquals(listOf(R.string.universal_search_play_cellular), errors)
+        entry.viewModelStore.clear()
+    }
+
+    @Test
+    fun `Spotify actions resolve lazily and send separate identities to playback and history`() = runTest {
+        val entry = Entry()
+        val player = mock<PlayerRepository>()
+        val history = history()
+        whenever(player.playExactSearchResult(any())).thenReturn(StreamRoutingResult.Deduped)
+        val track = SpotifyCatalogItem(
+            SpotifyCatalogItem.Kind.TRACK, "spotify-track", "spotify:track:spotify-track", "Song", "Artist",
+            null, 120_000, false, 0, albumTitle = "Album",
+        )
+        val album = SpotifyCatalogItem(
+            SpotifyCatalogItem.Kind.ALBUM, "spotify-album", "spotify:album:spotify-album", "Album", "Artist",
+            null, null, false, 2, albumTitle = "Album", releaseType = "single", releaseYear = "2024",
+        )
+        val factory = factory { scope, navigate, open, play ->
+            UniversalSearchSession(
+                scope, mapOf(YOUTUBE to { emptyList() }), SearchSourceSelection.Default, {}, history, navigate, open,
+                play = play, spotifySearch = { _, _, _ ->
+                    SpotifyCatalogPage(listOf(track, album), SpotifyCatalogItem.Kind.entries.toSet(), emptyMap())
+                },
+            )
+        }
+        val received = mutableListOf<SearchNavigation>()
+        val model = entry.viewModel(factory, player = player)
+        backgroundScope.launch { model.destinations.collect { received += it } }
+        runCurrent()
+        val session = checkNotNull(model.session.value)
+        session.onQueryChanged("artist")
+        advanceTimeBy(300)
+        runCurrent()
+        val hits = session.state.value.orderedResults
+        val foundTrack = hits.single { it.type == SearchResultType.TRACK }
+        val foundAlbum = hits.single { it.type == SearchResultType.ALBUM }
+        assertNull(foundTrack.audioIdentity)
+        verify(factory, org.mockito.kotlin.never()).resolveSpotifyTarget(any())
+        whenever(factory.resolveSpotifyTarget(foundTrack)).thenReturn(
+            YTMusicCatalogItem(YTMusicCatalogItem.Kind.TRACK, "ABCDEFGHIJK", "Song", "Artist", null, 120_000, false, 0),
+        )
+        whenever(factory.resolveSpotifyTarget(foundAlbum)).thenReturn(
+            YTMusicCatalogItem(YTMusicCatalogItem.Kind.ALBUM, "MPREb_verified", "Album", "Artist", null, null, false, 0),
+        )
+        session.onResultAction(foundTrack, SearchResultAction.PLAY)
+        runCurrent()
+        session.onResultAction(foundAlbum, SearchResultAction.NAVIGATE)
+        runCurrent()
+        val played = org.mockito.kotlin.argumentCaptor<TrackItem>()
+        verify(player).playExactSearchResult(played.capture())
+        assertEquals("ABCDEFGHIJK", played.firstValue.videoId)
+        assertEquals("Song", played.firstValue.title)
+        val destination = (received.single() as SearchNavigation.Album).album
+        assertEquals("MPREb_verified", destination.id)
+        verify(history).record(resultHistoryItem(
+            "Album", "Artist", foundAlbum.identity, SearchResultType.ALBUM,
+            browseIdentity = CatalogIdentity(YOUTUBE_MUSIC, "MPREb_verified"),
+        ))
+        assertEquals("spotify-album", foundAlbum.identity.catalogId)
         entry.viewModelStore.clear()
     }
 

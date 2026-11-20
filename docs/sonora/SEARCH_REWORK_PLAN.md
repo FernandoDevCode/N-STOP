@@ -10,6 +10,18 @@
 
 **Autoridade:** este documento prevalece, para a Busca, sobre planos históricos e experimentais. `AGENTS.md` e `docs/SONORA_CONSOLIDATION.md` continuam prevalecendo nas regras gerais do repositório.
 
+## Revisão estrutural pós-V217
+
+A V217 foi integrada pelo PR #104. A revisão abaixo atualiza os contratos de fontes, recuperação e ranking descritos nos checkpoints V217 deste documento. Os controles de pin e restauração, histórico, identidade de catálogo e fronteiras de reprodução continuam aplicáveis.
+
+- O Spotify fornece os IDs, títulos, créditos e edições do catálogo musical pela API de busca já autorizada. Uma solicitação inicial cobre faixas, artistas e lançamentos, com até dez entradas por tipo. O fim de uma lista musical solicita a próxima página somente para aquele tipo. O estado da consulta guarda páginas e erros por tipo e mantém resultados já recebidos em falhas de continuação. O cliente respeita `Retry-After` entre consultas, páginas e enriquecimento de capas.
+- Uma falha do Spotify inicia o fallback YouTube Music. Se a resposta Spotify omitir tipos, o fallback cobre apenas esses tipos. Uma lista de itens vazia e válida é uma resposta concluída. O painel mantém apenas a seleção musical Spotify. Preferências fixadas antigas mantêm a escolha musical, incluindo o alias YouTube Music.
+- Top, Artistas, Álbuns e Músicas usam entidades de catálogo por tipo. Álbuns incluem singles com o tipo de lançamento do provedor. YouTube WEB permanece no chip YouTube, com a chamada independente da mesma consulta já usada na V217. Um resultado Spotify com equivalente no YouTube aparece em sua categoria musical com o ID do Spotify.
+- O ranking usa faixas ordenadas de evidência. Título com crédito explícito indica intenção mais forte que um título coincidente. IDs de crédito corroboram artistas exatos ou parciais. Correspondências equivalentes, prefixos, termos, participação e vínculo com lançamento ajudam a ordenar os demais candidatos. A posição no provedor e a chave estável resolvem empates. A pontuação ordinal do YouTube WEB preserva sua ordenação. Resultados legítimos de baixa relevância permanecem disponíveis.
+- Um toque em faixa, álbum ou artista Spotify só usa um destino YouTube Music quando a resolução encontra um candidato único com os metadados exigidos para aquele tipo. A faixa verifica créditos, edição, duração e explicitude. O lançamento verifica os créditos, o ano e o tipo. O histórico armazena o destino de navegação separadamente da identidade Spotify. A reprodução de vídeo YouTube WEB continua enviando seu próprio ID ao fluxo exato.
+
+As seções abaixo registram o contrato e a integração até a V217.
+
 ## 1. Registro da preparação
 
 O checkout auditado estava em `codex/search-checkpoint-0`, no commit `0ded5dbad41c967f603fe80f5cb14c4986718cff`. Na auditoria, `nonstop`, o merge-base e o HEAD apontavam para o mesmo commit; o remoto também declarava `nonstop` como branch padrão. A branch de trabalho não substitui a regra canônica: os futuros branches/worktrees devem nascer da `nonstop` atualizada e os PRs devem ter base `nonstop`.

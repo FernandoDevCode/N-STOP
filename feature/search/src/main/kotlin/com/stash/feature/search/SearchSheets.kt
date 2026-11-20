@@ -61,10 +61,6 @@ internal fun SearchSourcesSheet(
                 CatalogSource.SPOTIFY in visible.enabled, "searchFilterSPOTIFY",
             ) { actions.onSourceToggled(CatalogSource.SPOTIFY) }
             HorizontalDivider(Modifier.padding(horizontal = 14.dp), color = VisualDesign.Ink.copy(alpha = .12f))
-            SourceToggle(
-                R.string.universal_search_youtube, R.string.universal_search_youtube_description,
-                CatalogSource.YOUTUBE in visible.enabled, "searchFilterYOUTUBE",
-            ) { actions.onSourceToggled(CatalogSource.YOUTUBE) }
         }
         SourceToggle(
             R.string.universal_search_pin_sources,
@@ -132,7 +128,7 @@ internal fun SearchResultSheet(
         val explicit = if (result.isExplicit) stringResource(R.string.universal_search_explicit) else null
         Text(
             listOfNotNull(
-                stringResource(result.identity.source.nameRes), stringResource(result.type.labelRes), duration, explicit,
+                stringResource(result.identity.source.nameRes), stringResource(result.resultLabelRes), duration, explicit,
             ).joinToString(" · "),
             color = VisualDesign.Muted,
             style = VisualDesign.Body,

@@ -6,14 +6,12 @@ import org.junit.Test
 
 class SearchContractTest {
 
-    @Test fun `default sources enable Spotify and YouTube but not YouTube Music`() {
+    @Test fun `Spotify is the only filter and YouTube is always active`() {
         val selection = SearchSourceSelection.Default
 
-        assertThat(selection.enabled).containsExactly(
-            CatalogSource.SPOTIFY,
-            CatalogSource.YOUTUBE,
-        )
-        assertThat(selection.enabled).doesNotContain(CatalogSource.YOUTUBE_MUSIC)
+        assertThat(selection.enabled).containsExactly(CatalogSource.SPOTIFY)
+        assertThat(selection.activeCatalogs).containsExactlyElementsIn(CatalogSource.entries)
+        assertThat(SearchSourceSelection(emptySet()).activeCatalogs).containsExactly(CatalogSource.YOUTUBE)
         assertThat(selection.isPinned).isFalse()
     }
 
@@ -23,8 +21,8 @@ class SearchContractTest {
             isPinned = true,
         )
         val visible = legacy.normalizedVisibleFilters()
-        assertThat(visible.enabled).containsExactly(CatalogSource.SPOTIFY, CatalogSource.YOUTUBE)
-        assertThat(visible.activeCatalogs).containsExactly(CatalogSource.YOUTUBE_MUSIC, CatalogSource.YOUTUBE)
+        assertThat(visible.enabled).containsExactly(CatalogSource.SPOTIFY)
+        assertThat(visible.activeCatalogs).containsExactlyElementsIn(CatalogSource.entries)
         assertThat(visible.isPinned).isTrue()
         assertThat(legacy.enabled).contains(CatalogSource.YOUTUBE_MUSIC)
         assertThat(visible.normalizedVisibleFilters()).isEqualTo(visible)

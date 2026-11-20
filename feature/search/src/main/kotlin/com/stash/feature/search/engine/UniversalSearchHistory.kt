@@ -51,6 +51,7 @@ internal class UniversalSearchHistory @Inject constructor(
                     entry.subtitle?.let { put("subtitle", JsonPrimitive(it)) }
                     entry.resultType?.let { put("resultType", JsonPrimitive(it.name)) }
                     entry.artworkUrl?.let { put("artworkUrl", JsonPrimitive(it)) }
+                    entry.browseIdentity?.let { put("browseId", JsonPrimitive(it.catalogId)) }
                     entry.resultIdentity?.let {
                         put("source", JsonPrimitive(it.source.name))
                         put("catalogId", JsonPrimitive(it.catalogId))
@@ -73,8 +74,10 @@ private fun decodeHistory(raw: String): List<RecentSearchItem> {
         val id = field("catalogId") ?: return@mapNotNull null
         val type = field("resultType")?.let { name -> SearchResultType.entries.find { it.name == name } }
             ?: legacyNavigationType(source, id)
+        val browse = field("browseId")?.takeIf { source == CatalogSource.SPOTIFY }
+            ?.let { CatalogIdentity(CatalogSource.YOUTUBE_MUSIC, it) }
         resultHistoryItem(label, field("subtitle"), CatalogIdentity(source, id, field("catalogUri")),
-            type, field("artworkUrl"))
+            type, field("artworkUrl"), browse)
     }
 }
 
@@ -113,6 +116,7 @@ internal fun resultHistoryItem(
     identity: CatalogIdentity,
     type: SearchResultType? = null,
     artworkUrl: String? = null,
+    browseIdentity: CatalogIdentity? = null,
 ) = RecentSearchItem(
     id = "result:${identity.source.name}:${identity.catalogId}",
     kind = RecentSearchKind.RESULT,
@@ -121,4 +125,5 @@ internal fun resultHistoryItem(
     resultIdentity = identity,
     resultType = type,
     artworkUrl = artworkUrl,
+    browseIdentity = browseIdentity,
 )

@@ -34,7 +34,7 @@ class UniversalSearchPersistenceTest {
     private val legacy = RecentSearchesStore(context)
 
     @Test
-    fun `two visible filters are transient by default and pinned empty selection round trips`() = runBlocking {
+    fun `music filter is transient by default and its pinned off state round trips`() = runBlocking {
         val prefs = SearchSourcePreferences(context)
         prefs.save(SearchSourceSelection.Default)
         val scopes = mutableListOf<CoroutineScope>()
@@ -49,21 +49,24 @@ class UniversalSearchPersistenceTest {
         }
         try {
             val first = session()
-            first.onSourceToggled(YOUTUBE)
-            assertEquals(setOf(SPOTIFY), first.state.value.selection.enabled)
+            first.onSourceToggled(SPOTIFY)
+            assertEquals(emptySet<CatalogSource>(), first.state.value.selection.enabled)
+            assertEquals(setOf(YOUTUBE), first.state.value.selection.activeCatalogs)
             assertEquals(SearchSourceSelection.Default, session().state.value.selection)
             first.onPinToggled()
+            assertEquals(SearchSourceSelection(emptySet(), true), session().state.value.selection)
+            first.onSourceToggled(SPOTIFY)
             assertEquals(SearchSourceSelection(setOf(SPOTIFY), true), session().state.value.selection)
-            assertEquals(setOf(YOUTUBE_MUSIC), session().state.value.selection.activeCatalogs)
+            assertEquals(CatalogSource.entries.toSet(), session().state.value.selection.activeCatalogs)
             first.onSourceToggled(SPOTIFY)
             scopes.first().cancel()
             val reopened = session()
             assertEquals(SearchSourceSelection(emptySet(), true), reopened.state.value.selection)
             reopened.onRestoreDefaultSources()
-            assertEquals(SearchSourceSelection(setOf(SPOTIFY, YOUTUBE), true), session().state.value.selection)
+            assertEquals(SearchSourceSelection(setOf(SPOTIFY), true), session().state.value.selection)
             reopened.onSourceToggled(SPOTIFY)
             reopened.onPinToggled()
-            assertEquals(SearchSourceSelection(setOf(YOUTUBE), false), reopened.state.value.selection)
+            assertEquals(SearchSourceSelection(emptySet(), false), reopened.state.value.selection)
             assertEquals(SearchSourceSelection.Default, session().state.value.selection)
             reopened.onRestoreDefaultSources()
             assertEquals(SearchSourceSelection.Default, reopened.state.value.selection)
@@ -81,7 +84,9 @@ class UniversalSearchPersistenceTest {
             prefs.save(SearchSourceSelection(setOf(YOUTUBE_MUSIC), true))
             assertEquals(SearchSourceSelection(setOf(SPOTIFY), true), prefs.read())
             prefs.save(SearchSourceSelection(setOf(YOUTUBE_MUSIC, YOUTUBE), true))
-            assertEquals(SearchSourceSelection(setOf(SPOTIFY, YOUTUBE), true), prefs.read())
+            assertEquals(SearchSourceSelection(setOf(SPOTIFY), true), prefs.read())
+            prefs.save(SearchSourceSelection(setOf(YOUTUBE), true))
+            assertEquals(SearchSourceSelection(emptySet(), true), prefs.read())
         } finally {
             prefs.save(SearchSourceSelection.Default)
             prefs.read()
@@ -129,6 +134,11 @@ class UniversalSearchPersistenceTest {
             SearchResultType.ALBUM, "https://example.test/rare.jpg",
         )
         history.record(release)
-        assertEquals(listOf(release, old), UniversalSearchHistory(context, legacy).recent.first())
+        val spotify = resultHistoryItem(
+            "New single", "Artist", CatalogIdentity(SPOTIFY, "spotify-id", "spotify:album:spotify-id"),
+            SearchResultType.ALBUM, browseIdentity = CatalogIdentity(YOUTUBE_MUSIC, "MPREb_verified"),
+        )
+        history.record(spotify)
+        assertEquals(listOf(spotify, release, old), UniversalSearchHistory(context, legacy).recent.first())
     }
 }

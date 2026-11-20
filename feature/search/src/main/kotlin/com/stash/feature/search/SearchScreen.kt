@@ -124,7 +124,7 @@ import com.stash.feature.search.contract.SourceSearchState
 import com.stash.feature.search.contract.UniversalSearchActions
 import com.stash.feature.search.contract.UniversalSearchResult
 import com.stash.feature.search.contract.UniversalSearchUiState
-import com.stash.feature.search.engine.exactPlaybackVideoId
+import com.stash.feature.search.engine.canPlayFromSearch
 import java.text.NumberFormat
 import java.util.Locale
 import kotlinx.coroutines.flow.collectLatest
@@ -199,12 +199,21 @@ private enum class SearchCategory(val label: Int) {
     SONGS(R.string.nostop_search_songs),
 }
 
-private val UniversalSearchResult.category: SearchCategory
+private val SearchCategory.musicType: SearchResultType?
+    get() = when (this) {
+        SearchCategory.ARTISTS -> SearchResultType.ARTIST
+        SearchCategory.ALBUMS -> SearchResultType.ALBUM
+        SearchCategory.SONGS -> SearchResultType.TRACK
+        SearchCategory.TOP, SearchCategory.YOUTUBE -> null
+    }
+
+private val UniversalSearchResult.category: SearchCategory?
     get() = when {
         identity.source == CatalogSource.YOUTUBE -> SearchCategory.YOUTUBE
         type == SearchResultType.ARTIST -> SearchCategory.ARTISTS
         type == SearchResultType.ALBUM -> SearchCategory.ALBUMS
-        else -> SearchCategory.SONGS
+        type == SearchResultType.TRACK -> SearchCategory.SONGS
+        else -> null
     }
 
 @Composable
@@ -222,21 +231,30 @@ internal fun UniversalSearchContent(
     val keyboard = LocalSoftwareKeyboardController.current
     val active = state.query.isNotBlank()
     var selectedCategory by rememberSaveable { mutableStateOf(SearchCategory.TOP) }
-    val category = if (active) selectedCategory else SearchCategory.TOP
+    var listQuery by rememberSaveable { mutableStateOf(state.query) }
+    val category = if (active && listQuery == state.query) selectedCategory else SearchCategory.TOP
     var sourceSheetOpen by rememberSaveable { mutableStateOf(false) }
     var detailsKey by remember(state.query) { mutableStateOf<String?>(null) }
     var detailsArtwork by remember(state.query) { mutableStateOf<String?>(null) }
     val ranked = state.orderedResults
-    val grouped = remember(ranked) { ranked.groupBy { it.category } }
-    val featured = ranked.firstOrNull()
-    val topSections = remember(grouped, featured) {
+    val music = remember(ranked) { ranked.filter { it.category?.musicType != null } }
+    val grouped = remember(music) { music.groupBy { checkNotNull(it.category) } }
+    val featured = music.firstOrNull()
+    val spotifyData = state.sourceStates[CatalogSource.SPOTIFY] as? SourceSearchState.Data
+    val topSections = remember(grouped, featured, spotifyData?.nextOffsets) {
         grouped.mapValues { (_, results) ->
             val remaining = if (results.firstOrNull() == featured) results.drop(1) else results
             remaining.take(3)
-        }.filterValues { it.isNotEmpty() }
+        }.filter { (section, preview) ->
+            preview.isNotEmpty() || section.musicType in spotifyData?.nextOffsets.orEmpty()
+        }
     }
-    val visibleResults = remember(ranked, category) {
-        if (category == SearchCategory.TOP) ranked else grouped[category].orEmpty()
+    val visibleResults = remember(ranked, music, category) {
+        when (category) {
+            SearchCategory.TOP -> music
+            SearchCategory.YOUTUBE -> ranked.filter { it.identity.source == CatalogSource.YOUTUBE }
+            else -> grouped[category].orEmpty()
+        }
     }
 
     fun openSources() {
@@ -257,6 +275,18 @@ internal fun UniversalSearchContent(
     val resultKeys by rememberUpdatedState(remember(visibleResults) {
         visibleResults.mapTo(hashSetOf()) { it.stableKey }
     })
+    val musicType = category.musicType
+    val nextOffset = spotifyData?.nextOffsets?.get(musicType)
+    val lastKey = visibleResults.lastOrNull()?.stableKey
+    val pageFailed = musicType in spotifyData?.pageErrors.orEmpty()
+    LaunchedEffect(state.query, musicType, nextOffset, lastKey, pageFailed) {
+        if (musicType == null || nextOffset == null || pageFailed) return@LaunchedEffect
+        snapshotFlow {
+            lastKey == null || list.layoutInfo.visibleItemsInfo.any { it.key == lastKey }
+        }.collect { reachedEnd ->
+            if (reachedEnd) actions.onLoadMore(query, musicType)
+        }
+    }
     LaunchedEffect(list, actions, lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             try {
@@ -276,7 +306,6 @@ internal fun UniversalSearchContent(
             }
         }
     }
-    var listQuery by rememberSaveable { mutableStateOf(state.query) }
     LaunchedEffect(state.query) {
         if (!active || listQuery != state.query) selectedCategory = SearchCategory.TOP
         if (listQuery != state.query) {
@@ -314,28 +343,19 @@ internal fun UniversalSearchContent(
                         return@LazyColumn
                     }
                     val enabled = state.selection.activeCatalogs
-                    if (category == SearchCategory.YOUTUBE && CatalogSource.YOUTUBE !in enabled) {
-                        item("youtubeOff") {
-                            SearchMessage(R.string.universal_search_youtube_disabled)
-                        }
+                    if (category != SearchCategory.YOUTUBE && CatalogSource.SPOTIFY !in enabled) {
+                        item("noSources") { SearchMessage(R.string.universal_search_music_disabled) }
                         return@LazyColumn
                     }
-                    val sources = when (category) {
-                        SearchCategory.TOP -> enabled
-                        SearchCategory.YOUTUBE -> setOf(CatalogSource.YOUTUBE)
-                        else -> enabled - CatalogSource.YOUTUBE
-                    }
-                    if (sources.isEmpty()) {
-                        item("noSources") {
-                            SearchMessage(if (enabled.isEmpty()) R.string.universal_search_select_source
-                                else R.string.universal_search_music_disabled)
+                    val sources = if (category == SearchCategory.YOUTUBE) listOf(CatalogSource.YOUTUBE) else
+                        listOf(CatalogSource.SPOTIFY, CatalogSource.YOUTUBE_MUSIC).filter {
+                            state.sourceStates[it] != SourceSearchState.Idle && state.sourceStates[it] != null
                         }
-                        return@LazyColumn
-                    }
 
                     val statuses = sources.map { state.sourceStates[it] ?: SourceSearchState.Idle }
-                    val finished = statuses.none { it is SourceSearchState.Loading || it == SourceSearchState.Idle }
-                    if (visibleResults.isEmpty() && finished) {
+                    val finished = statuses.isNotEmpty() &&
+                        statuses.none { it is SourceSearchState.Loading || it == SourceSearchState.Idle }
+                    if (visibleResults.isEmpty() && finished && nextOffset == null) {
                         when {
                             statuses.any { it is SourceSearchState.Error } ->
                                 item("error") { SearchMessage(R.string.nostop_search_failed) }
@@ -383,6 +403,18 @@ internal fun UniversalSearchContent(
                     } else {
                         items(visibleResults, key = UniversalSearchResult::stableKey, contentType = { "result" }) {
                             row(it, false)
+                        }
+                    }
+                    if (musicType != null && musicType in spotifyData?.loadingPages.orEmpty()) {
+                        item("loadingMore") {
+                            SourceStatus(CatalogSource.SPOTIFY, SourceSearchState.Loading(state.query), actions)
+                        }
+                    } else if (musicType != null && pageFailed) {
+                        item("pageError") {
+                            SourceStatus(
+                                CatalogSource.SPOTIFY, SourceSearchState.Error(state.query, "Page failed", true), actions,
+                                onRetry = { actions.onLoadMore(state.query, musicType) },
+                            )
                         }
                     }
                 }
@@ -555,7 +587,12 @@ private fun SearchCategories(selected: SearchCategory, onSelect: (SearchCategory
 }
 
 @Composable
-private fun SourceStatus(source: CatalogSource, state: SourceSearchState, actions: UniversalSearchActions) {
+private fun SourceStatus(
+    source: CatalogSource,
+    state: SourceSearchState,
+    actions: UniversalSearchActions,
+    onRetry: () -> Unit = { actions.onRetrySource(source) },
+) {
     val sourceName = stringResource(source.nameRes)
     val statusRes = when (state) {
         is SourceSearchState.Loading -> R.string.universal_search_loading_source
@@ -582,7 +619,7 @@ private fun SourceStatus(source: CatalogSource, state: SourceSearchState, action
             SourceStatusAction(
                 R.string.universal_search_retry_short,
                 stringResource(R.string.universal_search_retry_source, sourceName),
-            ) { actions.onRetrySource(source) }
+            ) { onRetry() }
         }
     }
 }
@@ -612,7 +649,7 @@ private fun SearchMessage(res: Int, compact: Boolean = false) {
 internal val UniversalSearchResult.primarySearchAction: SearchResultAction?
     get() = when {
         supports(SearchResultAction.NAVIGATE) -> SearchResultAction.NAVIGATE
-        exactPlaybackVideoId() != null -> SearchResultAction.PLAY
+        canPlayFromSearch() -> SearchResultAction.PLAY
         else -> null
     }
 
@@ -630,7 +667,10 @@ private fun ResultRow(
     var preferredLoaded by remember(preferredArtwork) { mutableStateOf(false) }
     val source = stringResource(result.identity.source.nameRes)
     val unavailable = stringResource(R.string.universal_search_catalog_only)
-    val loading = stringResource(R.string.universal_search_play_loading)
+    val loading = stringResource(
+        if (action == SearchResultAction.NAVIGATE) R.string.universal_search_details_loading
+        else R.string.universal_search_play_loading,
+    )
     val detailsLabel = stringResource(R.string.universal_search_result_options)
     val haptics = LocalHapticFeedback.current
     val openDetails by rememberUpdatedState(onDetails)
@@ -729,8 +769,13 @@ private fun ResultRow(
 @Composable
 private fun UniversalSearchResult.featuredLabel(source: String): String =
     if (type == SearchResultType.ARTIST || type == SearchResultType.ALBUM) {
-        stringResource(type.labelRes)
+        stringResource(resultLabelRes)
     } else source
+
+internal val UniversalSearchResult.resultLabelRes: Int
+    get() = if (type == SearchResultType.ALBUM && release?.type.equals("single", ignoreCase = true)) {
+        R.string.universal_search_single
+    } else type.labelRes
 
 internal val UniversalSearchResult.musicMetadata: List<String>
     get() = listOfNotNull(
