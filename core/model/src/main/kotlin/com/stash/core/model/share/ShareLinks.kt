@@ -32,7 +32,6 @@ object ShareConfig {
     val COVER_HOSTS: List<String> = listOf(
         "i.scdn.co", "mosaic.scdn.co",
         "i.ytimg.com", "lh3.googleusercontent.com", "yt3.googleusercontent.com", "yt3.ggpht.com",
-        "lastfm.freetls.fastly.net", "lastfm-img.freetls.fastly.net",
         "static.qobuz.com", "c.saavncdn.com",
         // Deezer: where the Worker finds a song page's cover by ISRC.
         "cdn-images.dzcdn.net", "e-cdns-images.dzcdn.net",

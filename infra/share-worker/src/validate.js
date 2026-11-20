@@ -9,7 +9,6 @@ export const MAX_TRACKS = 2000;
 export const COVER_HOSTS = [
     "i.scdn.co", "mosaic.scdn.co", // Spotify
     "i.ytimg.com", "lh3.googleusercontent.com", "yt3.googleusercontent.com", "yt3.ggpht.com", // YouTube
-    "lastfm.freetls.fastly.net", "lastfm-img.freetls.fastly.net", // Last.fm
     "static.qobuz.com", "c.saavncdn.com", // Qobuz, JioSaavn
     // Deezer: api.deezer.com's album.cover_xl is on cdn-images (checked 2026-10-03); e-cdns-images is its older name,
     // still serving the same paths. Song-link previews fall back to Deezer by ISRC (src/art.js).
