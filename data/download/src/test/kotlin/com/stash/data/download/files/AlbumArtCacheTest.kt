@@ -135,7 +135,7 @@ class AlbumArtCacheTest {
         assertEquals("https://lh3.googleusercontent.com/abc=w1200-h1200-l90-rj", requests.single().url.toString())
     }
 
-    // Qobuz, Last.fm and Spotify embeds used to be whatever was stored (600, 770, 640). They now
+    // Qobuz and Spotify embeds used to be whatever was stored (600, 640). They now
     // ask for the original and the scaler fits it within 1200; the stored URL stays the floor.
 
     @Test fun `qobuz embeds the max variant instead of the stored 600`() = runTest {
@@ -152,25 +152,6 @@ class AlbumArtCacheTest {
         val file = subject.resolveArt(stubTrack(albumArtUrl = QOBUZ_600))
         assertEquals(listOf(QOBUZ_MAX, QOBUZ_600), requests)
         assertEquals(60L, file!!.length())
-    }
-
-    @Test fun `a lastfm original smaller than the stored 770 embeds the stored url`() = runTest {
-        val original = ByteArray(35) { 3 }
-        val rendered770 = ByteArray(77) { 4 }
-        longSideOf = { if (it.size == 35) 350 else 770 }
-        val requests = stubUrls(mapOf(LASTFM_ORIG to (200 to original), LASTFM_770 to (200 to rendered770)))
-        val file = subject.resolveArt(stubTrack(albumArtUrl = LASTFM_770))
-        assertEquals(listOf(LASTFM_ORIG, LASTFM_770), requests)
-        assertEquals(77L, file!!.length())
-    }
-
-    @Test fun `a lastfm original at least the stored size is embedded`() = runTest {
-        val original = ByteArray(120) { 5 }
-        longSideOf = { 1200 }
-        val requests = stubUrls(mapOf(LASTFM_ORIG to (200 to original), LASTFM_770 to (200 to ByteArray(7))))
-        val file = subject.resolveArt(stubTrack(albumArtUrl = LASTFM_770))
-        assertEquals(listOf(LASTFM_ORIG), requests)
-        assertEquals(120L, file!!.length())
     }
 
     // R2: one failed attempt at the bigger variant must not make the stored cover the album's
@@ -284,7 +265,5 @@ class AlbumArtCacheTest {
     private companion object {
         const val QOBUZ_600 = "https://static.qobuz.com/images/covers/25/40/0060254794025_600.jpg"
         const val QOBUZ_MAX = "https://static.qobuz.com/images/covers/25/40/0060254794025_max.jpg"
-        const val LASTFM_770 = "https://lastfm-img.freetls.fastly.net/i/u/770x0/c9ebed7e766b45dabedaa8ee759b5181.jpg"
-        const val LASTFM_ORIG = "https://lastfm-img.freetls.fastly.net/i/u/ar0/c9ebed7e766b45dabedaa8ee759b5181.jpg"
     }
 }

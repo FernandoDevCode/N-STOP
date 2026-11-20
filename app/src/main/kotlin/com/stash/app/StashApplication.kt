@@ -18,7 +18,6 @@ import com.stash.core.data.diagnostics.CrashReporter
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.StashMixRecipeDao
 import com.stash.core.data.db.dao.TrackDao
-import com.stash.core.data.lastfm.LastFmScrobbler
 import com.stash.core.data.youtube.YouTubeHistoryScrobbler
 import com.stash.core.data.mix.StashMixDefaults
 import com.stash.core.data.prefs.DownloadNetworkPreference
@@ -34,10 +33,7 @@ import com.stash.core.data.sync.workers.ArtistImageBackfillWorker
 import com.stash.core.data.sync.workers.AutoSaveScrobbler
 import com.stash.core.data.sync.workers.QualityInfoBackfillWorker
 import com.stash.core.data.sync.workers.LoudnessBackfillWorker
-import com.stash.core.data.sync.workers.StashDiscoveryWorker
 import com.stash.core.data.sync.workers.StashMixRefreshWorker
-import com.stash.core.data.sync.workers.TagEnrichmentWorker
-import com.stash.core.data.sync.workers.TrackInfoEnrichmentWorker
 import com.stash.core.data.sync.workers.UpdateCheckWorker
 import com.stash.core.media.streaming.KennyyHealthProbe
 import com.stash.core.media.streaming.SquidCookieAutoRefresher
@@ -93,9 +89,6 @@ class StashApplication : Application(), Configuration.Provider {
     lateinit var listeningRecorder: ListeningRecorder
 
     @Inject
-    lateinit var lastFmScrobbler: LastFmScrobbler
-
-    @Inject
     lateinit var discordRpcCoordinator: com.stash.core.data.discord.DiscordRpcCoordinator
 
     @Inject
@@ -127,14 +120,6 @@ class StashApplication : Application(), Configuration.Provider {
 
     @Inject
     lateinit var stashMixPreference: com.stash.core.data.prefs.StashMixPreference
-
-    /**
-     * Issue #255 — Last.fm-as-a-source lifecycle owner. Startup reconcile
-     * activates/deactivates the "Recommended by Last.fm" recipe to match
-     * the current session + preference state.
-     */
-    @Inject
-    lateinit var lastFmRecommendationSource: com.stash.core.data.mix.LastFmRecommendationSource
 
     @Inject
     lateinit var downloadNetworkPreference: DownloadNetworkPreference
@@ -497,6 +482,24 @@ class StashApplication : Application(), Configuration.Provider {
         // first toggle), the built-in recipes/playlists stay inactive,
         // and Home/Library don't surface them.
         applicationScope.launch {
+            // Retire the legacy service-generated recipe without deleting personal library data.
+            try {
+                stashMixRecipeDao.getByName("Recommended by Last.fm")?.let { recipe ->
+                    stashMixRecipeDao.setActive(recipe.id, false)
+                    recipe.playlistId?.let { playlistDao.setActiveById(it, false) }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("StashStartup", "Could not retire legacy recommendation recipe", e)
+            }
+            // Cancel previously persisted Last.fm enrichment work before it can run.
+            val workManager = WorkManager.getInstance(applicationContext)
+            workManager.cancelUniqueWork("stash_tag_enrichment")
+            workManager.cancelUniqueWork("stash_track_info_enrichment")
+            workManager.cancelUniqueWork("stash_track_info_enrichment_oneshot")
+            workManager.cancelUniqueWork("stash_discovery")
+            workManager.cancelUniqueWork("stash_discovery_oneshot")
             val stashMixesEnabled = stashMixPreference.current()
             if (!stashMixesEnabled) {
                 // Best-effort cancel of any periodic work left over from an
@@ -520,28 +523,12 @@ class StashApplication : Application(), Configuration.Provider {
             } catch (e: Exception) {
                 Log.w("StashStartup", "Stash Mix seed/retune failed", e)
             }
-            // Issue #255: activate/deactivate the "Recommended by Last.fm"
-            // recipe BEFORE the one-shot refresh below, so a freshly
-            // reconciled recipe is picked up by that same run instead of
-            // waiting for tomorrow's periodic cycle.
 
             // Fire a one-shot refresh on first launch so mixes populate
             // without waiting for the 24-hour periodic cycle. Subsequent
             // one-shots are safe (unique-work policy = REPLACE).
             StashMixRefreshWorker.enqueueOneTime(this@StashApplication)
             StashMixRefreshWorker.schedulePeriodic(this@StashApplication)
-            val mode = downloadNetworkPreference.current()
-            TagEnrichmentWorker.schedulePeriodic(this@StashApplication, mode)
-            StashDiscoveryWorker.schedulePeriodic(this@StashApplication, mode)
-            TrackInfoEnrichmentWorker.schedulePeriodic(this@StashApplication)
-            // First-launch one-shot so users with a fresh install don't
-            // wait 24h for the first enrichment pass. KEEP policy means
-            // a re-launch before the worker completes doesn't re-enqueue.
-            WorkManager.getInstance(applicationContext).enqueueUniqueWork(
-                "stash_track_info_enrichment_oneshot",
-                androidx.work.ExistingWorkPolicy.KEEP,
-                androidx.work.OneTimeWorkRequestBuilder<TrackInfoEnrichmentWorker>().build(),
-            )
         }
         // Repair missing album_art_url on tracks downloaded before 0.5.3 —
         // primarily Stash Discover candidates whose match pipeline surfaced

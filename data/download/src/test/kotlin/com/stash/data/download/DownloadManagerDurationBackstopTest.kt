@@ -4,8 +4,6 @@ import com.google.common.truth.Truth.assertThat
 import com.stash.core.data.audio.AudioDurationExtractor
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackDao
-import com.stash.core.data.lastfm.LastFmApiClient
-import com.stash.core.data.lastfm.LastFmCredentials
 import com.stash.core.model.Track
 import com.stash.data.download.files.AlbumArtCache
 import com.stash.data.download.files.FileOrganizer
@@ -76,8 +74,6 @@ class DownloadManagerDurationBackstopTest {
     private val ytLibraryCanonicalizer: YtLibraryCanonicalizer = mockk(relaxed = true)
     private val trackDao: TrackDao = mockk(relaxed = true)
     private val playlistDao: PlaylistDao = mockk(relaxed = true)
-    private val lastFmApiClient: LastFmApiClient = mockk(relaxed = true)
-    private val lastFmCredentials: LastFmCredentials = mockk(relaxed = true)
     private val losslessRegistry: LosslessSourceRegistry = mockk()
     private val losslessUrlDownloader: LosslessUrlDownloader = mockk()
     private val losslessPrefs: LosslessSourcePreferences = mockk(relaxed = true)
@@ -103,8 +99,6 @@ class DownloadManagerDurationBackstopTest {
         ytLibraryCanonicalizer = ytLibraryCanonicalizer,
         trackDao = trackDao,
         playlistDao = playlistDao,
-        lastFmApiClient = lastFmApiClient,
-        lastFmCredentials = lastFmCredentials,
         losslessRegistry = losslessRegistry,
         losslessUrlDownloader = losslessUrlDownloader,
         losslessPrefs = losslessPrefs,

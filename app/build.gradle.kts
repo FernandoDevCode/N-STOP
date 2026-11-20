@@ -44,16 +44,6 @@ val hasReleaseSigning = releaseStoreFilePath != null &&
     releaseKeyAlias != null &&
     releaseKeyPassword != null
 
-// ── Last.fm API credentials ────────────────────────────────────────────────
-//
-// Read from `local.properties` (gitignored) or env vars (CI). Users who want
-// Last.fm scrobbling need to register a Last.fm API account at
-// https://www.last.fm/api/account/create and drop the key/secret into
-// local.properties as:
-//   lastfm.apiKey=...
-//   lastfm.apiSecret=...
-// Missing credentials are NOT an error — the app builds + runs normally, the
-// Last.fm UI just shows "Not configured" and the scrobbler no-ops.
 val localPropertiesFile = rootProject.file("local.properties")
 val localProperties = Properties().apply {
     if (localPropertiesFile.exists()) {
@@ -62,21 +52,6 @@ val localProperties = Properties().apply {
 }
 val fanartApiKey: String =
     localProperties.getProperty("fanart.apiKey") ?: System.getenv("FANART_API_KEY").orEmpty()
-
-val lastFmApiKey: String =
-    localProperties.getProperty("lastfm.apiKey") ?: System.getenv("LASTFM_API_KEY").orEmpty()
-val lastFmApiSecret: String =
-    localProperties.getProperty("lastfm.apiSecret") ?: System.getenv("LASTFM_API_SECRET").orEmpty()
-// Optional comma-separated pool of EXTRA api keys used only for unsigned read
-// endpoints (tag/similar/etc.) to spread load and raise the shared-key rate
-// ceiling. No secret needed — reads are unsigned. Auth/scrobble always use the
-// primary key above. Empty by default.
-val lastFmExtraApiKeys: String =
-    localProperties.getProperty("lastfm.extraApiKeys") ?: System.getenv("LASTFM_EXTRA_API_KEYS").orEmpty()
-// Optional Stash Last.fm proxy Worker base URL. When set, generic read lookups
-// route through it (the Worker holds the server key + shared cache), decoupling
-// Last.fm load from user count. Empty = app talks to Last.fm directly.
-val lastFmProxyUrl: String = "" // Retired Stash proxy cannot be re-enabled by local or CI secrets.
 
 // ── Link Stash on the web (sync-v1) ────────────────────────────────────────
 //
@@ -136,14 +111,7 @@ android {
         versionName = "0.9.182-sonora-search-quality"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // AppAuth redirect scheme removed -- Spotify now uses sp_dc cookie auth
-        // Last.fm API credentials exposed via BuildConfig for the app-level
-        // Hilt module to inject into LastFmApiClient. Empty strings are
-        // valid — the Settings UI just disables the connect button.
         buildConfigField("String", "FANART_API_KEY", "\"$fanartApiKey\"")
-        buildConfigField("String", "LASTFM_API_KEY", "\"$lastFmApiKey\"")
-        buildConfigField("String", "LASTFM_API_SECRET", "\"$lastFmApiSecret\"")
-        buildConfigField("String", "LASTFM_EXTRA_API_KEYS", "\"$lastFmExtraApiKeys\"")
-        buildConfigField("String", "LASTFM_PROXY_URL", "\"$lastFmProxyUrl\"")
         // v0.9.13: TipJarRepository fetches the public supporters JSON from
         // this URL on Home foreground (cache-aware, ~15 min refresh). Edit
         // the JSON and push to update the supporter list without an APK

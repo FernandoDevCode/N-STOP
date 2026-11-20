@@ -50,7 +50,6 @@ class LikePreferences @Inject constructor(
     private val heartDefaultYtMusicKey = booleanPreferencesKey("heart_default_ytmusic")
     private val mirrorLikesSpotifyKey = booleanPreferencesKey("mirror_likes_spotify")
     private val mirrorLikesYtMusicKey = booleanPreferencesKey("mirror_likes_youtube")
-    private val mirrorLikesLastFmKey = booleanPreferencesKey("mirror_likes_lastfm")
 
     val autoSaveEnabled: Flow<Boolean> =
         context.likeDataStore.data.map { it[autoSaveEnabledKey] ?: false }
@@ -93,14 +92,6 @@ class LikePreferences @Inject constructor(
     val mirrorLikesYtMusic: Flow<Boolean> =
         context.likeDataStore.data.map { it[mirrorLikesYtMusicKey] ?: false }
 
-    /**
-     * Mirror hearts to Last.fm loved tracks. Off by default like the others —
-     * mirroring writes to an account the user did not ask us to touch until they
-     * say so.
-     */
-    val mirrorLikesLastFm: Flow<Boolean> =
-        context.likeDataStore.data.map { it[mirrorLikesLastFmKey] ?: false }
-
     suspend fun autoSaveEnabledNow(): Boolean = autoSaveEnabled.first()
     suspend fun autoSaveThresholdNow(): Int = autoSaveThreshold.first()
     suspend fun heartDefaultStashNow(): Boolean = heartDefaultStash.first()
@@ -108,7 +99,6 @@ class LikePreferences @Inject constructor(
     suspend fun heartDefaultYtMusicNow(): Boolean = heartDefaultYtMusic.first()
     suspend fun mirrorLikesSpotifyNow(): Boolean = mirrorLikesSpotify.first()
     suspend fun mirrorLikesYtMusicNow(): Boolean = mirrorLikesYtMusic.first()
-    suspend fun mirrorLikesLastFmNow(): Boolean = mirrorLikesLastFm.first()
 
     suspend fun setAutoSaveEnabled(value: Boolean) {
         context.likeDataStore.edit { it[autoSaveEnabledKey] = value }
@@ -138,7 +128,4 @@ class LikePreferences @Inject constructor(
         context.likeDataStore.edit { it[mirrorLikesYtMusicKey] = value }
     }
 
-    suspend fun setMirrorLikesLastFm(value: Boolean) {
-        context.likeDataStore.edit { it[mirrorLikesLastFmKey] = value }
-    }
 }

@@ -25,8 +25,6 @@ class SizedArtBitmapLoaderTest {
 
     private val qobuz600 = "https://static.qobuz.com/images/covers/25/40/0060254794025_600.jpg"
     private val qobuzMax = "https://static.qobuz.com/images/covers/25/40/0060254794025_max.jpg"
-    private val lastFm770 = "https://lastfm-img.freetls.fastly.net/i/u/770x0/c9ebed7e766b45dabedaa8ee759b5181.jpg"
-    private val lastFmOrig = "https://lastfm-img.freetls.fastly.net/i/u/ar0/c9ebed7e766b45dabedaa8ee759b5181.jpg"
     private val yt60 = "https://yt3.googleusercontent.com/abc=w60-h60-l90-rj"
     private val yt1024 = "https://yt3.googleusercontent.com/abc=w1024-h1024-l90-rj"
 
@@ -97,16 +95,6 @@ class SizedArtBitmapLoaderTest {
     }
 
     @Test
-    fun `a bigger variant smaller than the stored cover falls back to the stored url`() {
-        // Sinnerman: Last.fm's original is 350px; its stored 770x0 is the CDN's cleaner upscale.
-        val stored = bitmap(770)
-        val fake = FakeLoader { Futures.immediateFuture(if (it == lastFmOrig) bitmap(350) else stored) }
-        val result = get(loader(fake).loadBitmap(Uri.parse(lastFm770)))
-        assertThat(result).isSameInstanceAs(stored)
-        assertThat(fake.loaded).containsExactly(lastFmOrig, lastFm770).inOrder()
-    }
-
-    @Test
     fun `when both fail the error is reported, so the notification just has no art as before`() {
         val fake = FakeLoader { Futures.immediateFailedFuture(IOException("offline")) }
         val future = loader(fake).loadBitmap(Uri.parse(qobuz600))
@@ -158,15 +146,6 @@ class SizedArtBitmapLoaderTest {
         assertThat(autoTileArtUri(mosaic).toString()).isEqualTo(mosaic)
         assertThat(autoTileArtUri(null)).isNull()
         assertThat(autoTileArtUri(qobuz600).toString()).isEqualTo(qobuz600)
-    }
-
-    @Test
-    fun `a decode above half the cap may be a sampled bigger original and is kept`() {
-        // 700px under a 1024 power-of-two cap: a 700px original, or a 1400px one sampled by 2.
-        val fake = FakeLoader { Futures.immediateFuture(bitmap(if (it == lastFmOrig) 700 else 770)) }
-        val result = get(loader(fake).loadBitmap(Uri.parse(lastFm770)))
-        assertThat(result.width).isEqualTo(700)
-        assertThat(fake.loaded).containsExactly(lastFmOrig)
     }
 
     // ── M1: items that PLAY keep the stored artwork; only listed tiles are sized ─────────────

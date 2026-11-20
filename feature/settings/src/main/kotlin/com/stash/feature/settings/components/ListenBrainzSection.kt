@@ -16,7 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 
-/** Connection state for the ListenBrainz section. Mirrors LastFmAuthState's shape. */
+/** Connection state for the ListenBrainz section. Models token-based authentication. */
 sealed interface ListenBrainzState {
     data object Disconnected : ListenBrainzState
     data object Validating : ListenBrainzState

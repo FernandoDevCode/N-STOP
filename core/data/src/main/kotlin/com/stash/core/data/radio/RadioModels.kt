@@ -6,7 +6,7 @@ package com.stash.core.data.radio
  * [videoId] is known for artist-radio picks (they come from a YT `popular`
  * list) and null for song-radio similar-track picks (resolved via
  * `searchCanonicalVideoId` at emit time). [weight] is the source artist's
- * relative frequency (seed share, or a neighbor's Last.fm match score); the
+ * relative frequency (seed share, or a related artist's weight); the
  * interleaver uses it to decide how often this candidate's artist appears.
  */
 data class RadioCandidate(
@@ -16,6 +16,8 @@ data class RadioCandidate(
     val weight: Float,
     val thumbnailUrl: String? = null,
 )
+
+data class RadioNeighbor(val name: String, val match: Float)
 
 /** Stable per-station identity for the no-repeat set. */
 internal fun RadioCandidate.identity(): String =
@@ -44,6 +46,6 @@ class RadioSession internal constructor(
      * first widen. Draining it — not re-fetching the same top-N — is the fix for
      * "widen returns the same already-played neighbors."
      */
-    internal val remainingNeighbors: ArrayDeque<com.stash.core.data.lastfm.LastFmSimilarArtist> = ArrayDeque()
+    internal val remainingNeighbors: ArrayDeque<RadioNeighbor> = ArrayDeque()
     internal var neighborsLoaded: Boolean = false
 }

@@ -4,7 +4,6 @@ import com.stash.core.auth.TokenManagerImpl
 import com.stash.core.auth.model.*
 import com.stash.core.auth.spotify.SpotifyAuthManager
 import com.stash.core.auth.youtube.YouTubeCookieHelper
-import com.stash.core.data.lastfm.LastFmCredentials
 import com.stash.data.spotify.SpotifyApiClient
 import com.stash.data.ytmusic.InnerTubeClient
 import com.stash.data.ytmusic.YTMusicApiClient
@@ -15,19 +14,16 @@ import kotlinx.coroutines.sync.withLock
 import okhttp3.OkHttpClient
 import java.io.File
 import java.net.URI
-import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
 /** Native account host. Service auth/refresh and library clients remain the original app code. */
 class DesktopAccounts(directory: File,
     val client: OkHttpClient = OkHttpClient.Builder().callTimeout(40, TimeUnit.SECONDS).followRedirects(false).build(),
     cipher: CredentialCipher = WindowsDpapi,
-    initialLastFmCredentials: LastFmCredentials = loadDesktopLastFmCredentials(),
 ) : AutoCloseable {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val operationLock = Mutex()
     val vault = WindowsTokenStore(directory, cipher)
-    private val lastFmStore = DesktopLastFmStore(directory, cipher)
     private val helper = YouTubeCookieHelper()
     private val spotifyAuth = SpotifyAuthManager(client)
     val tokens = TokenManagerImpl(vault, spotifyAuth, helper, client)
@@ -37,27 +33,13 @@ class DesktopAccounts(directory: File,
     val ready = MutableStateFlow(false)
     val busy = MutableStateFlow<String?>(null)
     val error = MutableStateFlow<String?>(null)
-    val lastFmState = MutableStateFlow<AuthState>(AuthState.NotConnected)
-    val lastFmConfigured = MutableStateFlow(initialLastFmCredentials.isConfigured)
-    val lastFmBlocked = MutableStateFlow(false)
-    val lastFmAuthorizationUrl = MutableStateFlow<String?>(null)
-    private var lastFmCredentials = initialLastFmCredentials
-    private var pendingLastFmToken: String? = null
-    private var lastFmSession: DesktopLastFmSession? = null
 
     init {
         scope.launch {
             try {
                 vault.initialize()
                 vault.errors.value?.let { error.value = it }
-                runCatching { lastFmStore.load() }.onSuccess { session ->
-                    if (session != null) {
-                        lastFmSession = session
-                        lastFmCredentials = LastFmCredentials(session.apiKey, session.apiSecret)
-                        lastFmConfigured.value = true
-                        lastFmState.value = AuthState.Connected(UserInfo(session.username, session.username))
-                    }
-                }.onFailure { lastFmBlocked.value = true; error.value = "Não foi possível abrir a sessão Last.fm. O arquivo foi preservado." }
+
             } catch (_: Exception) { error.value = "Não foi possível abrir o cofre de contas do Windows." }
             finally { ready.value = true }
         }
@@ -102,33 +84,6 @@ class DesktopAccounts(directory: File,
     fun disconnect(service: AuthService) = operation("Desconectando…") {
         innerTube.endSyncSession()
         tokens.clearAuth(service)
-    }
-    fun beginLastFm(apiKey: String = "", apiSecret: String = "") = operation("Preparando autorização Last.fm…") {
-        val credentials = if (apiKey.isNotBlank() || apiSecret.isNotBlank()) LastFmCredentials(apiKey.trim(), apiSecret.trim()) else lastFmCredentials
-        if (!credentials.isConfigured) throw AccountInputException("Configure a chave e o segredo da API Last.fm nesta tela ou no build local.")
-        val token = lastFmClient(client, credentials).getAuthToken().getOrThrow()
-        currentCoroutineContext().ensureActive()
-        lastFmCredentials = credentials
-        lastFmConfigured.value = true
-        pendingLastFmToken = token
-        fun enc(value: String) = URLEncoder.encode(value, Charsets.UTF_8)
-        lastFmAuthorizationUrl.value = "https://www.last.fm/api/auth/?api_key=${enc(credentials.apiKey)}&token=${enc(token)}"
-    }
-    fun finishLastFm() = operation("Concluindo conexão Last.fm…") {
-        val token = pendingLastFmToken ?: throw AccountInputException("Inicie a conexão Last.fm primeiro.")
-        val (username, sessionKey) = lastFmClient(client, lastFmCredentials).getSession(token).getOrThrow()
-        check(username.isNotBlank() && sessionKey.isNotBlank())
-        currentCoroutineContext().ensureActive()
-        val session = DesktopLastFmSession(username, sessionKey, lastFmCredentials.apiKey, lastFmCredentials.apiSecret)
-        lastFmStore.save(session)
-        lastFmSession = session
-        lastFmState.value = AuthState.Connected(UserInfo(username, username))
-        lastFmAuthorizationUrl.value = null; pendingLastFmToken = null
-    }
-    fun disconnectLastFm() = operation("Desconectando Last.fm…") {
-        lastFmStore.clear(); lastFmSession = null; lastFmState.value = AuthState.NotConnected
-        lastFmBlocked.value = false
-        lastFmAuthorizationUrl.value = null; pendingLastFmToken = null
     }
     override fun close() {
         scope.cancel(); tokens.close(); innerTube.endSyncSession(); client.dispatcher.cancelAll()

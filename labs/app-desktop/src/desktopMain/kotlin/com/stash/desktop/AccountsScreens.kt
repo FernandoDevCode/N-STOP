@@ -23,20 +23,13 @@ internal fun DesktopAccountsPage(controller: AppController, onBack: () -> Unit, 
     val spotify by accounts.tokens.spotifyAuthState.collectAsState()
     val youtube by accounts.tokens.youTubeAuthState.collectAsState()
     val discord by accounts.tokens.discordAuthState.collectAsState()
-    val lastfm by accounts.lastFmState.collectAsState()
     val ready by accounts.ready.collectAsState()
     val busy by accounts.busy.collectAsState()
     val error by accounts.error.collectAsState()
-    val lastfmConfigured by accounts.lastFmConfigured.collectAsState()
-    val authUrl by accounts.lastFmAuthorizationUrl.collectAsState()
     val unreadable by accounts.vault.unreadableServices.collectAsState()
-    val lastFmBlocked by accounts.lastFmBlocked.collectAsState()
     var dialog by remember { mutableStateOf<AuthService?>(null) }
     var credential by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
-    var lastFmSetup by remember { mutableStateOf(false) }
-    var apiKey by remember { mutableStateOf("") }
-    var apiSecret by remember { mutableStateOf("") }
     val enabled = ready && busy == null
     ScrollPage("Contas", onBack) {
         Text("Conecte seus serviços para sincronizar esta biblioteca.")
@@ -48,27 +41,10 @@ internal fun DesktopAccountsPage(controller: AppController, onBack: () -> Unit, 
                 Text("Remover credencial inacessível · ${when (service) { AuthService.SPOTIFY -> "Spotify"; AuthService.YOUTUBE_MUSIC -> "YouTube Music"; AuthService.DISCORD -> "Discord" }}")
             }
         }
-        if (lastFmBlocked) OutlinedButton(onClick = accounts::disconnectLastFm, enabled = enabled) { Text("Remover sessão Last.fm inacessível") }
         AccountConnectionCard("Spotify", Icons.Default.MusicNote, StashSpotifyGreen, spotify,
             onConnect = { dialog = AuthService.SPOTIFY }, onDisconnect = { accounts.disconnect(AuthService.SPOTIFY) }, enabled = enabled && AuthService.SPOTIFY !in unreadable)
         AccountConnectionCard("YouTube Music", Icons.Default.PlayCircle, StashYouTubeRed, youtube,
             onConnect = { dialog = AuthService.YOUTUBE_MUSIC }, onDisconnect = { accounts.disconnect(AuthService.YOUTUBE_MUSIC) }, enabled = enabled && AuthService.YOUTUBE_MUSIC !in unreadable)
-        AccountConnectionCard("Last.fm", Icons.Default.GraphicEq, StashLastfmRed, lastfm,
-            onConnect = { if (lastfmConfigured) accounts.beginLastFm() else lastFmSetup = true },
-            onDisconnect = accounts::disconnectLastFm, enabled = enabled && !lastFmBlocked)
-        if (authUrl != null) {
-            Text("Autorize o NØNSTOP no Last.fm e depois conclua a conexão aqui.")
-            OutlinedButton(onClick = { openAccountBrowser(authUrl!!) }, enabled = enabled) { Text("Abrir autorização Last.fm") }
-            Button(onClick = accounts::finishLastFm, enabled = enabled) { Text("Concluir conexão Last.fm") }
-        }
-        if (lastFmSetup) {
-            OutlinedTextField(apiKey, { apiKey = it }, label = { Text("Chave da API Last.fm") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
-            OutlinedTextField(apiSecret, { apiSecret = it }, label = { Text("Segredo da API Last.fm") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
-            Button(onClick = {
-                accounts.beginLastFm(apiKey, apiSecret); apiKey = ""; apiSecret = ""; lastFmSetup = false
-            }, enabled = enabled && apiKey.isNotBlank() && apiSecret.isNotBlank()) { Text("Iniciar autorização Last.fm") }
-        }
-        Text("Last.fm: a conexão fica disponível nesta etapa; envio de scrobbles e histórico ainda não foi migrado.", style = MaterialTheme.typography.bodySmall)
         AccountConnectionCard("Discord", Icons.Default.Forum, Color(0xFF5865F2), discord,
             onConnect = { dialog = AuthService.DISCORD }, onDisconnect = { accounts.disconnect(AuthService.DISCORD) }, enabled = enabled && AuthService.DISCORD !in unreadable)
         Text("Discord: conectar a conta ainda não ativa Rich Presence no Desktop.", style = MaterialTheme.typography.bodySmall)
@@ -150,6 +126,6 @@ internal fun DesktopSyncPage(controller: AppController, onBack: () -> Unit, onAc
 }
 private fun openAccountBrowser(url: String) {
     val uri = URI(url)
-    require(uri.scheme == "https" && uri.host in setOf("open.spotify.com", "music.youtube.com", "discord.com", "www.last.fm"))
+    require(uri.scheme == "https" && uri.host in setOf("open.spotify.com", "music.youtube.com", "discord.com"))
     runCatching { Desktop.getDesktop().browse(uri) }
 }

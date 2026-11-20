@@ -23,16 +23,9 @@ import com.stash.core.data.prefs.YouTubeHistoryPreference
 import com.stash.core.data.youtube.YouTubeHistoryScrobbler
 import com.stash.core.data.youtube.YouTubeScrobblerHealth
 import com.stash.core.data.youtube.YouTubeScrobblerState
-import com.stash.core.data.sync.workers.StashDiscoveryWorker
-import com.stash.core.data.sync.workers.TagEnrichmentWorker
 import com.stash.core.model.DownloadNetworkMode
 import com.stash.core.model.UiScale
 import dagger.hilt.android.qualifiers.ApplicationContext
-import com.stash.core.data.lastfm.LastFmApiClient
-import com.stash.core.data.lastfm.LastFmCredentials
-import com.stash.core.data.lastfm.LastFmScrobbler
-import com.stash.core.data.lastfm.LastFmSession
-import com.stash.core.data.lastfm.LastFmSessionPreference
 import com.stash.core.data.db.BackupImportResult
 import com.stash.core.data.db.BackupImportScope
 import com.stash.core.data.db.DatabaseBackupManager
@@ -107,11 +100,6 @@ class SettingsViewModel @Inject constructor(
     private val reorganizeLibraryCoordinator: ReorganizeLibraryCoordinator,
     private val youTubeCookieHelper: YouTubeCookieHelper,
     private val discordRpcCoordinator: com.stash.core.data.discord.DiscordRpcCoordinator,
-    private val lastFmApiClient: LastFmApiClient,
-    private val lastFmSessionPreference: LastFmSessionPreference,
-    private val lastFmCredentials: LastFmCredentials,
-    private val listeningEventDao: ListeningEventDao,
-    private val lastFmScrobbler: LastFmScrobbler,
     private val youTubeHistoryPreference: YouTubeHistoryPreference,
     private val stashMixPreference: com.stash.core.data.prefs.StashMixPreference,
     private val homeDiscoveryPreference: com.stash.core.data.prefs.HomeDiscoveryPreference,
@@ -139,12 +127,6 @@ class SettingsViewModel @Inject constructor(
     private val listenSinkCoordinator: com.stash.core.data.listen.ListenSinkCoordinator,
     private val listenSubmissionDao: com.stash.core.data.db.dao.ListenSubmissionDao,
     private val relayClient: LosslessRelayClient,
-    /**
-     * Issue #255 — Last.fm-as-a-source lifecycle. Connect/disconnect
-     * reconcile the "Recommended by Last.fm" recipe so the Sync-tab
-     * source card appears (or disappears) immediately, not next launch.
-     */
-    private val lastFmRecommendationSource: com.stash.core.data.mix.LastFmRecommendationSource,
     /**
      * Which connected accounts the last sync found signed out, so Accounts can
      * offer Reconnect on that card; a fresh sign-in or a disconnect clears the
@@ -211,29 +193,6 @@ class SettingsViewModel @Inject constructor(
             started = SharingStarted.WhileSubscribed(5_000),
             initialValue = com.stash.feature.settings.components.ListenBrainzState.Disconnected,
         )
-
-    val mirrorLikesLastFm: StateFlow<Boolean> =
-        likePreferences.mirrorLikesLastFm.stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = false,
-        )
-
-    /**
-     * Issue #112 — submit only the primary artist to Last.fm. Exposed as its
-     * own flow rather than folded into the main `combine`, which is index-based
-     * (`values[N]`) and would need every downstream index shifted.
-     */
-    val scrobbleFirstArtistOnly: StateFlow<Boolean> =
-        lastFmSessionPreference.firstArtistOnly.stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = false,
-        )
-
-    fun onScrobbleFirstArtistOnlyChanged(enabled: Boolean) {
-        viewModelScope.launch { lastFmSessionPreference.setFirstArtistOnly(enabled) }
-    }
 
     fun onListenBrainzTokenChange(value: String) {
         _listenBrainzTokenInput.value = value
@@ -589,8 +548,6 @@ class SettingsViewModel @Inject constructor(
         themePreference.themeMode,
         storagePreference.externalTreeUri,
         moveLibraryCoordinator.state,
-        lastFmSessionPreference.session,
-        listeningEventDao.pendingScrobbleCount(),
         downloadNetworkPreference.mode,
         _localState,
         youTubeHistoryPreference.enabled,
@@ -638,8 +595,6 @@ class SettingsViewModel @Inject constructor(
         val theme = v.next<ThemeMode>()
         val externalTree = v.next<Uri?>()
         val moveState = v.next<MoveLibraryState>()
-        val lastFmSession = v.next<LastFmSession?>()
-        val pendingScrobbles = v.next<Int>()
         val downloadNetworkMode = v.next<DownloadNetworkMode>()
         val local = v.next<LocalState>()
         val ytHistoryEnabled = v.next<Boolean>()
@@ -676,16 +631,6 @@ class SettingsViewModel @Inject constructor(
         val reorganizeState = v.next<ReorganizeLibraryState>()
         v.requireExhausted()
 
-        val lastFmState: LastFmAuthState = local.lastFmAuthOverride
-            ?: when {
-                !lastFmCredentials.isConfigured -> LastFmAuthState.NotConfigured
-                lastFmSession != null -> LastFmAuthState.Connected(
-                    username = lastFmSession.username,
-                    pendingScrobbles = pendingScrobbles,
-                )
-                else -> LastFmAuthState.Disconnected
-            }
-
         SettingsUiState(
             spotifyAuthState = spotifyAuth,
             youTubeAuthState = youTubeAuth,
@@ -713,9 +658,6 @@ class SettingsViewModel @Inject constructor(
             moveLibraryState = moveState,
             libraryLayout = libraryLayout,
             reorganizeLibraryState = reorganizeState,
-            lastFmState = lastFmState,
-            isScrobbleDraining = local.isScrobbleDraining,
-            scrobbleDrainResult = local.lastScrobbleDrainResult,
             ytHistoryEnabled = ytHistoryEnabled,
             stashMixesEnabled = stashMixesEnabled,
             qobuzDiscoveryEnabled = qobuzDiscoveryEnabled,
@@ -1059,120 +1001,6 @@ class SettingsViewModel @Inject constructor(
     /** Dismisses the backup Success/Error overlay. */
     fun onDismissDatabaseBackupStatus() {
         _localState.update { it.copy(databaseBackupState = DatabaseBackupState.Idle) }
-    }
-
-    // -- Last.fm actions ------------------------------------------------------
-
-    /**
-     * Step 1 of the Last.fm web-auth flow: request a one-shot auth token
-     * from Last.fm and transition to [LastFmAuthState.AwaitingAuth]. The
-     * screen is expected to open the user's browser to
-     * `https://www.last.fm/api/auth/?api_key=X&token=Y` so they can
-     * approve. Returns the URL to open so the screen can hand it to
-     * UriHandler.
-     */
-    fun onConnectLastFm(onUrlReady: (String) -> Unit) {
-        viewModelScope.launch {
-            val tokenResult = lastFmApiClient.getAuthToken()
-            tokenResult.fold(
-                onSuccess = { token ->
-                    _localState.update {
-                        it.copy(lastFmAuthOverride = LastFmAuthState.AwaitingAuth(token))
-                    }
-                    val url = "https://www.last.fm/api/auth/?api_key=" +
-                        "${lastFmCredentials.apiKey}&token=$token"
-                    onUrlReady(url)
-                },
-                onFailure = { t ->
-                    _localState.update {
-                        it.copy(
-                            lastFmAuthOverride = LastFmAuthState.Error(
-                                t.message ?: "Couldn't request Last.fm auth token",
-                            ),
-                        )
-                    }
-                },
-            )
-        }
-    }
-
-    /**
-     * Step 2: user has approved in their browser, back in Stash they tap
-     * "Finish connecting." Exchange the stored token for a session key.
-     */
-    fun onFinishLastFmAuth() {
-        val override = _localState.value.lastFmAuthOverride
-        if (override !is LastFmAuthState.AwaitingAuth) return
-        viewModelScope.launch {
-            val result = lastFmApiClient.getSession(override.token)
-            result.fold(
-                onSuccess = { (username, sessionKey) ->
-                    lastFmSessionPreference.save(LastFmSession(username, sessionKey))
-                    // Issue #255: the connection just became a SOURCE. Reconcile
-                    // so "Recommended by Last.fm" activates now — the user sees
-                    // it on the Sync tab without restarting.
-                    // kickRefresh: the user is watching the Sync tab right
-                    // now — without it the new playlist sits empty until the
-                    // next daily cycle or app restart.
-                    runCatching { lastFmRecommendationSource.reconcile(kickRefresh = true) }
-                        .onFailure { android.util.Log.w("SettingsVM", "lastfm reconcile failed", it) }
-                    // Clear the override — the session flow now drives Connected state.
-                    _localState.update { it.copy(lastFmAuthOverride = null) }
-                },
-                onFailure = { t ->
-                    _localState.update {
-                        it.copy(
-                            lastFmAuthOverride = LastFmAuthState.Error(
-                                t.message ?: "Couldn't finish Last.fm connection. " +
-                                    "Did you tap Allow on Last.fm's website?",
-                            ),
-                        )
-                    }
-                },
-            )
-        }
-    }
-
-    /** Forget the Last.fm session + stop scrobbling. */
-    fun onDisconnectLastFm() {
-        viewModelScope.launch {
-            lastFmSessionPreference.clear()
-            // Issue #255: no session → no source. Deactivate the recipe and
-            // hide its playlist; nothing is deleted, reconnect restores it.
-            runCatching { lastFmRecommendationSource.reconcile() }
-                .onFailure { android.util.Log.w("SettingsVM", "lastfm reconcile failed", it) }
-            _localState.update { it.copy(lastFmAuthOverride = null) }
-        }
-    }
-
-    /** Dismiss a Last.fm error banner and return to Disconnected. */
-    fun onDismissLastFmError() {
-        _localState.update { it.copy(lastFmAuthOverride = null) }
-    }
-
-    /**
-     * Manually drain the pending Last.fm scrobble queue. Triggered from
-     * the Settings "Sync scrobbles now" button. Result is surfaced via a
-     * one-shot flag on LocalState so the UI can show a snackbar like
-     * "Sent 312 scrobbles" — the reactive pending-count Flow keeps the
-     * subtitle under the button accurate on its own.
-     */
-    fun onSyncScrobblesNow() {
-        viewModelScope.launch {
-            _localState.update { it.copy(isScrobbleDraining = true) }
-            val result = runCatching { lastFmScrobbler.drainNow() }.getOrNull()
-            _localState.update {
-                it.copy(
-                    isScrobbleDraining = false,
-                    lastScrobbleDrainResult = result,
-                )
-            }
-        }
-    }
-
-    /** UI acknowledgement of the drain snackbar. */
-    fun onClearScrobbleDrainResult() {
-        _localState.update { it.copy(lastScrobbleDrainResult = null) }
     }
 
     /**
@@ -1620,18 +1448,12 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
-     * Persists a new download-network mode AND re-schedules the two
-     * workers that depend on it ([StashDiscoveryWorker],
-     * [TagEnrichmentWorker]) so the updated `Constraints` take effect
-     * immediately. WorkManager snapshots constraints at enqueue time —
-     * without the re-schedule, the setting would only apply to future
-     * installs, not the current one.
+     * Persists a new download-network mode. Only active providers
+     * observe this setting; retired discovery workers are not rescheduled.
      */
     fun onDownloadNetworkModeChanged(mode: DownloadNetworkMode) {
         viewModelScope.launch {
             downloadNetworkPreference.setMode(mode)
-            StashDiscoveryWorker.schedulePeriodic(appContext, mode)
-            TagEnrichmentWorker.schedulePeriodic(appContext, mode)
         }
     }
 
@@ -1899,7 +1721,6 @@ class SettingsViewModel @Inject constructor(
         when (destination) {
             Destination.SPOTIFY -> likePreferences.setMirrorLikesSpotify(value)
             Destination.YT_MUSIC -> likePreferences.setMirrorLikesYtMusic(value)
-            Destination.LAST_FM -> likePreferences.setMirrorLikesLastFm(value)
             Destination.STASH -> Unit // local likes are always on; not a mirror target
         }
     }
@@ -1925,20 +1746,6 @@ class SettingsViewModel @Inject constructor(
         val showDiscordTokenDialog: Boolean = false,
         val discordTokenError: String? = null,
         val isDiscordTokenValidating: Boolean = false,
-        /**
-         * Transient Last.fm auth state used to override the session-flow-
-         * derived default. Non-null while we're mid-flow (AwaitingAuth
-         * after fetching a token) or showing an error. Cleared when the
-         * flow completes or the user dismisses the error.
-         */
-        val lastFmAuthOverride: LastFmAuthState? = null,
-        /** True while a manual scrobble-drain is in-flight. */
-        val isScrobbleDraining: Boolean = false,
-        /**
-         * Result of the most recent manual drain. Consumed by the UI
-         * (snackbar) and then cleared via [onClearScrobbleDrainResult].
-         */
-        val lastScrobbleDrainResult: LastFmScrobbler.DrainResult? = null,
         /** Current status of the database backup operation. */
         val databaseBackupState: DatabaseBackupState = DatabaseBackupState.Idle,
         /** Whether the import confirmation dialog is showing. */

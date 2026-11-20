@@ -46,38 +46,6 @@ object ArtUrlUpgrader {
     private const val SPOTIFY_300 = "ab67616d00001e02"
     private const val SPOTIFY_640 = "ab67616d0000b273"
 
-    // Last.fm covers live at `<host>/i/u/<size>/<hash>.<ext>` on TWO hosts:
-    // `lastfm.freetls.fastly.net` AND `lastfm-img.freetls.fastly.net`. Match
-    // the shared CDN domain, never the host prefix — the old check was
-    // `"lastfm." in url`, which `lastfm-img.` does not contain, so 56% of a
-    // real library's Last.fm covers were never upgraded at all.
-    private const val LASTFM_HOST = "freetls.fastly.net"
-    private val LASTFM_PATH_REGEX = Regex("""(/i/u/)[^/]+/([0-9a-f]+)\.[A-Za-z]+""")
-    private const val LASTFM_TARGET_SIZE = "770x0"
-
-    // The API only ever advertises 300x300, and it serves it as a PNG. The
-    // same hash is available 770 wide, and as a JPEG it is LIGHTER than the
-    // 300px PNG it replaces — probed over 200 covers of a real library on
-    // 2026-09-09: 300x300.png median 152 KB, 770x0.png median 739 KB,
-    // 770x0.jpg median 91 KB. So this is 2.5x the pixels for 60% of the
-    // bytes. The 770 variants are rendered on demand and a few percent of
-    // hashes miss one of the two formats (never both), which is what
-    // `LastFmArtFallbackInterceptor` exists to catch.
-    //
-    // Re-probing this: Fastly varies these on Accept-Encoding. The SAME url
-    // 404s without `Accept-Encoding: gzip` and serves 200 with it, so a
-    // curl/urllib probe invents misses the app never sees — OkHttp always
-    // sends gzip. Measured with the app's own headers, all 191 covers
-    // reachable in a real library's playlists serve the 770 JPEG, and a
-    // miss can also be transient: one that 404'd three times from a PC
-    // served 200 to the phone a minute later.
-    private const val LASTFM_TARGET_EXT = "jpg"
-
-    // What the API itself hands back, and therefore the last rung of the
-    // fallback: whatever else is missing, this is the URL that worked before.
-    private const val LASTFM_SOURCE_SIZE = "300x300"
-    private const val LASTFM_SOURCE_EXT = "png"
-
     // i.ytimg.com filenames in increasing order of quality:
     //   `default`      → 120x90
     //   `mqdefault`    → 320x180   (16:9, no bars)
@@ -119,7 +87,6 @@ object ArtUrlUpgrader {
     private const val QOBUZ_LARGEST_FALLBACK = "_600.jpg"
     private const val SPOTIFY_ORIGINAL = "/image/ab67616d000082c1"
     private const val SPOTIFY_ORIGINAL_FALLBACK = "/image/ab67616d0000b273"
-    private const val LASTFM_ORIGINAL_SIZE = "ar0"
     private const val ITUNES_HOST = "mzstatic.com"
     private const val ITUNES_SAFE_PX = 600
     private val ITUNES_FILE_REGEX = Regex("""/(\d+)x(\d+)([a-z]{2}(?:-\d+)?\.(?:jpg|png|webp))$""")
@@ -158,20 +125,9 @@ object ArtUrlUpgrader {
      * `hqdefault`, which every video has. Each step gives up resolution
      * rather than showing nothing.
      *
-     * Last.fm renders the `770x0` variants on demand and a small share of
-     * hashes are missing one of the two formats — measured over 200 covers of
-     * a real library on 2026-09-09, `770x0.jpg` missed 6 and `770x0.png`
-     * missed 5, and no hash missed both. The rungs therefore run
-     * `770x0.jpg` -> `770x0.png` -> `300x300.png` (what the API itself
-     * advertises), so an upgraded cover can never render worse than the URL
-     * it replaced. Applied by the OkHttp interceptor, which covers every
-     * consumer of the shared client: Coil for the in-app surfaces and
-     * media3's bitmap loader for the notification and lock screen.
-     *
      * The large variants [ArtUrlSizer] asks for on a big surface step down to
      * the size that was stored before: Qobuz `_max` -> `_600`, Spotify's
-     * original (`82c1`) -> 640 (`b273`), Last.fm's original (`ar0`) ->
-     * `770x0.jpg` (and on down the walk above), iTunes above 600 -> 600.
+     * original (`82c1`) -> 640 (`b273`), iTunes above 600 -> 600.
      */
     fun artFallback(url: String?): String? {
         if (url == null) return null
@@ -196,19 +152,7 @@ object ArtUrlUpgrader {
             }
             return next
         }
-        if (LASTFM_HOST !in url) return null
-        val match = LASTFM_PATH_REGEX.find(url) ?: return null
-        val (prefix, hash) = match.groupValues[1] to match.groupValues[2]
-        val next = when {
-            "/$LASTFM_ORIGINAL_SIZE/$hash." in url ->
-                "$prefix$LASTFM_TARGET_SIZE/$hash.$LASTFM_TARGET_EXT"
-            "/$LASTFM_TARGET_SIZE/$hash.$LASTFM_TARGET_EXT" in url ->
-                "$prefix$LASTFM_TARGET_SIZE/$hash.$LASTFM_SOURCE_EXT"
-            "/$LASTFM_TARGET_SIZE/$hash.$LASTFM_SOURCE_EXT" in url ->
-                "$prefix$LASTFM_SOURCE_SIZE/$hash.$LASTFM_SOURCE_EXT"
-            else -> return null
-        }
-        return LASTFM_PATH_REGEX.replace(url) { next }
+        return null
     }
 
     fun upgrade(url: String?): String? {
@@ -247,19 +191,6 @@ object ArtUrlUpgrader {
             "i.scdn.co/image/" in url -> {
                 url.replace(SPOTIFY_64, SPOTIFY_640)
                     .replace(SPOTIFY_300, SPOTIFY_640)
-            }
-
-            // Last.fm art (lastfm.freetls.fastly.net) is served under
-            // `/i/u/<size>/<hash>.<ext>` — e.g. `/i/u/300x300/…`. The API
-            // hands back 300x300 (or smaller `NNNs` avatars), which is badly
-            // upscaled on the 300dp Now Playing hero (~1000px on a 3.5x
-            // screen) and on the Home mosaics. Take the same hash 770 wide
-            // and as a JPEG: sharper AND smaller than what it replaces.
-            LASTFM_HOST in url && LASTFM_PATH_REGEX.containsMatchIn(url) -> {
-                LASTFM_PATH_REGEX.replace(url) { match ->
-                    "${match.groupValues[1]}$LASTFM_TARGET_SIZE/" +
-                        "${match.groupValues[2]}.$LASTFM_TARGET_EXT"
-                }
             }
 
             // YouTube video thumbnails (i.ytimg.com): strip the `?sqp=…&rs=…`

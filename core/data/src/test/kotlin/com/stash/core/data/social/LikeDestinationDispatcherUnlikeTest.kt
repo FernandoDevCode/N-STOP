@@ -25,11 +25,8 @@ class LikeDestinationDispatcherUnlikeTest {
     private val ytMusic = mockk<YtMusicLibraryApiClient>(relaxed = true)
     private val stashLiked = mockk<StashLikedPlaylistRepository>(relaxed = true)
     private val trackDao = mockk<TrackDao>(relaxed = true)
-    private val lastFm = mockk<com.stash.core.data.lastfm.LastFmApiClient>(relaxed = true)
-    private val lastFmSession =
-        mockk<com.stash.core.data.lastfm.LastFmSessionPreference>(relaxed = true)
     private val dispatcher =
-        LikeDestinationDispatcher(spotify, ytMusic, stashLiked, trackDao, lastFm, lastFmSession)
+        LikeDestinationDispatcher(spotify, ytMusic, stashLiked, trackDao)
 
     private fun track(
         spotifySavedAt: Long? = null,
@@ -90,44 +87,6 @@ class LikeDestinationDispatcherUnlikeTest {
 
     @Test fun `empty destination set is a no-op`() = runBlocking {
         assertTrue(dispatcher.unlike(track(), emptySet()).isEmpty())
-    }
-    /**
-     * Loves must use the SAME artist string as scrobbles.
-     *
-     * The first-artist toggle (#392) was applied to scrobbles only; loves still sent
-     * the raw `track.artist`. With the toggle on that scrobbles "Calvin Harris" and
-     * loves "Calvin Harris, Dua Lipa" — two different Last.fm catalog entries for one
-     * track, which is exactly the mismatch the toggle exists to prevent.
-     */
-    @Test fun `love uses the primary artist when the toggle is on`() = runBlocking {
-        every { lastFmSession.session } returns kotlinx.coroutines.flow.flowOf(
-            com.stash.core.data.lastfm.LastFmSession(username = "u", sessionKey = "k"),
-        )
-        every { lastFmSession.firstArtistOnly } returns kotlinx.coroutines.flow.flowOf(true)
-        coEvery { lastFm.setLoved(any(), any(), any(), any()) } returns Result.success(Unit)
-
-        dispatcher.like(
-            track(spotifyUri = null, youtubeId = null).copy(artist = "Calvin Harris, Dua Lipa"),
-            setOf(Destination.LAST_FM),
-        )
-
-        coVerify { lastFm.setLoved(any(), "Calvin Harris", any(), true) }
-    }
-
-    /** Toggle off: the full credit is preserved, unchanged behaviour. */
-    @Test fun `love keeps the full artist when the toggle is off`() = runBlocking {
-        every { lastFmSession.session } returns kotlinx.coroutines.flow.flowOf(
-            com.stash.core.data.lastfm.LastFmSession(username = "u", sessionKey = "k"),
-        )
-        every { lastFmSession.firstArtistOnly } returns kotlinx.coroutines.flow.flowOf(false)
-        coEvery { lastFm.setLoved(any(), any(), any(), any()) } returns Result.success(Unit)
-
-        dispatcher.like(
-            track(spotifyUri = null, youtubeId = null).copy(artist = "Calvin Harris, Dua Lipa"),
-            setOf(Destination.LAST_FM),
-        )
-
-        coVerify { lastFm.setLoved(any(), "Calvin Harris, Dua Lipa", any(), true) }
     }
 
 }

@@ -173,7 +173,6 @@ fun SettingsHubScreen(
     androidx.compose.runtime.LaunchedEffect(Unit) {
         when (viewModel.consumeDeepLinkFocus()) {
             com.stash.core.data.navigation.SettingsFocus.LOSSLESS -> onOpenAudioQuality()
-            com.stash.core.data.navigation.SettingsFocus.LASTFM -> onOpenAccounts()
             null -> Unit
         }
     }

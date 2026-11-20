@@ -3,6 +3,8 @@ package com.stash.core.network.art
 import com.stash.core.common.ArtUrlUpgrader
 import okhttp3.Interceptor
 import okhttp3.Response
+import okhttp3.Protocol
+import okhttp3.ResponseBody.Companion.toResponseBody
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -25,6 +27,20 @@ import javax.inject.Singleton
 class ArtFallbackInterceptor @Inject constructor() : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         var request = chain.request()
+        // Legacy DB rows can contain Last.fm artwork URLs. Never send them
+        // over the network after the integration has been retired.
+        val host = request.url.host.lowercase()
+        if (host == "last.fm" || host.endsWith(".last.fm") ||
+            host == "lastfm.freetls.fastly.net" ||
+            host == "lastfm-img.freetls.fastly.net") {
+            return Response.Builder()
+                .request(request)
+                .protocol(Protocol.HTTP_1_1)
+                .code(410)
+                .message("Retired artwork source")
+                .body("".toResponseBody(null))
+                .build()
+        }
         var response = chain.proceed(request)
         // At most three steps: Last.fm's original (ar0) -> 770 jpg -> 770 png ->
         // its own 300x300 png is the longest walk; YouTube maxres -> sd -> hq;

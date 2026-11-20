@@ -55,5 +55,4 @@ class SettingsDeepLinkController @Inject constructor() {
  */
 enum class SettingsFocus {
     LOSSLESS,
-    LASTFM,
 }

@@ -2,7 +2,6 @@ package com.stash.core.media.listening
 
 import com.stash.core.data.db.dao.ListeningEventDao
 import com.stash.core.data.db.dao.TrackSkipEventDao
-import com.stash.core.data.lastfm.LastFmScrobbler
 import com.stash.core.data.listen.ListenSinkCoordinator
 import com.stash.core.data.db.entity.ListeningEventEntity
 import com.stash.core.data.db.entity.TrackSkipEventEntity
@@ -144,7 +143,6 @@ class ListeningRecorderSkipTest {
             musicRepository = passthroughMusicRepository(),
             listeningEventDao = listeningDao,
             trackSkipEventDao = skipDao,
-            scrobbler = mockk(relaxed = true),
             listenSinks = mockk(relaxed = true),
             scope = backgroundScope,
             nowMs = { testScheduler.currentTime },
@@ -181,7 +179,6 @@ class ListeningRecorderSkipTest {
             musicRepository = passthroughMusicRepository(),
             listeningEventDao = listeningDao,
             trackSkipEventDao = skipDao,
-            scrobbler = mockk(relaxed = true),
             listenSinks = mockk(relaxed = true),
             scope = backgroundScope,
             nowMs = { testScheduler.currentTime },
@@ -230,7 +227,6 @@ class ListeningRecorderSkipTest {
             musicRepository = musicRepository,
             listeningEventDao = listeningDao,
             trackSkipEventDao = skipDao,
-            scrobbler = mockk(relaxed = true),
             listenSinks = mockk(relaxed = true),
             scope = backgroundScope,
             nowMs = { testScheduler.currentTime },
@@ -269,7 +265,6 @@ class ListeningRecorderSkipTest {
             musicRepository = passthroughMusicRepository(),
             listeningEventDao = listeningDao,
             trackSkipEventDao = mockk(relaxed = true),
-            scrobbler = mockk(relaxed = true),
             listenSinks = mockk(relaxed = true),
             scope = backgroundScope,
             nowMs = { testScheduler.currentTime },
@@ -310,7 +305,6 @@ class ListeningRecorderSkipTest {
             musicRepository = passthroughMusicRepository(),
             listeningEventDao = listeningDao,
             trackSkipEventDao = mockk(relaxed = true),
-            scrobbler = mockk(relaxed = true),
             listenSinks = mockk(relaxed = true),
             scope = backgroundScope,
             nowMs = { testScheduler.currentTime },
@@ -348,7 +342,6 @@ class ListeningRecorderSkipTest {
             musicRepository = passthroughMusicRepository(),
             listeningEventDao = listeningDao,
             trackSkipEventDao = skipDao,
-            scrobbler = mockk(relaxed = true),
             listenSinks = mockk(relaxed = true),
             scope = backgroundScope,
             nowMs = { testScheduler.currentTime },
@@ -392,7 +385,6 @@ class ListeningRecorderSkipTest {
             musicRepository = passthroughMusicRepository(),
             listeningEventDao = listeningDao,
             trackSkipEventDao = mockk(relaxed = true),
-            scrobbler = mockk(relaxed = true),
             listenSinks = mockk(relaxed = true),
             scope = backgroundScope,
             nowMs = { testScheduler.currentTime },
@@ -416,14 +408,12 @@ class ListeningRecorderSkipTest {
     fun `a song shown paused after a restart is not sent as playing or recorded`() = runTest {
         val playerRepo = FakePlayerRepository(PlayerState(currentTrack = trackA, isPlaying = false))
         val listeningDao = mockk<ListeningEventDao>(relaxed = true)
-        val scrobbler = mockk<LastFmScrobbler>(relaxed = true)
         val sinks = mockk<ListenSinkCoordinator>(relaxed = true)
         val recorder = ListeningRecorder(
             playerRepository = playerRepo,
             musicRepository = passthroughMusicRepository(),
             listeningEventDao = listeningDao,
             trackSkipEventDao = mockk(relaxed = true),
-            scrobbler = scrobbler,
             listenSinks = sinks,
             scope = backgroundScope,
             nowMs = { testScheduler.currentTime },
@@ -434,7 +424,6 @@ class ListeningRecorderSkipTest {
         advanceTimeBy(300_000) // longer than any threshold
         runCurrent()
 
-        coVerify(exactly = 0) { scrobbler.notifyNowPlaying(any(), any(), any()) }
         verify(exactly = 0) { sinks.notifyNowPlaying(any()) }
         coVerify(exactly = 0) { listeningDao.recordCompletedListen(any()) }
     }
@@ -444,7 +433,6 @@ class ListeningRecorderSkipTest {
         val paused = PlayerState(currentTrack = trackA, isPlaying = false)
         val playerRepo = FakePlayerRepository(paused)
         val listeningDao = mockk<ListeningEventDao>(relaxed = true)
-        val scrobbler = mockk<LastFmScrobbler>(relaxed = true)
         val sinks = mockk<ListenSinkCoordinator>(relaxed = true)
         val listen = slot<ListeningEventEntity>()
         coEvery { listeningDao.recordCompletedListen(capture(listen)) } returns 1L
@@ -453,7 +441,6 @@ class ListeningRecorderSkipTest {
             musicRepository = passthroughMusicRepository(),
             listeningEventDao = listeningDao,
             trackSkipEventDao = mockk(relaxed = true),
-            scrobbler = scrobbler,
             listenSinks = sinks,
             scope = backgroundScope,
             nowMs = { testScheduler.currentTime },
@@ -474,7 +461,6 @@ class ListeningRecorderSkipTest {
         advanceTimeBy(95_000)
         runCurrent()
 
-        coVerify(exactly = 1) { scrobbler.notifyNowPlaying("X", "A", null) }
         verify(exactly = 1) { sinks.notifyNowPlaying(any()) }
         coVerify(exactly = 1) { listeningDao.recordCompletedListen(any()) }
         assertEquals(trackA.id, listen.captured.trackId)
@@ -489,7 +475,6 @@ class ListeningRecorderSkipTest {
         musicRepository = passthroughMusicRepository(),
         listeningEventDao = listeningDao,
         trackSkipEventDao = skipDao,
-        scrobbler = mockk(relaxed = true),
         listenSinks = mockk(relaxed = true),
         scope = backgroundScope,
         nowMs = { testScheduler.currentTime },
@@ -591,7 +576,6 @@ class ListeningRecorderSkipTest {
             musicRepository = musicRepository,
             listeningEventDao = mockk(relaxed = true),
             trackSkipEventDao = skipDao,
-            scrobbler = mockk(relaxed = true),
             listenSinks = mockk(relaxed = true),
             scope = backgroundScope,
             nowMs = { testScheduler.currentTime },
@@ -696,13 +680,11 @@ class ListeningRecorderSkipTest {
         val playing = PlayerState(isPlaying = true, currentTrack = trackA, repeatMode = RepeatMode.ONE, positionMs = 0)
         val playerRepo = FakePlayerRepository(playing)
         val listeningDao = mockk<ListeningEventDao>(relaxed = true)
-        val scrobbler = mockk<LastFmScrobbler>(relaxed = true)
         ListeningRecorder(
             playerRepository = playerRepo,
             musicRepository = passthroughMusicRepository(),
             listeningEventDao = listeningDao,
             trackSkipEventDao = mockk(relaxed = true),
-            scrobbler = scrobbler,
             listenSinks = mockk(relaxed = true),
             scope = backgroundScope,
             nowMs = { testScheduler.currentTime },
@@ -719,7 +701,6 @@ class ListeningRecorderSkipTest {
         runCurrent()
 
         coVerify(exactly = 0) { listeningDao.recordCompletedListen(any()) }
-        coVerify(exactly = 1) { scrobbler.notifyNowPlaying(any(), any(), any()) }
 
         // Playing again starts the new session and counts only play time.
         playerRepo.setState(playing)
@@ -727,7 +708,6 @@ class ListeningRecorderSkipTest {
         advanceTimeBy(90_000)
         runCurrent()
         coVerify(exactly = 1) { listeningDao.recordCompletedListen(any()) }
-        coVerify(exactly = 2) { scrobbler.notifyNowPlaying(any(), any(), any()) }
     }
 
     @Test
@@ -742,7 +722,6 @@ class ListeningRecorderSkipTest {
             musicRepository = passthroughMusicRepository(),
             listeningEventDao = listeningDao,
             trackSkipEventDao = mockk(relaxed = true),
-            scrobbler = mockk(relaxed = true),
             listenSinks = mockk(relaxed = true),
             scope = recorderScope,
             nowMs = { testScheduler.currentTime },

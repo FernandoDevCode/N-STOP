@@ -1,9 +1,10 @@
 package com.stash.core.data.radio
 
-import com.stash.core.data.lastfm.LastFmApiClient
-import com.stash.core.data.lastfm.LastFmSimilarTrack
-import com.stash.core.data.lastfm.LastFmTopTrack
+import com.stash.data.ytmusic.CanonicalMatch
 import com.stash.data.ytmusic.YTMusicApiClient
+import com.stash.data.ytmusic.model.ArtistProfile
+import com.stash.data.ytmusic.model.ArtistSummary
+import com.stash.data.ytmusic.model.TrackSummary
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
@@ -12,69 +13,41 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RadioStationGeneratorSongTest {
-    private val lastFm: LastFmApiClient = mockk()
     private val yt: YTMusicApiClient = mockk()
-    private fun gen() = RadioStationGenerator(lastFm, yt)
+    private fun gen() = RadioStationGenerator(yt)
+    private fun track(name: String) = TrackSummary("v0000000001", name, "Lil Wayne", null, 180.0, null)
 
-    @Test fun `song seed blends seed-artist tracks with similar tracks, resolves via search`() = runTest {
-        coEvery { lastFm.getSimilarTracks("Lil Wayne", "A Milli", any()) } returns
-            Result.success(listOf(
-                LastFmSimilarTrack("Drake", "Forever", 0.9f),
-                LastFmSimilarTrack("T.I.", "Whatever You Like", 0.7f)))
-        coEvery { lastFm.getArtistTopTracks("Lil Wayne", any()) } returns
-            Result.success(listOf(
-                LastFmTopTrack("Lil Wayne", "6 Foot 7 Foot", 100),
-                LastFmTopTrack("Lil Wayne", "Lollipop", 90)))
-        // Song-radio candidates carry no Last.fm artwork and resolve via YT Music
-        // search — which also yields the song's square album cover. Most resolve
-        // WITH a cover; "T.I." resolves without one to exercise the video-frame
-        // fallback so blank covers never reach Now Playing/queue/notif.
-        coEvery { yt.searchCanonicalMatch(any(), any()) } answers {
-            val artist = firstArg<String>()
-            com.stash.data.ytmusic.CanonicalMatch(
-                // A distinct id per song, in the 11-character shape real ids have:
-                // only those are built into a thumbnail URL.
-                videoId = "v%010d".format("$artist|${secondArg<String>()}".hashCode().toLong() and 0x7fffffffL),
-                thumbnailUrl = if (artist == "T.I.") null
-                    else "https://lh3.googleusercontent.com/cover=w1024-h1024",
-            )
-        }
-
-        val (session, batch) = gen().start(RadioSeed.Song("A Milli", "Lil Wayne"))
-
-        assertTrue(batch.isNotEmpty())
-        assertTrue(batch.all { it.youtubeId != null })
-        assertTrue("has seed share", batch.any { it.artist == "Lil Wayne" })
-        assertTrue("has similar tracks", batch.any { it.artist != "Lil Wayne" })
-        assertTrue(session.played.isNotEmpty())
-        // Every emitted track has album art, and the resolved square cover is used
-        // when the search returned one (crisp, no black bars) rather than the
-        // low-res video frame.
-        assertTrue("all tracks have album art", batch.all { !it.albumArtUrl.isNullOrBlank() })
-        assertTrue("resolved cover used", batch.any { it.albumArtUrl!!.contains("lh3.googleusercontent.com") })
+    @Test fun songRadioMixesSeedAndRelatedArtists() = runTest {
+        coEvery { yt.resolveArtist("Lil Wayne") } returns ArtistSummary("WAYNE", "Lil Wayne", null)
+        coEvery { yt.getArtist("WAYNE") } returns ArtistProfile("WAYNE", "Lil Wayne", null, null,
+            listOf(track("Lollipop")), emptyList(), emptyList(),
+            listOf(ArtistSummary("DRAKE", "Drake", null)))
+        coEvery { yt.resolveArtist("Drake") } returns ArtistSummary("DRAKE", "Drake", null)
+        coEvery { yt.getArtist("DRAKE") } returns ArtistProfile("DRAKE", "Drake", null, null,
+            listOf(TrackSummary("v0000000002", "Forever", "Drake", null, 180.0, null)),
+            emptyList(), emptyList(), emptyList())
+        val (_, batch) = gen().start(RadioSeed.Song("A Milli", "Lil Wayne", ytVideoId = "v0000000003"))
+        assertTrue(batch.any { it.artist == "Lil Wayne" })
+        assertTrue(batch.any { it.artist == "Drake" })
+        assertTrue(batch.mapNotNull { it.youtubeId }.distinct().size == batch.size)
     }
 
-    /**
-     * Every song-radio candidate but the seed needs a YouTube search, and the
-     * first batch used to run them one after another: about a dozen searches,
-     * 5-10 s before anything could play.
-     */
-    @Test fun `the first batch resolves its candidates concurrently`() = runTest {
-        coEvery { lastFm.getSimilarTracks(any(), any(), any()) } returns
-            Result.success((1..20).map { LastFmSimilarTrack("Artist $it", "Song $it", 0.5f) })
-        coEvery { lastFm.getArtistTopTracks(any(), any()) } returns Result.success(emptyList())
+    @Test fun unresolvedCandidatesArePrefetchedConcurrently() = runTest {
         coEvery { yt.searchCanonicalMatch(any(), any()) } coAnswers {
-            kotlinx.coroutines.delay(500) // one search's latency
-            com.stash.data.ytmusic.CanonicalMatch(
-                videoId = "v%010d".format("${firstArg<String>()}|${secondArg<String>()}".hashCode().toLong() and 0x7fffffffL),
+            kotlinx.coroutines.delay(500)
+            val key = firstArg<String>() + "|" + secondArg<String>()
+            CanonicalMatch(
+                videoId = "v%010d".format(key.hashCode().toLong() and 0x7fffffffL),
                 thumbnailUrl = null,
             )
         }
-
-        val (_, batch) = gen().start(RadioSeed.Song("Seed", "Seed Artist", ytVideoId = "vSeed000001"))
-
+        val candidates = (1..20).map {
+            RadioCandidate("Artist " + it, "Song " + it, null, 1f)
+        }
+        val session = RadioSession(RadioSeed.Song("Seed", "Seed Artist"),
+            candidates.toMutableList(), mutableSetOf())
+        val batch = gen().drainBatch(session, RadioStationGenerator.FIRST_BATCH)
         assertEquals(RadioStationGenerator.FIRST_BATCH, batch.size)
-        // 11 searches back to back would take 5.5 s; in parallel a few rounds do.
-        assertTrue("took ${testScheduler.currentTime} ms", testScheduler.currentTime <= 2_000)
+        assertTrue("expected concurrent lookahead", testScheduler.currentTime <= 2_000)
     }
 }

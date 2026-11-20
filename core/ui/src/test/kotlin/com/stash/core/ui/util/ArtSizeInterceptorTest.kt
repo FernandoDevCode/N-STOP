@@ -36,8 +36,6 @@ class ArtSizeInterceptorTest {
 
     private val qobuz600 = "https://static.qobuz.com/images/covers/25/40/0060254794025_600.jpg"
     private val qobuzMax = "https://static.qobuz.com/images/covers/25/40/0060254794025_max.jpg"
-    private val lastFm770 = "https://lastfm-img.freetls.fastly.net/i/u/770x0/c9ebed7e766b45dabedaa8ee759b5181.jpg"
-    private val lastFmOrig = "https://lastfm-img.freetls.fastly.net/i/u/ar0/c9ebed7e766b45dabedaa8ee759b5181.jpg"
 
     private class FakeImage(override val width: Int, override val height: Int) : Image {
         override val size: Long = width.toLong() * height * 4
@@ -104,26 +102,11 @@ class ArtSizeInterceptorTest {
     // ── The stored URL is the floor for size ──────────────────────────────────────────────────
 
     @Test
-    fun `a sized-up result smaller than the stored url draws the stored url`() = runTest {
-        // Sinnerman: Last.fm's original is 350px, its stored 770x0 the CDN's cleaner upscale.
-        val (result, tried) = run(lastFm770) { r -> if (r.data == lastFmOrig) ok(r, 350) else ok(r, 770) }
-        assertEquals(listOf<Any>(lastFmOrig, lastFm770), tried)
-        assertEquals(770, result.image!!.width)
-    }
-
-    @Test
     fun `a sized-up result bigger than the stored url is kept, with one fetch`() = runTest {
         val (result, tried) = run(qobuz600) { r -> ok(r, 1024) }
         assertEquals(listOf<Any>(qobuzMax), tried)
         assertEquals(qobuzMax, result.request.data)
         assertEquals(1024, result.image!!.width)
-    }
-
-    @Test
-    fun `a lastfm original at least the stored size is kept`() = runTest {
-        val (result, tried) = run(lastFm770) { r -> ok(r, 1000) }
-        assertEquals(listOf<Any>(lastFmOrig), tried)
-        assertEquals(1000, result.image!!.width)
     }
 
     // ── Requests that are not sized up go straight through ────────────────────────────────────

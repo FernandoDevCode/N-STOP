@@ -31,11 +31,9 @@ import com.stash.feature.settings.components.SettingsSectionLabel
  *
  * Behavior-preserving relocation of the original "Accounts" section from the
  * monolithic [SettingsScreen]: the Spotify and YouTube Music connection cards
- * (each with their inline auto-save / history-sync extras), the Last.fm card,
- * and the like-mirroring opt-ins (plus the mirror-warning ack dialog). Every
+ * (each with their inline auto-save / history-sync extras), the like-mirroring opt-ins (plus the mirror-warning ack dialog). Every
  * control calls the SAME [SettingsViewModel] method the old screen used; no
  * logic is changed. The `bringIntoViewRequester` on the Last.fm card (a
- * deep-link affordance) is intentionally dropped here.
  */
 @Composable
 fun SettingsAccountsScreen(
@@ -218,17 +216,13 @@ fun SettingsAccountsScreen(
         SettingsSectionLabel(stringResource(R.string.nostop_accounts_mirror_likes), beta = true)
 
         GlassCard {
-            val mirrorLastFm by viewModel.mirrorLikesLastFm.collectAsStateWithLifecycle()
             com.stash.feature.settings.components.LikeMirrorSection(
                 spotifyEnabled = uiState.mirrorLikesSpotify,
                 ytMusicEnabled = uiState.mirrorLikesYtMusic,
-                lastFmEnabled = mirrorLastFm,
                 spotifyConnected = uiState.spotifyAuthState is com.stash.core.auth.model.AuthState.Connected,
                 ytConnected = uiState.youTubeAuthState is com.stash.core.auth.model.AuthState.Connected,
-                lastFmConnected = uiState.lastFmState is LastFmAuthState.Connected,
                 onSpotifyToggle = { viewModel.onMirrorToggleRequested(com.stash.core.data.social.Destination.SPOTIFY, it) },
                 onYtMusicToggle = { viewModel.onMirrorToggleRequested(com.stash.core.data.social.Destination.YT_MUSIC, it) },
-                onLastFmToggle = { viewModel.onMirrorToggleRequested(com.stash.core.data.social.Destination.LAST_FM, it) },
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             )
         }

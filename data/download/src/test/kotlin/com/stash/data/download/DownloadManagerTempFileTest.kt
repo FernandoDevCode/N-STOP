@@ -2,8 +2,6 @@ package com.stash.data.download
 
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.TrackDao
-import com.stash.core.data.lastfm.LastFmApiClient
-import com.stash.core.data.lastfm.LastFmCredentials
 import com.stash.core.model.QualityTier
 import com.stash.core.model.Track
 import com.stash.data.download.files.AlbumArtCache
@@ -78,8 +76,6 @@ class DownloadManagerTempFileTest {
         ytLibraryCanonicalizer = mockk<YtLibraryCanonicalizer>(relaxed = true),
         trackDao = trackDao,
         playlistDao = mockk<PlaylistDao>(relaxed = true),
-        lastFmApiClient = mockk<LastFmApiClient>(relaxed = true),
-        lastFmCredentials = mockk<LastFmCredentials>(relaxed = true),
         losslessRegistry = mockk<LosslessSourceRegistry>(relaxed = true),
         losslessUrlDownloader = mockk<LosslessUrlDownloader>(relaxed = true),
         losslessPrefs = losslessPrefs,

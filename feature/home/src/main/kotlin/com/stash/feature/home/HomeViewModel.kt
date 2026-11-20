@@ -20,7 +20,6 @@ import com.stash.core.data.mix.mixBuildState
 import com.stash.core.data.prefs.DownloadNetworkPreference
 import com.stash.core.data.prefs.StreamingPreference
 import com.stash.core.data.repository.MusicRepository
-import com.stash.core.data.sync.workers.StashDiscoveryWorker
 import com.stash.core.data.sync.workers.StashMixRefreshWorker
 import com.stash.core.media.PlayerRepository
 import com.stash.core.model.Playlist
@@ -636,27 +635,11 @@ class HomeViewModel @Inject constructor(
             // unique name + REPLACE policy as StashMixRefreshWorker.enqueueOneTime,
             // mirroring lines 154-168 of that worker.
             val request = OneTimeWorkRequestBuilder<StashMixRefreshWorker>()
-                .setConstraints(
-                    Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.CONNECTED)
-                        .build(),
-                )
                 .setInputData(workDataOf(StashMixRefreshWorker.KEY_RECIPE_ID to recipe.id))
                 .build()
             val uniqueName = "${StashMixRefreshWorker.ONE_SHOT_WORK_NAME}_${recipe.id}"
             WorkManager.getInstance(context)
                 .enqueueUniqueWork(uniqueName, ExistingWorkPolicy.REPLACE, request)
-
-            // v0.9.20: fire the full discovery pipeline. queueDiscoveryForRecipe
-            // inside the mix refresh worker enqueues new Last.fm candidates into
-            // discovery_queue PENDING; this trigger processes them right now (subject
-            // to user's DownloadNetworkMode pref) instead of waiting up to 24h for
-            // the periodic schedule. StashDiscoveryWorker turns them into
-            // stream-only tracks and, when it made any, re-links the mix with a
-            // materialize-only refresh — nothing downloads, and the user doesn't
-            // lift another finger.
-            val mode = downloadNetworkPreference.current()
-            StashDiscoveryWorker.enqueueOneTime(context, mode)
 
             // Observe the unique-work Flow; filter to OUR enqueued request's id
             // so historical entries from earlier taps (or earlier sessions)

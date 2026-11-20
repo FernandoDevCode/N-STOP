@@ -103,7 +103,6 @@ class MusicRepositoryDownloadsMixTest {
         localFileOps = mockk(relaxed = true),
         syncPreferencesManager = syncPreferencesManager,
         singleTrackDownloadEnqueuer = singleTrackDownloadEnqueuer,
-        lastFmRecommendationSource = mockk(relaxed = true),
         sharedMixDao = mockk(relaxed = true),
         downloadJobs = downloadJobs,
     )

@@ -3,7 +3,6 @@ package com.stash.core.media.listening
 import android.util.Log
 import androidx.annotation.VisibleForTesting
 import com.stash.core.data.db.dao.ListeningEventDao
-import com.stash.core.data.lastfm.LastFmScrobbler
 import com.stash.core.data.listen.Listen
 import com.stash.core.data.listen.ListenSinkCoordinator
 import com.stash.core.data.db.dao.TrackSkipEventDao
@@ -59,7 +58,6 @@ class ListeningRecorder @VisibleForTesting internal constructor(
     private val musicRepository: MusicRepository,
     private val listeningEventDao: ListeningEventDao,
     private val trackSkipEventDao: TrackSkipEventDao,
-    private val scrobbler: LastFmScrobbler,
     private val listenSinks: ListenSinkCoordinator,
     private val scope: CoroutineScope,
     /** Monotonic clock for listening time. Tests pass the test scheduler's time. */
@@ -72,14 +70,12 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         musicRepository: MusicRepository,
         listeningEventDao: ListeningEventDao,
         trackSkipEventDao: TrackSkipEventDao,
-        scrobbler: LastFmScrobbler,
         listenSinks: ListenSinkCoordinator,
     ) : this(
         playerRepository = playerRepository,
         musicRepository = musicRepository,
         listeningEventDao = listeningEventDao,
         trackSkipEventDao = trackSkipEventDao,
-        scrobbler = scrobbler,
         listenSinks = listenSinks,
         // One thread at a time: the track and play-state collectors both read and write `pending`.
         scope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1)),
@@ -247,11 +243,6 @@ class ListeningRecorder @VisibleForTesting internal constructor(
         pending = session
         resumeCountdown(session)
         scope.launch {
-            scrobbler.notifyNowPlaying(
-                artist = track.artist,
-                track = track.title,
-                album = track.album.takeIf { it.isNotBlank() },
-            )
             listenSinks.notifyNowPlaying(
                 Listen(
                     // No listening_events row exists yet — a now-playing listen
@@ -360,7 +351,6 @@ class ListeningRecorder @VisibleForTesting internal constructor(
                 ),
             )
             // Push the new listen to the generic sinks (ListenBrainz).
-            // Last.fm has its own Flow-driven scrobbler and needs no nudge.
             listenSinks.onListenRecorded()
         } catch (e: CancellationException) {
             throw e

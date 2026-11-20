@@ -17,13 +17,13 @@ object ShareConfig {
      * DNS answer, refused, TLS failed): DNS filters often block newly registered domains for weeks. Links are still
      * built on [BASE_URL], whichever host answered.
      */
-    val API_BASE_URLS: List<String> = emptyList() // Historical links are parsed only; no Stash API calls.
+    val API_BASE_URLS: List<String> = emptyList() // Historical links are parsed only.
 
     /**
      * Hosts whose links open in Stash: stashfm.app, and the workers.dev host older links use. Keep in sync with the
      * App Links filter in app/src/main/AndroidManifest.xml.
      */
-    val HOSTS: Set<String> = setOf(BASE_URL.removePrefix("https://"), LEGACY_BASE_URL.removePrefix("https://")) // Parse old local links only.
+    val HOSTS: Set<String> = setOf(BASE_URL.removePrefix("https://"), LEGACY_BASE_URL.removePrefix("https://"))
 
     /**
      * Album-art CDNs a shared mix's or song's covers may point at. Anything else could log recipients' IPs.
@@ -32,7 +32,6 @@ object ShareConfig {
     val COVER_HOSTS: List<String> = listOf(
         "i.scdn.co", "mosaic.scdn.co",
         "i.ytimg.com", "lh3.googleusercontent.com", "yt3.googleusercontent.com", "yt3.ggpht.com",
-        "lastfm.freetls.fastly.net", "lastfm-img.freetls.fastly.net",
         "static.qobuz.com", "c.saavncdn.com",
         // Deezer: where the Worker finds a song page's cover by ISRC.
         "cdn-images.dzcdn.net", "e-cdns-images.dzcdn.net",

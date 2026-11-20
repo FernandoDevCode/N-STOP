@@ -1,7 +1,6 @@
 package com.stash.core.data.social
 
 import android.util.Log
-import com.stash.core.common.primaryArtist
 import com.stash.core.data.db.dao.TrackDao
 import com.stash.core.data.social.spotify.SpotifyLibraryApiClient
 import com.stash.core.data.social.stash.StashLikedPlaylistRepository
@@ -10,13 +9,11 @@ import com.stash.core.model.Track
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
 
 class NoSpotifyUriException : Exception("Track has no spotifyUri")
 class NoYouTubeIdException : Exception("Track has no youtubeId")
-class NoLastFmSessionException : Exception("Last.fm is not connected")
 
 /**
  * v0.9.13: Stateless fan-out for Like operations. Both auto-save
@@ -38,8 +35,6 @@ class LikeDestinationDispatcher @Inject constructor(
     private val ytMusicLibraryClient: YtMusicLibraryApiClient,
     private val stashLikedRepository: StashLikedPlaylistRepository,
     private val trackDao: TrackDao,
-    private val lastFmApiClient: com.stash.core.data.lastfm.LastFmApiClient,
-    private val lastFmSessionPreference: com.stash.core.data.lastfm.LastFmSessionPreference,
 ) {
     suspend fun like(
         track: Track,
@@ -73,20 +68,6 @@ class LikeDestinationDispatcher @Inject constructor(
                     ytMusicLibraryClient.likeVideo(videoId)
                     runCatching { trackDao.markYtMusicSaved(track.id, System.currentTimeMillis()) }
                         .onFailure { Log.w(TAG, "markYtMusicSaved failed for ${track.id}", it) }
-                }
-                Destination.LAST_FM -> {
-                    // No platform id needed: Last.fm matches on artist + title, so
-                    // there is nothing to resolve first.
-                    val session = lastFmSessionPreference.session.first()
-                        ?: throw NoLastFmSessionException()
-                    lastFmApiClient.setLoved(
-                        sessionKey = session.sessionKey,
-                        artist = scrobbleArtist(track.artist),
-                        track = track.title,
-                        loved = true,
-                    ).getOrThrow()
-                    runCatching { trackDao.markLastFmLoved(track.id, System.currentTimeMillis()) }
-                        .onFailure { Log.w(TAG, "markLastFmLoved failed for ${track.id}", it) }
                 }
             }
             Result.success(Unit)
@@ -137,21 +118,6 @@ class LikeDestinationDispatcher @Inject constructor(
                     runCatching { trackDao.clearYtMusicSaved(track.id) }
                         .onFailure { Log.w(TAG, "clearYtMusicSaved failed for ${track.id}", it) }
                 }
-                Destination.LAST_FM -> {
-                    // Only reached when lastFmLovedAt is set, i.e. only for a love
-                    // Stash itself created — a love the user made years ago is not
-                    // ours to delete.
-                    val session = lastFmSessionPreference.session.first()
-                        ?: throw NoLastFmSessionException()
-                    lastFmApiClient.setLoved(
-                        sessionKey = session.sessionKey,
-                        artist = scrobbleArtist(track.artist),
-                        track = track.title,
-                        loved = false,
-                    ).getOrThrow()
-                    runCatching { trackDao.clearLastFmLoved(track.id) }
-                        .onFailure { Log.w(TAG, "clearLastFmLoved failed for ${track.id}", it) }
-                }
             }
             Result.success(Unit)
         } catch (ce: CancellationException) {
@@ -161,31 +127,10 @@ class LikeDestinationDispatcher @Inject constructor(
         }
     }
 
-    /**
-     * Applies the same "only first artist" preference the scrobbler uses.
-     *
-     * Loves and scrobbles must agree. Last.fm matches a love against its own catalog
-     * entry, so submitting "Calvin Harris" for the scrobble and "Calvin Harris, Dua
-     * Lipa" for the love lands them on different entries — or the love on nothing at
-     * all. That split is precisely what the toggle exists to prevent, so it has to
-     * govern both writes, not just one.
-     *
-     * Reuses [com.stash.core.common.primaryArtist] rather than reimplementing
-     * the split: one definition of "primary artist", one place to fix it when the
-     * "Tyler, The Creator" limitation is eventually addressed.
-     */
-    private suspend fun scrobbleArtist(artist: String): String =
-        if (lastFmSessionPreference.firstArtistOnly.first() == true) {
-            artist.primaryArtist()
-        } else {
-            artist
-        }
-
     private fun alreadySaved(track: Track, dest: Destination): Boolean = when (dest) {
         Destination.STASH -> track.stashLikedAt != null
         Destination.SPOTIFY -> track.spotifySavedAt != null
         Destination.YT_MUSIC -> track.ytMusicSavedAt != null
-        Destination.LAST_FM -> track.lastFmLovedAt != null
     }
 
     companion object {

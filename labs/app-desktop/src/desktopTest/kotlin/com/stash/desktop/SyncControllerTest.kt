@@ -1,7 +1,6 @@
 package com.stash.desktop
 
 import com.stash.core.auth.model.*
-import com.stash.core.data.lastfm.LastFmCredentials
 import com.stash.core.model.SyncResult
 import com.stash.data.spotify.*
 import com.stash.data.spotify.model.*
@@ -22,8 +21,7 @@ class SyncControllerTest {
             override fun protect(cleartext: ByteArray) = cleartext.reversedArray()
             override fun unprotect(ciphertext: ByteArray) = ciphertext.reversedArray()
         }
-        val accounts = DesktopAccounts(File(store.directory, "accounts"), cipher = cipher,
-            initialLastFmCredentials = LastFmCredentials("", ""))
+        val accounts = DesktopAccounts(File(store.directory, "accounts"), cipher = cipher)
         accounts.ready.first { it }
         accounts.vault.saveSpotifyToken(ServiceToken("synthetic", "synthetic", Long.MAX_VALUE, "test-user|test-client"), UserInfo("test-user", "Test user"))
         return AppController(store, accounts = accounts, spotifySyncSource = source).also { controllers.add(it) }

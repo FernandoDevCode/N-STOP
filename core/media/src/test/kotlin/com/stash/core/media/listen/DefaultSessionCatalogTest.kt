@@ -122,7 +122,7 @@ class DefaultSessionCatalogTest {
     }
 
     @Test fun `a song brings its cover link to the room, never a local file or an unknown host`() = runTest {
-        val cover = "https://lastfm-img.freetls.fastly.net/i/u/770x0/ab12.jpg"
+        val cover = "https://i.scdn.co/image/ab67616d0000b273ab12"
         coEvery { trackDao.getById(3) } returns TrackEntity(id = 3, title = "Home Row", artist = "Me", albumArtUrl = cover, albumArtPath = "/data/art/3.jpg")
         coEvery { trackDao.getById(4) } returns TrackEntity(id = 4, title = "Tracked", artist = "Me", albumArtUrl = "https://tracker.example/x.jpg")
         assertThat(catalog.sharedTrackFor(MediaItem.Builder().setMediaId("3").build())!!.artUrl).isEqualTo(cover)
