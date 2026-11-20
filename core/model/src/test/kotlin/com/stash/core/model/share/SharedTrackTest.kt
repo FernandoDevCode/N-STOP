@@ -44,9 +44,10 @@ class SharedTrackTest {
     }
 
     @Test fun `a room song's cover becomes the new row's art, only from a known cover host`() {
-        val cover = "https://lastfm-img.freetls.fastly.net/i/u/770x0/ab12.jpg"
+        val cover = "https://i.scdn.co/image/ab67616d0000b273ab12"
         assertThat(SharedTrack("T", "A", artUrl = cover).toTrack().albumArtUrl).isEqualTo(cover)
         assertThat(SharedTrack("T", "A", artUrl = "https://tracker.example/x.jpg").toTrack().albumArtUrl).isNull()
+        assertThat(SharedTrack("T", "A", artUrl = "https://lastfm-img.freetls.fastly.net/i/u/300x300/abc.png").toTrack().albumArtUrl).isNull()
         assertThat(SharedTrack("T", "A").toTrack().albumArtUrl).isNull()
     }
 
