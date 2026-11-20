@@ -406,8 +406,7 @@ class MixGenerator @Inject constructor(
 
     /**
      * Keeps the tracks Last.fm tags with the recipe's decade(s) ("80s", via
-     * [RecipeTagResolver.decadeTag], the same tags the discovery side seeds
-     * from). A Mix Builder era chip means *released* in that decade.
+     * decade tags associated with release dates. A Mix Builder era chip means *released* in that decade.
      *
      * This used to compare the era with the year of `date_added`, the day the
      * track entered Stash, so an "80s" mix kept no library tracks at all for a
@@ -426,7 +425,7 @@ class MixGenerator @Inject constructor(
         val startYear = recipe.eraStartYear ?: recipe.eraEndYear ?: return pool
         val endYear = recipe.eraEndYear ?: startYear
         if (pool.isEmpty()) return pool
-        val decadeTags = (startYear / 10 * 10..endYear step 10).map { RecipeTagResolver.decadeTag(it) }
+        val decadeTags = (startYear / 10 * 10..endYear step 10).map { if (it < 2000) "${(it % 100) / 10}0s" else "${(it / 10) * 10}s" }
         if (decadeTags.isEmpty()) return pool
         val inEraIds = trackTagDao.getTrackIdsByTags(decadeTags).toSet()
         return pool.filter { it.id in inEraIds }.ifEmpty { pool }
