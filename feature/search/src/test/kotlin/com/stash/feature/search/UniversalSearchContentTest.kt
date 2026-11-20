@@ -137,6 +137,26 @@ class UniversalSearchContentTest {
     }
 
     @Test
+    fun `changing query resets Top while updates to the same query preserve the category`() {
+        val state = mutableStateOf(UniversalSearchUiState(query = "radiohead"))
+        compose.setContent {
+            VisualTheme { UniversalSearchContent(state.value, actions, autoFocus = false) }
+        }
+        selectCategory("ALBUMS")
+        compose.onNodeWithTag("searchCategoryALBUMS").assertIsSelected()
+
+        // A recomposition of the same query (including navigation back) keeps the chosen category.
+        compose.runOnIdle {
+            state.value = state.value.copy(recentSearches = listOf(queryHistoryItem("older")))
+        }
+        compose.onNodeWithTag("searchCategoryALBUMS").assertIsSelected()
+
+        // Replacing one nonempty query with another must restore Top.
+        compose.runOnIdle { state.value = state.value.copy(query = "slipknot") }
+        compose.onNodeWithTag("searchCategoryTOP").assertIsSelected()
+    }
+
+    @Test
     fun `youtube category stays available with the source off and never toggles it`() {
         show(UniversalSearchUiState(query = "rock", selection = SearchSourceSelection(setOf(SPOTIFY))))
         selectCategory("YOUTUBE")

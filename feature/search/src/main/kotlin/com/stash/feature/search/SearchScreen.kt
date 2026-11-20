@@ -278,7 +278,7 @@ internal fun UniversalSearchContent(
     }
     var listQuery by rememberSaveable { mutableStateOf(state.query) }
     LaunchedEffect(state.query) {
-        if (!active) selectedCategory = SearchCategory.TOP
+        if (!active || listQuery != state.query) selectedCategory = SearchCategory.TOP
         if (listQuery != state.query) {
             listQuery = state.query
             list.scrollToItem(0)
