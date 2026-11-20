@@ -10,9 +10,11 @@ import java.net.UnknownHostException
 class ResilientDnsRetiredHostsTest {
     @Test fun retiredHostsAreRejectedBeforeDelegateLookup() {
         var delegated = false
-        val dns = ResilientDns(delegate = Dns {
-            delegated = true
-            listOf(InetAddress.getLoopbackAddress())
+        val dns = ResilientDns(delegate = object : Dns {
+            override fun lookup(hostname: String): List<InetAddress> {
+                delegated = true
+                return listOf(InetAddress.getLoopbackAddress())
+            }
         }, maxAttempts = 1)
         listOf("last.fm", "api.last.fm", "lastfm.freetls.fastly.net",
             "lastfm-img.freetls.fastly.net").forEach { host ->
