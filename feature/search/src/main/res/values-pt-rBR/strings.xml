@@ -55,9 +55,7 @@
     <string name="universal_search_see_all">Ver tudo</string>
     <string name="universal_search_see_all_category">Ver tudo em %1$s</string>
     <string name="universal_search_source_settings">Filtros da busca</string>
-    <string name="universal_search_spotify_description">Catálogo do YouTube Music com capas e metadados visuais do Spotify quando disponíveis.</string>
-    <string name="universal_search_youtube_description">Busca no catálogo independente de vídeos do YouTube.</string>
-    <string name="universal_search_youtube_disabled">Abra os filtros da busca e ative o YouTube para ver vídeos aqui.</string>
+    <string name="universal_search_spotify_description">Busca no catálogo musical do Spotify, com YouTube Music como alternativa.</string>
     <string name="universal_search_music_disabled">Abra os filtros da busca e ative o Spotify para ver resultados musicais.</string>
     <string name="universal_search_details_hint">Toque e segure um resultado para ver opções e detalhes do catálogo.</string>
     <string name="universal_search_result_options">Opções e detalhes do catálogo</string>
@@ -66,7 +64,6 @@
     <string name="universal_search_pin_sources">Fixar seleção entre sessões</string>
     <string name="universal_search_pinned">Salvas entre sessões</string>
     <string name="universal_search_temporary">Somente nesta sessão</string>
-    <string name="universal_search_select_source">Selecione pelo menos uma fonte para buscar.</string>
     <string name="universal_search_prompt">Busque uma música, um vídeo, um artista ou um álbum.</string>
     <string name="universal_search_clear_history">Limpar histórico</string>
     <string name="universal_search_loading_source">Buscando no %1$s…</string>
@@ -86,6 +83,7 @@
     <string name="universal_search_remove_recent">Remover %1$s do histórico</string>
     <string name="universal_search_video">Vídeo</string>
     <string name="universal_search_album">Álbum</string>
+    <string name="universal_search_single">Single</string>
     <string name="universal_search_explicit">Explícito</string>
     <!-- Sonora: localized active destinations. -->
     <string name="sonora_artist_photo_title">Fotografia de %1$s</string>

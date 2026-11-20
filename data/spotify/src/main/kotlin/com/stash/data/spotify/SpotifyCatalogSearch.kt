@@ -10,6 +10,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
 import okhttp3.Call
@@ -30,19 +31,27 @@ data class SpotifyCatalogItem(
     val albumTitle: String? = null,
     val releaseYear: String? = null,
     val releaseType: String? = null,
+    val artistNames: List<String> = emptyList(),
 ) {
     enum class Kind { TRACK, ARTIST, ALBUM }
 }
 
-internal fun parseSpotifyCatalog(body: String): List<SpotifyCatalogItem> {
+data class SpotifyCatalogPage(
+    val items: List<SpotifyCatalogItem>,
+    val returnedKinds: Set<SpotifyCatalogItem.Kind>,
+    val nextOffsets: Map<SpotifyCatalogItem.Kind, Int>,
+)
+
+internal fun parseSpotifyCatalog(body: String, requestedOffset: Int = 0): SpotifyCatalogPage {
     val root = Json.parseToJsonElement(body).jsonObject
-    val buckets = SpotifyCatalogItem.Kind.entries.associateWith { kind ->
-        (root[kind.name.lowercase() + "s"] as? JsonObject)?.get("items") as? JsonArray
+    val pages = SpotifyCatalogItem.Kind.entries.associateWith { kind ->
+        root[kind.name.lowercase() + "s"] as? JsonObject
     }
+    val buckets = pages.mapValues { (_, page) -> page?.get("items") as? JsonArray }
     if (buckets.values.all { it == null }) throw IOException("Missing Spotify search result buckets")
 
-    // The API ranks each type separately. Weave equal positions in request order.
-    return buildList {
+    // Keep API positions even when individual rows are missing or malformed.
+    val items = buildList {
         val size = buckets.values.maxOf { it?.size ?: 0 }
         for (index in 0 until size) {
             for ((kind, items) in buckets) {
@@ -55,29 +64,43 @@ internal fun parseSpotifyCatalog(body: String): List<SpotifyCatalogItem> {
                     item
                 }
                 val artists = (item["artists"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+                val artistNames = artists.mapNotNull { it.text("name") }
                 add(
                     SpotifyCatalogItem(
                         kind = kind,
                         id = id,
                         uri = item.text("uri"),
                         title = title,
-                        artists = artists.mapNotNull { it.text("name") }
-                            .joinToString(", ").takeIf { it.isNotBlank() },
+                        artists = artistNames.takeIf { it.isNotEmpty() }?.joinToString(", "),
                         artworkUrl = (artwork?.get("images") as? JsonArray).orEmpty()
                             .firstNotNullOfOrNull { (it as? JsonObject)?.text("url") },
                         durationMs = (item["duration_ms"] as? JsonPrimitive)?.longOrNull
                             ?.takeIf { it >= 0 },
                         isExplicit = (item["explicit"] as? JsonPrimitive)?.booleanOrNull == true,
-                        rank = index * buckets.size + kind.ordinal,
+                        rank = (requestedOffset + index) * buckets.size + kind.ordinal,
                         artistIds = artists.mapNotNull { it.text("id") },
                         albumTitle = artwork?.text("name"),
                         releaseYear = artwork?.text("release_date")?.take(4),
                         releaseType = artwork?.text("album_type"),
+                        artistNames = artistNames,
                     ),
                 )
             }
         }
     }
+    val returnedKinds = buckets.filterValues { it != null }.keys
+    val nextOffsets = buildMap {
+        for (kind in returnedKinds) {
+            val page = pages.getValue(kind) ?: continue
+            if (page.text("next") == null) continue
+            val offset = (page["offset"] as? JsonPrimitive)?.intOrNull ?: requestedOffset
+            val limit = (page["limit"] as? JsonPrimitive)?.intOrNull ?: continue
+            val next = offset.toLong() + limit
+            // Rebuild authenticated requests locally instead of following a response URL.
+            if (offset == requestedOffset && next > offset && next <= 1_000) put(kind, next.toInt())
+        }
+    }
+    return SpotifyCatalogPage(items, returnedKinds, nextOffsets)
 }
 
 private fun JsonObject.text(key: String): String? =

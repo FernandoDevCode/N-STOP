@@ -8,6 +8,7 @@ interface UniversalSearchActions {
     fun onPinToggled()
     fun onRestoreDefaultSources()
     fun onRetrySource(source: CatalogSource)
+    fun onLoadMore(query: String, type: SearchResultType)
     fun onVisibleResultsChanged(query: String, stableKeys: Set<String>)
     fun onResultAction(
         result: UniversalSearchResult,

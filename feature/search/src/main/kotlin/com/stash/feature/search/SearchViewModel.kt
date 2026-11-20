@@ -8,6 +8,7 @@ import com.stash.core.data.artistphotos.SelectedArtistPhotoRepository
 import com.stash.core.media.PlayerRepository
 import com.stash.core.media.StreamRoutingResult
 import com.stash.core.model.TrackItem
+import com.stash.core.model.YouTubeVideoId
 import com.stash.data.ytmusic.model.AlbumSummary
 import com.stash.feature.search.contract.CatalogIdentity
 import com.stash.feature.search.contract.CatalogSource
@@ -17,11 +18,13 @@ import com.stash.feature.search.contract.UniversalSearchResult
 import com.stash.feature.search.engine.UniversalSearchSession
 import com.stash.feature.search.engine.UniversalSearchSessionFactory
 import com.stash.feature.search.engine.exactPlaybackVideoId
+import com.stash.feature.search.engine.searchTextKey
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,7 +36,7 @@ import kotlinx.coroutines.launch
 
 @HiltViewModel
 class SearchViewModel @Inject constructor(
-    factory: UniversalSearchSessionFactory,
+    private val factory: UniversalSearchSessionFactory,
     savedStateHandle: SavedStateHandle,
     artistPhotos: SelectedArtistPhotoRepository,
     private val player: PlayerRepository,
@@ -54,10 +57,7 @@ class SearchViewModel @Inject constructor(
         viewModelScope.launch {
             val session = factory.open(
                 scope = viewModelScope,
-                onNavigate = { result ->
-                    searchDestination(result.identity, result.type, result.title, result.subtitle, result.artworkUrl)
-                        ?.let { navigation.tryEmit(it) }
-                },
+                onNavigate = ::openResult,
                 onOpenRecent = { item -> item.destination()?.let { navigation.tryEmit(it) } },
                 onPlay = ::play,
             )
@@ -67,37 +67,86 @@ class SearchViewModel @Inject constructor(
         }
     }
 
+    private fun openResult(result: UniversalSearchResult) {
+        if (result.identity.source != CatalogSource.SPOTIFY) {
+            searchDestination(result.identity, result.type, result.title, result.subtitle, result.artworkUrl)
+                ?.let { navigation.tryEmit(it) }
+            return
+        }
+        val session = openedSession.value ?: return
+        val search = session.state.value
+        runResultAction(result, R.string.universal_search_details_unavailable) {
+            // More than one Spotify artist with the same name gives no verified cross-catalog route.
+            val hasHomonym = result.type == SearchResultType.ARTIST && search.orderedResults.any {
+                it.type == result.type && it.identity != result.identity && it.identity.source == result.identity.source &&
+                    searchTextKey(it.title) == searchTextKey(result.title)
+            }
+            val target = if (hasHomonym) null else factory.resolveSpotifyTarget(result)
+            currentCoroutineContext().ensureActive()
+            val current = session.state.value
+            if (current.query != search.query || current.orderedResults.none { it.stableKey == result.stableKey }) {
+                return@runResultAction
+            }
+            val identity = target?.let { CatalogIdentity(CatalogSource.YOUTUBE_MUSIC, it.id) }
+            val destination = identity?.let {
+                searchDestination(it, result.type, result.title, result.subtitle, result.artworkUrl)
+            }
+            if (identity != null && destination != null) {
+                session.recordNavigation(result, identity)
+                navigation.tryEmit(destination)
+            } else {
+                playbackErrors.tryEmit(R.string.universal_search_details_unavailable)
+            }
+        }
+    }
+
     private fun play(result: UniversalSearchResult, artworkUrl: String?) {
-        val videoId = result.exactPlaybackVideoId() ?: return
-        if (pendingPlayback.value?.audioIdentity == result.audioIdentity) return
+        runResultAction(result, R.string.universal_search_play_failed) {
+            val videoId = if (result.identity.source == CatalogSource.SPOTIFY) {
+                factory.resolveSpotifyTarget(result)?.id?.takeIf(YouTubeVideoId::isValid)
+            } else result.exactPlaybackVideoId()
+            currentCoroutineContext().ensureActive()
+            if (videoId == null) {
+                playbackErrors.tryEmit(R.string.universal_search_play_unavailable)
+                return@runResultAction
+            }
+            val outcome = player.playExactSearchResult(
+                TrackItem(
+                    videoId = videoId,
+                    title = result.title,
+                    artist = result.subtitle.orEmpty(),
+                    durationSeconds = (result.durationMs ?: 0L) / 1000.0,
+                    thumbnailUrl = artworkUrl,
+                    album = result.release?.title,
+                ),
+            )
+            currentCoroutineContext().ensureActive()
+            val error = when (outcome) {
+                StreamRoutingResult.NotAvailable -> R.string.universal_search_play_unavailable
+                StreamRoutingResult.NoConnectivity -> R.string.universal_search_play_offline
+                StreamRoutingResult.CellularRefused -> R.string.universal_search_play_cellular
+                StreamRoutingResult.Deduped, is StreamRoutingResult.Item -> null
+            }
+            error?.let { playbackErrors.tryEmit(it) }
+        }
+    }
+
+    private fun runResultAction(result: UniversalSearchResult, failureMessage: Int, action: suspend () -> Unit) {
+        val pending = pendingPlayback.value
+        if (pending?.stableKey == result.stableKey ||
+            (result.audioIdentity != null && pending?.audioIdentity == result.audioIdentity)
+        ) return
         playbackJob?.cancel()
         pendingPlayback.value = result
         playbackJob = viewModelScope.launch(start = CoroutineStart.LAZY) {
             try {
-                val outcome = player.playExactSearchResult(
-                    TrackItem(
-                        videoId = videoId,
-                        title = result.title,
-                        artist = result.subtitle.orEmpty(),
-                        durationSeconds = (result.durationMs ?: 0L) / 1000.0,
-                        thumbnailUrl = artworkUrl,
-                        album = result.release?.title,
-                    ),
-                )
-                ensureActive()
-                val error = when (outcome) {
-                    StreamRoutingResult.NotAvailable -> R.string.universal_search_play_unavailable
-                    StreamRoutingResult.NoConnectivity -> R.string.universal_search_play_offline
-                    StreamRoutingResult.CellularRefused -> R.string.universal_search_play_cellular
-                    StreamRoutingResult.Deduped, is StreamRoutingResult.Item -> null
-                }
-                error?.let { playbackErrors.tryEmit(it) }
+                action()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
                 ensureActive()
-                Log.w("SearchViewModel", "Could not start exact Search playback", error)
-                playbackErrors.tryEmit(R.string.universal_search_play_failed)
+                Log.w("SearchViewModel", "Could not open selected search result", error)
+                playbackErrors.tryEmit(failureMessage)
             } finally {
                 if (playbackJob === coroutineContext[Job]) {
                     playbackJob = null
@@ -125,7 +174,7 @@ internal sealed interface SearchNavigation {
 }
 
 internal fun RecentSearchItem.destination(): SearchNavigation? =
-    resultIdentity?.let { searchDestination(it, resultType, label, subtitle, artworkUrl) }
+    (browseIdentity ?: resultIdentity)?.let { searchDestination(it, resultType, label, subtitle, artworkUrl) }
 
 internal fun searchDestination(
     identity: CatalogIdentity,

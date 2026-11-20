@@ -25,29 +25,23 @@ enum class SearchResultAction {
 
 val DefaultSearchSources: Set<CatalogSource> = setOf(
     CatalogSource.SPOTIFY,
-    CatalogSource.YOUTUBE,
 )
 
 data class SearchSourceSelection(
     val enabled: Set<CatalogSource> = DefaultSearchSources,
     val isPinned: Boolean = false,
 ) {
-    // Historical pins can contain YOUTUBE_MUSIC as an independent visual filter.
-    // Keep the catalog identity, but migrate that visual choice to its Spotify alias.
+    // Historic pins may contain the former YouTube switch or the legacy music alias.
     fun normalizedVisibleFilters(): SearchSourceSelection =
-        if (CatalogSource.YOUTUBE_MUSIC in enabled) {
-            copy(enabled = (enabled - CatalogSource.YOUTUBE_MUSIC) + CatalogSource.SPOTIFY)
-        } else {
-            this
-        }
+        copy(enabled = if (enabled.any { it != CatalogSource.YOUTUBE }) DefaultSearchSources else emptySet())
 
-    // Persist the visual choices by their existing enum names. Route requests by catalog.
+    // The YouTube chip works independently. YouTube Music is the music fallback.
     val activeCatalogs: Set<CatalogSource>
-        get() = enabled.mapTo(linkedSetOf()) { filter ->
-            if (filter == CatalogSource.SPOTIFY) CatalogSource.YOUTUBE_MUSIC else filter
-        }
+        get() = if (enabled.any { it != CatalogSource.YOUTUBE }) musicAndVideoCatalogs else videoCatalog
 
     companion object {
+        private val musicAndVideoCatalogs = CatalogSource.entries.toSet()
+        private val videoCatalog = setOf(CatalogSource.YOUTUBE)
         val Default = SearchSourceSelection()
     }
 }
@@ -96,6 +90,8 @@ data class UniversalSearchResult(
     val rankingScore: Double,
     val supportedActions: Set<SearchResultAction> = emptySet(),
     val release: SearchReleaseMetadata? = null,
+    val artistNames: List<String> = emptyList(),
+    val artistIds: List<String> = emptyList(),
 ) {
     val stableKey: String = "${identity.source.name}:${type.name}:${identity.catalogId}"
 
@@ -147,10 +143,13 @@ sealed interface SourceSearchState {
     data class Data(
         val query: String,
         val items: List<UniversalSearchResult>,
+        val nextOffsets: Map<SearchResultType, Int> = emptyMap(),
+        val loadingPages: Set<SearchResultType> = emptySet(),
+        val pageErrors: Set<SearchResultType> = emptySet(),
     ) : SourceSearchState {
         init {
             require(query.isNotBlank()) { "Data query must not be blank" }
-            require(items.isNotEmpty()) { "Data must contain at least one item" }
+            require(items.isNotEmpty() || nextOffsets.isNotEmpty()) { "Data must contain an item or continuation" }
         }
     }
 
@@ -194,6 +193,7 @@ data class RecentSearchItem(
     val resultIdentity: CatalogIdentity? = null,
     val resultType: SearchResultType? = null,
     val artworkUrl: String? = null,
+    val browseIdentity: CatalogIdentity? = null,
 ) {
     init {
         require(id.isNotBlank()) { "id must not be blank" }
@@ -220,13 +220,14 @@ data class UniversalSearchUiState(
     val artworkOverrides: Map<String, String> = emptyMap(),
 ) {
     init {
+        val resultsBySource = sourceStates.mapValues { (_, state) -> state.visibleItems().toHashSet() }
         sourceStates.forEach { (source, state) ->
             state.queryOrNull()?.let { stateQuery ->
                 require(stateQuery == query) {
                     "$source state belongs to a different query"
                 }
             }
-            require(state.visibleItems().all { it.identity.source == source }) {
+            require(resultsBySource.getValue(source).all { it.identity.source == source }) {
                 "$source state may contain only results from that source"
             }
         }
@@ -238,9 +239,7 @@ data class UniversalSearchUiState(
         }
 
         require(orderedResults.all { result ->
-            sourceStates[result.identity.source]
-                ?.visibleItems()
-                ?.contains(result) == true
+            resultsBySource[result.identity.source]?.contains(result) == true
         }) {
             "orderedResults must exactly match visible results from their source"
         }

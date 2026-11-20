@@ -62,8 +62,37 @@ class SpotifyCatalogSearchTest {
         val search = client { response(it, 429).newBuilder().header("Retry-After", "12").build() }
         val error = runCatching { search.searchCatalog("demo") }.exceptionOrNull()
         assertEquals(12L, (error as SpotifyRateLimitException).retryAfterSeconds)
+        val blocked = runCatching { search.searchCatalogPage("other query") }.exceptionOrNull()
+        assertTrue(checkNotNull((blocked as SpotifyRateLimitException).retryAfterSeconds) in 1L..12L)
         assertEquals(1, requests.size)
         coVerify(exactly = 0) { tokens.forceRefreshSpotifyAccessToken() }
+    }
+
+    @Test
+    fun `partial search distinguishes missing and empty types and pages only the requested type`() = runBlocking {
+        coEvery { tokens.getSpotifyAccessToken() } returns "fresh"
+        val search = client { request ->
+            if (request.url.queryParameter("offset") == "10") {
+                response(request, 200, """{"tracks":{"items":[null,{"id":"later","name":"Better match"}],"next":null}}""")
+            } else {
+                response(request, 200, """
+                    {"tracks":{"items":[{"id":"first","name":"First","artists":[{"name":"Lead"},{"name":"Guest"}]}],
+                     "offset":0,"limit":10,"next":"https://api.spotify.com/v1/search?offset=10"},
+                     "albums":{"items":[],"next":null},"artists":null}
+                """.trimIndent())
+            }
+        }
+        val first = search.searchCatalogPage("query")
+        assertEquals(setOf(SpotifyCatalogItem.Kind.TRACK, SpotifyCatalogItem.Kind.ALBUM), first.returnedKinds)
+        assertEquals(mapOf(SpotifyCatalogItem.Kind.TRACK to 10), first.nextOffsets)
+        assertEquals(listOf("Lead", "Guest"), first.items.single().artistNames)
+        val second = search.searchCatalogPage("query", kind = SpotifyCatalogItem.Kind.TRACK, offset = 10)
+        assertEquals("track", requests.last().url.queryParameter("type"))
+        assertEquals("query", requests.last().url.queryParameter("q"))
+        assertEquals("10", requests.first().url.queryParameter("limit"))
+        assertEquals("later", second.items.single().id)
+        assertEquals(33, second.items.single().rank)
+        assertTrue(second.nextOffsets.isEmpty())
     }
 
     private fun client(respond: (Request) -> Response) = SpotifyApiClient(

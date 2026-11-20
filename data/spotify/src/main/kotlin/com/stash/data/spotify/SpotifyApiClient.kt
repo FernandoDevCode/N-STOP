@@ -38,6 +38,8 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.net.URLEncoder
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -951,11 +953,24 @@ class SpotifyApiClient @Inject constructor(
         query: String,
         limit: Int = 8,
         kind: SpotifyCatalogItem.Kind? = null,
-    ): List<SpotifyCatalogItem> =
+    ): List<SpotifyCatalogItem> = searchCatalogPage(query, limit, kind).items
+
+    private val catalogRetryAtMs = AtomicLong(Long.MIN_VALUE)
+
+    suspend fun searchCatalogPage(
+        query: String,
+        limit: Int = 10,
+        kind: SpotifyCatalogItem.Kind? = null,
+        offset: Int = 0,
+    ): SpotifyCatalogPage =
         withContext(Dispatchers.IO) {
+            require(offset in 0..1_000)
             val type = kind?.name?.lowercase() ?: "track,artist,album"
-            val url = "$WEB_API_BASE/search?type=$type&limit=$limit" +
+            val url = "$WEB_API_BASE/search?type=$type&limit=$limit&offset=$offset" +
                 "&q=${URLEncoder.encode(query, "UTF-8")}"
+            val retryAt = catalogRetryAtMs.get()
+            val now = TimeUnit.NANOSECONDS.toMillis(System.nanoTime())
+            if (retryAt > now) throw SpotifyRateLimitException((retryAt - now + 999) / 1_000)
             val token = tokenManager.getSpotifyAccessToken()
                 ?: throw SpotifyApiException(0, url, "Spotify search requires a connected account")
             var response = okHttpClient.newCall(searchRequest(url, token)).awaitCatalogResponse()
@@ -965,10 +980,15 @@ class SpotifyApiClient @Inject constructor(
                 response = okHttpClient.newCall(searchRequest(url, refreshed)).awaitCatalogResponse()
             }
             when (response.code) {
-                429 -> throw SpotifyRateLimitException(response.retryAfterSeconds)
+                429 -> {
+                    val wait = (response.retryAfterSeconds ?: 60).coerceIn(1, Int.MAX_VALUE.toLong())
+                    val retryAtMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime()) + wait * 1_000
+                    catalogRetryAtMs.accumulateAndGet(retryAtMs, ::maxOf)
+                    throw SpotifyRateLimitException(response.retryAfterSeconds)
+                }
                 !in 200..299 -> throw SpotifyApiException(response.code, url, "Spotify search failed")
             }
-            parseSpotifyCatalog(response.body ?: throw java.io.IOException("Empty Spotify search response"))
+            parseSpotifyCatalog(response.body ?: throw java.io.IOException("Empty Spotify search response"), offset)
         }
 
     /**
