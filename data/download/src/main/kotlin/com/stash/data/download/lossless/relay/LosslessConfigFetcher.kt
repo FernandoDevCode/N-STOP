@@ -116,6 +116,14 @@ class LosslessConfigFetcher @Inject constructor(
      * into app-private storage (`allowBackup=false`).
      */
     suspend fun loadCached() {
+        if (!enabled) {
+            // On upgrade, retire relays cached by older versions as well.
+            _relays.value = emptyList()
+            _relayKey.value = null
+            _updatedAt.value = 0L
+            context.losslessRelayConfigDataStore.edit { it.clear() }
+            return
+        }
         val cached = readCache() ?: return
         parse(cached)?.let { _relays.value = it.relays; _relayKey.value = it.relayKey; _updatedAt.value = it.updatedAt }
     }

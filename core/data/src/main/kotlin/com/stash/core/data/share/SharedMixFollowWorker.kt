@@ -26,22 +26,8 @@ class SharedMixFollowWorker @AssistedInject constructor(
     private val repository: SharedMixRepository,
 ) : CoroutineWorker(appContext, params) {
 
-    override suspend fun doWork(): Result {
-        val force = inputData.getBoolean(KEY_FORCE, false)
-        val now = System.currentTimeMillis()
-        for (row in sharedMixDao.activeFollowed()) {
-            if (isStopped) break
-            if (!isDue(row, now, force)) continue
-            try {
-                repository.checkForUpdate(row, now)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.w(TAG, "check failed for ${com.stash.core.model.share.ShareLinks.logId(row.shareId)}", e) // one bad mix never stops the rest
-            }
-        }
-        return Result.success()
-    }
+    /** Retained for existing WorkManager records, but must never call the old server. */
+    override suspend fun doWork(): Result = Result.success()
 
     companion object {
         private const val TAG = "SharedMix"

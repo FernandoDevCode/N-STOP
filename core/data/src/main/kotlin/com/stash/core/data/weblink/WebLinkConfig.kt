@@ -10,7 +10,7 @@ package com.stash.core.data.weblink
  */
 data class WebLinkConfig(val baseUrl: String, val enabled: Boolean) {
     init {
-        require(baseUrl.startsWith("https://") || baseUrl.startsWith("http://")) { "sync base URL must be http(s)" }
+        require(!enabled || baseUrl.startsWith("https://") || baseUrl.startsWith("http://")) { "sync base URL must be http(s)" }
     }
 
     /** True for a plain-http Worker (a debug build pointed at `wrangler dev`): the client then allows cleartext. */

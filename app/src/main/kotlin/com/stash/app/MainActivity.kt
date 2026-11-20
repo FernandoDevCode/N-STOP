@@ -129,12 +129,7 @@ class MainActivity : ComponentActivity() {
      * What every song Share sheet's "Stash link" uses to make a short link (via [LocalCreateTrackLink]). Null on any
      * failure: the sheet then shares the long link, so sharing still works.
      */
-    private val createTrackLink: suspend (SharedTrack) -> String? = { track ->
-        when (val r = shareApiClient.createTrackLink(track)) {
-            is ShareResult.Ok -> r.value.url
-            else -> { Log.w("ShareTrack", "short link failed ($r); sharing the long link"); null }
-        }
-    }
+    private val createTrackLink: suspend (SharedTrack) -> String? = { null }
 
     /**
      * Pending deep-link target read from the launch / new-intent extras.

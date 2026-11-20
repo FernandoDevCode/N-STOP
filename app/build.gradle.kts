@@ -44,16 +44,6 @@ val hasReleaseSigning = releaseStoreFilePath != null &&
     releaseKeyAlias != null &&
     releaseKeyPassword != null
 
-// ── Last.fm API credentials ────────────────────────────────────────────────
-//
-// Read from `local.properties` (gitignored) or env vars (CI). Users who want
-// Last.fm scrobbling need to register a Last.fm API account at
-// https://www.last.fm/api/account/create and drop the key/secret into
-// local.properties as:
-//   lastfm.apiKey=...
-//   lastfm.apiSecret=...
-// Missing credentials are NOT an error — the app builds + runs normally, the
-// Last.fm UI just shows "Not configured" and the scrobbler no-ops.
 val localPropertiesFile = rootProject.file("local.properties")
 val localProperties = Properties().apply {
     if (localPropertiesFile.exists()) {
@@ -63,24 +53,14 @@ val localProperties = Properties().apply {
 val fanartApiKey: String =
     localProperties.getProperty("fanart.apiKey") ?: System.getenv("FANART_API_KEY").orEmpty()
 
-// Optional comma-separated pool of EXTRA api keys used only for unsigned read
-// endpoints (tag/similar/etc.) to spread load and raise the shared-key rate
-// ceiling. No secret needed — reads are unsigned. Auth/scrobble always use the
-// primary key above. Empty by default.
-// Optional Stash Last.fm proxy Worker base URL. When set, generic read lookups
-// route through it (the Worker holds the server key + shared cache), decoupling
-// Last.fm load from user count. Empty = app talks to Last.fm directly.
-
 // ── Link Stash on the web (sync-v1) ────────────────────────────────────────
 //
 // Release builds talk to https://sync.stashfm.app with the feature on (it shipped; the flag stays as the off switch).
 // Debug builds show it too, and can point at a local Worker with
 // `sync.baseUrl=http://192.168.137.1:8795` in local.properties; only that host gets cleartext, through a
 // debug-only network security config generated below.
-val syncReleaseBaseUrl = "https://sync.stashfm.app"
-val syncDebugBaseUrl: String =
-    (localProperties.getProperty("sync.baseUrl") ?: System.getenv("STASH_SYNC_BASE_URL")).orEmpty().trim().trimEnd('/')
-        .ifEmpty { syncReleaseBaseUrl }
+val syncReleaseBaseUrl = "" // Retired Stash web sync is not configured in Sonora.
+val syncDebugBaseUrl: String = "" // Debug cannot reconnect to the old sync server.
 val syncDebugCleartextHost: String? =
     syncDebugBaseUrl.takeIf { it.startsWith("http://") }?.removePrefix("http://")?.substringBefore('/')?.substringBefore(':')
 
@@ -131,9 +111,6 @@ android {
         versionName = "0.9.182-sonora-search-quality"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // AppAuth redirect scheme removed -- Spotify now uses sp_dc cookie auth
-        // Last.fm API credentials exposed via BuildConfig for the app-level
-        // Hilt module to inject into LastFmApiClient. Empty strings are
-        // valid — the Settings UI just disables the connect button.
         buildConfigField("String", "FANART_API_KEY", "\"$fanartApiKey\"")
         // v0.9.13: TipJarRepository fetches the public supporters JSON from
         // this URL on Home foreground (cache-aware, ~15 min refresh). Edit

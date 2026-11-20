@@ -26,22 +26,8 @@ class SharedMixPublishWorker @AssistedInject constructor(
     private val repository: SharedMixRepository,
 ) : CoroutineWorker(appContext, params) {
 
-    override suspend fun doWork(): Result {
-        var retry = false
-        for (row in sharedMixDao.activeOwnedWithUpdates()) {
-            if (isStopped) break
-            // Only transient failures retry; Rejected/Forbidden would fail identically forever.
-            try {
-                if (repository.publishIfChanged(row) == PublishOutcome.Failed) retry = true
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.w(TAG, "publish failed for ${com.stash.core.model.share.ShareLinks.logId(row.shareId)}", e) // one bad mix never stops the rest
-                retry = true
-            }
-        }
-        return if (retry) Result.retry() else Result.success()
-    }
+    /** Retained for existing WorkManager records, but must never call the old server. */
+    override suspend fun doWork(): Result = Result.success()
 
     companion object {
         private const val TAG = "SharedMix"

@@ -540,8 +540,11 @@ class StashApplication : Application(), Configuration.Provider {
         // KDoc). KEEP policy means a re-launch before the worker completes
         // doesn't re-enqueue; re-arms after each sync via SyncFinalizeWorker.
         ArtistImageBackfillWorker.enqueueOneTime(this)
-        // Followed shared mixes: check on start, at most every 6 h (the worker gates per mix).
-        com.stash.core.data.share.SharedMixFollowWorker.enqueue(this, force = false)
+        // Cancel stale share jobs from previous installations; the worker bodies are also inert.
+        WorkManager.getInstance(applicationContext).apply {
+            cancelUniqueWork("stash_shared_mix_follow")
+            cancelUniqueWork("stash_shared_mix_publish")
+        }
         // v0.9.11: kick a background sweep that fills in bit-depth +
         // sample-rate for tracks downloaded before the columns existed.
         // The flag is set immediately on enqueue (not after success) so

@@ -89,54 +89,13 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="stash" android:host="track" />
             </intent-filter>
-            <!--
-                Shared mix, song and Listen Together links (spec 2026-09-23 shared mixes §6, 2026-09-24 listen together). Verified App Links:
-                each host serves /.well-known/assetlinks.json for com.stash.app and .debug. stashfm.app is where links live
-                since 2026-10-03; the old workers.dev host stays so links already shared keep opening (same Worker, keep ShareConfig.HOSTS in sync).
-                /t?… is the long song link, /t/{id} the short one. (The <data> tags of one filter combine, so every path applies to both hosts.)
-                Release order: the Worker must be live on stashfm.app, serving assetlinks.json, BEFORE an app with this host ships.
-                On Android 6-11 one host that fails verification turns App Links off for every host in the filter, and the
-                app's share API calls go to stashfm.app too.
-            -->
-            <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="stashfm.app" android:pathPrefix="/m/" />
-                <data android:scheme="https" android:host="stashfm.app" android:path="/t" />
-                <data android:scheme="https" android:host="stashfm.app" android:pathPrefix="/t/" />
-                <data android:scheme="https" android:host="stashfm.app" android:pathPrefix="/l/" />
-                <data android:scheme="https" android:host="stash-share.rawnaldclark.workers.dev" android:pathPrefix="/m/" />
-                <data android:scheme="https" android:host="stash-share.rawnaldclark.workers.dev" android:path="/t" />
-                <data android:scheme="https" android:host="stash-share.rawnaldclark.workers.dev" android:pathPrefix="/t/" />
-                <data android:scheme="https" android:host="stash-share.rawnaldclark.workers.dev" android:pathPrefix="/l/" />
-            </intent-filter>
+            <!-- Legacy Stash HTTP App Links retired; local audio import remains. -->
             <!-- Static app shortcuts (e.g. "Resume playback"). Must live on
                  the launcher activity. -->
             <meta-data
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
         </activity>
-        <!--
-            Link Stash on the web (spec 2026-10-10 link-sync §2.2, sync-v1 §3.4): the pairing code is a link,
-            https://stashfm.app/link#1.<pairId>.<pairSecret>.<eB.pub>, so scanning it with the phone's own camera app opens
-            Stash at the confirm sheet (the secrets are in the fragment, which never reaches a server). Its own filter, apart
-            from the share links', because the <data> tags of one filter combine and /link must not apply to the old
-            workers.dev host. An alias so the build flag can switch it off (WEB_LINK_ENABLED, manifest placeholder
-            webLinkEnabled); on in release and debug builds.
-        -->
-        <activity-alias
-            android:name=".WebLinkAlias"
-            android:enabled="${webLinkEnabled}"
-            android:exported="true"
-            android:targetActivity=".MainActivity">
-            <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="stashfm.app" android:path="/link" />
-            </intent-filter>
-        </activity-alias>
         <receiver
             android:name="com.stash.core.data.sync.BootReceiver"
             android:exported="true"
