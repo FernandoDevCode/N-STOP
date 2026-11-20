@@ -209,9 +209,7 @@ class StashMixRefreshWorker @AssistedInject constructor(
 
         /**
          * Schedule the periodic refresh. Default 24-hour cadence with no
-         * constraints — the library-only path works offline and fast
-         * enough to not care. Discovery is opportunistic and tolerates
-         * being skipped when the device is offline.
+         * constraints — the library-only path works offline.
          */
         suspend fun schedulePeriodic(context: Context) {
             val constraints = Constraints.Builder()
@@ -243,11 +241,6 @@ class StashMixRefreshWorker @AssistedInject constructor(
          */
         fun enqueueOneTime(context: Context, materializeOnly: Boolean = false) {
             val builder = OneTimeWorkRequestBuilder<StashMixRefreshWorker>()
-                .setConstraints(
-                    Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.CONNECTED)
-                        .build(),
-                )
             if (materializeOnly) {
                 builder.setInputData(androidx.work.workDataOf(KEY_MATERIALIZE_ONLY to true))
             }
@@ -272,11 +265,6 @@ class StashMixRefreshWorker @AssistedInject constructor(
         fun enqueueOneTime(context: Context, recipeId: Long) {
             val data = androidx.work.workDataOf(KEY_RECIPE_ID to recipeId)
             val work = OneTimeWorkRequestBuilder<StashMixRefreshWorker>()
-                .setConstraints(
-                    Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.CONNECTED)
-                        .build(),
-                )
                 .setInputData(data)
                 .build()
             WorkManager.getInstance(context).enqueueUniqueWork(

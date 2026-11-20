@@ -635,11 +635,6 @@ class HomeViewModel @Inject constructor(
             // unique name + REPLACE policy as StashMixRefreshWorker.enqueueOneTime,
             // mirroring lines 154-168 of that worker.
             val request = OneTimeWorkRequestBuilder<StashMixRefreshWorker>()
-                .setConstraints(
-                    Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.CONNECTED)
-                        .build(),
-                )
                 .setInputData(workDataOf(StashMixRefreshWorker.KEY_RECIPE_ID to recipe.id))
                 .build()
             val uniqueName = "${StashMixRefreshWorker.ONE_SHOT_WORK_NAME}_${recipe.id}"
