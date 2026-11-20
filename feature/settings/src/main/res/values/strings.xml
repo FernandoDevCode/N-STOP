@@ -123,10 +123,6 @@
     <string name="nostop_accounts_connect_anyway">Connect anyway</string>
     <string name="nostop_accounts_cancel">Cancel</string>
     <string name="nostop_accounts_finish_connect">Finish connecting</string>
-    <string name="nostop_accounts_lastfm_first">Legacy feature unavailable in Sonora.</string>
-    <string name="nostop_accounts_lastfm_offline">Legacy feature unavailable in Sonora.</string>
-    <string name="nostop_accounts_lastfm_no_scrobbles">No new scrobbles to send.</string>
-    <string name="nostop_accounts_lastfm_sent">Legacy feature unavailable in Sonora.</string>
     <string name="nostop_hub_stream_only">Stream only</string>
     <string name="nostop_hub_cellular_on">Cellular on</string>
     <string name="nostop_hub_cellular_off">Cellular off</string>

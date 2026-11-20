@@ -13,8 +13,6 @@ val StashCyanLight = Color(0xFFF4F5F7)
 val StashCyanDark = Color(0xFF343944)
 val StashSpotifyGreen = Color(0xFF1DB954)
 val StashYouTubeRed = Color(0xFFFF0033)
-// Last.fm brand red — the Sync-tab Last.fm source card's brand bar (issue #255).
-val StashLastfmRed = Color(0xFFD51007)
 val StashError = Color(0xFFEF4444)
 val StashWarning = Color(0xFFF59E0B)
 val StashSuccess = Color(0xFF10B981)
@@ -56,7 +54,6 @@ val StashGlassBorderBrightLight = Color(0x40637084)
 data class StashExtendedColors(
     val spotifyGreen: Color = StashSpotifyGreen,
     val youtubeRed: Color = StashYouTubeRed,
-    val lastfmRed: Color = StashLastfmRed,
     val cyan: Color = StashCyan,
     val cyanLight: Color = StashCyanLight,
     val cyanDark: Color = StashCyanDark,

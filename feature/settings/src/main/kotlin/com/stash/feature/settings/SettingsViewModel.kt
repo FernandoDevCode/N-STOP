@@ -1448,12 +1448,8 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
-     * Persists a new download-network mode AND re-schedules the two
-     * workers that depend on it ([StashDiscoveryWorker],
-     * enrichment workers) so the updated `Constraints` take effect
-     * immediately. WorkManager snapshots constraints at enqueue time —
-     * without the re-schedule, the setting would only apply to future
-     * installs, not the current one.
+     * Persists a new download-network mode. Only active providers
+     * observe this setting; retired discovery workers are not rescheduled.
      */
     fun onDownloadNetworkModeChanged(mode: DownloadNetworkMode) {
         viewModelScope.launch {
