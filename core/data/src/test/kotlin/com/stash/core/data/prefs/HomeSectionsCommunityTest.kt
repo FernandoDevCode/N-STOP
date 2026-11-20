@@ -1,11 +1,11 @@
 package com.stash.core.data.prefs
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -17,34 +17,27 @@ import org.robolectric.RobolectricTestRunner
 class HomeSectionsCommunityTest {
     private lateinit var context: Context
 
-    // The DataStore instance outlives a test, so deleting its file doesn't reset it: each test starts from an empty store.
     @Before fun setUp() = runTest {
         context = ApplicationProvider.getApplicationContext()
         context.homeSectionsDataStore.edit { it.clear() }
     }
 
-    @Test fun `off until turned on, the first time it goes to the top, after that it stays where it was put`() = runTest {
+    @Test fun `old saved opt-in cannot reconnect to the retired community`() = runTest {
+        context.homeSectionsDataStore.edit { it[booleanPreferencesKey("community_on")] = true }
         val pref = HomeSectionsPreference(context)
         assertFalse(pref.communityOn.first())
         assertFalse(HomeSection.COMMUNITY in pref.visibleSections.first())
 
         pref.setCommunityOn(true)
-        assertTrue(pref.communityOn.first())
-        assertEquals(HomeSection.COMMUNITY, pref.visibleSections.first().first())
-
-        pref.move(HomeSection.COMMUNITY, up = false)
-        pref.setCommunityOn(false)
+        assertFalse(pref.communityOn.first())
         assertFalse(HomeSection.COMMUNITY in pref.visibleSections.first())
-        pref.setCommunityOn(true)
-        assertEquals(HomeSection.COMMUNITY, pref.visibleSections.first()[1])
     }
 
-    @Test fun `placed by hand before it was ever on, it keeps that spot when turned on`() = runTest {
+    @Test fun `other Home preferences keep working with community disabled`() = runTest {
         val pref = HomeSectionsPreference(context)
-        pref.move(HomeSection.COMMUNITY, up = true)
-        val placed = pref.order.first()
-
-        pref.setCommunityOn(true)
-        assertEquals(placed, pref.visibleSections.first())
+        pref.setShowLikedOnHome(true)
+        assertTrue(pref.showLikedOnHome.first())
+        pref.setCommunityOn(false)
+        assertFalse(HomeSection.COMMUNITY in pref.visibleSections.first())
     }
 }
