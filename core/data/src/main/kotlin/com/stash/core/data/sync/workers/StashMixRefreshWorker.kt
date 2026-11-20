@@ -21,19 +21,10 @@ import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.PlaylistTrackCrossRef
 import com.stash.core.data.db.entity.StashMixRecipeEntity
 import com.stash.core.data.db.entity.TrackEntity
-import com.stash.core.data.lastfm.LastFmApiClient
-import com.stash.core.data.lastfm.LastFmCredentials
-import com.stash.core.data.lastfm.LastFmPeriod
-import com.stash.core.data.lastfm.LastFmPersonas
-import com.stash.core.data.lastfm.LastFmSessionPreference
-import com.stash.core.data.lastfm.LastFmTopArtist
-import com.stash.core.data.lastfm.LastFmTopTrack
 import com.stash.core.data.mix.MixGenerator
 import com.stash.core.data.mix.MixSeedGenerator
-import com.stash.core.data.mix.MixSeedStrategy
 import com.stash.core.data.mix.RecipeTagResolver
 import com.stash.core.data.mix.StashMixDefaults
-import com.stash.core.data.mix.TagPoolBuilder
 import com.stash.core.data.prefs.DownloadNetworkPreference
 import com.stash.core.data.sync.TrackMatcher
 import com.stash.core.data.sync.enqueueUniquePeriodicWorkReviving
@@ -79,19 +70,8 @@ class StashMixRefreshWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val recipeDao: StashMixRecipeDao,
     private val playlistDao: PlaylistDao,
-    private val discoveryQueueDao: DiscoveryQueueDao,
-    private val listeningEventDao: ListeningEventDao,
     private val trackDao: TrackDao,
     private val mixGenerator: MixGenerator,
-    private val seedGenerator: MixSeedGenerator,
-    private val lastFmApiClient: LastFmApiClient,
-    private val lastFmCredentials: LastFmCredentials,
-    private val sessionPreference: LastFmSessionPreference,
-    private val blocklistGuard: com.stash.core.data.blocklist.BlocklistGuard,
-    private val trackSkipEventDao: TrackSkipEventDao,
-    private val tagPoolBuilder: TagPoolBuilder,
-    private val trackMatcher: TrackMatcher,
-    private val downloadNetworkPreference: DownloadNetworkPreference,
 ) : CoroutineWorker(appContext, params) {
 
     companion object {
@@ -350,24 +330,6 @@ class StashMixRefreshWorker @AssistedInject constructor(
         }
 
         val now = System.currentTimeMillis()
-        val lastFmConfigured = lastFmCredentials.isConfigured
-
-        val username = sessionPreference.session.first()?.username
-        val personas = if (lastFmConfigured && !username.isNullOrBlank()) {
-            // v0.9.16: Bound the persona fetch — 5 periods × 2 endpoints =
-            // 10 sequential HTTP calls. With a slow connection or upstream
-            // hiccup, OkHttp's default timeouts could stack into multiple
-            // minutes and blow past WorkManager's 10-min budget. 30s ceiling
-            // means we degrade gracefully to library-only seeding when
-            // Last.fm is sluggish; the next refresh tries again.
-            runCatching {
-                withTimeout(30_000L) { fetchPersonas(username) }
-            }.getOrElse { e ->
-                Log.w(TAG, "persona fetch failed/timed-out, falling back to local seeds", e)
-                LastFmPersonas.EMPTY
-            }
-        } else LastFmPersonas.EMPTY
-
         // v0.9.20: pre-sort by dedup priority so the most-restrictive
         // recipes claim their natural picks before more-permissive ones
         // see them. excludeIds accumulates library + discovery ids
@@ -403,7 +365,7 @@ class StashMixRefreshWorker @AssistedInject constructor(
             // tests / future tracing can see exactly what was excluded
             // at the moment of the call.
             val excludeSnapshot = excludeIds.toSet()
-            val tracks = mixGenerator.generate(recipe, excludeSnapshot)
+            val tracks = mixGenerator.generate(recipe.copy(discoveryRatio = 0f), excludeSnapshot)
 
             // Empty-tracks skip is only safe for library-only recipes
             // (discoveryRatio == 0). Pure-discovery recipes like "Stash
@@ -437,13 +399,7 @@ class StashMixRefreshWorker @AssistedInject constructor(
             excludeIds += tracks.map { it.id }
             excludeIds += result.discoveryIds
 
-            // Discovery — opportunistic. Don't block refresh success on it.
-            // Skipped in materialize-only mode: the post-drain re-link must not
-            // queue MORE candidates (that's the loop's fuel).
-            if (recipe.discoveryRatio > 0f && lastFmConfigured && !materializeOnly) {
-                runCatching { queueDiscoveryForRecipe(recipe, personas) }
-                    .onFailure { Log.w(TAG, "discovery queueing failed for '${recipe.name}'", it) }
-            }
+
         }
 
         // v0.9.38 — hydrate fresh stream-only stubs with art + duration.
@@ -455,32 +411,6 @@ class StashMixRefreshWorker @AssistedInject constructor(
         // initialised in a unit-test JVM throws IllegalStateException).
         runCatching { ArtBackfillWorker.enqueueFromMixRefresh(applicationContext) }
             .onFailure { Log.w(TAG, "art-backfill enqueue failed; refresh still succeeded", it) }
-
-        // Drain the discovery_queue we just FILLED. queueDiscoveryForRecipe
-        // above only enqueues PENDING candidate rows — it does not turn them
-        // into stream-only stubs; StashDiscoveryWorker does. Without this kick
-        // a freshly-created/refreshed mix sits empty ("Building your mix…")
-        // until the once-daily periodic sweep happens to run, because the
-        // only other drain trigger — the parallel kick in MixBuilderViewModel
-        // .save() — races this fill and usually runs before the PENDING rows
-        // exist (the Last.fm tag queries here take seconds). Kicking the drain
-        // at the END of the fill closes that race for every refresh path
-        // (create, manual "Refresh this mix", periodic). Guarded + REPLACE:
-        // a test-JVM WorkManager throws, and rapid double-fills coalesce.
-        // Loop-break: in materialize-only mode (the post-drain re-link kicked
-        // by StashDiscoveryWorker) we must NOT re-kick the drain. Doing so
-        // formed a runaway refresh⇄drain cycle that continuously cleared +
-        // reinserted every mix. The normal refresh path still kicks it so
-        // freshly-queued candidates get drained once.
-        if (!materializeOnly) {
-            runCatching {
-                StashDiscoveryWorker.enqueueOneTime(
-                    applicationContext,
-                    downloadNetworkPreference.current(),
-                    expedited = true,
-                )
-            }.onFailure { Log.w(TAG, "discovery drain enqueue failed; refresh still succeeded", it) }
-        }
 
         return Result.success()
     }
@@ -551,152 +481,14 @@ class StashMixRefreshWorker @AssistedInject constructor(
             ?.takeIf { it.type == PlaylistType.STASH_MIX }
             ?: playlistDao.findBySourceId(sourceId)?.takeIf { it.type == PlaylistType.STASH_MIX }
 
-        // ── v0.9.42 idempotency backstop ──────────────────────────────────
-        // Compute the discovery survivors (and therefore the FULL ordered
-        // trackId list that WOULD be written) BEFORE touching the playlist.
-        // This lets us short-circuit a no-op refresh: if the set we're about
-        // to write equals what's already there (same ids, same order), we
-        // skip the destructive clear + reinsert that causes the visible
-        // "tracks vanish then repopulate" flash. This is a backstop for any
-        // refresh that re-runs with an identical result (the primary fix is
-        // gating the worker loop in DiscoveryDownloadWorker).
-        //
-        // The discovery computation below depends only on `librarySet` and
-        // the recipe (the candidate query is keyed by recipe.id, not by the
-        // playlist's current cross-refs), so it is safe to run before the
-        // membership is rebuilt.
-        // Re-link any Discovery-sourced tracks that this recipe has
-        // already accepted on previous refreshes. Without this, every
-        // weekly refresh wiped the Discovery slots when the playlist was
-        // cleared above, the next orphan-sweep deleted the audio files,
-        // and the mix silently degenerated to 100% library tracks — the
-        // user's "Stash Discover" ended up being a random unplayed slice
-        // of their own imports. See the audit in conversation 2026-04-21.
-        //
-        // Library tracks already own positions 0..tracks.size-1, so we
-        // append discovery survivors after them. Dedup against the set
-        // we just inserted in case generator + discovery both surface
-        // the same track (possible if a Discovery download completed and
-        // then showed up in the user's library in some other way).
-        val librarySet = tracks.mapTo(HashSet(tracks.size)) { it.id }
-        // v0.9.15: Filter out blocked identities. Without this, a track
-        // that was discovered + downloaded + later blocked would re-link
-        // into the mix on every refresh because the discovery queue's
-        // DONE row is keyed by track id, not identity. `filter` doesn't
-        // accept suspend lambdas, so the blocklist check is a manual
-        // loop that calls the suspend guard sequentially.
-        // v0.9.19 follow-up: cap discovery survivors at the recipe's stated
-        // slot count (targetLength * discoveryRatio). DAO query orders by
-        // completed_at DESC so newest-DONE survivors win when we have to cut.
-        // Library shortfall-fill in MixGenerator is intentionally untouched —
-        // total playlist size for Daily Discover settles at up-to-50 (library)
-        // + up-to-20 (discovery) = <=70, replacing the previous unbounded growth.
-        //
-        // v0.9.20: filter via excludeIds; over-fetch so post-filter still
-        // fills the cap. Worst case: every excluded id was a survivor — we
-        // still come back with `discoveryCap` distinct ids. Bounded — the
-        // DAO's ORDER BY completed_at DESC + LIMIT means we just slide the
-        // window further down the survivor list.
-        val discoveryCap = (recipe.targetLength * recipe.discoveryRatio)
-            .roundToInt()
-            .coerceAtLeast(0)
-        // Generous over-fetch: in pathological pool-overlap cases (e.g. Deep
-        // Cuts' TRACK_SIMILAR pool ~95% overlapping First Listen's TAG_GRAPH
-        // pool because a user's top-tracks naturally share tags with the
-        // wider taste graph) the older limit could exhaust before we found
-        // discoveryCap survivors. Headroom is bounded by the total recipe
-        // backlog — DAO query has its own LIMIT clause.
-        //
-        // v0.9.37: swap to playlistDao.getStreamableOrDoneTrackIdsForRecipe
-        // so stream-only DONE rows (is_downloaded=0, is_streamable=1) also
-        // make it into the Mix playlist. The new DAO method has NO limit
-        // parameter (kept the query simple — the spec's Section 8 still
-        // owns the per-recipe cap revisit). We trim post-fetch with .take
-        // to preserve the over-fetch headroom semantics from above. ORDER
-        // BY completed_at DESC inside the query means .take still slides
-        // newest-first.
-        // #287: consider the recipe's whole DONE backlog (bounded) instead of
-        // a thin newest-first window — rotation needs breadth to rotate over.
-        val rawCandidateIds = playlistDao
-            .getStreamableOrDoneTrackIdsForRecipe(recipe.id)
-            .take(SURVIVOR_POOL_LIMIT)
-        val nonLibraryCandidates = rawCandidateIds.filter { it !in librarySet }
-        // v0.9.21: soft cross-mix dedup. Prefer survivors not already claimed
-        // by an earlier-ordered mix; if dedup leaves us below the cap, backfill
-        // from the shared pool rather than ship an empty discovery section.
-        // Without this, recipes that draw from overlapping Last.fm pools
-        // (TRACK_SIMILAR ∩ TAG_GRAPH ≈ everywhere) silently collapsed to
-        // library-only when refreshed after their peers had already grabbed
-        // the shared candidates. See conversation 2026-05-12: Deep Cuts had
-        // 102 recipe-4 downloaded tracks but 0 discovery survivors.
-        val (preferredRaw, sharedIds) = nonLibraryCandidates
-            .partition { it !in excludeIds }
-        // #287: unheard discoveries outrank repeats — rotation exists to
-        // serve NEW music, so the pool orders unplayed-first (each half
-        // stays newest-first internally; the rotation's guaranteed head is
-        // therefore the newest UNHEARD finds).
-        val playedIds = if (preferredRaw.isEmpty()) {
-            emptySet()
-        } else {
-            listeningEventDao.getPlayedTrackIdsAmong(preferredRaw).toHashSet()
-        }
-        val (unplayedPool, playedPool) = preferredRaw.partition { it !in playedIds }
-        val preferredIds = unplayedPool + playedPool
-        val survivorCandidates = if (preferredIds.size >= discoveryCap) {
-            rotateSurvivorWindow(preferredIds, discoveryCap, rotationSeed)
-        } else {
-            val backfill = sharedIds.take(discoveryCap - preferredIds.size)
-            if (backfill.isNotEmpty()) {
-                Log.i(
-                    TAG,
-                    "'${recipe.name}': dedup left ${preferredIds.size}/$discoveryCap unique survivors; " +
-                        "backfilled ${backfill.size} from cross-mix pool",
-                )
-            }
-            preferredIds + backfill
-        }
-        val discoveryTrackIds = buildList {
-            for (trackId in survivorCandidates) {
-                if (!blocklistGuard.isBlockedByTrackId(trackId)) add(trackId)
-            }
-        }
-        Log.i(
-            TAG,
-            "'${recipe.name}' (id=${recipe.id}) link: raw=${rawCandidateIds.size} " +
-                "nonLib=${nonLibraryCandidates.size} preferred=${preferredIds.size} " +
-                "shared=${sharedIds.size} cap=$discoveryCap linked=${discoveryTrackIds.size} " +
-                "excludeIds.size=${excludeIds.size}",
-        )
-        // The full ordered membership we are about to write: library slice
-        // (generator order) followed by discovery survivors.
-        // #287 follow-up: a discovery-led mix leads WITH its discoveries —
-        // fresh finds own the top of the list, the cover mosaic (built from
-        // the first 4 positions), and the first tap of Play. Under the old
-        // library-first order a successful rotation was visually invisible:
-        // same openers, same art, same count — users read Refresh as a no-op.
-        // Library-led mixes keep their library-first order.
-        val discoveryFirst = recipe.discoveryRatio >= 0.5f
-        val finalOrderedIds = if (discoveryFirst) {
-            discoveryTrackIds + tracks.map { it.id }
-        } else {
-            tracks.map { it.id } + discoveryTrackIds
-        }
-        val totalCount = finalOrderedIds.size
-
-        // v0.9.42: idempotency short-circuit. If the playlist already exists
-        // and its current ordered membership is identical to what we'd write,
-        // skip the clear + reinsert entirely — no visible flash, no orphan
-        // churn. We still leave the existing art/count alone in this branch
-        // because membership (hence cover + count) is unchanged.
+        // Keep the existing playlist and its stable ID, but materialize only
+        // local library results. Previously discovered songs already in the
+        // user's library remain available as normal local tracks.
+        val finalOrderedIds = tracks.map { it.id }
+        val discoveryTrackIds = emptyList<Long>()
         if (existing != null) {
             val current = playlistDao.getOrderedTrackIdsForPlaylist(existing.id)
             if (current == finalOrderedIds) {
-                Log.i(
-                    TAG,
-                    "'${recipe.name}' (id=${existing.id}) unchanged — skipping re-materialize",
-                )
-                // Name can still drift (e.g. a recipe rename) even when the
-                // track set matches; keep that cheap, non-destructive update.
                 playlistDao.updateName(existing.id, recipe.name)
                 return MaterializeResult(existing.id, discoveryTrackIds)
             }
@@ -750,235 +542,4 @@ class StashMixRefreshWorker @AssistedInject constructor(
         return MaterializeResult(playlistId, discoveryTrackIds)
     }
 
-    /**
-     * v0.9.16: Per-recipe candidate generation, dispatched by the
-     * recipe's [StashMixRecipeEntity.seedStrategy]. Each strategy
-     * inputs different signals from the user's personas + library;
-     * [MixSeedGenerator] handles the Last.fm calls + rate limiting and
-     * returns the candidate list, which we hand off to
-     * [MixGenerator.queueDiscoveryCandidates] for blocklist + dedup
-     * filtering before insertion.
-     */
-    private suspend fun queueDiscoveryForRecipe(
-        recipe: StashMixRecipeEntity,
-        personas: LastFmPersonas,
-    ) {
-        val strategy = MixSeedStrategy.fromStored(recipe.seedStrategy)
-        if (strategy == MixSeedStrategy.NONE) return
-
-        // TAG_GRAPH recipes seed from their OWN resolved tags (genres+moods+era),
-        // not the user's global top tags — the custom-mix + retuned-Deep-Cuts path.
-        // Other strategies keep the persona-seeded path below, unchanged.
-        if (strategy == MixSeedStrategy.TAG_GRAPH) {
-            queueTagSeededDiscovery(recipe)
-            return
-        }
-
-        val nowMs = System.currentTimeMillis()
-        val since = nowMs - AFFINITY_LOOKBACK_DAYS * 24 * 60 * 60 * 1000
-        val recentSince = nowMs - RECENT_LISTENING_LOOKBACK_MS
-
-        // #287: yesterday's listening LEADS the seed chain — a "Daily"
-        // discover should chase what the user actually played in the last
-        // day or two, not a month-old persona. The older-taste tiers
-        // (persona 1-month > local 180d > library-top) become the blend
-        // backfill so a thin recent window never narrows discovery to a
-        // single-artist echo chamber. Recent-first seeds also vary the
-        // Last.fm query keys day to day, which keeps the proxy's edge cache
-        // from pinning the candidate pools for its full TTL.
-        val recentArtists = listeningEventDao
-            .getTopArtistsSince(recentSince, TOP_ARTISTS_LIMIT)
-            .map { it.artist }
-        val affinityArtists = personas.topArtistsByPeriod[LastFmPeriod.ONE_MONTH]
-            ?.takeIf { it.isNotEmpty() }
-            ?.take(TOP_ARTISTS_LIMIT)?.map { it.name }
-            ?: listeningEventDao.getTopArtistsSince(since, TOP_ARTISTS_LIMIT)
-                .map { it.artist }
-                .ifEmpty { trackDao.getTopArtistsByTrackCount(TOP_ARTISTS_LIMIT) }
-        val seedArtists = blendRecentFirst(recentArtists, affinityArtists, TOP_ARTISTS_LIMIT)
-
-        // v0.9.20 PR 8: seedTracks gets the same fallback chain as
-        // seedArtists (persona > local events > library top-by-LFM-playcount),
-        // now likewise led by the recent-listening blend.
-        val recentTracks = listeningEventDao
-            .getTopTracksByLocalPlays(recentSince, 20)
-            .map { it.artist to it.title }
-        val affinityTracks: List<Pair<String, String>> = personas.topTracksByPeriod[LastFmPeriod.ONE_MONTH]
-            ?.takeIf { it.isNotEmpty() }
-            ?.take(20)?.map { it.artist to it.title }
-            ?: listeningEventDao.getTopTracksByLocalPlays(since, 20)
-                .map { it.artist to it.title }
-                .ifEmpty {
-                    trackDao.getTopTracksByLfmPlaycount(20)
-                        .map { it.artist to it.title }
-                }
-        val seedTracks = blendRecentFirst(recentTracks, affinityTracks, 20)
-
-        val topTags = mixGenerator.computeUserTopTags(limit = 10)
-
-        val candidates = seedGenerator.generate(
-            strategy = strategy,
-            seedArtists = seedArtists,
-            topTags = topTags,
-            seedTracks = seedTracks,
-            personas = personas,
-        )
-        if (candidates.isEmpty()) return
-
-        // v0.9.20: pre-filter against library + skip-ban so discovery_queue
-        // PENDING rows represent genuinely-new music, not "rediscovery" hits.
-        val libraryKeys = trackDao.getLibraryCanonicalKeys().toHashSet()
-        val skipBannedKeys = trackSkipEventDao
-            .getEarlySkipBannedCanonicalKeys(
-                minSkips = DISCOVERY_SKIP_BAN_MIN_COUNT,
-                sinceMs = System.currentTimeMillis() - DISCOVERY_SKIP_BAN_WINDOW_MS,
-                maxPositionMs = DISCOVERY_SKIP_BAN_MAX_POSITION_MS,
-            )
-            .toHashSet()
-
-        val filtered = candidates.filter { candidate ->
-            val key = canonicalKey(candidate.artist, candidate.title)
-            key !in libraryKeys && key !in skipBannedKeys
-        }
-
-        val final = if (filtered.size >= MIN_DISCOVERY_POOL_AFTER_FILTER) {
-            filtered
-        } else {
-            // Fallback: top off with TAG_GRAPH candidates (different strategy
-            // typically yields different artists, so library overlap is lower).
-            // Same filters applied. withTimeout protects WorkManager's 10-minute
-            // budget — mirrors the existing 30s persona-fetch timeout.
-            val tagFallback = runCatching {
-                withTimeout(SEED_FALLBACK_TIMEOUT_MS) {
-                    seedGenerator.generate(
-                        strategy = MixSeedStrategy.TAG_GRAPH,
-                        seedArtists = emptyList(),
-                        topTags = topTags,
-                        seedTracks = emptyList(),
-                        personas = personas,
-                    )
-                }
-            }.getOrElse {
-                Log.w(TAG, "'${recipe.name}': TAG_GRAPH fallback timed out / failed", it)
-                emptyList()
-            }.filter { candidate ->
-                val key = canonicalKey(candidate.artist, candidate.title)
-                key !in libraryKeys && key !in skipBannedKeys
-            }
-            Log.i(
-                TAG,
-                "'${recipe.name}': filtered pool (${filtered.size}) below floor; " +
-                    "appending ${tagFallback.size} TAG_GRAPH fallback candidates",
-            )
-            filtered + tagFallback
-        }
-
-        if (final.isEmpty()) {
-            Log.w(TAG, "'${recipe.name}': all candidates filtered out (library + skips); skipping queue")
-            return
-        }
-
-        Log.i(
-            TAG,
-            "'${recipe.name}': ${final.size} candidates via $strategy " +
-                "(${candidates.size - filtered.size} filtered as library/banned)",
-        )
-        mixGenerator.queueDiscoveryCandidates(recipe, final)
-    }
-
-    /**
-     * Tag-seeded discovery for TAG_GRAPH recipes (custom mixes + Deep Cuts).
-     * Pool comes from the recipe's resolved tags via [TagPoolBuilder] — NOT from
-     * tracks similar to the user's library — which is what fixes Deep Cuts. Applies
-     * the same library/skip pre-filter as the persona path, plus a relaxation
-     * ladder (drop era -> drop moods) when the filtered pool is below the floor.
-     */
-    private suspend fun queueTagSeededDiscovery(recipe: StashMixRecipeEntity) {
-        val userTopTags = mixGenerator.computeUserTopTags(limit = 10)
-        val userTopArtists = trackDao.getTopArtistsByTrackCount(TOP_ARTISTS_LIMIT)
-            .map { it.trim().lowercase() }.toHashSet()
-
-        val libraryKeys = trackDao.getLibraryCanonicalKeys().toHashSet()
-        val skipBannedKeys = trackSkipEventDao.getEarlySkipBannedCanonicalKeys(
-            minSkips = DISCOVERY_SKIP_BAN_MIN_COUNT,
-            sinceMs = System.currentTimeMillis() - DISCOVERY_SKIP_BAN_WINDOW_MS,
-            maxPositionMs = DISCOVERY_SKIP_BAN_MAX_POSITION_MS,
-        ).toHashSet()
-
-        fun filterNew(c: List<MixGenerator.DiscoveryCandidate>) = c.filter {
-            val key = canonicalKey(it.artist, it.title)
-            key !in libraryKeys && key !in skipBannedKeys
-        }
-
-        val baseTags = RecipeTagResolver.resolve(recipe, userTopTags)
-        val pool = filterNew(tagPoolBuilder.build(baseTags, recipe.tagSampleDepth, userTopArtists))
-            .toMutableList()
-        val seen = pool.mapTo(HashSet()) { canonicalKey(it.artist, it.title) }
-
-        if (pool.size < MIN_DISCOVERY_POOL_AFTER_FILTER) {
-            val rungs = buildList {
-                if (recipe.eraStartYear != null) add(recipe.copy(eraStartYear = null, eraEndYear = null))
-                if (recipe.moodKeysCsv.isNotEmpty()) {
-                    add(recipe.copy(eraStartYear = null, eraEndYear = null, moodKeysCsv = ""))
-                }
-            }
-            for (rung in rungs) {
-                if (pool.size >= MIN_DISCOVERY_POOL_AFTER_FILTER) break
-                val rungTags = RecipeTagResolver.resolve(rung, userTopTags)
-                val more = filterNew(tagPoolBuilder.build(rungTags, rung.tagSampleDepth, userTopArtists))
-                    .filter { seen.add(canonicalKey(it.artist, it.title)) }
-                pool.addAll(more)
-                Log.i(TAG, "'${recipe.name}': relaxed tag pool to ${pool.size} (dropped era/mood rung)")
-            }
-        }
-
-        if (pool.isEmpty()) {
-            Log.w(TAG, "'${recipe.name}': tag-seeded pool empty after filtering; skipping queue")
-            return
-        }
-        Log.i(TAG, "'${recipe.name}': queueing ${pool.size} tag-seeded candidates")
-        mixGenerator.queueDiscoveryCandidates(recipe, pool)
-    }
-
-    /**
-     * Canonical key used by the discovery pre-filter — must match the
-     * format the DAOs store and return: TrackMatcher's normalization
-     * applied to artist and title, joined with "|".
-     *
-     * The sync writer uses this same TrackMatcher instance to populate
-     * tracks.canonical_artist / canonical_title, so the keys produced
-     * here match the keys returned by getLibraryCanonicalKeys() and
-     * getEarlySkipBannedCanonicalKeys().
-     */
-    private fun canonicalKey(artist: String, title: String): String =
-        "${trackMatcher.canonicalArtist(artist)}|${trackMatcher.canonicalTitle(title)}"
-
-    /**
-     * v0.9.16: Snapshot the user's period-sliced top tracks/artists once
-     * per refresh run so each recipe can pull whichever slice it needs
-     * (Daily Discover → 1month, Throwback → overall − 3month, etc.)
-     * without redundant network calls. Sequential with a small inter-call
-     * delay to stay polite under Last.fm's rate ceiling. Wrapped by
-     * [withTimeout] at the call site — failures here surface as the
-     * cancelled-coroutine path which the caller turns into [LastFmPersonas.EMPTY].
-     */
-    private suspend fun fetchPersonas(username: String): LastFmPersonas {
-        val periods = listOf(
-            LastFmPeriod.SEVEN_DAY,
-            LastFmPeriod.ONE_MONTH,
-            LastFmPeriod.THREE_MONTH,
-            LastFmPeriod.SIX_MONTH,
-            LastFmPeriod.OVERALL,
-        )
-        val tracks = mutableMapOf<LastFmPeriod, List<LastFmTopTrack>>()
-        val artists = mutableMapOf<LastFmPeriod, List<LastFmTopArtist>>()
-        for (period in periods) {
-            tracks[period] = lastFmApiClient.getUserTopTracks(username, period, limit = 100)
-                .getOrNull().orEmpty()
-            artists[period] = lastFmApiClient.getUserTopArtists(username, period, limit = 50)
-                .getOrNull().orEmpty()
-            delay(SIMILAR_REQUEST_INTERVAL_MS)
-        }
-        return LastFmPersonas(tracks, artists)
-    }
 }
