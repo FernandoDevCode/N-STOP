@@ -1,7 +1,6 @@
 package com.stash.desktop
 
 import com.stash.core.auth.model.*
-import com.stash.core.data.lastfm.LastFmCredentials
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import okhttp3.OkHttpClient
@@ -27,7 +26,7 @@ class DesktopAccountsTest {
             override fun protect(cleartext: ByteArray) = cleartext.reversedArray()
             override fun unprotect(ciphertext: ByteArray) = ciphertext.reversedArray()
         }
-        return DesktopAccounts(folder.newFolder(), client, cipher, LastFmCredentials("", "")).also { accounts.add(it) }
+        return DesktopAccounts(folder.newFolder(), client, cipher).also { accounts.add(it) }
     }
     @Test fun youtubeRequiresAuthenticatedServerProfileBeforePersisting() = runBlocking {
         val host = host()
@@ -71,25 +70,6 @@ class DesktopAccountsTest {
         host.connect(AuthService.SPOTIFY, "invalid-session")
         withTimeout(5000) { host.error.first { it != null } }
         Assert.assertNull(host.vault.spotifyToken.first())
-    }
-    @Test fun lastFmBrowserAuthorizationPersistsOnlyConfirmedSession() = runBlocking<Unit> {
-        server.dispatcher = object : Dispatcher() {
-            override fun dispatch(request: RecordedRequest): MockResponse = when (request.requestUrl?.queryParameter("method")) {
-                "auth.getToken" -> MockResponse().setBody("""{"token":"synthetic-pending"}""")
-                "auth.getSession" -> MockResponse().setBody("""{"session":{"name":"test-lastfm","key":"synthetic-session"}}""")
-                else -> MockResponse().setResponseCode(400)
-            }
-        }
-        val host = host()
-        host.ready.first { it }
-        host.beginLastFm("synthetic-api-key", "synthetic-api-secret")
-        withTimeout(5000) { host.lastFmAuthorizationUrl.first { it != null } }
-        Assert.assertTrue(host.lastFmState.value is AuthState.NotConnected)
-        host.finishLastFm()
-        withTimeout(5000) { host.lastFmState.first { it is AuthState.Connected } }
-        Assert.assertEquals("test-lastfm", (host.lastFmState.value as AuthState.Connected).user.displayName)
-        host.disconnectLastFm()
-        withTimeout(5000) { host.lastFmState.first { it is AuthState.NotConnected } }
     }
     @Test fun discordValidationUsesOriginalClientAndPersistsProfile() = runBlocking {
         val host = host()

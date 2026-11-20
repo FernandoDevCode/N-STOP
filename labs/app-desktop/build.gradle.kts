@@ -48,11 +48,6 @@ kotlin {
             kotlin.srcDir("../../core/common/src/main/kotlin")
             kotlin.srcDir("../../core/auth/src/main/kotlin")
             kotlin.srcDir("../../core/data/src/main/kotlin")
-            kotlin.include("com/stash/core/data/lastfm/LastFmApiClient.kt", "com/stash/core/data/lastfm/LastFmRateLimitGate.kt",
-                "com/stash/core/data/lastfm/LastFmApiException.kt", "com/stash/core/data/lastfm/LastFmCacheKey.kt",
-                "com/stash/core/data/lastfm/LastFmTrackInfo.kt", "com/stash/core/data/db/dao/LastFmCacheDao.kt",
-                "com/stash/core/data/db/entity/LastFmCacheEntity.kt", "com/stash/core/data/lastfm/LastFmArtistInfo.kt",
-                "com/stash/core/data/lastfm/LastFmPeriod.kt", "com/stash/core/data/lastfm/LastFmReadKeySelector.kt")
             kotlin.srcDir("../../data/spotify/src/main/kotlin")
             kotlin.include("com/stash/core/auth/model/AuthModels.kt", "com/stash/core/auth/TokenManager.kt",
                 "com/stash/core/auth/TokenManagerImpl.kt", "com/stash/core/auth/store/TokenStore.kt",
