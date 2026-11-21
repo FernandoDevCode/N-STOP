@@ -424,4 +424,8 @@
     <string name="sonora_storage_reorganize_intro">Faixas fora da organização %2$s: %1$d. Deseja movê-las agora? Os novos downloads já utilizam essa organização.</string>
     <string name="sonora_storage_reorganize_move">Mover %1$d faixas para %2$s</string>
     <string name="sonora_home_section_show_accessibility">Exibir %1$s na tela Início</string>
+    <string name="sonora_spotify_sync_name">Spotify — Sincronização</string>
+    <string name="sonora_spotify_search_name">Spotify — Pesquisa</string>
+    <string name="sonora_spotify_search_disconnect_title">Desconectar Spotify Pesquisa?</string>
+    <string name="sonora_spotify_search_disconnect_body">Somente a conta de pesquisa será desconectada. A conta de sincronização e as músicas salvas serão preservadas.</string>
 </resources>
