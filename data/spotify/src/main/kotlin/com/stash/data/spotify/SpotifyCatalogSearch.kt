@@ -183,7 +183,11 @@ internal fun parseSpotifyPartnerCatalog(
             }
         }
     }
-    val returnedKinds = buckets.filterValues { it != null }.keys
+    // Populated rows that all fail parsing mean schema drift, not a valid empty catalog.
+    // Mark only such kinds missing so the existing YouTube Music fallback can fill them.
+    val returnedKinds = buckets.filter { (kind, rows) ->
+        rows != null && (rows.isEmpty() || items.any { it.kind == kind })
+    }.keys
     val nextOffsets = buildMap {
         for (kind in returnedKinds) {
             val page = pages[kind] ?: continue
