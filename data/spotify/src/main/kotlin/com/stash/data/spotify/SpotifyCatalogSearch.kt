@@ -69,7 +69,7 @@ internal fun parseSpotifyCatalog(body: String, requestedOffset: Int = 0): Spotif
                     SpotifyCatalogItem(
                         kind = kind,
                         id = id,
-                        uri = item.text("uri"),
+                        uri = uri,
                         title = title,
                         artists = artistNames.takeIf { it.isNotEmpty() }?.joinToString(", "),
                         artworkUrl = (artwork?.get("images") as? JsonArray).orEmpty()
@@ -137,7 +137,12 @@ internal fun parseSpotifyPartnerCatalog(
             for (kind in kinds) {
                 val wrapper = buckets[kind]?.getOrNull(index) as? JsonObject ?: continue
                 val item = wrapper.partnerPayload(kind) ?: continue
-                val id = item.partnerId(kind) ?: continue
+                // searchV2 may put the URI on the TrackResponseWrapper, not its data.
+                val uri = item.partnerUri(kind)
+                    ?: (wrapper["item"] as? JsonObject)?.partnerUri(kind)
+                    ?: wrapper.partnerUri(kind)
+                    ?: continue
+                val id = uri.substringAfterLast(":")
                 val name = (item.text("name")
                     ?: (item["profile"] as? JsonObject)?.text("name")) ?: continue
                 val album = if (kind == SpotifyCatalogItem.Kind.TRACK) {
@@ -207,11 +212,15 @@ private fun JsonObject.partnerPayload(kind: SpotifyCatalogItem.Kind): JsonObject
         ?: this.takeIf { it["uri"] is JsonPrimitive }
 }
 
-private fun JsonObject.partnerId(kind: SpotifyCatalogItem.Kind): String? {
+private fun JsonObject.partnerUri(kind: SpotifyCatalogItem.Kind): String? {
     val prefix = "spotify:" + kind.name.lowercase(java.util.Locale.ROOT) + ":"
-    return text("uri")?.takeIf { it.startsWith(prefix) }
-        ?.removePrefix(prefix)?.takeIf { it.isNotBlank() && ':' !in it }
+    return listOfNotNull(text("uri"), text("_uri"))
+        .firstOrNull { it.startsWith(prefix) && it.removePrefix(prefix).isNotBlank() &&
+            ':' !in it.removePrefix(prefix) }
 }
+
+private fun JsonObject.partnerId(kind: SpotifyCatalogItem.Kind): String? =
+    partnerUri(kind)?.substringAfterLast(":")
 
 private fun JsonObject.partnerCredits(): List<Pair<String, String?>> {
     val artists = (this["artists"] as? JsonObject)?.get("items") as? JsonArray
