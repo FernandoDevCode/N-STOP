@@ -231,7 +231,7 @@ private fun JsonObject.partnerCover(): String? {
     val cover = (this["coverArt"] as? JsonObject) ?: (this["visuals"] as? JsonObject)
     val sources = cover?.get("sources") as? JsonArray
         ?: ((cover?.get("data") as? JsonObject)?.get("sources") as? JsonArray)
-    return sources?.mapNotNull { (it as? JsonObject)?.text("url") }?.firstOrNull()
+    return sources.partnerBestImage()
 }
 
 private fun JsonObject.partnerArtistImage(): String? {
@@ -239,8 +239,18 @@ private fun JsonObject.partnerArtistImage(): String? {
     val avatar = visuals["avatarImage"] as? JsonObject ?: return null
     val sources = avatar["sources"] as? JsonArray
         ?: ((avatar["data"] as? JsonObject)?.get("sources") as? JsonArray)
-    return sources?.mapNotNull { (it as? JsonObject)?.text("url") }?.firstOrNull()
+    return sources.partnerBestImage()
 }
+
+/** Use the largest published HTTPS source, not an arbitrarily small thumbnail. */
+private fun JsonArray?.partnerBestImage(): String? =
+    this?.mapNotNull { element ->
+        val image = element as? JsonObject ?: return@mapNotNull null
+        val url = image.text("url")?.takeIf { it.startsWith("https://") }
+            ?: return@mapNotNull null
+        val width = (image["width"] as? JsonPrimitive)?.intOrNull ?: 0
+        url to width
+    }?.maxByOrNull { it.second }?.first
 
 private fun JsonObject.text(key: String): String? =
     (this[key] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
