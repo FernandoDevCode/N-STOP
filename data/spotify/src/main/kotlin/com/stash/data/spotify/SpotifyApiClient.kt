@@ -964,18 +964,20 @@ class SpotifyApiClient @Inject constructor(
         offset: Int = 0,
     ): SpotifyCatalogPage =
         withContext(Dispatchers.IO) {
-            require(offset in 0..1_000)
+            val startedNs = System.nanoTime()
+            try {
+                require(offset in 0..1_000)
             val type = kind?.name?.lowercase() ?: "track,artist,album"
             val url = "$WEB_API_BASE/search?type=$type&limit=$limit&offset=$offset" +
                 "&q=${URLEncoder.encode(query, "UTF-8")}"
             val retryAt = catalogRetryAtMs.get()
             val now = TimeUnit.NANOSECONDS.toMillis(System.nanoTime())
             if (retryAt > now) throw SpotifyRateLimitException((retryAt - now + 999) / 1_000)
-            val token = tokenManager.getSpotifyAccessToken()
+            val token = tokenManager.getSpotifySearchAccessToken()
                 ?: throw SpotifyApiException(0, url, "Spotify search requires a connected account")
             var response = okHttpClient.newCall(searchRequest(url, token)).awaitCatalogResponse()
             if (response.code == 401) {
-                val refreshed = tokenManager.forceRefreshSpotifyAccessToken()
+                val refreshed = tokenManager.forceRefreshSpotifySearchAccessToken()
                     ?: throw SpotifyApiException(401, url, "Spotify session could not be refreshed")
                 response = okHttpClient.newCall(searchRequest(url, refreshed)).awaitCatalogResponse()
             }
@@ -988,7 +990,10 @@ class SpotifyApiClient @Inject constructor(
                 }
                 !in 200..299 -> throw SpotifyApiException(response.code, url, "Spotify search failed")
             }
-            parseSpotifyCatalog(response.body ?: throw java.io.IOException("Empty Spotify search response"), offset)
+                parseSpotifyCatalog(response.body ?: throw java.io.IOException("Empty Spotify search response"), offset)
+            } finally {
+                Log.d("SonoraPerf", "spotify_catalog_request_ms=${TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNs)}")
+            }
         }
 
     /**
