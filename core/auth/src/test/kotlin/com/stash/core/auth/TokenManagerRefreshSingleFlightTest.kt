@@ -66,6 +66,8 @@ class TokenManagerRefreshSingleFlightTest {
         assertEquals(listOf("new", "new", "new"), callers.awaitAll())
         coVerify(exactly = 1) { auth.refreshAccessToken(any()) }
         coVerify(exactly = 1) { store.saveSpotifyToken(any(), any()) }
+        // Close the TokenManager's independent Flow observers before @After resets Main.
+        manager.close()
     }
 
     @Test fun `catalog credentials and disconnect cannot touch the sync token`() = runTest {
