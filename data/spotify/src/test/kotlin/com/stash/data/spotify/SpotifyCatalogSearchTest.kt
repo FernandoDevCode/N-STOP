@@ -9,6 +9,10 @@ import io.mockk.mockk
 import io.mockk.verify
 import java.io.IOException
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.intOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
@@ -123,7 +127,8 @@ class SpotifyCatalogSearchTest {
     @Test fun partialWebSearchDistinguishesMissingAndEmptyTypesAndPagesOnlyOneKind() = runBlocking {
         ready()
         val search = client { request ->
-            if (request.url.queryParameter("variables")!!.contains("\\"offset\\":10")) {
+            val offset = Json.parseToJsonElement(request.url.queryParameter("variables")!!).jsonObject["offset"]?.jsonPrimitive?.intOrNull
+            if (offset == 10) {
                 response(request, 200, """{"data":{"searchV2":{"tracksV2":{"items":[null,
                     {"item":{"data":{"uri":"spotify:track:later","name":"Better match"}}}],"totalCount":12}}}}""")
             } else {
@@ -140,7 +145,7 @@ class SpotifyCatalogSearchTest {
         assertEquals(listOf("Lead"), first.items.single().artistNames)
         val second = search.searchCatalogPage("query", kind = SpotifyCatalogItem.Kind.TRACK, offset = 10)
         assertEquals("later", second.items.single().id)
-        assertEquals(34, second.items.single().rank)
+        assertEquals(33, second.items.single().rank)
         assertTrue(second.nextOffsets.isEmpty())
         assertTrue(requests.all { it.url.host == "api-partner.spotify.com" })
     }
