@@ -1,6 +1,7 @@
 package com.stash.feature.search.engine
 
 import android.util.Log
+import android.os.SystemClock
 import androidx.annotation.MainThread
 import com.stash.data.spotify.SpotifyApiClient
 import com.stash.data.spotify.SpotifyApiException
@@ -106,6 +107,8 @@ class UniversalSearchSession internal constructor(
     )
     val state = mutableState.asStateFlow()
 
+    private var queryEnteredAtMs = 0L
+    private var firstResultsMeasured = false
     private var pendingQuery: Job? = null
     private val jobs = mutableMapOf<CatalogSource, Job>()
     private val pageJobs = mutableMapOf<SearchResultType, Job>()
@@ -130,6 +133,8 @@ class UniversalSearchSession internal constructor(
     override fun onQueryChanged(query: String) {
         val current = state.value
         if (query == current.query) return
+        queryEnteredAtMs = SystemClock.elapsedRealtime()
+        firstResultsMeasured = false
         pendingQuery?.cancel()
         pendingQuery = null
         jobs.values.forEach { it.cancel() }
@@ -438,6 +443,10 @@ class UniversalSearchSession internal constructor(
             val visibleKeys = aggregated.orderedResults.mapTo(hashSetOf()) { it.stableKey }
             aggregated.copy(artworkOverrides = current.artworkOverrides.filterKeys { it in visibleKeys })
         } else aggregated
+        if (!firstResultsMeasured && query.isNotBlank() && mutableState.value.orderedResults.isNotEmpty()) {
+            firstResultsMeasured = true
+            Log.d("SonoraPerf", "search_first_results_ms=${SystemClock.elapsedRealtime() - queryEnteredAtMs}")
+        }
     }
 
     private fun eligible(query: String): Boolean = query.isNotBlank()
