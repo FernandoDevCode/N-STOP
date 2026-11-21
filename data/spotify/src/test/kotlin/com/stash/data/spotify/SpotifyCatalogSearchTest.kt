@@ -150,6 +150,17 @@ class SpotifyCatalogSearchTest {
         assertTrue(requests.all { it.url.host == "api-partner.spotify.com" })
     }
 
+    @Test fun unknownRowsAreNotMistakenForLegitimateEmptySpotifyResults() = runBlocking {
+        val page = parseSpotifyPartnerCatalog(
+            """{"data":{"searchV2":{
+                "tracksV2":{"items":[{"item":{"data":{"unexpected":"schema"}}}]},
+                "artists":{"items":[]}
+            }}}""",
+        )
+        assertEquals(setOf(SpotifyCatalogItem.Kind.ARTIST), page.returnedKinds)
+        assertTrue(page.items.isEmpty())
+    }
+
     @Test fun emptyBucketIsDataButMissingShapeAndGraphQLErrorsAreFailures() = runBlocking {
         ready()
         val empty = client { response(it, 200, """{"data":{"search":{"tracks":{"items":[]},"artists":{"items":[]},"albums":{"items":[]}}}}""") }
