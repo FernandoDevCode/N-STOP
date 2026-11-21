@@ -261,7 +261,8 @@ internal suspend fun Call.awaitCatalogResponse(): CatalogResponse =
                         CatalogResponse(
                             it.code,
                             it.header("Retry-After")?.toLongOrNull(),
-                            if (it.isSuccessful) it.body?.string() else null,
+                            // GraphQL persisted-query misses are returned as HTTP 400 JSON.
+                            if (it.isSuccessful || it.code == 400) it.body?.string() else null,
                         )
                     }
                 }
