@@ -135,6 +135,9 @@ class SettingsViewModel @Inject constructor(
     private val syncStateManager: com.stash.core.data.sync.SyncStateManager,
 ) : ViewModel() {
 
+    /** Account B; observed separately to avoid enlarging the existing Settings state combine. */
+    val spotifySearchAuthState = tokenManager.spotifySearchAuthState
+
     // ── ListenBrainz ────────────────────────────────────────────────────────
     //
     // Exposed as standalone StateFlows rather than threaded through the big
@@ -1018,8 +1021,17 @@ class SettingsViewModel @Inject constructor(
      * own login page and the app extracts the sp_dc cookie automatically.
      */
     fun onConnectSpotify() {
+        _localState.update { it.copy(showSpotifyWebLogin = true, spotifySearchLogin = false) }
+    }
+
+    /** Independent account used only for Spotify catalog search. */
+    fun onConnectSpotifySearch() {
         _localState.update {
-            it.copy(showSpotifyWebLogin = true)
+            it.copy(
+                showSpotifyWebLogin = true,
+                spotifySearchLogin = true,
+                spotifyCookieError = null,
+            )
         }
     }
 
@@ -1051,7 +1063,7 @@ class SettingsViewModel @Inject constructor(
 
     /** Dismisses the WebView login screen. */
     fun onDismissSpotifyWebLogin() {
-        _localState.update { it.copy(showSpotifyWebLogin = false) }
+        _localState.update { it.copy(showSpotifyWebLogin = false, spotifySearchLogin = false) }
     }
 
     /**
@@ -1089,14 +1101,19 @@ class SettingsViewModel @Inject constructor(
                 it.copy(isSpotifyCookieValidating = true, spotifyCookieError = null)
             }
 
-            val success = connectGuarded { tokenManager.connectSpotifyWithCookie(cookie, username) }
+            val searchLogin = _localState.value.spotifySearchLogin
+            val success = connectGuarded {
+                if (searchLogin) tokenManager.connectSpotifySearchWithCookie(cookie, username)
+                else tokenManager.connectSpotifyWithCookie(cookie, username)
+            }
 
             if (success == true) {
-                // A fresh sp_dc renews the session the last sync found expired.
-                syncStateManager.clearAuthExpiry(spotify = true)
+                // A catalog login must never mutate the sync account's auth-expiry state.
+                if (!searchLogin) syncStateManager.clearAuthExpiry(spotify = true)
                 _localState.update {
                     it.copy(
                         showSpotifyCookieDialog = false,
+                        spotifySearchLogin = false,
                         spotifyCookieError = null,
                         isSpotifyCookieValidating = false,
                     )
@@ -1122,6 +1139,7 @@ class SettingsViewModel @Inject constructor(
     fun onDismissSpotifyCookieDialog() {
         _localState.update {
             it.copy(
+                spotifySearchLogin = false,
                 showSpotifyCookieDialog = false,
                 spotifyCookieError = null,
                 isSpotifyCookieValidating = false,
@@ -1139,6 +1157,11 @@ class SettingsViewModel @Inject constructor(
             // Nothing left to re-authenticate: the Sync tab's banner stops asking.
             syncStateManager.clearAuthExpiry(spotify = true)
         }
+    }
+
+    /** Search sign-out must not cancel downloads or alter the sync credential. */
+    fun onDisconnectSpotifySearch() {
+        viewModelScope.launch { tokenManager.clearSpotifySearch() }
     }
 
     /**
@@ -1734,6 +1757,7 @@ class SettingsViewModel @Inject constructor(
      */
     private data class LocalState(
         val showSpotifyWebLogin: Boolean = false,
+        val spotifySearchLogin: Boolean = false,
         val showYouTubeWebLogin: Boolean = false,
         val showYouTubeCookieDialog: Boolean = false,
         val showSpotifyCookieDialog: Boolean = false,

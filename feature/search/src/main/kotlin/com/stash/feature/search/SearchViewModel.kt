@@ -69,13 +69,17 @@ class SearchViewModel @Inject constructor(
 
     private fun openResult(result: UniversalSearchResult) {
         if (result.identity.source != CatalogSource.SPOTIFY) {
+            val startedMs = android.os.SystemClock.elapsedRealtime()
             searchDestination(result.identity, result.type, result.title, result.subtitle, result.artworkUrl)
                 ?.let { navigation.tryEmit(it) }
+            Log.d("SonoraPerf", "search_detail_route_ms=${android.os.SystemClock.elapsedRealtime() - startedMs}")
             return
         }
         val session = openedSession.value ?: return
         val search = session.state.value
         runResultAction(result, R.string.universal_search_details_unavailable) {
+            val startedMs = android.os.SystemClock.elapsedRealtime()
+            try {
             // More than one Spotify artist with the same name gives no verified cross-catalog route.
             val hasHomonym = result.type == SearchResultType.ARTIST && search.orderedResults.any {
                 it.type == result.type && it.identity != result.identity && it.identity.source == result.identity.source &&
@@ -97,11 +101,15 @@ class SearchViewModel @Inject constructor(
             } else {
                 playbackErrors.tryEmit(R.string.universal_search_details_unavailable)
             }
+            } finally {
+                Log.d("SonoraPerf", "search_detail_route_ms=${android.os.SystemClock.elapsedRealtime() - startedMs}")
+            }
         }
     }
 
     private fun play(result: UniversalSearchResult, artworkUrl: String?) {
         runResultAction(result, R.string.universal_search_play_failed) {
+            val startedMs = android.os.SystemClock.elapsedRealtime()
             val videoId = if (result.identity.source == CatalogSource.SPOTIFY) {
                 factory.resolveSpotifyTarget(result)?.id?.takeIf(YouTubeVideoId::isValid)
             } else result.exactPlaybackVideoId()
@@ -120,6 +128,7 @@ class SearchViewModel @Inject constructor(
                     album = result.release?.title,
                 ),
             )
+            Log.d("SonoraPerf", "search_play_routing_ms=${android.os.SystemClock.elapsedRealtime() - startedMs}")
             currentCoroutineContext().ensureActive()
             val error = when (outcome) {
                 StreamRoutingResult.NotAvailable -> R.string.universal_search_play_unavailable

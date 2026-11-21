@@ -42,6 +42,8 @@ class TokenManagerRefreshSingleFlightTest {
         val store = mockk<EncryptedTokenStore>(relaxed = true) {
             every { spotifyToken } returns stored
             every { spotifyUser } returns MutableStateFlow(UserInfo("me", "Me"))
+            every { spotifySearchToken } returns MutableStateFlow(null)
+            every { spotifySearchUser } returns MutableStateFlow(null)
             every { youTubeToken } returns MutableStateFlow(null)
             every { youTubeUser } returns MutableStateFlow(null)
             every { discordToken } returns MutableStateFlow(null)
@@ -64,5 +66,33 @@ class TokenManagerRefreshSingleFlightTest {
         assertEquals(listOf("new", "new", "new"), callers.awaitAll())
         coVerify(exactly = 1) { auth.refreshAccessToken(any()) }
         coVerify(exactly = 1) { store.saveSpotifyToken(any(), any()) }
+        // Close the TokenManager's independent Flow observers before @After resets Main.
+        manager.close()
+    }
+
+    @Test fun `catalog credentials and disconnect cannot touch the sync token`() = runTest {
+        val now = Instant.now().epochSecond
+        val personal = MutableStateFlow<ServiceToken?>(ServiceToken("personal", "cookie-A", now + 3_600))
+        val catalog = MutableStateFlow<ServiceToken?>(ServiceToken("search", "cookie-B", now + 3_600))
+        val store = mockk<EncryptedTokenStore>(relaxed = true) {
+            every { spotifyToken } returns personal
+            every { spotifyUser } returns MutableStateFlow(UserInfo("A", "Sync"))
+            every { spotifySearchToken } returns catalog
+            every { spotifySearchUser } returns MutableStateFlow(UserInfo("B", "Search"))
+            every { youTubeToken } returns MutableStateFlow(null)
+            every { youTubeUser } returns MutableStateFlow(null)
+            every { discordToken } returns MutableStateFlow(null)
+            every { discordUser } returns MutableStateFlow(null)
+            coEvery { clearSpotifySearch() } answers { catalog.value = null }
+        }
+        val manager = TokenManagerImpl(store, mockk(relaxed = true), mockk(relaxed = true))
+        assertEquals("personal", manager.getSpotifyAccessToken())
+        assertEquals("search", manager.getSpotifySearchAccessToken())
+        manager.clearSpotifySearch()
+        assertEquals(null, manager.getSpotifySearchAccessToken())
+        assertEquals("personal", manager.getSpotifyAccessToken())
+        coVerify(exactly = 1) { store.clearSpotifySearch() }
+        coVerify(exactly = 0) { store.clearSpotify() }
+        manager.close()
     }
 }

@@ -56,6 +56,7 @@ class EncryptedTokenStore @Inject constructor(
 
     private object Keys {
         val SPOTIFY = stringPreferencesKey("spotify_token")
+        val SPOTIFY_SEARCH = stringPreferencesKey("spotify_search_token")
         val YOUTUBE = stringPreferencesKey("youtube_token")
         val DISCORD = stringPreferencesKey("discord_token")
     }
@@ -81,6 +82,23 @@ class EncryptedTokenStore @Inject constructor(
     /** Removes the stored Spotify credentials. */
     override suspend fun clearSpotify() {
         context.authDataStore.edit { it.remove(Keys.SPOTIFY) }
+    }
+
+    // ── Spotify catalog search (independent of library sync) ─────────────
+    override val spotifySearchToken: Flow<ServiceToken?> = context.authDataStore.data.map { prefs ->
+        prefs[Keys.SPOTIFY_SEARCH]?.let { decryptToken(it) }
+    }
+
+    override val spotifySearchUser: Flow<UserInfo?> = context.authDataStore.data.map { prefs ->
+        prefs[Keys.SPOTIFY_SEARCH]?.let { decryptUser(it) }
+    }
+
+    override suspend fun saveSpotifySearchToken(token: ServiceToken, user: UserInfo?) {
+        saveBlob(Keys.SPOTIFY_SEARCH, encryptStored(token.toStoredToken(user)))
+    }
+
+    override suspend fun clearSpotifySearch() {
+        context.authDataStore.edit { it.remove(Keys.SPOTIFY_SEARCH) }
     }
 
     // ── YouTube Music ────────────────────────────────────────────────────
@@ -139,6 +157,7 @@ class EncryptedTokenStore @Inject constructor(
         context.authDataStore.edit { prefs ->
             if (encryption.consumeKeysetReset()) {
                 prefs.remove(Keys.SPOTIFY)
+                prefs.remove(Keys.SPOTIFY_SEARCH)
                 prefs.remove(Keys.YOUTUBE)
                 prefs.remove(Keys.DISCORD)
             }

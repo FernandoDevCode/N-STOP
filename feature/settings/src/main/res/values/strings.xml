@@ -424,4 +424,8 @@
     <string name="sonora_storage_reorganize_intro">Tracks outside the %2$s folder layout: %1$d. Move them now? New downloads already use this layout.</string>
     <string name="sonora_storage_reorganize_move">Move %1$d tracks to %2$s</string>
     <string name="sonora_home_section_show_accessibility">Show %1$s on Home</string>
+    <string name="sonora_spotify_sync_name">Spotify — Sync</string>
+    <string name="sonora_spotify_search_name">Spotify — Search</string>
+    <string name="sonora_spotify_search_disconnect_title">Disconnect Spotify Search?</string>
+    <string name="sonora_spotify_search_disconnect_body">Only the catalog search account will be disconnected. Your Spotify sync account and saved music will be kept.</string>
 </resources>

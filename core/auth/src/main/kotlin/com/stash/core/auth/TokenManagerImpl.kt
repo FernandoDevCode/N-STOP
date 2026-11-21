@@ -54,6 +54,16 @@ class TokenManagerImpl @Inject constructor(
     private val _spotifyAuthState = MutableStateFlow<AuthState>(AuthState.NotConnected)
     override val spotifyAuthState: StateFlow<AuthState> = _spotifyAuthState.asStateFlow()
 
+    private val _spotifySearchAuthState = MutableStateFlow<AuthState>(AuthState.NotConnected)
+    override val spotifySearchAuthState: StateFlow<AuthState> = _spotifySearchAuthState.asStateFlow()
+    // The web-client device/session state must not be shared with sync.
+    private val spotifySearchAuthManager = SpotifyAuthManager(httpClient)
+    private val spotifySearchRefreshLock = Mutex()
+    private val spotifySearchClientLock = Mutex()
+    private var cachedSearchClientToken: String? = null
+    private var cachedSearchClientCookie: String? = null
+    private var attemptedSearchDeviceRestoreCookie: String? = null
+
     // -- YouTube Music state --------------------------------------------------
 
     private val _youTubeAuthState = MutableStateFlow<AuthState>(AuthState.NotConnected)
@@ -66,6 +76,7 @@ class TokenManagerImpl @Inject constructor(
 
     init {
         observeSpotify()
+        observeSpotifySearch()
         observeYouTube()
         observeDiscord()
     }
@@ -106,6 +117,70 @@ class TokenManagerImpl @Inject constructor(
             refreshed.accessToken
         }
     }
+
+    /** Catalog credentials are never sourced from the personal session. */
+    override suspend fun getSpotifySearchAccessToken(): String? {
+        val token = tokenStore.spotifySearchToken.first() ?: return null
+        if (!token.isExpired && !token.isExpiringSoon) return token.accessToken
+        return spotifySearchRefreshLock.withLock {
+            val current = tokenStore.spotifySearchToken.first() ?: return@withLock null
+            if (!current.isExpired && !current.isExpiringSoon) return@withLock current.accessToken
+            if (current.refreshToken.isBlank()) return@withLock null
+            val refreshed = spotifySearchAuthManager.refreshAccessToken(current.refreshToken)
+                ?: return@withLock null
+            tokenStore.saveSpotifySearchToken(refreshed, tokenStore.spotifySearchUser.first())
+            refreshed.accessToken
+        }
+    }
+
+    override suspend fun forceRefreshSpotifySearchAccessToken(): String? =
+        spotifySearchRefreshLock.withLock {
+            val current = tokenStore.spotifySearchToken.first() ?: return@withLock null
+            if (current.refreshToken.isBlank()) return@withLock null
+            val refreshed = spotifySearchAuthManager.refreshAccessToken(current.refreshToken)
+                ?: return@withLock null
+            tokenStore.saveSpotifySearchToken(refreshed, tokenStore.spotifySearchUser.first())
+            refreshed.accessToken
+        }
+
+    override suspend fun getSpotifySearchClientToken(forceRefresh: Boolean): String? {
+        // sp_t lives in the Web auth manager's memory. After a process restart
+        // restore it from account B at most once, before requesting Client-Token.
+        // The original sync session and its refresh lock are never consulted.
+        spotifySearchRefreshLock.withLock {
+            val previous = tokenStore.spotifySearchToken.first()
+            if (previous != null && spotifySearchAuthManager.getSpT() == null &&
+                attemptedSearchDeviceRestoreCookie != previous.refreshToken
+            ) {
+                attemptedSearchDeviceRestoreCookie = previous.refreshToken
+                val renewed = spotifySearchAuthManager.refreshAccessToken(previous.refreshToken)
+                if (renewed != null) {
+                    tokenStore.saveSpotifySearchToken(renewed, tokenStore.spotifySearchUser.first())
+                }
+            }
+        }
+        return spotifySearchClientLock.withLock {
+            val stored = tokenStore.spotifySearchToken.first() ?: return@withLock null
+            val clientId = stored.scope.split(SpotifyAuthManager.SCOPE_DELIMITER)
+                .getOrNull(1)?.takeIf { it.isNotBlank() } ?: return@withLock null
+            if (!forceRefresh && stored.refreshToken == cachedSearchClientCookie) {
+                cachedSearchClientToken?.let { return@withLock it }
+            }
+            // Keep Client-Token in memory only; never use the sync account's device/session state.
+            cachedSearchClientToken = null
+            cachedSearchClientCookie = null
+            val client = spotifySearchAuthManager.getClientToken(clientId) ?: return@withLock null
+            if (tokenStore.spotifySearchToken.first()?.refreshToken != stored.refreshToken) return@withLock null
+            cachedSearchClientToken = client
+            cachedSearchClientCookie = stored.refreshToken
+            client
+        }
+    }
+
+    override fun getSpotifySearchClientVersion(): String = spotifySearchAuthManager.getClientVersion()
+
+    override fun scrapeSpotifySearchQueryHash(staleHash: String): String? =
+        spotifySearchAuthManager.scrapePersistedQueryHash("searchDesktop", staleHash)
 
     /** Serializes Spotify token refreshes; see [getSpotifyAccessToken]. */
     private val spotifyRefreshLock = Mutex()
@@ -205,6 +280,17 @@ class TokenManagerImpl @Inject constructor(
         val user = UserInfo(id = "youtube_user", displayName = "YouTube User")
         tokenStore.saveYouTubeToken(token, user)
         return true
+    }
+
+    override suspend fun clearSpotifySearch() {
+        spotifySearchRefreshLock.withLock {
+            tokenStore.clearSpotifySearch()
+            spotifySearchClientLock.withLock {
+                cachedSearchClientToken = null
+                cachedSearchClientCookie = null
+                attemptedSearchDeviceRestoreCookie = null
+            }
+        }
     }
 
     override suspend fun clearAuth(service: AuthService) {
@@ -326,6 +412,34 @@ class TokenManagerImpl @Inject constructor(
         return true
     }
 
+    override suspend fun connectSpotifySearchWithCookie(spDcCookie: String, username: String): Boolean {
+        if (spDcCookie.isBlank()) return false
+        return spotifySearchRefreshLock.withLock {
+            val token = spotifySearchAuthManager.getAccessToken(spDcCookie.trim())
+                ?: return@withLock false
+            val parts = token.scope.split(SpotifyAuthManager.SCOPE_DELIMITER)
+            val name = username.takeIf { it.isNotBlank() }
+                ?: parts.firstOrNull()?.takeIf { it.isNotBlank() }
+                ?: spotifySearchAuthManager.extractUsernameFromJwt(token.accessToken)
+                ?: ""
+            val clientId = parts.getOrNull(1).orEmpty()
+            val user = UserInfo(
+                id = name.ifBlank { "spotify_search_user" },
+                displayName = name.ifBlank { "Spotify Search" },
+            )
+            tokenStore.saveSpotifySearchToken(
+                token.copy(scope = "$name${SpotifyAuthManager.SCOPE_DELIMITER}$clientId"),
+                user,
+            )
+            spotifySearchClientLock.withLock {
+                cachedSearchClientToken = null
+                cachedSearchClientCookie = null
+                attemptedSearchDeviceRestoreCookie = null
+            }
+            true
+        }
+    }
+
     // -- Internal observers ---------------------------------------------------
 
     /**
@@ -343,6 +457,18 @@ class TokenManagerImpl @Inject constructor(
                         token != null && user != null -> AuthState.Connected(user)
                         else -> AuthState.NotConnected
                     }
+                }
+        }
+    }
+
+    private fun observeSpotifySearch() {
+        scope.launch {
+            tokenStore.spotifySearchToken
+                .combine(tokenStore.spotifySearchUser) { token, user -> token to user }
+                .flowOn(Dispatchers.Default)
+                .collect { (token, user) ->
+                    _spotifySearchAuthState.value = if (token != null && user != null)
+                        AuthState.Connected(user) else AuthState.NotConnected
                 }
         }
     }
