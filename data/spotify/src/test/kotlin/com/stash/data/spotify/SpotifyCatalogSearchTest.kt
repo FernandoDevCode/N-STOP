@@ -22,7 +22,7 @@ class SpotifyCatalogSearchTest {
 
     @Test
     fun `signed out makes no catalog request`() = runBlocking {
-        coEvery { tokens.getSpotifyAccessToken() } returns null
+        coEvery { tokens.getSpotifySearchAccessToken() } returns null
         val search = client { error("Signed-out search must not reach HTTP") }
         val error = runCatching { search.searchCatalog("rust in peace") }.exceptionOrNull()
         assertEquals(0, (error as SpotifyApiException).httpCode)
@@ -31,8 +31,8 @@ class SpotifyCatalogSearchTest {
 
     @Test
     fun `refreshes once and retains native catalog metadata in bucket order`() = runBlocking {
-        coEvery { tokens.getSpotifyAccessToken() } returns "expired"
-        coEvery { tokens.forceRefreshSpotifyAccessToken() } returns "fresh"
+        coEvery { tokens.getSpotifySearchAccessToken() } returns "expired"
+        coEvery { tokens.forceRefreshSpotifySearchAccessToken() } returns "fresh"
         val search = client { request ->
             if (request.header("Authorization") == "Bearer expired") response(request, 401)
             else response(request, 200, catalogBody)
@@ -53,24 +53,26 @@ class SpotifyCatalogSearchTest {
         assertEquals(123000L, results.first().durationMs)
         assertNull(results.last().durationMs)
         assertTrue(results.first().isExplicit)
-        coVerify(exactly = 1) { tokens.forceRefreshSpotifyAccessToken() }
+        coVerify(exactly = 1) { tokens.forceRefreshSpotifySearchAccessToken() }
+        coVerify(exactly = 0) { tokens.getSpotifyAccessToken() }
+        coVerify(exactly = 0) { tokens.forceRefreshSpotifyAccessToken() }
     }
 
     @Test
     fun `429 retains retry-after and does not refresh or retry`() = runBlocking {
-        coEvery { tokens.getSpotifyAccessToken() } returns "fresh"
+        coEvery { tokens.getSpotifySearchAccessToken() } returns "fresh"
         val search = client { response(it, 429).newBuilder().header("Retry-After", "12").build() }
         val error = runCatching { search.searchCatalog("demo") }.exceptionOrNull()
         assertEquals(12L, (error as SpotifyRateLimitException).retryAfterSeconds)
         val blocked = runCatching { search.searchCatalogPage("other query") }.exceptionOrNull()
         assertTrue(checkNotNull((blocked as SpotifyRateLimitException).retryAfterSeconds) in 1L..12L)
         assertEquals(1, requests.size)
-        coVerify(exactly = 0) { tokens.forceRefreshSpotifyAccessToken() }
+        coVerify(exactly = 0) { tokens.forceRefreshSpotifySearchAccessToken() }
     }
 
     @Test
     fun `partial search distinguishes missing and empty types and pages only the requested type`() = runBlocking {
-        coEvery { tokens.getSpotifyAccessToken() } returns "fresh"
+        coEvery { tokens.getSpotifySearchAccessToken() } returns "fresh"
         val search = client { request ->
             if (request.url.queryParameter("offset") == "10") {
                 response(request, 200, """{"tracks":{"items":[null,{"id":"later","name":"Better match"}],"next":null}}""")
