@@ -16,6 +16,8 @@ interface TokenManager {
 
     /** Current authentication state for Spotify. */
     val spotifyAuthState: StateFlow<AuthState>
+    /** Independent Spotify account used only by the universal catalog search. */
+    val spotifySearchAuthState: StateFlow<AuthState>
 
     /** Current authentication state for YouTube Music. */
     val youTubeAuthState: StateFlow<AuthState>
@@ -25,6 +27,12 @@ interface TokenManager {
      * or the token has expired / is expiring soon.
      */
     suspend fun getSpotifyAccessToken(): String?
+
+    /** Never falls back to the personal sync account. */
+    suspend fun getSpotifySearchAccessToken(): String?
+    suspend fun forceRefreshSpotifySearchAccessToken(): String?
+    suspend fun connectSpotifySearchWithCookie(spDcCookie: String, username: String = ""): Boolean
+    suspend fun clearSpotifySearch()
 
     /**
      * Forces a token refresh for Spotify regardless of whether the current token
