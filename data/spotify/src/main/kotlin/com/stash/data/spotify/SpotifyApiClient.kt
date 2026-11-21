@@ -1017,6 +1017,8 @@ class SpotifyApiClient @Inject constructor(
                     .header("Spotify-App-Version", version)
                     .header("Origin", "https://open.spotify.com")
                     .header("Referer", "https://open.spotify.com/")
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+                        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36")
                     .build()
                 val response = okHttpClient.newCall(request).awaitCatalogResponse()
                 if ((response.code == 400 || response.code in 200..299) &&
