@@ -42,6 +42,7 @@ fun SettingsAccountsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val spotifySearchAuth by viewModel.spotifySearchAuthState.collectAsStateWithLifecycle()
     val extendedColors = com.stash.core.ui.theme.StashTheme.extendedColors
     // The last sync's verdict on each stored sign-in: an expired card leads with
     // Reconnect (the Sync tab's "Re-authenticate" lands here).
@@ -145,6 +146,7 @@ fun SettingsAccountsScreen(
         // first (as Discord's connect does). Saveable, like showDiscordRisk, so
         // a rotation keeps the question up.
         var confirmSpotifyDisconnect by rememberSaveable { mutableStateOf(false) }
+        var confirmSpotifySearchDisconnect by rememberSaveable { mutableStateOf(false) }
         var confirmYouTubeDisconnect by rememberSaveable { mutableStateOf(false) }
         if (confirmSpotifyDisconnect) {
             com.stash.feature.settings.components.DisconnectAccountDialog(
@@ -156,6 +158,24 @@ fun SettingsAccountsScreen(
                     viewModel.onDisconnectSpotify()
                 },
                 onDismiss = { confirmSpotifyDisconnect = false },
+            )
+        }
+        if (confirmSpotifySearchDisconnect) {
+            AlertDialog(
+                onDismissRequest = { confirmSpotifySearchDisconnect = false },
+                title = { Text(stringResource(R.string.sonora_spotify_search_disconnect_title)) },
+                text = { Text(stringResource(R.string.sonora_spotify_search_disconnect_body)) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        confirmSpotifySearchDisconnect = false
+                        viewModel.onDisconnectSpotifySearch()
+                    }) { Text(stringResource(R.string.nostop_account_disconnect)) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { confirmSpotifySearchDisconnect = false }) {
+                        Text(stringResource(R.string.nostop_accounts_cancel))
+                    }
+                },
             )
         }
         if (confirmYouTubeDisconnect) {
@@ -172,7 +192,7 @@ fun SettingsAccountsScreen(
         }
 
         AccountConnectionCard(
-            serviceName = "Spotify",
+            serviceName = stringResource(R.string.sonora_spotify_sync_name),
             icon = Icons.Rounded.MusicNote,
             accentColor = extendedColors.spotifyGreen,
             authState = uiState.spotifyAuthState,
@@ -190,6 +210,16 @@ fun SettingsAccountsScreen(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                 )
             },
+        )
+
+        AccountConnectionCard(
+            serviceName = stringResource(R.string.sonora_spotify_search_name),
+            icon = Icons.Rounded.MusicNote,
+            accentColor = extendedColors.spotifyGreen,
+            authState = spotifySearchAuth,
+            expired = false,
+            onConnect = viewModel::onConnectSpotifySearch,
+            onDisconnect = { confirmSpotifySearchDisconnect = true },
         )
 
         AccountConnectionCard(
