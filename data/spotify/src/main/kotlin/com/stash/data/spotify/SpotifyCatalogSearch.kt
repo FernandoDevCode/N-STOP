@@ -69,7 +69,7 @@ internal fun parseSpotifyCatalog(body: String, requestedOffset: Int = 0): Spotif
                     SpotifyCatalogItem(
                         kind = kind,
                         id = id,
-                        uri = uri,
+                        uri = item.text("uri"),
                         title = title,
                         artists = artistNames.takeIf { it.isNotEmpty() }?.joinToString(", "),
                         artworkUrl = (artwork?.get("images") as? JsonArray).orEmpty()
@@ -165,7 +165,7 @@ internal fun parseSpotifyPartnerCatalog(
                 add(SpotifyCatalogItem(
                     kind = kind,
                     id = id,
-                    uri = item.text("uri"),
+                    uri = uri,
                     title = name,
                     artists = credits.map { it.first }.takeIf { it.isNotEmpty() }?.joinToString(", "),
                     artworkUrl = image,
