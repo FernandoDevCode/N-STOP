@@ -62,6 +62,7 @@ class TokenManagerImpl @Inject constructor(
     private val spotifySearchClientLock = Mutex()
     private var cachedSearchClientToken: String? = null
     private var cachedSearchClientCookie: String? = null
+    private var attemptedSearchDeviceRestoreCookie: String? = null
 
     // -- YouTube Music state --------------------------------------------------
 
@@ -142,8 +143,23 @@ class TokenManagerImpl @Inject constructor(
             refreshed.accessToken
         }
 
-    override suspend fun getSpotifySearchClientToken(forceRefresh: Boolean): String? =
-        spotifySearchClientLock.withLock {
+    override suspend fun getSpotifySearchClientToken(forceRefresh: Boolean): String? {
+        // sp_t lives in the Web auth manager's memory. After a process restart
+        // restore it from account B at most once, before requesting Client-Token.
+        // The original sync session and its refresh lock are never consulted.
+        spotifySearchRefreshLock.withLock {
+            val previous = tokenStore.spotifySearchToken.first()
+            if (previous != null && spotifySearchAuthManager.getSpT() == null &&
+                attemptedSearchDeviceRestoreCookie != previous.refreshToken
+            ) {
+                attemptedSearchDeviceRestoreCookie = previous.refreshToken
+                val renewed = spotifySearchAuthManager.refreshAccessToken(previous.refreshToken)
+                if (renewed != null) {
+                    tokenStore.saveSpotifySearchToken(renewed, tokenStore.spotifySearchUser.first())
+                }
+            }
+        }
+        return spotifySearchClientLock.withLock {
             val stored = tokenStore.spotifySearchToken.first() ?: return@withLock null
             val clientId = stored.scope.split(SpotifyAuthManager.SCOPE_DELIMITER)
                 .getOrNull(1)?.takeIf { it.isNotBlank() } ?: return@withLock null
@@ -154,12 +170,12 @@ class TokenManagerImpl @Inject constructor(
             cachedSearchClientToken = null
             cachedSearchClientCookie = null
             val client = spotifySearchAuthManager.getClientToken(clientId) ?: return@withLock null
-            // If the account changed while the network request was running, do not cache its token.
             if (tokenStore.spotifySearchToken.first()?.refreshToken != stored.refreshToken) return@withLock null
             cachedSearchClientToken = client
             cachedSearchClientCookie = stored.refreshToken
             client
         }
+    }
 
     override fun getSpotifySearchClientVersion(): String = spotifySearchAuthManager.getClientVersion()
 
@@ -272,6 +288,7 @@ class TokenManagerImpl @Inject constructor(
             spotifySearchClientLock.withLock {
                 cachedSearchClientToken = null
                 cachedSearchClientCookie = null
+                attemptedSearchDeviceRestoreCookie = null
             }
         }
     }
@@ -417,6 +434,7 @@ class TokenManagerImpl @Inject constructor(
             spotifySearchClientLock.withLock {
                 cachedSearchClientToken = null
                 cachedSearchClientCookie = null
+                attemptedSearchDeviceRestoreCookie = null
             }
             true
         }
