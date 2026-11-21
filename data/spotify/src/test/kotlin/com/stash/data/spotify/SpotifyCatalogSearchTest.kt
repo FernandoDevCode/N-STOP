@@ -130,7 +130,7 @@ class SpotifyCatalogSearchTest {
             val offset = Json.parseToJsonElement(request.url.queryParameter("variables")!!).jsonObject["offset"]?.jsonPrimitive?.intOrNull
             if (offset == 10) {
                 response(request, 200, """{"data":{"searchV2":{"tracksV2":{"items":[null,
-                    {"item":{"data":{"uri":"spotify:track:later","name":"Better match"}}}],"totalCount":12}}}}""")
+                    {"item":{"_uri":"spotify:track:later","data":{"name":"Better match"}}}],"totalCount":12}}}}""")
             } else {
                 response(request, 200, """{"data":{"searchV2":{
                     "tracksV2":{"items":[{"item":{"data":{"uri":"spotify:track:first","name":"First",
