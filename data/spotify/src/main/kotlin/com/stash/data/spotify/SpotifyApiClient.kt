@@ -991,7 +991,10 @@ class SpotifyApiClient @Inject constructor(
                 put("limit", limit)
                 put("numberOfTopResults", 5)
                 put("includeAudiobooks", false)
+                put("includeArtistHasConcertsField", false)
                 put("includePreReleases", false)
+                put("includeLocalConcertsField", false)
+                put("includeAuthors", false)
             }.toString()
 
             var hash = catalogQueryHash
