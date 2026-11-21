@@ -957,44 +957,112 @@ class SpotifyApiClient @Inject constructor(
 
     private val catalogRetryAtMs = AtomicLong(Long.MIN_VALUE)
 
+    /** Separate from sync's liveHashes: this persisted query serves only account B. */
+    @Volatile private var catalogQueryHash = SpotifyAuthConfig.HASH_SEARCH_DESKTOP
+
+    /**
+     * Catalog for Sonora's universal search through the Spotify Web player's
+     * searchDesktop persisted GraphQL operation, never REST /v1/search.
+     * Sync GraphQL/REST endpoints above remain bound to the personal account.
+     */
     suspend fun searchCatalogPage(
         query: String,
         limit: Int = 10,
         kind: SpotifyCatalogItem.Kind? = null,
         offset: Int = 0,
-    ): SpotifyCatalogPage =
-        withContext(Dispatchers.IO) {
-            val startedNs = System.nanoTime()
-            try {
-                require(offset in 0..1_000)
-            val type = kind?.name?.lowercase() ?: "track,artist,album"
-            val url = "$WEB_API_BASE/search?type=$type&limit=$limit&offset=$offset" +
-                "&q=${URLEncoder.encode(query, "UTF-8")}"
+    ): SpotifyCatalogPage = withContext(Dispatchers.IO) {
+        val startedNs = System.nanoTime()
+        try {
+            require(offset in 0..1_000 && limit in 1..50)
             val retryAt = catalogRetryAtMs.get()
             val now = TimeUnit.NANOSECONDS.toMillis(System.nanoTime())
             if (retryAt > now) throw SpotifyRateLimitException((retryAt - now + 999) / 1_000)
-            val token = tokenManager.getSpotifySearchAccessToken()
-                ?: throw SpotifyApiException(0, url, "Spotify search requires a connected account")
-            var response = okHttpClient.newCall(searchRequest(url, token)).awaitCatalogResponse()
-            if (response.code == 401) {
-                val refreshed = tokenManager.forceRefreshSpotifySearchAccessToken()
-                    ?: throw SpotifyApiException(401, url, "Spotify session could not be refreshed")
-                response = okHttpClient.newCall(searchRequest(url, refreshed)).awaitCatalogResponse()
-            }
-            when (response.code) {
-                429 -> {
-                    val wait = (response.retryAfterSeconds ?: 60).coerceIn(1, Int.MAX_VALUE.toLong())
-                    val retryAtMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime()) + wait * 1_000
-                    catalogRetryAtMs.accumulateAndGet(retryAtMs, ::maxOf)
+
+            // The Partner API needs BOTH account B's web token and its client token.
+            // No fallback to personal credentials or to the rate-limited REST endpoint.
+            var access = tokenManager.getSpotifySearchAccessToken()
+                ?: throw SpotifyApiException(0, SpotifyAuthConfig.GRAPHQL_ENDPOINT, "Spotify catalog session missing")
+            var client = tokenManager.getSpotifySearchClientToken()
+                ?: throw SpotifyApiException(0, SpotifyAuthConfig.GRAPHQL_ENDPOINT, "Spotify catalog client token missing")
+            val version = tokenManager.getSpotifySearchClientVersion()
+            val variables = buildJsonObject {
+                put("searchTerm", query)
+                put("offset", offset)
+                put("limit", limit)
+                put("numberOfTopResults", 5)
+                put("includeAudiobooks", false)
+                put("includePreReleases", false)
+            }.toString()
+
+            var hash = catalogQueryHash
+            var retriedAccess = false
+            var retriedClient = false
+            var retriedHash = false
+            while (true) {
+                val extensions = buildJsonObject {
+                    put("persistedQuery", buildJsonObject {
+                        put("version", 1)
+                        put("sha256Hash", hash)
+                    })
+                }.toString()
+                val url = SpotifyAuthConfig.GRAPHQL_ENDPOINT +
+                    "?operationName=searchDesktop&variables=${URLEncoder.encode(variables, "UTF-8")}" +
+                    "&extensions=${URLEncoder.encode(extensions, "UTF-8")}"
+                val request = Request.Builder()
+                    .url(url).get()
+                    .header("Authorization", "Bearer $access")
+                    .header("Client-Token", client)
+                    .header("Accept", "application/json")
+                    .header("App-Platform", "WebPlayer")
+                    .header("Spotify-App-Version", version)
+                    .header("Origin", "https://open.spotify.com")
+                    .header("Referer", "https://open.spotify.com/")
+                    .build()
+                val response = okHttpClient.newCall(request).awaitCatalogResponse()
+                if ((response.code == 400 || response.code in 200..299) &&
+                    isPersistedQueryMiss(response.body) && !retriedHash
+                ) {
+                    retriedHash = true
+                    val replacement = tokenManager.scrapeSpotifySearchQueryHash(hash)
+                    if (replacement != null && replacement != hash) {
+                        catalogQueryHash = replacement
+                        hash = replacement
+                        continue
+                    }
+                }
+                if (response.code == 401 && !retriedAccess) {
+                    retriedAccess = true
+                    val fresh = tokenManager.forceRefreshSpotifySearchAccessToken()
+                        ?: throw SpotifyApiException(401, SpotifyAuthConfig.GRAPHQL_ENDPOINT, "Catalog session expired")
+                    access = fresh
+                    continue
+                }
+                if (response.code == 400 && !retriedClient && !isPersistedQueryMiss(response.body)) {
+                    retriedClient = true
+                    val fresh = tokenManager.getSpotifySearchClientToken(forceRefresh = true)
+                        ?: throw SpotifyApiException(400, SpotifyAuthConfig.GRAPHQL_ENDPOINT, "Catalog client token rejected")
+                    client = fresh
+                    continue
+                }
+                if (response.code == 429) {
+                    val wait = (response.retryAfterSeconds ?: 60).coerceIn(1, 86_400)
+                    val deadline = TimeUnit.NANOSECONDS.toMillis(System.nanoTime()) + wait * 1_000
+                    catalogRetryAtMs.accumulateAndGet(deadline, ::maxOf)
                     throw SpotifyRateLimitException(response.retryAfterSeconds)
                 }
-                !in 200..299 -> throw SpotifyApiException(response.code, url, "Spotify search failed")
+                if (response.code !in 200..299) {
+                    throw SpotifyApiException(response.code, SpotifyAuthConfig.GRAPHQL_ENDPOINT,
+                        "Spotify web catalog search failed")
+                }
+                val payload = response.body ?: throw java.io.IOException("Empty Spotify web catalog response")
+                return@withContext parseSpotifyPartnerCatalog(payload, offset, limit, kind)
             }
-                parseSpotifyCatalog(response.body ?: throw java.io.IOException("Empty Spotify search response"), offset)
-            } finally {
-                Log.d("SonoraPerf", "spotify_catalog_request_ms=${TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNs)}")
-            }
+            @Suppress("UNREACHABLE_CODE")
+            throw IllegalStateException("Unreachable Spotify catalog state")
+        } finally {
+            Log.d("SonoraPerf", "spotify_catalog_request_ms=${TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNs)}")
         }
+    }
 
     /**
      * Search tracks via the web player's `searchDesktop` GraphQL operation
