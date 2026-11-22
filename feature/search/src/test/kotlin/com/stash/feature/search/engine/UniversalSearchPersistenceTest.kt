@@ -34,59 +34,18 @@ class UniversalSearchPersistenceTest {
     private val legacy = RecentSearchesStore(context)
 
     @Test
-    fun `music filter is transient by default and its pinned off state round trips`() = runBlocking {
+    fun `legacy Spotify and pinned sources normalize to YTM and WEB defaults`() = runBlocking {
         val prefs = SearchSourcePreferences(context)
-        prefs.save(SearchSourceSelection.Default)
-        val scopes = mutableListOf<CoroutineScope>()
-        suspend fun session(): UniversalSearchSession {
-            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
-            scopes.add(scope)
-            return UniversalSearchSession(
-                scope,
-                CatalogSource.entries.associateWith { { _: String -> emptyList() } },
-                prefs.read(), prefs::save, UniversalSearchHistory(context, legacy), {}, {},
-            )
-        }
         try {
-            val first = session()
-            first.onSourceToggled(SPOTIFY)
-            assertEquals(emptySet<CatalogSource>(), first.state.value.selection.enabled)
-            assertEquals(setOf(YOUTUBE), first.state.value.selection.activeCatalogs)
-            assertEquals(SearchSourceSelection.Default, session().state.value.selection)
-            first.onPinToggled()
-            assertEquals(SearchSourceSelection(emptySet(), true), session().state.value.selection)
-            first.onSourceToggled(SPOTIFY)
-            assertEquals(SearchSourceSelection(setOf(SPOTIFY), true), session().state.value.selection)
-            assertEquals(CatalogSource.entries.toSet(), session().state.value.selection.activeCatalogs)
-            first.onSourceToggled(SPOTIFY)
-            scopes.first().cancel()
-            val reopened = session()
-            assertEquals(SearchSourceSelection(emptySet(), true), reopened.state.value.selection)
-            reopened.onRestoreDefaultSources()
-            assertEquals(SearchSourceSelection(setOf(SPOTIFY), true), session().state.value.selection)
-            reopened.onSourceToggled(SPOTIFY)
-            reopened.onPinToggled()
-            assertEquals(SearchSourceSelection(emptySet(), false), reopened.state.value.selection)
-            assertEquals(SearchSourceSelection.Default, session().state.value.selection)
-            reopened.onRestoreDefaultSources()
-            assertEquals(SearchSourceSelection.Default, reopened.state.value.selection)
-        } finally {
-            scopes.forEach { it.cancel() }
+            for (previous in listOf(
+                setOf(SPOTIFY), setOf(YOUTUBE_MUSIC), setOf(YOUTUBE),
+                setOf(SPOTIFY, YOUTUBE), emptySet(),
+            )) {
+                prefs.save(SearchSourceSelection(previous, isPinned = true))
+                assertEquals(SearchSourceSelection.Default, prefs.read())
+            }
             prefs.save(SearchSourceSelection.Default)
-            prefs.read()
-        }
-    }
-
-    @Test
-    fun `legacy pinned YouTube Music filter is stored and loaded as Spotify`() = runBlocking {
-        val prefs = SearchSourcePreferences(context)
-        try {
-            prefs.save(SearchSourceSelection(setOf(YOUTUBE_MUSIC), true))
-            assertEquals(SearchSourceSelection(setOf(SPOTIFY), true), prefs.read())
-            prefs.save(SearchSourceSelection(setOf(YOUTUBE_MUSIC, YOUTUBE), true))
-            assertEquals(SearchSourceSelection(setOf(SPOTIFY), true), prefs.read())
-            prefs.save(SearchSourceSelection(setOf(YOUTUBE), true))
-            assertEquals(SearchSourceSelection(emptySet(), true), prefs.read())
+            assertEquals(SearchSourceSelection.Default, prefs.read())
         } finally {
             prefs.save(SearchSourceSelection.Default)
             prefs.read()
