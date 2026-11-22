@@ -43,6 +43,14 @@ internal fun parseTracksFromShelf(
     }
 }
 
+/** Spotify does not participate in song discovery. The YTM artist Songs shelf
+ * may link to its complete playlist instead of exposing only five rows. */
+internal fun parseArtistSongsMore(shelf: JsonObject): String? =
+    shelf.navigatePath("title", "runs")?.firstArray()?.firstOrNull()
+        ?.asObject()?.navigatePath("navigationEndpoint", "browseEndpoint", "browseId")
+        ?.asString()?.takeIf { it.startsWith("VL") && it.length in 3..255 }
+
+
 /**
  * Parses an "Albums" or "Singles and EPs" carousel on an artist page.
  *
