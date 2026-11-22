@@ -12,7 +12,6 @@ import com.stash.core.common.perf.PerfLog
 import com.stash.core.data.cache.AlbumCache
 import com.stash.core.data.cache.ArtistCache
 import com.stash.core.data.musicbrainz.MusicBrainzClient
-import com.stash.core.model.TrackItem
 import com.stash.data.ytmusic.YTMusicApiClient
 import com.stash.core.data.artistphotos.SelectedArtistPhotoRepository
 import com.stash.core.data.artistphotos.ArtistPhotoOrigin
