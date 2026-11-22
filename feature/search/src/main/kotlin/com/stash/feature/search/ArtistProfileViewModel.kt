@@ -209,7 +209,7 @@ class ArtistProfileViewModel @Inject constructor(
                     val found = findMusicBrainzTrackAudio(artist, track, options)
                     if (found == null) {
                         _discography.update { it.copy(unavailable = it.unavailable + index) }
-                        _userMessages.tryEmit("Gravação não confirmada no YouTube Music.")
+                        _userMessages.tryEmit("Não encontramos esta gravação.")
                         return@launch
                     }
                     TrackItem(
