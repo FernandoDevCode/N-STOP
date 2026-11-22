@@ -6,7 +6,11 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -83,6 +87,44 @@ class MusicBrainzClientImpl @Inject constructor(
         }
     }
 
+
+    override suspend fun albumGroups(artistName: String): List<MusicBrainzAlbumGroup>? {
+        if (artistName.isBlank()) return emptyList()
+        return try {
+            val artistId = searchUniqueByName(artistName)?.text("id") ?: return null
+            val body = get("release-group?artist=$artistId&type=album&limit=100&fmt=json") ?: return null
+            parseMusicBrainzGroups(body)
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    override suspend fun editions(groupId: String): List<MusicBrainzEdition>? {
+        if (!validMbid(groupId)) return null
+        return try {
+            val body = get("release?release-group=$groupId&limit=100&fmt=json") ?: return null
+            parseMusicBrainzEditions(body)
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    override suspend fun releaseTracks(releaseId: String): List<MusicBrainzEditionTrack>? {
+        if (!validMbid(releaseId)) return null
+        return try {
+            val body = get("release/$releaseId?inc=recordings&fmt=json") ?: return null
+            parseMusicBrainzTracks(body)
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     /** GET [path] under the MB base with our UA + rate gate; null on non-2xx. */
     private suspend fun get(path: String): JsonObject? {
         throttle()
@@ -108,7 +150,57 @@ class MusicBrainzClientImpl @Inject constructor(
     private companion object {
         const val BASE = "https://musicbrainz.org/ws/2/"
         private const val CALL_TIMEOUT_SECONDS = 5L
-        const val USER_AGENT = "Stash/1.0 ( https://github.com/rawnaldclark/Stash )"
+        const val USER_AGENT = "Sonora/0.9 ( https://github.com/FernandoDevCode/N-STOP )"
         const val MIN_INTERVAL_MS = 1000L
     }
 }
+
+/** Pure parsers preserve release identity, avoid making MusicBrainz IDs into streams. */
+private fun JsonObject.text(name: String): String? =
+    (this[name] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
+private fun JsonObject.array(name: String): JsonArray? = this[name] as? JsonArray
+private fun validMbid(id: String) =
+    Regex("^[a-fA-F0-9]{8}-(?:[a-fA-F0-9]{4}-){3}[a-fA-F0-9]{12}$").matches(id)
+
+internal fun parseMusicBrainzGroups(body: JsonObject): List<MusicBrainzAlbumGroup> =
+    body.array("release-groups").orEmpty().mapNotNull { element ->
+        val obj = element as? JsonObject ?: return@mapNotNull null
+        val id = obj.text("id")?.takeIf(::validMbid) ?: return@mapNotNull null
+        val title = obj.text("title") ?: return@mapNotNull null
+        MusicBrainzAlbumGroup(id, title, obj.text("first-release-date")?.take(4))
+    }.distinctBy { it.id }.sortedWith(compareByDescending<MusicBrainzAlbumGroup> { it.year.orEmpty() }.thenBy { it.title })
+
+internal fun parseMusicBrainzEditions(body: JsonObject): List<MusicBrainzEdition> =
+    body.array("releases").orEmpty().mapNotNull { element ->
+        val obj = element as? JsonObject ?: return@mapNotNull null
+        val id = obj.text("id")?.takeIf(::validMbid) ?: return@mapNotNull null
+        MusicBrainzEdition(
+            id, obj.text("title") ?: return@mapNotNull null,
+            obj.text("disambiguation"), obj.text("date"), obj.text("country"),
+        )
+    }.distinctBy { it.id }.sortedWith(
+        compareByDescending<MusicBrainzEdition> {
+            it.description?.contains("anniversary", ignoreCase = true) == true ||
+                it.title.contains("anniversary", ignoreCase = true)
+        }.thenBy { it.date.orEmpty() }.thenBy { it.title }
+    )
+
+internal fun parseMusicBrainzTracks(body: JsonObject): List<MusicBrainzEditionTrack> =
+    buildList {
+        body.array("media").orEmpty().forEachIndexed { mediaIndex, medium ->
+            val disc = (medium as? JsonObject) ?: return@forEachIndexed
+            disc.array("tracks").orEmpty().forEachIndexed { trackIndex, element ->
+                val track = element as? JsonObject ?: return@forEachIndexed
+                val title = track.text("title") ?: return@forEachIndexed
+                val recording = track["recording"] as? JsonObject
+                add(MusicBrainzEditionTrack(
+                    position = (track["position"] as? JsonPrimitive)?.content?.toIntOrNull() ?: trackIndex + 1,
+                    disc = (disc["position"] as? JsonPrimitive)?.content?.toIntOrNull() ?: mediaIndex + 1,
+                    title = title,
+                    durationMs = (track["length"] as? JsonPrimitive)?.longOrNull
+                        ?: (recording?.get("length") as? JsonPrimitive)?.longOrNull,
+                    recordingId = recording?.text("id")?.takeIf(::validMbid),
+                ))
+            }
+        }
+    }
