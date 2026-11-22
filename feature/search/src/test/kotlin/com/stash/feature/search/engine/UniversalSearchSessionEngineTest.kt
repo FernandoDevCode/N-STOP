@@ -205,4 +205,4 @@ class UniversalSearchSessionEngineTest {
         title = "Echoes", subtitle = "Pink Floyd", artworkUrl = "original", durationMs = 300_000,
         providerRank = 0, rankingScore = 1.0,
     )
-
+}
