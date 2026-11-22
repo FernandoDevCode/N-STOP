@@ -233,20 +233,18 @@ internal fun UniversalSearchContent(
     var selectedCategory by rememberSaveable { mutableStateOf(SearchCategory.TOP) }
     var listQuery by rememberSaveable { mutableStateOf(state.query) }
     val category = if (active && listQuery == state.query) selectedCategory else SearchCategory.TOP
-    var sourceSheetOpen by rememberSaveable { mutableStateOf(false) }
     var detailsKey by remember(state.query) { mutableStateOf<String?>(null) }
     var detailsArtwork by remember(state.query) { mutableStateOf<String?>(null) }
     val ranked = state.orderedResults
     val music = remember(ranked) { ranked.filter { it.category?.musicType != null } }
     val grouped = remember(music) { music.groupBy { checkNotNull(it.category) } }
     val featured = music.firstOrNull()
-    val spotifyData = state.sourceStates[CatalogSource.SPOTIFY] as? SourceSearchState.Data
-    val topSections = remember(grouped, featured, spotifyData?.nextOffsets) {
+    val topSections = remember(grouped, featured) {
         grouped.mapValues { (_, results) ->
             val remaining = if (results.firstOrNull() == featured) results.drop(1) else results
             remaining.take(3)
         }.filter { (section, preview) ->
-            preview.isNotEmpty() || section.musicType in spotifyData?.nextOffsets.orEmpty()
+            preview.isNotEmpty()
         }
     }
     val visibleResults = remember(ranked, music, category) {
@@ -255,13 +253,6 @@ internal fun UniversalSearchContent(
             SearchCategory.YOUTUBE -> ranked.filter { it.identity.source == CatalogSource.YOUTUBE }
             else -> grouped[category].orEmpty()
         }
-    }
-
-    fun openSources() {
-        keyboard?.hide()
-        focus.clearFocus()
-        detailsKey = null
-        sourceSheetOpen = true
     }
 
     fun selectCategory(next: SearchCategory) {
@@ -275,18 +266,6 @@ internal fun UniversalSearchContent(
     val resultKeys by rememberUpdatedState(remember(visibleResults) {
         visibleResults.mapTo(hashSetOf()) { it.stableKey }
     })
-    val musicType = category.musicType
-    val nextOffset = spotifyData?.nextOffsets?.get(musicType)
-    val lastKey = visibleResults.lastOrNull()?.stableKey
-    val pageFailed = musicType in spotifyData?.pageErrors.orEmpty()
-    LaunchedEffect(state.query, musicType, nextOffset, lastKey, pageFailed) {
-        if (musicType == null || nextOffset == null || pageFailed) return@LaunchedEffect
-        snapshotFlow {
-            lastKey == null || list.layoutInfo.visibleItemsInfo.any { it.key == lastKey }
-        }.collect { reachedEnd ->
-            if (reachedEnd) actions.onLoadMore(query, musicType)
-        }
-    }
     LaunchedEffect(list, actions, lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             try {
@@ -318,7 +297,7 @@ internal fun UniversalSearchContent(
     Scaffold(Modifier.imePadding(), containerColor = Color.Transparent, snackbarHost = snackbarHost) { insets ->
         Box(Modifier.fillMaxSize().padding(insets), contentAlignment = Alignment.TopCenter) {
             Column(Modifier.widthIn(max = 720.dp).fillMaxSize()) {
-                SearchHeader(state, actions, autoFocus, ::openSources)
+                SearchHeader(state, actions, autoFocus)
                 if (active) SearchCategories(category, ::selectCategory)
                 LazyColumn(
                     modifier = Modifier.fillMaxSize().testTag("searchList"),
@@ -342,20 +321,13 @@ internal fun UniversalSearchContent(
                         }
                         return@LazyColumn
                     }
-                    val enabled = state.selection.activeCatalogs
-                    if (category != SearchCategory.YOUTUBE && CatalogSource.SPOTIFY !in enabled) {
-                        item("noSources") { SearchMessage(R.string.universal_search_music_disabled) }
-                        return@LazyColumn
-                    }
-                    val sources = if (category == SearchCategory.YOUTUBE) listOf(CatalogSource.YOUTUBE) else
-                        listOf(CatalogSource.SPOTIFY, CatalogSource.YOUTUBE_MUSIC).filter {
-                            state.sourceStates[it] != SourceSearchState.Idle && state.sourceStates[it] != null
-                        }
+                    val sources = if (category == SearchCategory.YOUTUBE)
+                        listOf(CatalogSource.YOUTUBE) else listOf(CatalogSource.YOUTUBE_MUSIC)
 
                     val statuses = sources.map { state.sourceStates[it] ?: SourceSearchState.Idle }
                     val finished = statuses.isNotEmpty() &&
                         statuses.none { it is SourceSearchState.Loading || it == SourceSearchState.Idle }
-                    if (visibleResults.isEmpty() && finished && nextOffset == null) {
+                    if (visibleResults.isEmpty() && finished) {
                         when {
                             statuses.any { it is SourceSearchState.Error } ->
                                 item("error") { SearchMessage(R.string.nostop_search_failed) }
@@ -405,18 +377,7 @@ internal fun UniversalSearchContent(
                             row(it, false)
                         }
                     }
-                    if (musicType != null && musicType in spotifyData?.loadingPages.orEmpty()) {
-                        item("loadingMore") {
-                            SourceStatus(CatalogSource.SPOTIFY, SourceSearchState.Loading(state.query), actions)
-                        }
-                    } else if (musicType != null && pageFailed) {
-                        item("pageError") {
-                            SourceStatus(
-                                CatalogSource.SPOTIFY, SourceSearchState.Error(state.query, "Page failed", true), actions,
-                                onRetry = { actions.onLoadMore(state.query, musicType) },
-                            )
-                        }
-                    }
+
                 }
             }
         }
@@ -424,7 +385,6 @@ internal fun UniversalSearchContent(
 
     val detail = detailsKey?.let { key -> ranked.firstOrNull { it.stableKey == key } }
     when {
-        sourceSheetOpen -> SearchSourcesSheet(state.selection, actions) { sourceSheetOpen = false }
         detail != null -> SearchResultSheet(
             result = detail,
             shownArtwork = detailsArtwork,
@@ -463,7 +423,6 @@ private fun SearchHeader(
     state: UniversalSearchUiState,
     actions: UniversalSearchActions,
     autoFocus: Boolean,
-    onSources: () -> Unit,
 ) {
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -527,13 +486,7 @@ private fun SearchHeader(
                     }
                 },
             )
-            IconButton(
-                onClick = onSources,
-                modifier = Modifier.size(48.dp).clip(fieldShape).background(searchSurface())
-                    .testTag("searchSourceSettings"),
-            ) {
-                Icon(Icons.Outlined.Tune, stringResource(R.string.universal_search_source_settings), Modifier.size(21.dp))
-            }
+
         }
     }
     var focused by rememberSaveable { mutableStateOf(false) }
