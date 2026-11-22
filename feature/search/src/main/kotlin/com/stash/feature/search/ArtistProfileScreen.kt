@@ -83,6 +83,7 @@ fun ArtistProfileScreen(
     vm: ArtistProfileViewModel = hiltViewModel(),
 ) {
     val state by vm.uiState.collectAsStateWithLifecycle()
+    val discography by vm.discography.collectAsStateWithLifecycle()
     // Optional image lookup is UI-owned, never part of catalog or playback VM.
     val wordmarkUrl by produceState<String?>(initialValue = null, key1 = state.hero.name) {
         value = ArtistWordmarkLookup.resolve(state.hero.name)
@@ -359,6 +360,25 @@ fun ArtistProfileScreen(
                     focus = focus,
                 )
             }
+            if (selectedArtistTab == 1 && state.status !is ArtistProfileStatus.Loading) {
+                item(key = "musicbrainz-editions") {
+                    androidx.compose.material3.Surface(
+                        onClick = vm::openFullDiscography,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .45f),
+                    ) {
+                        Column(Modifier.padding(horizontal = 16.dp, vertical = 16.dp)) {
+                            Text("Explorar outras edições", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "MusicBrainz · edições adicionais, remasters e faixas bônus",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
         }
         // Status bar contrast remains independent from the scrolling section menu.
         // No fixed artist name, tabs or scrim is drawn over album artwork.
@@ -383,6 +403,17 @@ fun ArtistProfileScreen(
                 },
                 onDismiss = { showStreamingSheet = false },
                 sheetState = streamingSheetState,
+            )
+        }
+
+        if (discography.open) {
+            MusicBrainzDiscographySheet(
+                state = discography,
+                onDismiss = vm::closeFullDiscography,
+                onBack = vm::backFullDiscography,
+                onGroup = vm::openReleaseGroup,
+                onEdition = vm::openReleaseEdition,
+                onTrack = vm::useEditionTrack,
             )
         }
 

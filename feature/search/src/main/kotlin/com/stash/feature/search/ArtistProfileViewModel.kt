@@ -11,6 +11,8 @@ import com.stash.core.data.artistphotos.ArtistIdentityKind
 import com.stash.core.common.perf.PerfLog
 import com.stash.core.data.cache.AlbumCache
 import com.stash.core.data.cache.ArtistCache
+import com.stash.core.data.musicbrainz.MusicBrainzClient
+import com.stash.data.ytmusic.YTMusicApiClient
 import com.stash.core.data.artistphotos.SelectedArtistPhotoRepository
 import com.stash.core.data.artistphotos.ArtistPhotoOrigin
 import com.stash.core.data.cache.CachedProfile
@@ -76,6 +78,8 @@ class ArtistProfileViewModel @Inject constructor(
     private val selectedArtistPhotos: SelectedArtistPhotoRepository,
     private val appleAlbumMetadata: AppleMusicAlbumMetadataLookup,
     private val albumCache: AlbumCache,
+    private val musicBrainz: MusicBrainzClient,
+    private val ytMusic: YTMusicApiClient,
     private val prefetcher: PreviewPrefetcher,
     private val playerRepository: PlayerRepository,
     private val musicRepository: MusicRepository,
@@ -109,6 +113,138 @@ class ArtistProfileViewModel @Inject constructor(
         ),
     )
     val uiState: StateFlow<ArtistProfileUiState> = _uiState.asStateFlow()
+
+    private val _discography = MutableStateFlow(MusicBrainzDiscoveryState())
+    internal val discography: StateFlow<MusicBrainzDiscoveryState> = _discography.asStateFlow()
+    private var discographyJob: Job? = null
+    private var audioLookupJob: Job? = null
+
+    fun openFullDiscography() {
+        discographyJob?.cancel()
+        _discography.value = MusicBrainzDiscoveryState(open = true, loading = true)
+        discographyJob = viewModelScope.launch {
+            val groups = musicBrainz.albumGroups(_uiState.value.hero.name.ifBlank { initialName })
+            if (!_discography.value.open) return@launch
+            _discography.update {
+                it.copy(loading = false, groups = groups.orEmpty(),
+                    error = if (groups == null) "Não foi possível consultar a discografia." else null)
+            }
+        }
+    }
+
+    fun closeFullDiscography() {
+        discographyJob?.cancel()
+        audioLookupJob?.cancel()
+        _discography.value = MusicBrainzDiscoveryState()
+    }
+
+    fun openReleaseGroup(group: com.stash.core.data.musicbrainz.MusicBrainzAlbumGroup) {
+        discographyJob?.cancel()
+        audioLookupJob?.cancel()
+        _discography.update {
+            it.copy(selectedGroup = group, selectedEdition = null, editions = emptyList(),
+                tracks = emptyList(), resolved = emptyMap(), unavailable = emptySet(),
+                resolving = null, loading = true, error = null)
+        }
+        discographyJob = viewModelScope.launch {
+            val releases = musicBrainz.editions(group.id)
+            if (_discography.value.selectedGroup?.id != group.id) return@launch
+            _discography.update {
+                it.copy(loading = false, editions = releases.orEmpty(),
+                    error = if (releases == null) "Não foi possível consultar as edições." else null)
+            }
+        }
+    }
+
+    fun openReleaseEdition(edition: com.stash.core.data.musicbrainz.MusicBrainzEdition) {
+        discographyJob?.cancel()
+        audioLookupJob?.cancel()
+        _discography.update {
+            it.copy(selectedEdition = edition, tracks = emptyList(), resolved = emptyMap(),
+                unavailable = emptySet(), resolving = null, loading = true, error = null)
+        }
+        discographyJob = viewModelScope.launch {
+            val tracks = musicBrainz.releaseTracks(edition.id)
+            if (_discography.value.selectedEdition?.id != edition.id) return@launch
+            _discography.update {
+                it.copy(loading = false, tracks = tracks.orEmpty(),
+                    error = if (tracks == null) "Não foi possível obter as faixas desta edição." else null)
+            }
+        }
+    }
+
+    fun backFullDiscography() {
+        discographyJob?.cancel()
+        audioLookupJob?.cancel()
+        _discography.update { state ->
+            when {
+                state.selectedEdition != null -> state.copy(
+                    selectedEdition = null, tracks = emptyList(), resolved = emptyMap(),
+                    unavailable = emptySet(), resolving = null, error = null, loading = false,
+                )
+                state.selectedGroup != null -> state.copy(
+                    selectedGroup = null, editions = emptyList(), error = null, loading = false,
+                )
+                else -> MusicBrainzDiscoveryState()
+            }
+        }
+    }
+
+    /**
+     * Resolve individual album tracks on demand only, without replacing another recording.
+     * Album identities stay in MusicBrainz; audio IDs stay in YouTube Music.
+     */
+    fun useEditionTrack(index: Int, download: Boolean) {
+        val snapshot = _discography.value
+        val track = snapshot.tracks.getOrNull(index) ?: return
+        val edition = snapshot.selectedEdition ?: return
+        if (snapshot.resolving != null) return
+        audioLookupJob?.cancel()
+        audioLookupJob = viewModelScope.launch {
+            _discography.update { it.copy(resolving = index, error = null) }
+            try {
+                val item = snapshot.resolved[index] ?: run {
+                    val artist = _uiState.value.hero.name.ifBlank { initialName }
+                    val options = ytMusic.searchCatalog("$artist ${track.title}")
+                    val found = findMusicBrainzTrackAudio(artist, track, options)
+                    if (found == null) {
+                        _discography.update { it.copy(unavailable = it.unavailable + index) }
+                        _userMessages.tryEmit("Gravação não confirmada no YouTube Music.")
+                        return@launch
+                    }
+                    TrackItem(
+                        videoId = found.id, title = track.title,
+                        artist = artist, durationSeconds = (found.durationMs ?: track.durationMs ?: 0L) / 1000.0,
+                        thumbnailUrl = found.artworkUrl,
+                        album = edition.title, albumArtist = artist,
+                    ).also { matched ->
+                        _discography.update { it.copy(resolved = it.resolved + (index to matched), unavailable = it.unavailable - index) }
+                    }
+                }
+                if (edition.id != _discography.value.selectedEdition?.id) return@launch
+                if (download) delegate.downloadTrack(item)
+                else {
+                    when (playerRepository.playExactSearchResult(item)) {
+                        com.stash.core.media.StreamRoutingResult.NotAvailable ->
+                            _userMessages.tryEmit("Esta gravação está indisponível.")
+                        com.stash.core.media.StreamRoutingResult.NoConnectivity ->
+                            _userMessages.tryEmit("Sem conexão para reproduzir.")
+                        com.stash.core.media.StreamRoutingResult.CellularRefused ->
+                            _userMessages.tryEmit("Reprodução por dados móveis desativada.")
+                        else -> Unit
+                    }
+                }
+            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                _userMessages.tryEmit("Falha ao consultar a gravação. Tente novamente.")
+            } finally {
+                if (edition.id == _discography.value.selectedEdition?.id) {
+                    _discography.update { it.copy(resolving = null) }
+                }
+            }
+        }
+    }
 
     /**
      * One-shot user-facing messages (snackbars). Uses a [MutableSharedFlow]

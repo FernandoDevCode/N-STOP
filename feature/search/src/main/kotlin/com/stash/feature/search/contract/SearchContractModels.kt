@@ -24,24 +24,21 @@ enum class SearchResultAction {
 }
 
 val DefaultSearchSources: Set<CatalogSource> = setOf(
-    CatalogSource.SPOTIFY,
+    CatalogSource.YOUTUBE_MUSIC,
+    CatalogSource.YOUTUBE,
 )
 
 data class SearchSourceSelection(
     val enabled: Set<CatalogSource> = DefaultSearchSources,
     val isPinned: Boolean = false,
 ) {
-    // Historic pins may contain the former YouTube switch or the legacy music alias.
-    fun normalizedVisibleFilters(): SearchSourceSelection =
-        copy(enabled = if (enabled.any { it != CatalogSource.YOUTUBE }) DefaultSearchSources else emptySet())
+    // Search sources are fixed: Music in YTM, videos in YouTube WEB.
+    // Normalize all old Spotify/pinned choices without touching stored catalog identities.
+    fun normalizedVisibleFilters(): SearchSourceSelection = copy(enabled = DefaultSearchSources, isPinned = false)
 
-    // The YouTube chip works independently. YouTube Music is the music fallback.
-    val activeCatalogs: Set<CatalogSource>
-        get() = if (enabled.any { it != CatalogSource.YOUTUBE }) musicAndVideoCatalogs else videoCatalog
+    val activeCatalogs: Set<CatalogSource> get() = DefaultSearchSources
 
     companion object {
-        private val musicAndVideoCatalogs = CatalogSource.entries.toSet()
-        private val videoCatalog = setOf(CatalogSource.YOUTUBE)
         val Default = SearchSourceSelection()
     }
 }

@@ -18,7 +18,35 @@ interface MusicBrainzClient {
     suspend fun searchByName(name: String): JsonObject?
     /** Exact unambiguous match for cross-provider artist-photo identity. */
     suspend fun searchUniqueByName(name: String): JsonObject?
+
+    /** Discography metadata only; returned MusicBrainz IDs are never playable IDs.
+     * null indicates unavailable API or ambiguous artist; empty means no entries. */
+    suspend fun albumGroups(artistName: String): List<MusicBrainzAlbumGroup>? = null
+    suspend fun editions(groupId: String): List<MusicBrainzEdition>? = null
+    suspend fun releaseTracks(releaseId: String): List<MusicBrainzEditionTrack>? = null
 }
+
+/** Album concept (release group) — editions are selected separately. */
+data class MusicBrainzAlbumGroup(val id: String, val title: String, val year: String?)
+
+/** An actual release, including edition-specific disambiguation. */
+data class MusicBrainzEdition(
+    val id: String,
+    val title: String,
+    val description: String?,
+    val date: String?,
+    val country: String?,
+)
+
+/** Official track position within a selected release, not an audio destination. */
+data class MusicBrainzEditionTrack(
+    val position: Int,
+    val disc: Int,
+    val title: String,
+    val durationMs: Long?,
+    val recordingId: String?,
+)
+
 
 private val HOST_KIND = linkedMapOf(
     "instagram.com" to "instagram", "twitter.com" to "x", "x.com" to "x",

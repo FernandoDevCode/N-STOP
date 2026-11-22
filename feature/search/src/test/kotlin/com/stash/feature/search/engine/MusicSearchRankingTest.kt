@@ -108,7 +108,7 @@ class MusicSearchRankingTest {
     private fun ordered(query: String, candidates: List<UniversalSearchResult>): List<UniversalSearchResult> =
         UniversalSearchEngine.aggregate(
             query, SearchSourceSelection.Default,
-            mapOf(CatalogSource.SPOTIFY to SourceSearchState.Data(query, rankMusicSearch(query, candidates))),
+            mapOf(CatalogSource.YOUTUBE_MUSIC to SourceSearchState.Data(query, rankMusicSearch(query, candidates))),
         ).orderedResults
 
     private fun List<UniversalSearchResult>.ids() = map { it.identity.catalogId }
@@ -121,7 +121,7 @@ class MusicSearchRankingTest {
         artists: List<String> = emptyList(),
         artistIds: List<String> = emptyList(),
     ) = UniversalSearchResult(
-        CatalogIdentity(CatalogSource.SPOTIFY, id), type = type, title = title,
+        CatalogIdentity(CatalogSource.YOUTUBE_MUSIC, id), type = type, title = title,
         providerRank = rank, rankingScore = ordinalSearchScore(rank),
         artistNames = artists, artistIds = artistIds,
     )

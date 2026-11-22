@@ -68,51 +68,16 @@ class SearchViewModel @Inject constructor(
     }
 
     private fun openResult(result: UniversalSearchResult) {
-        if (result.identity.source != CatalogSource.SPOTIFY) {
-            val startedMs = android.os.SystemClock.elapsedRealtime()
-            searchDestination(result.identity, result.type, result.title, result.subtitle, result.artworkUrl)
-                ?.let { navigation.tryEmit(it) }
-            Log.d("SonoraPerf", "search_detail_route_ms=${android.os.SystemClock.elapsedRealtime() - startedMs}")
-            return
-        }
-        val session = openedSession.value ?: return
-        val search = session.state.value
-        runResultAction(result, R.string.universal_search_details_unavailable) {
-            val startedMs = android.os.SystemClock.elapsedRealtime()
-            try {
-            // More than one Spotify artist with the same name gives no verified cross-catalog route.
-            val hasHomonym = result.type == SearchResultType.ARTIST && search.orderedResults.any {
-                it.type == result.type && it.identity != result.identity && it.identity.source == result.identity.source &&
-                    searchTextKey(it.title) == searchTextKey(result.title)
-            }
-            val target = if (hasHomonym) null else factory.resolveSpotifyTarget(result)
-            currentCoroutineContext().ensureActive()
-            val current = session.state.value
-            if (current.query != search.query || current.orderedResults.none { it.stableKey == result.stableKey }) {
-                return@runResultAction
-            }
-            val identity = target?.let { CatalogIdentity(CatalogSource.YOUTUBE_MUSIC, it.id) }
-            val destination = identity?.let {
-                searchDestination(it, result.type, result.title, result.subtitle, result.artworkUrl)
-            }
-            if (identity != null && destination != null) {
-                session.recordNavigation(result, identity)
-                navigation.tryEmit(destination)
-            } else {
-                playbackErrors.tryEmit(R.string.universal_search_details_unavailable)
-            }
-            } finally {
-                Log.d("SonoraPerf", "search_detail_route_ms=${android.os.SystemClock.elapsedRealtime() - startedMs}")
-            }
-        }
+        val start = android.os.SystemClock.elapsedRealtime()
+        searchDestination(result.identity, result.type, result.title, result.subtitle, result.artworkUrl)
+            ?.let { navigation.tryEmit(it) }
+        Log.d("SonoraPerf", "search_detail_route_ms="+(android.os.SystemClock.elapsedRealtime()-start))
     }
 
     private fun play(result: UniversalSearchResult, artworkUrl: String?) {
         runResultAction(result, R.string.universal_search_play_failed) {
             val startedMs = android.os.SystemClock.elapsedRealtime()
-            val videoId = if (result.identity.source == CatalogSource.SPOTIFY) {
-                factory.resolveSpotifyTarget(result)?.id?.takeIf(YouTubeVideoId::isValid)
-            } else result.exactPlaybackVideoId()
+            val videoId = result.exactPlaybackVideoId()
             currentCoroutineContext().ensureActive()
             if (videoId == null) {
                 playbackErrors.tryEmit(R.string.universal_search_play_unavailable)

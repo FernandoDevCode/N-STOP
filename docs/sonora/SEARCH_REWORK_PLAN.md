@@ -1,5 +1,15 @@
 # Sonora — especificação vigente e contrato do rework da Busca
 
+## Decisão de produto — 2026-11-22 (substitui a busca Spotify-first)
+
+- **Busca principal:** YouTube Music alimenta exclusivamente Top, Artistas, Álbuns e Músicas. YouTube WEB alimenta exclusivamente o chip YouTube. As consultas são independentes e não usam Spotify, tampouco fallback cruzado entre chips.
+- **Spotify:** fora da Busca e de seu enriquecimento de capas. Mantém-se apenas a infraestrutura independente de fotografias de perfis de artistas e os recursos existentes de sincronização pessoal, que não são parte desta Busca. A sessão B de pesquisa deixa de ser oferecida para conexão.
+- **Filtros antigos:** preferências fixadas de Spotify/YouTube são normalizadas em memória para as duas fontes fixas; a Busca não exibe seletor de fontes. Histórico mantém os IDs e o provedor real de resultados anteriores, sem falsificação.
+- **MusicBrainz:** consulta opcional dentro do perfil do artista para navegar release groups, edições específicas e faixas. Identificadores MusicBrainz não são IDs de reprodução nem de álbum do YTM. A discografia normal do YTM permanece inalterada.
+- **Álbum reconstruído:** ao tocar/baixar uma faixa de edição adicional, verificar sob demanda uma correspondência única no YTM por título e versão completos, crédito primário e duração próxima; sem correspondência inequívoca, mostrar indisponível, sem trocar gravação. Não gerar downloads, álbuns YTM ou queues artificiais.
+- **Fronteiras:** não alterar o resolvedor de áudio, Media3, armazenamento de downloads, sync da conta pessoal, assinaturas nem IDs de aplicativo. O restante deste documento contém decisões históricas das etapas anteriores e não prevalece sobre as regras acima.
+
+
 **Status:** Busca universal integrada pelo PR #95; reprodução exata pelo PR #97. A V217 apresenta os resultados em categorias e concentra a configuração das fontes em um painel.
 
 **Data da consolidação:** 10/11/2026

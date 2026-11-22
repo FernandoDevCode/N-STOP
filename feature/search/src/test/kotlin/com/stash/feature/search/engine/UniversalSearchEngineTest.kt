@@ -96,15 +96,16 @@ class UniversalSearchEngineTest {
 
     @Test
     fun disabledSource_neverPublishesItsStateOrResults() {
-        val disabled = result(CatalogSource.YOUTUBE_MUSIC, "disabled")
+        // Spotify is no longer an active search source, even for a legacy pinned selection.
+        val disabled = result(CatalogSource.SPOTIFY, "disabled")
 
         val state = aggregate(
-            enabled = setOf(CatalogSource.YOUTUBE),
-            states = mapOf(CatalogSource.YOUTUBE_MUSIC to data(disabled)),
+            enabled = setOf(CatalogSource.SPOTIFY),
+            states = mapOf(CatalogSource.SPOTIFY to data(disabled)),
         )
 
         assertThat(state.orderedResults).isEmpty()
-        assertThat(state.sourceStates[CatalogSource.YOUTUBE_MUSIC])
+        assertThat(state.sourceStates[CatalogSource.SPOTIFY])
             .isEqualTo(SourceSearchState.Idle)
     }
 
