@@ -1,6 +1,8 @@
 package com.stash.feature.search
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,12 +21,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.stash.core.data.musicbrainz.MusicBrainzAlbumGroup
 import com.stash.core.data.musicbrainz.MusicBrainzEdition
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 internal fun MusicBrainzDiscographySheet(
     state: MusicBrainzDiscoveryState,
@@ -69,7 +74,20 @@ internal fun MusicBrainzDiscographySheet(
                             if (state.tracks.isEmpty()) item { Text("Esta edição não possui faixas cadastradas.") }
                             itemsIndexed(state.tracks, key = { index, track -> "${track.disc}:${track.position}:$index" }) { index, track ->
                                 Row(
-                                    Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                                    Modifier.fillMaxWidth()
+                                        .combinedClickable(
+                                            onClick = { onTrack(index, false) },
+                                            onLongClick = { onTrack(index, true) },
+                                        )
+                                        .semantics {
+                                            customActions = listOf(
+                                                CustomAccessibilityAction("Baixar esta faixa") {
+                                                    onTrack(index, true)
+                                                    true
+                                                }
+                                            )
+                                        }
+                                        .padding(vertical = 12.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Column(Modifier.weight(1f)) {
@@ -77,16 +95,12 @@ internal fun MusicBrainzDiscographySheet(
                                         val caption = when {
                                             state.resolved[index] != null -> "YouTube Music · correspondência encontrada"
                                             index in state.unavailable -> "Sem correspondência confirmada"
-                                            else -> "Verificar gravação no YouTube Music"
+                                            else -> "Toque para ouvir · segure para baixar"
                                         }
                                         Text(caption, style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     if (state.resolving == index) CircularProgressIndicator(modifier = Modifier.padding(8.dp))
-                                    else {
-                                        TextButton(onClick = { onTrack(index, false) }) { Text("Tocar") }
-                                        TextButton(onClick = { onTrack(index, true) }) { Text("Baixar") }
-                                    }
                                 }
                             }
                         }
