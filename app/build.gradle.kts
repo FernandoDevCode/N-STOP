@@ -107,8 +107,8 @@ android {
         applicationId = "com.stash.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 219
-        versionName = "0.9.183-sonora-independent"
+        versionCode = 220
+        versionName = "0.9.184-sonora-independent"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // AppAuth redirect scheme removed -- Spotify now uses sp_dc cookie auth
         buildConfigField("String", "FANART_API_KEY", "\"$fanartApiKey\"")
