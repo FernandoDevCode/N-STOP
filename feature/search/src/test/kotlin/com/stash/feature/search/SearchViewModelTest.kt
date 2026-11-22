@@ -265,25 +265,16 @@ class SearchViewModelTest {
     }
 
     @Test
-    fun `Spotify actions resolve lazily and send separate identities to playback and history`() = runTest {
+    fun `YT Music album navigation and track playback preserve their native IDs`() = runTest {
         val entry = Entry()
         val player = mock<PlayerRepository>()
-        val history = history()
         whenever(player.playExactSearchResult(any())).thenReturn(StreamRoutingResult.Deduped)
-        val track = SpotifyCatalogItem(
-            SpotifyCatalogItem.Kind.TRACK, "spotify-track", "spotify:track:spotify-track", "Song", "Artist",
-            null, 120_000, false, 0, albumTitle = "Album",
-        )
-        val album = SpotifyCatalogItem(
-            SpotifyCatalogItem.Kind.ALBUM, "spotify-album", "spotify:album:spotify-album", "Album", "Artist",
-            null, null, false, 2, albumTitle = "Album", releaseType = "single", releaseYear = "2024",
-        )
+        val album = catalogItem(YTMusicCatalogItem.Kind.ALBUM, "MPREbAnniversary", "Slipknot Anniversary")
+        val song = catalogItem(YTMusicCatalogItem.Kind.TRACK, "ABCDEFGHIJK", "Eyeless")
         val factory = factory { scope, navigate, open, play ->
             UniversalSearchSession(
-                scope, mapOf(YOUTUBE to { emptyList() }), SearchSourceSelection.Default, {}, history, navigate, open,
-                play = play, spotifySearch = { _, _, _ ->
-                    SpotifyCatalogPage(listOf(track, album), SpotifyCatalogItem.Kind.entries.toSet(), emptyMap())
-                },
+                scope, mapOf(YOUTUBE_MUSIC to { listOf(album, song) }),
+                SearchSourceSelection.Default, {}, history(), navigate, open, play = play,
             )
         }
         val received = mutableListOf<SearchNavigation>()
@@ -291,35 +282,16 @@ class SearchViewModelTest {
         backgroundScope.launch { model.destinations.collect { received += it } }
         runCurrent()
         val session = checkNotNull(model.session.value)
-        session.onQueryChanged("artist")
+        session.onQueryChanged("slipknot")
         advanceTimeBy(300)
         runCurrent()
-        val hits = session.state.value.orderedResults
-        val foundTrack = hits.single { it.type == SearchResultType.TRACK }
-        val foundAlbum = hits.single { it.type == SearchResultType.ALBUM }
-        assertNull(foundTrack.audioIdentity)
-        verify(factory, org.mockito.kotlin.never()).resolveSpotifyTarget(any())
-        whenever(factory.resolveSpotifyTarget(foundTrack)).thenReturn(
-            YTMusicCatalogItem(YTMusicCatalogItem.Kind.TRACK, "ABCDEFGHIJK", "Song", "Artist", null, 120_000, false, 0),
-        )
-        whenever(factory.resolveSpotifyTarget(foundAlbum)).thenReturn(
-            YTMusicCatalogItem(YTMusicCatalogItem.Kind.ALBUM, "MPREb_verified", "Album", "Artist", null, null, false, 0),
-        )
-        session.onResultAction(foundTrack, SearchResultAction.PLAY)
+        session.onResultAction(album, SearchResultAction.NAVIGATE)
+        session.onResultAction(song, SearchResultAction.PLAY)
         runCurrent()
-        session.onResultAction(foundAlbum, SearchResultAction.NAVIGATE)
-        runCurrent()
-        val played = org.mockito.kotlin.argumentCaptor<TrackItem>()
-        verify(player).playExactSearchResult(played.capture())
-        assertEquals("ABCDEFGHIJK", played.firstValue.videoId)
-        assertEquals("Song", played.firstValue.title)
-        val destination = (received.single() as SearchNavigation.Album).album
-        assertEquals("MPREb_verified", destination.id)
-        verify(history).record(resultHistoryItem(
-            "Album", "Artist", foundAlbum.identity, SearchResultType.ALBUM,
-            browseIdentity = CatalogIdentity(YOUTUBE_MUSIC, "MPREb_verified"),
-        ))
-        assertEquals("spotify-album", foundAlbum.identity.catalogId)
+        assertEquals("MPREbAnniversary", (received.single() as SearchNavigation.Album).album.id)
+        val item = org.mockito.kotlin.argumentCaptor<TrackItem>()
+        verify(player).playExactSearchResult(item.capture())
+        assertEquals(song.identity.catalogId, item.firstValue.videoId)
         entry.viewModelStore.clear()
     }
 
