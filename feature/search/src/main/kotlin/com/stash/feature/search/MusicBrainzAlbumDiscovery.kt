@@ -34,6 +34,7 @@ internal fun findMusicBrainzTrackAudio(
 ): YTMusicCatalogItem? {
     val name = exactMusicKey(track.title)
     val artist = exactMusicKey(artistName)
+    val expectedDuration = track.durationMs
     return results.asSequence()
         .filter { it.kind == YTMusicCatalogItem.Kind.TRACK && YouTubeVideoId.isValid(it.id) }
         .filter { exactMusicKey(it.title) == name }
@@ -41,7 +42,7 @@ internal fun findMusicBrainzTrackAudio(
             item.subtitle?.substringBefore('·')?.substringBefore('•')?.substringBefore(',')
                 ?.let { exactMusicKey(it) == artist } == true
         }
-        .filter { item -> track.durationMs == null || item.durationMs?.let { abs(it - track.durationMs) <= 4_000 } == true }
+        .filter { item -> expectedDuration == null || item.durationMs?.let { abs(it - expectedDuration) <= 4_000 } == true }
         .distinctBy { it.id }
         .take(2)
         .toList()
