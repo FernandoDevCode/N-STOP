@@ -34,128 +34,30 @@ import org.mockito.kotlin.whenever
 @OptIn(ExperimentalCoroutinesApi::class)
 class UniversalSearchSessionEngineTest {
     @Test
-    fun `legacy music preferences route once to the fallback when Spotify has no session`() = runTest {
-        for (enabled in listOf(setOf(SPOTIFY), setOf(YOUTUBE_MUSIC), setOf(SPOTIFY, YOUTUBE_MUSIC))) {
-            var requests = 0
-            val answer = CompletableDeferred<Unit>()
-            val hit = result(YOUTUBE_MUSIC, "real-video")
-            val session = session(enabled, music = { requests++; answer.await(); listOf(hit, hit) })
-            query(session, "echoes")
-            assertEquals(1, requests)
-            assertEquals(1, session.state.value.sourceStates.values.count { it is SourceSearchState.Loading })
-            answer.complete(Unit)
-            runCurrent()
-            assertEquals(listOf(hit), session.state.value.orderedResults)
-            assertEquals("YOUTUBE_MUSIC:TRACK:real-video", hit.stableKey)
-        }
+    fun `YT Music and YouTube are independent and no Spotify search is required`() = runTest {
+        var musicCalls = 0
+        var webCalls = 0
+        val song = result(YOUTUBE_MUSIC, "song")
+        val video = result(YOUTUBE, "video")
+        val session = session(setOf(SPOTIFY), web = { webCalls++; listOf(video) },
+            music = { musicCalls++; listOf(song, song) })
+        query(session, "slipknot")
+        assertEquals(1, musicCalls)
+        assertEquals(1, webCalls)
+        assertEquals(setOf(YOUTUBE_MUSIC, YOUTUBE), session.state.value.orderedResults.map { it.identity.source }.toSet())
+        assertEquals(listOf(song), session.state.value.orderedResults.filter { it.identity.source == YOUTUBE_MUSIC })
+        assertEquals(SourceSearchState.Idle, session.state.value.sourceStates[SPOTIFY])
     }
 
     @Test
-    fun `disabling music cancels only music and leaves YouTube data in the same query`() = runTest {
-        var requests = 0
-        var canceled = false
-        val web = result(YOUTUBE, "web")
-        val session = session(setOf(SPOTIFY), web = { listOf(web) }, music = {
-            requests++
-            try {
-                awaitCancellation()
-            } finally {
-                canceled = true
-            }
-        })
-        query(session, "echoes")
-        session.onSourceToggled(YOUTUBE)
-        runCurrent()
-        assertFalse(canceled)
-        assertEquals(1, requests)
-        session.onSourceToggled(SPOTIFY)
-        runCurrent()
-        assertTrue(canceled)
-        assertTrue(session.state.value.selection.enabled.isEmpty())
-        assertEquals(listOf(web), session.state.value.orderedResults)
-        assertEquals(SourceSearchState.Idle, session.state.value.sourceStates[YOUTUBE_MUSIC])
-    }
-
-    @Test
-    fun `a pinned music filter off still searches YouTube once without a music request`() = runTest {
-        var webRequests = 0
-        val session = session(emptySet(), web = { webRequests++; listOf(result(YOUTUBE, "web")) },
-            music = { error("Music is disabled") })
-        query(session, "echoes")
-        assertEquals(1, webRequests)
-        session.onSourceToggled(YOUTUBE)
-        runCurrent()
-        assertEquals(1, webRequests)
-        assertEquals(YOUTUBE, session.state.value.orderedResults.single().identity.source)
-    }
-
-    @Test
-    fun `Spotify supplies musical identities and only missing buckets use the fallback`() = runTest {
-        var fallbackRequests = 0
-        val track = spotifyTrack("native", "Echoes", 1)
-        val web = result(YOUTUBE, "native")
-        val fallbackArtist = result(YOUTUBE_MUSIC, "artist").copy(type = SearchResultType.ARTIST)
-        val session = session(setOf(SPOTIFY), web = { listOf(web) }, spotify = { _, _, _ ->
-            SpotifyCatalogPage(listOf(track), setOf(SpotifyCatalogItem.Kind.TRACK, SpotifyCatalogItem.Kind.ALBUM), emptyMap())
-        }, music = {
-            fallbackRequests++
-            listOf(result(YOUTUBE_MUSIC, "also-a-track"), fallbackArtist)
-        })
-        query(session, "echoes")
-        assertEquals(1, fallbackRequests)
-        val hits = session.state.value.orderedResults
-        assertEquals(setOf("native", "artist"), hits.map { it.identity.catalogId }.toSet())
-        assertEquals(setOf(YOUTUBE, SPOTIFY, YOUTUBE_MUSIC), hits.map { it.identity.source }.toSet())
-        assertEquals(track.uri, hits.single { it.identity.source == SPOTIFY }.identity.catalogUri)
-        assertEquals(null, hits.single { it.identity.source == SPOTIFY }.audioIdentity)
-    }
-
-    @Test
-    fun `empty Spotify response is final and does not trigger unnecessary fallback`() = runTest {
-        val session = session(setOf(SPOTIFY), spotify = { _, _, _ ->
-            SpotifyCatalogPage(emptyList(), SpotifyCatalogItem.Kind.entries.toSet(), emptyMap())
-        }, music = { error("Empty response was not a provider failure") })
-        query(session, "qzxqzx")
-        assertTrue(session.state.value.orderedResults.isEmpty())
-        assertEquals(SourceSearchState.Empty("qzxqzx"), session.state.value.sourceStates[SPOTIFY])
-        assertEquals(SourceSearchState.Idle, session.state.value.sourceStates[YOUTUBE_MUSIC])
-    }
-
-    @Test
-    fun `deduplicated continuation ranks every candidate and failed page preserves data for retry`() = runTest {
-        val requests = mutableListOf<Pair<SpotifyCatalogItem.Kind?, Int>>()
-        val releasePage = CompletableDeferred<Unit>()
-        val early = (0..9).map { spotifyTrack("id${it}", "Echoes Live ${it}", it * 3) }
-        val exact = spotifyTrack("exact", "Echoes", 33)
-        val session = session(setOf(SPOTIFY), spotify = { _, kind, offset ->
-            requests += kind to offset
-            when (requests.size) {
-                1 -> SpotifyCatalogPage(early, SpotifyCatalogItem.Kind.entries.toSet(), mapOf(SpotifyCatalogItem.Kind.TRACK to 10))
-                2 -> {
-                    releasePage.await()
-                    throw IOException("page interrupted")
-                }
-                else -> SpotifyCatalogPage(listOf(early.last(), exact), setOf(SpotifyCatalogItem.Kind.TRACK), emptyMap())
-            }
-        })
-        query(session, "echoes")
-        session.onLoadMore("other query", SearchResultType.TRACK)
-        repeat(5) { session.onLoadMore("echoes", SearchResultType.TRACK) }
-        runCurrent()
-        assertEquals(2, requests.size)
-        releasePage.complete(Unit)
-        runCurrent()
-        val failed = session.state.value.sourceStates.getValue(SPOTIFY) as SourceSearchState.Data
-        assertEquals(setOf(SearchResultType.TRACK), failed.pageErrors)
-        assertEquals(early.size, failed.items.size)
-        session.onLoadMore("echoes", SearchResultType.TRACK)
-        runCurrent()
-        val ranked = session.state.value.orderedResults
-        assertEquals("exact", ranked.first().identity.catalogId)
-        assertEquals(early.size + 1, ranked.size)
-        session.onLoadMore("echoes", SearchResultType.TRACK)
-        runCurrent()
-        assertEquals(listOf(null to 0, SpotifyCatalogItem.Kind.TRACK to 10, SpotifyCatalogItem.Kind.TRACK to 10), requests)
+    fun `YT Music failure never suppresses independent YouTube video results`() = runTest {
+        val video = result(YOUTUBE, "web")
+        val session = session(setOf(SPOTIFY), web = { listOf(video) },
+            music = { throw IOException("offline") })
+        query(session, "slipknot")
+        assertEquals(listOf(video), session.state.value.orderedResults)
+        assertTrue(session.state.value.hasPartialSuccess)
+        assertTrue(session.state.value.sourceStates[YOUTUBE_MUSIC] is SourceSearchState.Error)
     }
 
     @Test
@@ -288,13 +190,12 @@ class UniversalSearchSessionEngineTest {
         web: CatalogSearch = { emptyList() },
         music: CatalogSearch = { emptyList() },
         artwork: suspend (UniversalSearchResult) -> String? = { null },
-        spotify: SpotifySearch = { _, _, _ -> throw SpotifyApiException(0, "", "Signed out") },
     ): UniversalSearchSession {
         val history = mock<UniversalSearchHistory>()
         whenever(history.recent).thenReturn(flowOf(emptyList()))
         return UniversalSearchSession(
             backgroundScope, mapOf(YOUTUBE to web, YOUTUBE_MUSIC to music),
-            SearchSourceSelection(enabled), {}, history, {}, {}, timeoutMs = 1_000, artwork = artwork, spotifySearch = spotify,
+            SearchSourceSelection(enabled), {}, history, {}, {}, timeoutMs = 1_000, artwork = artwork,
         )
     }
 
@@ -305,8 +206,3 @@ class UniversalSearchSessionEngineTest {
         providerRank = 0, rankingScore = 1.0,
     )
 
-    private fun spotifyTrack(id: String, title: String, rank: Int) = SpotifyCatalogItem(
-        SpotifyCatalogItem.Kind.TRACK, id, "spotify:track:$id", title, "Pink Floyd", "original", 300_000, false, rank,
-        artistNames = listOf("Pink Floyd"),
-    )
-}
