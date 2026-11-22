@@ -21,9 +21,9 @@ interface MusicBrainzClient {
 
     /** Discography metadata only; returned MusicBrainz IDs are never playable IDs.
      * null indicates unavailable API or ambiguous artist; empty means no entries. */
-    suspend fun albumGroups(artistName: String): List<MusicBrainzAlbumGroup>?
-    suspend fun editions(groupId: String): List<MusicBrainzEdition>?
-    suspend fun releaseTracks(releaseId: String): List<MusicBrainzEditionTrack>?
+    suspend fun albumGroups(artistName: String): List<MusicBrainzAlbumGroup>? = null
+    suspend fun editions(groupId: String): List<MusicBrainzEdition>? = null
+    suspend fun releaseTracks(releaseId: String): List<MusicBrainzEditionTrack>? = null
 }
 
 /** Album concept (release group) — editions are selected separately. */
