@@ -37,7 +37,10 @@ internal fun findMusicBrainzTrackAudio(
     return results.asSequence()
         .filter { it.kind == YTMusicCatalogItem.Kind.TRACK && YouTubeVideoId.isValid(it.id) }
         .filter { exactMusicKey(it.title) == name }
-        .filter { item -> item.subtitle?.let { exactMusicKey(it).contains(artist) } == true }
+        .filter { item ->
+            item.subtitle?.substringBefore('·')?.substringBefore('•')?.substringBefore(',')
+                ?.let { exactMusicKey(it) == artist } == true
+        }
         .filter { item -> track.durationMs == null || item.durationMs?.let { abs(it - track.durationMs) <= 4_000 } == true }
         .distinctBy { it.id }
         .take(2)
