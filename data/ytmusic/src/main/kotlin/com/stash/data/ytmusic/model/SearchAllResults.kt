@@ -129,4 +129,8 @@ data class ArtistProfile(
     val singles: List<AlbumSummary>,
     val related: List<ArtistSummary>,
     val about: ArtistAbout? = null,
+    /** YouTube Music's monthly audience text; not Spotify follower/listener data. */
+    val monthlyAudienceText: String? = null,
+    /** Optional YT Music playlist browse identity for the artist's full songs list. */
+    val popularBrowseId: String? = null,
 )

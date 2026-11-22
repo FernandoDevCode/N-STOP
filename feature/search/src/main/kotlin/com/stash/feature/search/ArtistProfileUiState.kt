@@ -19,6 +19,8 @@ data class HeroState(
     val subscribersText: String?,
     val artworkKind: ArtistIdentityKind = ArtistIdentityKind.PHOTO,
     val spotifyArtistUrl: String? = null,
+    /** Actual monthly audience from the YT Music artist header; not Spotify listeners. */
+    val monthlyAudienceText: String? = null,
 )
 
 /**
@@ -57,4 +59,8 @@ data class ArtistProfileUiState(
     val status: ArtistProfileStatus = ArtistProfileStatus.Loading,
     val focusAlbum: String? = null,
     val about: ArtistAbout? = null,
+    val popularBrowseId: String? = null,
+    val popularExpanded: Boolean = false,
+    val popularLoadingMore: Boolean = false,
+    val popularMoreLoaded: Boolean = false,
 )

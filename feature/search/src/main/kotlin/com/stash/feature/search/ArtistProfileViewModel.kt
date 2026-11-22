@@ -209,7 +209,7 @@ class ArtistProfileViewModel @Inject constructor(
                     val found = findMusicBrainzTrackAudio(artist, track, options)
                     if (found == null) {
                         _discography.update { it.copy(unavailable = it.unavailable + index) }
-                        _userMessages.tryEmit("Gravação não confirmada no YouTube Music.")
+                        _userMessages.tryEmit("Não encontramos esta gravação.")
                         return@launch
                     }
                     TrackItem(
@@ -462,6 +462,9 @@ class ArtistProfileViewModel @Inject constructor(
             selectedArtistPhotos.restoreAutomatic(artistId)
         }
         updateHeroPhoto()
+        // Start the official Spotify portrait lookup immediately: no need to
+        // wait for the (potentially slow) YTM artist profile/cache refresh.
+        maybeLoadPhoto(initialName)
 
         // Nav-args hero already painted by the MutableStateFlow seed above —
         // this bookend marks the "first-frame" moment so latency verification
@@ -538,6 +541,46 @@ class ArtistProfileViewModel @Inject constructor(
         cacheJob?.cancel()
         _uiState.update { it.copy(status = ArtistProfileStatus.Loading) }
         cacheJob = viewModelScope.launch { observeCache() }
+    }
+
+    private var popularMoreJob: Job? = null
+
+    /** Five songs at first glance; expand real catalog rows on demand. */
+    fun togglePopularExpanded() {
+        val current = _uiState.value
+        if (current.popularExpanded) {
+            _uiState.update { it.copy(popularExpanded = false) }
+            return
+        }
+        _uiState.update { it.copy(popularExpanded = true) }
+        val browseId = current.popularBrowseId ?: return
+        if (current.popularMoreLoaded || current.popularLoadingMore) return
+        popularMoreJob?.cancel()
+        popularMoreJob = viewModelScope.launch {
+            _uiState.update { it.copy(popularLoadingMore = true) }
+            try {
+                val more = ytMusic.getArtistPopularMore(browseId)
+                if (_uiState.value.popularBrowseId != browseId) return@launch
+                if (more == null) {
+                    _userMessages.tryEmit("Não foi possível carregar mais músicas.")
+                } else {
+                    _uiState.update {
+                        it.copy(
+                            popular = (it.popular + more).distinctBy { song -> song.videoId }.take(30),
+                            popularMoreLoaded = true,
+                        )
+                    }
+                }
+            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                _userMessages.tryEmit("Não foi possível carregar mais músicas.")
+            } finally {
+                if (_uiState.value.popularBrowseId == browseId) {
+                    _uiState.update { it.copy(popularLoadingMore = false) }
+                }
+            }
+        }
     }
 
     /**
@@ -701,10 +744,13 @@ class ArtistProfileViewModel @Inject constructor(
                 name = profile.name,
                 avatarUrl = chosenHeroPhoto(),
                 subscribersText = profile.subscribersText,
+                monthlyAudienceText = profile.monthlyAudienceText,
                 artworkKind = ArtistIdentityKind.PHOTO,
                 spotifyArtistUrl = if (spotifyActive) selection?.spotifyArtistUrl ?: spotifyPhoto?.artistUrl else null,
             ),
-            popular = profile.popular,
+            popular = if (_uiState.value.popularMoreLoaded &&
+                _uiState.value.hero.name == profile.name) _uiState.value.popular else profile.popular,
+            popularBrowseId = profile.popularBrowseId,
             albums = AppleMusicAlbumMetadataLookup.enrich(profile.albums, appleMetadata),
             singles = AppleMusicAlbumMetadataLookup.enrich(profile.singles, appleMetadata),
             related = profile.related,

@@ -329,6 +329,7 @@ fun ArtistProfileScreen(
                         onAddToQueue = vm::onAddToQueue,
                         onStartRadio = vm::onStartRadio,
                         onRequestAddToPlaylist = vm::onRequestAddToPlaylist,
+                        onTogglePopularExpanded = vm::togglePopularExpanded,
                         onNavigateToAlbum = onNavigateToAlbum,
                         onNavigateToArtist = onNavigateToArtist,
                         wordmarkSource = ArtistWordmarkLookup.attribution(wordmarkUrl),
@@ -354,6 +355,7 @@ fun ArtistProfileScreen(
                     onAddToQueue = vm::onAddToQueue,
                     onStartRadio = vm::onStartRadio,
                     onRequestAddToPlaylist = vm::onRequestAddToPlaylist,
+                    onTogglePopularExpanded = vm::togglePopularExpanded,
                     onNavigateToAlbum = onNavigateToAlbum,
                     onNavigateToArtist = onNavigateToArtist,
                     wordmarkSource = ArtistWordmarkLookup.attribution(wordmarkUrl),
@@ -371,7 +373,7 @@ fun ArtistProfileScreen(
                         Column(Modifier.padding(horizontal = 16.dp, vertical = 16.dp)) {
                             Text("Explorar outras edições", style = MaterialTheme.typography.titleMedium)
                             Text(
-                                "MusicBrainz · edições adicionais, remasters e faixas bônus",
+                                "Outras versões, remasterizações e faixas bônus",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

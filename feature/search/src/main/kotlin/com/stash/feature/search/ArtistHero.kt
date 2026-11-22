@@ -399,7 +399,7 @@ fun ArtistHero(
                     }
                     Spacer(Modifier.height(7.dp))
                     Text(
-                        text = "Artista",
+                        text = artistMonthlyAudienceLabel(hero.monthlyAudienceText) ?: "Artista",
                         color = Color.White.copy(alpha = .76f),
                         fontSize = 13.sp,
                     )

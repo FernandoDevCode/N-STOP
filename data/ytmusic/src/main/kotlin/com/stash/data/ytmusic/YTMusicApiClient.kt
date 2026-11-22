@@ -708,6 +708,10 @@ class YTMusicApiClient @Inject constructor(
             "subscriptionButton", "subscribeButtonRenderer",
             "subscriberCountText", "runs",
         )?.firstArray()?.firstOrNull()?.asObject()?.get("text")?.asString()
+        val monthlyAudienceText = header?.navigatePath(
+            "monthlyListenerCount", "runs",
+        )?.firstArray()?.firstOrNull()?.asObject()?.get("text")?.asString()
+            ?: header?.navigatePath("monthlyListenerCount", "simpleText")?.asString()
 
         val sections = response.navigatePath(
             "contents", "singleColumnBrowseResultsRenderer", "tabs",
@@ -717,6 +721,7 @@ class YTMusicApiClient @Inject constructor(
             ?: return emptyArtistProfile(normalized, name, avatarUrl, subscribersText)
 
         var popular = emptyList<TrackSummary>()
+        var popularBrowseId: String? = null
         var albums = emptyList<AlbumSummary>()
         var singles = emptyList<AlbumSummary>()
         var related = emptyList<ArtistSummary>()
@@ -740,7 +745,10 @@ class YTMusicApiClient @Inject constructor(
                 // instead of "Popular" — which is common in production.
                 if (popular.isEmpty()) {
                     val parsed = parseTracksFromShelf(shelf).take(10)
-                    if (parsed.isNotEmpty()) popular = parsed
+                    if (parsed.isNotEmpty()) {
+                        popular = parsed
+                        popularBrowseId = parseArtistSongsMore(shelf)
+                    }
                 }
             }
             obj["musicCarouselShelfRenderer"]?.asObject()?.let { carousel ->
@@ -821,7 +829,35 @@ class YTMusicApiClient @Inject constructor(
             albums = albums,
             singles = singles,
             related = related,
+            monthlyAudienceText = monthlyAudienceText,
+            popularBrowseId = popularBrowseId,
         )
+    }
+
+    /**
+     * Request more songs only when the person opens the popular list. A YTM
+     * artist shelf supplies this playlist ID; no text-search guessing.
+     */
+    suspend fun getArtistPopularMore(browseId: String): List<TrackSummary>? {
+        if (!browseId.startsWith("VL") || browseId.length !in 3..255) return null
+        return when (val result = getPlaylistTracks(browseId, maxPages = 2)) {
+            is SyncResult.Success -> result.data.tracks.asSequence()
+                .filter { com.stash.core.model.YouTubeVideoId.isValid(it.videoId) }
+                .distinctBy { it.videoId }
+                .take(30)
+                .map { track ->
+                    TrackSummary(
+                        videoId = track.videoId,
+                        title = track.title,
+                        artist = track.artists,
+                        album = track.album,
+                        durationSeconds = (track.durationMs ?: 0L) / 1000.0,
+                        thumbnailUrl = track.thumbnailUrl,
+                    )
+                }.toList()
+            is SyncResult.Empty -> emptyList()
+            is SyncResult.Error -> null
+        }
     }
 
     /** Builds a shelf-less [ArtistProfile] for error / partial-response paths. */

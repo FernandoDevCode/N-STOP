@@ -47,14 +47,14 @@ internal fun MusicBrainzDiscographySheet(
                 }
                 Text(
                     text = state.selectedEdition?.let { it.description?.let { label -> "${it.title} · $label" } ?: it.title }
-                        ?: state.selectedGroup?.title ?: "Discografia · MusicBrainz",
+                        ?: state.selectedGroup?.title ?: "Discografia completa",
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.titleLarge,
                 )
             }
             if (state.selectedEdition != null) {
                 Text(
-                    "Edição do MusicBrainz. Apenas faixas encontradas com correspondência no YouTube Music podem tocar ou baixar.",
+                    "Edições adicionais: a reprodução depende da disponibilidade de cada gravação.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 8.dp),
@@ -93,7 +93,7 @@ internal fun MusicBrainzDiscographySheet(
                                     Column(Modifier.weight(1f)) {
                                         Text("${track.position}. ${track.title}", style = MaterialTheme.typography.bodyLarge)
                                         val caption = when {
-                                            state.resolved[index] != null -> "YouTube Music · correspondência encontrada"
+                                            state.resolved[index] != null -> "Gravação encontrada"
                                             index in state.unavailable -> "Sem correspondência confirmada"
                                             else -> "Toque para ouvir · segure para baixar"
                                         }

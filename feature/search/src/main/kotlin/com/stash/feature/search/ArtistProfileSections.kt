@@ -50,6 +50,7 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
     onAddToQueue: (TrackItem) -> Unit,
     onStartRadio: (TrackItem) -> Unit,
     onRequestAddToPlaylist: (TrackItem) -> Unit,
+    onTogglePopularExpanded: () -> Unit,
     onNavigateToAlbum: (album: AlbumSummary) -> Unit,
     onNavigateToArtist: (artistId: String, name: String, avatarUrl: String?) -> Unit,
     wordmarkSource: String?,
@@ -75,6 +76,10 @@ internal fun androidx.compose.foundation.lazy.LazyListScope.contentSections(
                         onAddToQueue = onAddToQueue,
                         onStartRadio = onStartRadio,
                         onRequestAddToPlaylist = onRequestAddToPlaylist,
+                        expanded = state.popularExpanded,
+                        loadingMore = state.popularLoadingMore,
+                        hasMore = state.popularBrowseId != null && !state.popularMoreLoaded,
+                        onToggleExpanded = onTogglePopularExpanded,
                     )
                 }
             }
