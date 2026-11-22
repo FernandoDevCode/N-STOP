@@ -37,5 +37,5 @@ internal fun artistMonthlyAudienceLabel(raw: String?): String? {
         value >= 1_000 -> "${formatter.format(value / 1_000)} mil"
         else -> formatter.format(value)
     }
-    return "$text de público mensal"
+    return "Público mensal · $text"
 }
