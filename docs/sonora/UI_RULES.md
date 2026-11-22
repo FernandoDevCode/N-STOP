@@ -37,7 +37,7 @@ O Sonora deve manter superfícies grafite/neutral, arte como fonte de atmosfera 
 
 ### 3. Hierarquia por tela
 
-- **Busca:** título e campo compacto com botão de filtros no topo. Histórico com consulta vazia. Com texto, chips de categorias e Top editorial sobre fundo neutro. Faixas usam linhas de música; retratos, capas e miniaturas distinguem artistas, álbuns e vídeos.
+- **Busca:** título e campo compacto no topo, sem seleção de provedores; os chips filtram categorias, e o YouTube WEB aparece apenas no chip YouTube. Histórico com consulta vazia. Com texto, chips de categorias e Top editorial sobre fundo neutro. Faixas usam linhas de música; retratos, capas e miniaturas distinguem artistas, álbuns e vídeos.
 - **Álbum:** capa e atmosfera contextual são do cabeçalho; tracklist é neutra, numerada e escaneável. Não aplicar efeito da capa em cada faixa.
 - **Playlist:** contexto e ações da coleção no cabeçalho; músicas seguem a mesma geometria da Biblioteca.
 - **Home / Explorar / Rádio:** cards somente para descoberta/coleções, não para cada faixa. Seções devem comunicar algo diferente, não apenas repetir carrosséis.
