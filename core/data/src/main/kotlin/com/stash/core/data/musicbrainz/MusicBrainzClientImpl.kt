@@ -104,8 +104,22 @@ class MusicBrainzClientImpl @Inject constructor(
     override suspend fun editions(groupId: String): List<MusicBrainzEdition>? {
         if (!validMbid(groupId)) return null
         return try {
-            val body = get("release?release-group=$groupId&limit=100&fmt=json") ?: return null
-            parseMusicBrainzEditions(body)
+            val collected = mutableListOf<MusicBrainzEdition>()
+            var offset = 0
+            // A browse page may contain far fewer than 100 releases (the MB API's
+            // 500-track cap). Advance by rows actually returned to preserve old editions.
+            repeat(8) {
+                val body = get("release?release-group=$groupId&limit=100&offset=$offset&fmt=json")
+                    ?: return if (collected.isEmpty()) null else sortMusicBrainzEditions(collected)
+                val page = body.array("releases").orEmpty()
+                if (page.isEmpty()) return sortMusicBrainzEditions(collected)
+                collected += parseMusicBrainzEditions(body)
+                offset += page.size
+                val total = (body["release-count"] as? JsonPrimitive)?.content?.toIntOrNull()
+                if (total != null && offset >= total) return sortMusicBrainzEditions(collected)
+                if (total == null && page.size < 100) return sortMusicBrainzEditions(collected)
+            }
+            sortMusicBrainzEditions(collected)
         } catch (cancel: CancellationException) {
             throw cancel
         } catch (_: Exception) {
@@ -171,14 +185,17 @@ internal fun parseMusicBrainzGroups(body: JsonObject): List<MusicBrainzAlbumGrou
     }.distinctBy { it.id }.sortedWith(compareByDescending<MusicBrainzAlbumGroup> { it.year.orEmpty() }.thenBy { it.title })
 
 internal fun parseMusicBrainzEditions(body: JsonObject): List<MusicBrainzEdition> =
-    body.array("releases").orEmpty().mapNotNull { element ->
+    sortMusicBrainzEditions(body.array("releases").orEmpty().mapNotNull { element ->
         val obj = element as? JsonObject ?: return@mapNotNull null
         val id = obj.text("id")?.takeIf(::validMbid) ?: return@mapNotNull null
         MusicBrainzEdition(
             id, obj.text("title") ?: return@mapNotNull null,
             obj.text("disambiguation"), obj.text("date"), obj.text("country"),
         )
-    }.distinctBy { it.id }.sortedWith(
+    })
+
+private fun sortMusicBrainzEditions(releases: List<MusicBrainzEdition>): List<MusicBrainzEdition> =
+    releases.distinctBy { it.id }.sortedWith(
         compareByDescending<MusicBrainzEdition> {
             it.description?.contains("anniversary", ignoreCase = true) == true ||
                 it.title.contains("anniversary", ignoreCase = true)
