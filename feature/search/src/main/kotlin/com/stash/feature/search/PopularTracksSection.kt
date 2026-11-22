@@ -2,12 +2,17 @@ package com.stash.feature.search
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import com.stash.core.media.preview.LosslessUrlPrefetcher
 import com.stash.core.media.preview.PreviewState
@@ -52,13 +57,18 @@ fun PopularTracksSection(
     onAddToQueue: (TrackItem) -> Unit = {},
     onStartRadio: (TrackItem) -> Unit = {},
     onRequestAddToPlaylist: (TrackItem) -> Unit = {},
+    expanded: Boolean = false,
+    loadingMore: Boolean = false,
+    hasMore: Boolean = false,
+    onToggleExpanded: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(
         modifier = modifier.padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        tracks.take(5).forEachIndexed { index, track ->
+        val visibleTracks = if (expanded) tracks else tracks.take(5)
+        visibleTracks.forEachIndexed { index, track ->
             val item = track.toSearchResultItem()
             val trackItem = track.toTrackItem()
             // Warm the lossless URL cache as each Popular row enters composition.
@@ -86,7 +96,24 @@ fun PopularTracksSection(
                 editorialIndex = index + 1,
                 editorialSubtitle = track.album?.takeIf { it.isNotBlank() } ?: track.artist,
             )
-
+        }
+        if (tracks.size > 5 || hasMore || expanded) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onToggleExpanded, enabled = !loadingMore) {
+                    Text(if (expanded) "Mostrar menos" else "Mostrar mais")
+                }
+                if (loadingMore) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.padding(start = 8.dp),
+                        strokeWidth = 2.dp,
+                    )
+                    Text(
+                        "Carregando músicas…",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
+            }
         }
     }
 }
