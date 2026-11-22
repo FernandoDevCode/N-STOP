@@ -546,7 +546,6 @@ private fun SourceStatus(
     actions: UniversalSearchActions,
     onRetry: () -> Unit = { actions.onRetrySource(source) },
 ) {
-    val sourceName = stringResource(source.nameRes)
     val statusRes = when (state) {
         is SourceSearchState.Loading -> R.string.universal_search_loading_source
         is SourceSearchState.Empty -> R.string.universal_search_empty_source
@@ -563,7 +562,7 @@ private fun SourceStatus(
             CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
         }
         Text(
-            stringResource(statusRes, sourceName),
+            stringResource(statusRes),
             Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite },
             color = VisualDesign.Muted,
             style = VisualDesign.Caption,
@@ -571,7 +570,7 @@ private fun SourceStatus(
         if (state is SourceSearchState.Error && state.canRetry) {
             SourceStatusAction(
                 R.string.universal_search_retry_short,
-                stringResource(R.string.universal_search_retry_source, sourceName),
+                stringResource(R.string.universal_search_retry_source),
             ) { onRetry() }
         }
     }
