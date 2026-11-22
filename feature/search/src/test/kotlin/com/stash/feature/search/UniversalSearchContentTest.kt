@@ -70,7 +70,7 @@ class UniversalSearchContentTest {
     private val actions = mock<UniversalSearchActions>()
 
     @Test
-    fun `empty query shows history and source settings without category chips`() {
+    fun `empty query shows history without Spotify selector or category chips`() {
         show(UniversalSearchUiState())
         compose.onNodeWithText("Search for a song, video, artist, or album.").assertExists()
         compose.onNodeWithText("Spotify").assertDoesNotExist()
@@ -80,39 +80,12 @@ class UniversalSearchContentTest {
         compose.onNodeWithTag("searchRestoreDefaults").assertDoesNotExist()
         compose.onNodeWithText("Sources").assertDoesNotExist()
         compose.onNodeWithTag("searchCategories").assertDoesNotExist()
-        compose.onNodeWithTag("searchSourceSettings").assertHasClickAction()
+        compose.onNodeWithTag("searchSourceSettings").assertDoesNotExist()
         compose.onNodeWithTag("searchQuery").performTextInput("a")
         compose.onNodeWithTag("searchQuery").performImeAction()
         verify(actions).onQueryChanged("a")
         verify(actions).onSearchSubmitted()
         verify(actions, never()).onSourceToggled(any())
-    }
-
-    @Test
-    fun `the filters sheet contains only the music toggle and its pin`() {
-        show(UniversalSearchUiState(query = "rock"))
-        compose.onNodeWithTag("searchCategoryTOP").assertIsSelected()
-        compose.onNodeWithTag("searchFilterSPOTIFY").assertDoesNotExist()
-        openSources()
-        compose.onNodeWithTag("searchFilterSPOTIFY").assertIsOn().performClick()
-        compose.onNodeWithTag("searchFilterYOUTUBE").assertDoesNotExist()
-        compose.onNodeWithTag("searchFilterYOUTUBE_MUSIC").assertDoesNotExist()
-        compose.onNodeWithTag("searchRestoreDefaults").assertIsNotEnabled()
-        compose.onNodeWithTag("searchPin").assertIsOff().performClick()
-        verify(actions).onSourceToggled(SPOTIFY)
-        verify(actions).onPinToggled()
-        verify(actions, never()).onSourceToggled(YOUTUBE_MUSIC)
-    }
-
-    @Test
-    fun `restore defaults is enabled for a changed visible selection`() {
-        show(UniversalSearchUiState(query = "rock", selection = SearchSourceSelection(setOf(YOUTUBE), isPinned = true)))
-        openSources()
-        compose.onNodeWithTag("searchFilterSPOTIFY").assertIsOff()
-        compose.onNodeWithTag("searchFilterYOUTUBE").assertDoesNotExist()
-        compose.onNodeWithTag("searchPin").assertIsOn()
-        compose.onNodeWithTag("searchRestoreDefaults").assertHasClickAction().performClick()
-        verify(actions).onRestoreDefaultSources()
     }
 
     @Test
@@ -131,10 +104,7 @@ class UniversalSearchContentTest {
         compose.onNodeWithTag("searchCategorySONGS").assertIsSelected()
         selectCategory("TOP")
         compose.onNodeWithTag("searchCategoryTOP").assertIsSelected()
-        openSources()
-        compose.onNodeWithTag("searchFilterSPOTIFY").assertHasClickAction()
-        compose.onNodeWithTag("searchFilterYOUTUBE").assertDoesNotExist()
-        compose.onNodeWithTag("searchPin").assertHasClickAction()
+        compose.onNodeWithTag("searchSourceSettings").assertDoesNotExist()
     }
 
     @Test
@@ -177,11 +147,11 @@ class UniversalSearchContentTest {
 
     @Test
     fun `Top and each music category exclude even the highest ranked YouTube result`() {
-        val artist = hit(SPOTIFY, "artist", "Best artist", SearchResultType.ARTIST)
-        val related = hit(SPOTIFY, "related", "Related artist", SearchResultType.ARTIST)
-        val album = hit(SPOTIFY, "album", "A single", SearchResultType.ALBUM)
+        val artist = hit(YOUTUBE_MUSIC, "artist", "Best artist", SearchResultType.ARTIST)
+        val related = hit(YOUTUBE_MUSIC, "related", "Related artist", SearchResultType.ARTIST)
+        val album = hit(YOUTUBE_MUSIC, "album", "A single", SearchResultType.ALBUM)
             .copy(release = SearchReleaseMetadata("A single", "2025", "single"))
-        val track = hit(SPOTIFY, "shared", "Same recording", SearchResultType.TRACK)
+        val track = hit(YOUTUBE_MUSIC, "shared", "Same recording", SearchResultType.TRACK)
         val musicVideo = hit(YOUTUBE_MUSIC, "ytm", "Music video", SearchResultType.VIDEO)
         val webVideo = hit(YOUTUBE, "shared", "Same recording", SearchResultType.VIDEO)
         val misclassifiedWeb = hit(YOUTUBE, "web-artist", "Non-catalog artist", SearchResultType.ARTIST)
@@ -189,8 +159,7 @@ class UniversalSearchContentTest {
         show(UniversalSearchUiState(
             query = "rock",
             sourceStates = mapOf(
-                SPOTIFY to SourceSearchState.Data("rock", music),
-                YOUTUBE_MUSIC to SourceSearchState.Data("rock", listOf(musicVideo)),
+                YOUTUBE_MUSIC to SourceSearchState.Data("rock", music + musicVideo),
                 YOUTUBE to SourceSearchState.Data("rock", listOf(webVideo, misclassifiedWeb)),
             ),
             orderedResults = listOf(webVideo, misclassifiedWeb) + music + musicVideo,
@@ -222,7 +191,7 @@ class UniversalSearchContentTest {
         verify(actions, never()).onSourceToggled(any())
         selectCategory("ALBUMS")
         compose.onNodeWithTag(album.stableKey).performSemanticsAction(SemanticsActions.OnLongClick)
-        compose.onNodeWithText("Spotify · Single").assertExists()
+        compose.onNodeWithText("YouTube Music · Single").assertExists()
     }
 
     @Test
@@ -237,67 +206,6 @@ class UniversalSearchContentTest {
         verify(actions).onRecentSelected(recent)
         verify(actions).onRecentRemoved(recent)
         verify(actions).onRecentCleared()
-    }
-
-    @Test
-    fun `active query with no sources shows a recovery message and restore action`() {
-        show(UniversalSearchUiState(query = "demo", selection = SearchSourceSelection(emptySet())))
-        compose.onNodeWithText("Open Search filters and turn on Spotify to see music results.").assertExists()
-        openSources()
-        compose.onNodeWithTag("searchRestoreDefaults").assertHasClickAction().performClick()
-        verify(actions).onRestoreDefaultSources()
-    }
-
-    @Test
-    fun `partial results stay in motor order with a single retry`() {
-        val demo = hit(YOUTUBE_MUSIC, "demoOriginal", "First (Demo)", SearchResultType.TRACK)
-        val live = hit(YOUTUBE_MUSIC, "liveOriginal", "Second (Live)", SearchResultType.TRACK)
-        val artist = hit(YOUTUBE_MUSIC, "artistOriginal", "Third", SearchResultType.ARTIST)
-        show(
-            UniversalSearchUiState(
-                query = "rock",
-                selection = SearchSourceSelection(CatalogSource.entries.toSet()),
-                sourceStates = mapOf(
-                    SPOTIFY to SourceSearchState.Error("rock", "Network failure", canRetry = true),
-                    YOUTUBE_MUSIC to SourceSearchState.Data("rock", listOf(artist, live, demo)),
-                ),
-                orderedResults = listOf(demo, live, artist),
-            ),
-        )
-        compose.onNodeWithText("Search failed").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Connect Spotify").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Retry Spotify").performClick()
-        compose.onNodeWithContentDescription("Clear search").performClick()
-        val first = compose.onNodeWithTag(demo.stableKey).assertHasNoClickAction()
-        val second = compose.onNodeWithTag(live.stableKey).assertHasNoClickAction()
-        assertTrue(first.getUnclippedBoundsInRoot().top < second.getUnclippedBoundsInRoot().top)
-        compose.onNodeWithTag(artist.stableKey).assertHasClickAction().performClick()
-        verify(actions).onRetrySource(SPOTIFY)
-        verify(actions).onClearQuery()
-        verify(actions).onResultAction(artist, SearchResultAction.NAVIGATE)
-    }
-
-    @Test
-    fun `loading defers the global error until selected sources settle`() {
-        val error = SourceSearchState.Error("rock", "Network failure", true)
-        val spotify = androidx.compose.runtime.mutableStateOf<SourceSearchState>(SourceSearchState.Loading("rock"))
-        val music = androidx.compose.runtime.mutableStateOf<SourceSearchState>(error)
-        compose.setContent {
-            VisualTheme {
-                UniversalSearchContent(
-                    UniversalSearchUiState(query = "rock", sourceStates = mapOf(YOUTUBE_MUSIC to music.value, SPOTIFY to spotify.value)),
-                    actions, autoFocus = false,
-                )
-            }
-        }
-        compose.onNodeWithText("Searching Spotify…").assertExists()
-        compose.onNodeWithText("Search failed").assertDoesNotExist()
-        compose.runOnIdle { spotify.value = SourceSearchState.Empty("rock") }
-        compose.onNodeWithText("Search failed").assertExists()
-        compose.onNodeWithText("Spotify · No results").assertExists()
-        compose.runOnIdle { music.value = SourceSearchState.Empty("rock") }
-        compose.onNodeWithText("Search failed").assertDoesNotExist()
-        compose.onNodeWithText("No results found").assertExists()
     }
 
     @Test
@@ -361,26 +269,17 @@ class UniversalSearchContentTest {
     }
 
     @Test
-    fun `only the end of a full music category requests its next page`() {
-        val tracks = (1..20).map { hit(SPOTIFY, "track$it", "Rock song $it", SearchResultType.TRACK) }
-        val video = hit(YOUTUBE, "video", "Rock video", SearchResultType.VIDEO)
+    fun `YTM music list never invokes obsolete Spotify pagination`() {
+        val tracks = (1..20).map { hit(YOUTUBE_MUSIC, "track$it", "Rock song $it", SearchResultType.TRACK) }
         show(UniversalSearchUiState(
             query = "rock",
-            sourceStates = mapOf(
-                SPOTIFY to SourceSearchState.Data("rock", tracks, nextOffsets = mapOf(SearchResultType.TRACK to 20)),
-                YOUTUBE to SourceSearchState.Data("rock", listOf(video)),
-            ),
-            orderedResults = tracks + video,
+            sourceStates = mapOf(YOUTUBE_MUSIC to SourceSearchState.Data("rock", tracks)),
+            orderedResults = tracks,
         ))
-        for (chip in listOf("YOUTUBE", "SONGS", "ARTISTS", "SONGS")) selectCategory(chip)
-        verify(actions, never()).onLoadMore(any(), any())
+        selectCategory("SONGS")
         compose.onNodeWithTag("searchList").performScrollToKey(tracks.last().stableKey)
         compose.waitForIdle()
-        verify(actions).onLoadMore("rock", SearchResultType.TRACK)
-    }
-
-    private fun openSources() {
-        compose.onNodeWithTag("searchSourceSettings").performClick()
+        verify(actions, never()).onLoadMore(any(), any())
     }
 
     private fun selectCategory(category: String) {
