@@ -41,64 +41,6 @@ import com.stash.feature.search.contract.UniversalSearchActions
 import com.stash.feature.search.contract.UniversalSearchResult
 
 @Composable
-internal fun SearchSourcesSheet(
-    selection: SearchSourceSelection,
-    actions: UniversalSearchActions,
-    onDismiss: () -> Unit,
-) {
-    val visible = selection.normalizedVisibleFilters()
-    SearchSheet(onDismiss) {
-        Text(
-            stringResource(R.string.universal_search_sources),
-            Modifier.semantics { heading() },
-            style = VisualDesign.HeroTitle,
-        )
-        Column(
-            Modifier.clip(RoundedCornerShape(14.dp)).background(searchSurface(.09f)),
-        ) {
-            SourceToggle(
-                R.string.universal_search_spotify, R.string.universal_search_spotify_description,
-                CatalogSource.SPOTIFY in visible.enabled, "searchFilterSPOTIFY",
-            ) { actions.onSourceToggled(CatalogSource.SPOTIFY) }
-            HorizontalDivider(Modifier.padding(horizontal = 14.dp), color = VisualDesign.Ink.copy(alpha = .12f))
-        }
-        SourceToggle(
-            R.string.universal_search_pin_sources,
-            if (visible.isPinned) R.string.universal_search_pinned else R.string.universal_search_temporary,
-            visible.isPinned, "searchPin",
-        ) { actions.onPinToggled() }
-        TextButton(
-            actions::onRestoreDefaultSources,
-            Modifier.align(Alignment.Start).testTag("searchRestoreDefaults"),
-            enabled = visible.enabled != DefaultSearchSources,
-        ) {
-            Text(stringResource(R.string.universal_search_restore))
-        }
-    }
-}
-
-@Composable
-private fun SourceToggle(label: Int, supporting: Int, selected: Boolean, tag: String, onToggle: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = 60.dp).testTag(tag)
-            .toggleable(selected, role = Role.Switch, onValueChange = { onToggle() })
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(stringResource(label), style = VisualDesign.Heading)
-            Text(stringResource(supporting), style = VisualDesign.Body, color = VisualDesign.Muted)
-        }
-        Switch(
-            checked = selected,
-            onCheckedChange = null,
-            colors = SwitchDefaults.colors(uncheckedTrackColor = searchSurface(.09f)),
-        )
-    }
-}
-
-@Composable
 internal fun SearchResultSheet(
     result: UniversalSearchResult,
     shownArtwork: String?,
