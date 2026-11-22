@@ -103,7 +103,7 @@ class UniversalSearchSession internal constructor(
                 if (error !is IOException) throw error
                 Log.w("UniversalSearch", "Could not read recent searches", error)
             }.collect { recent ->
-                mutableState.value = state.value.copy(recentSearches = recent)
+                mutableState.value = state.value.copy(recentSearches = recent.filter { it.resultIdentity?.source != CatalogSource.SPOTIFY })
             }
         }
     }
