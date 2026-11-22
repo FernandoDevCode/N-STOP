@@ -6,27 +6,27 @@ import org.junit.Test
 
 class SearchContractTest {
 
-    @Test fun `Spotify is the only filter and YouTube is always active`() {
+    @Test fun `YT Music and YouTube WEB are the only active catalogs`() {
         val selection = SearchSourceSelection.Default
-
-        assertThat(selection.enabled).containsExactly(CatalogSource.SPOTIFY)
-        assertThat(selection.activeCatalogs).containsExactlyElementsIn(CatalogSource.entries)
-        assertThat(SearchSourceSelection(emptySet()).activeCatalogs).containsExactly(CatalogSource.YOUTUBE)
+        assertThat(selection.enabled).containsExactly(CatalogSource.YOUTUBE_MUSIC, CatalogSource.YOUTUBE)
+        assertThat(selection.activeCatalogs).containsExactly(CatalogSource.YOUTUBE_MUSIC, CatalogSource.YOUTUBE)
+        assertThat(SearchSourceSelection(emptySet()).activeCatalogs)
+            .containsExactly(CatalogSource.YOUTUBE_MUSIC, CatalogSource.YOUTUBE)
         assertThat(selection.isPinned).isFalse()
     }
 
-    @Test fun `legacy third visual filter migrates to Spotify without touching catalog identity`() {
+    @Test fun `legacy Spotify pins normalize to fixed catalogs without rewriting result IDs`() {
         val legacy = SearchSourceSelection(
-            enabled = setOf(CatalogSource.YOUTUBE_MUSIC, CatalogSource.YOUTUBE),
+            enabled = setOf(CatalogSource.SPOTIFY),
             isPinned = true,
         )
         val visible = legacy.normalizedVisibleFilters()
-        assertThat(visible.enabled).containsExactly(CatalogSource.SPOTIFY)
-        assertThat(visible.activeCatalogs).containsExactlyElementsIn(CatalogSource.entries)
-        assertThat(visible.isPinned).isTrue()
-        assertThat(legacy.enabled).contains(CatalogSource.YOUTUBE_MUSIC)
+        assertThat(visible.enabled).containsExactly(CatalogSource.YOUTUBE_MUSIC, CatalogSource.YOUTUBE)
+        assertThat(visible.activeCatalogs).containsExactly(CatalogSource.YOUTUBE_MUSIC, CatalogSource.YOUTUBE)
+        assertThat(visible.isPinned).isFalse()
+        assertThat(legacy.enabled).containsExactly(CatalogSource.SPOTIFY)
         assertThat(visible.normalizedVisibleFilters()).isEqualTo(visible)
-        assertThat(SearchSourceSelection(emptySet(), true).normalizedVisibleFilters().enabled).isEmpty()
+        assertThat(SearchSourceSelection(emptySet(), true).normalizedVisibleFilters()).isEqualTo(visible)
     }
 
     @Test fun `stable key is derived from source type and catalog id`() {
@@ -237,21 +237,23 @@ class SearchContractTest {
         }
     }
 
-    @Test fun `ordered results cannot contain a disabled source`() {
-        val youtubeMusic = UniversalSearchFixtures.youtubeMusicAlbum()
-
+    @Test fun `Spotify search results cannot appear in the fixed catalogs`() {
+        val oldSpotify = UniversalSearchFixtures.youtubeMusicAlbum().copy(
+            identity = CatalogIdentity(CatalogSource.SPOTIFY, "legacy-album"),
+        )
         assertThrows(IllegalArgumentException::class.java) {
             UniversalSearchUiState(
                 query = UniversalSearchFixtures.Query,
-                selection = SearchSourceSelection(setOf(CatalogSource.YOUTUBE)),
+                selection = SearchSourceSelection(setOf(CatalogSource.SPOTIFY)),
                 sourceStates = mapOf(
-                    CatalogSource.YOUTUBE_MUSIC to SourceSearchState.Data(
+                    CatalogSource.SPOTIFY to SourceSearchState.Data(
                         UniversalSearchFixtures.Query,
-                        listOf(youtubeMusic),
+                        listOf(oldSpotify),
                     ),
                 ),
-                orderedResults = listOf(youtubeMusic),
+                orderedResults = listOf(oldSpotify),
             )
         }
     }
+
 }
