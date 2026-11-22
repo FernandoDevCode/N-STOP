@@ -66,11 +66,11 @@
     <string name="universal_search_temporary">Current session only</string>
     <string name="universal_search_prompt">Search for a song, video, artist, or album.</string>
     <string name="universal_search_clear_history">Clear history</string>
-    <string name="universal_search_loading_source">Searching %1$s…</string>
-    <string name="universal_search_empty_source">%1$s · No results</string>
-    <string name="universal_search_error_source">%1$s · Search failed</string>
-    <string name="universal_search_unavailable_source">%1$s · Unavailable</string>
-    <string name="universal_search_retry_source">Retry %1$s</string>
+    <string name="universal_search_loading_source">Loading results…</string>
+    <string name="universal_search_empty_source">No results found</string>
+    <string name="universal_search_error_source">Search failed</string>
+    <string name="universal_search_unavailable_source">Results unavailable</string>
+    <string name="universal_search_retry_source">Try searching again</string>
     <string name="universal_search_retry_short">Retry</string>
     <string name="universal_search_catalog_only">Catalog only. Actions unavailable.</string>
     <string name="universal_search_play">Play</string>
