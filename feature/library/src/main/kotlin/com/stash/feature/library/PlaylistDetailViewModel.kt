@@ -63,13 +63,16 @@ data class DownloadButtonState(
     val downloaded: Int,
     val total: Int,
     val followed: Boolean = false,
+    val incomplete: Int = 0,
 ) {
     /** On, and every song is on the phone. */
-    val complete: Boolean get() = on && downloaded == total
+    val complete: Boolean get() = on && total > 0 && downloaded == total
 
     val label: String get() = when {
         !on -> "Download"
         complete -> "Downloaded"
+        total == 0 -> "No songs"
+        incomplete > 0 -> "$downloaded of $total downloaded · $incomplete incomplete"
         else -> "Downloading $downloaded of $total"
     }
 }
@@ -167,7 +170,9 @@ class PlaylistDetailViewModel @Inject constructor(
         val on = when {
             playlist == null -> null
             followed -> playlist.syncEnabled
-            playlist.type in DOWNLOAD_BUTTON_TYPES -> playlist.keepOffline || (!streamOnly && playlist.syncEnabled)
+            playlist.type in DOWNLOAD_BUTTON_TYPES -> playlist.keepOffline ||
+                (playlist.source != com.stash.core.model.MusicSource.SPOTIFY && !streamOnly && playlist.syncEnabled) ||
+                (playlist.type == PlaylistType.DAILY_MIX && !streamOnly && playlist.syncEnabled)
             else -> null
         }
         // A downloaded song always counts, even if a stale emission still lists it as given up.
@@ -176,7 +181,8 @@ class PlaylistDetailViewModel @Inject constructor(
             DownloadButtonState(
                 on = it,
                 downloaded = tracks.count { t -> t.isDownloaded },
-                total = tracks.count { t -> t.isDownloaded || t.id !in givenUp },
+                total = tracks.distinctBy { t -> t.id }.size,
+                incomplete = tracks.count { t -> !t.isDownloaded && t.id in givenUp },
                 followed = followed,
             )
         }
@@ -678,6 +684,6 @@ class PlaylistDetailViewModel @Inject constructor(
 
     private companion object {
         /** Playlist types whose page has a Download button (#474). */
-        val DOWNLOAD_BUTTON_TYPES = setOf(PlaylistType.DAILY_MIX, PlaylistType.CUSTOM)
+        val DOWNLOAD_BUTTON_TYPES = setOf(PlaylistType.DAILY_MIX, PlaylistType.CUSTOM, PlaylistType.LIKED_SONGS, PlaylistType.STASH_LIKED)
     }
 }
