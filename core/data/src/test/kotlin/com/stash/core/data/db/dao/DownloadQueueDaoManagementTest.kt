@@ -233,7 +233,7 @@ class DownloadQueueDaoManagementTest {
             PlaylistEntity(
                 id = trackId * 1000,
                 name = "Playlist $trackId",
-                source = MusicSource.SPOTIFY,
+                source = MusicSource.YOUTUBE,
                 syncEnabled = true,
                 isActive = true,
             )
