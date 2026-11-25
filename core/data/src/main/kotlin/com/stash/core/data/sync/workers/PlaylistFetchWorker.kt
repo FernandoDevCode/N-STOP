@@ -706,7 +706,14 @@ class PlaylistFetchWorker @AssistedInject constructor(
             val orderedLikedSongs = sortLikedSongsByAddedAtDesc(allLikedSongs)
 
             if (orderedLikedSongs.isNotEmpty()) {
-                diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.SUCCESS, orderedLikedSongs.size))
+                diagnostics.add(
+                    SyncStepResult(
+                        "SPOTIFY", "getLikedSongs",
+                        if (likedFetchPartial) StepStatus.ERROR else StepStatus.SUCCESS,
+                        orderedLikedSongs.size,
+                        errorMessage = if (likedFetchPartial) "Incomplete Spotify liked songs fetch" else null,
+                    )
+                )
                 Log.d(TAG, "fetchSpotifyPlaylists: found ${orderedLikedSongs.size} liked songs total")
 
                 val likedPlaylistId = remoteSnapshotDao.insertPlaylistSnapshot(
