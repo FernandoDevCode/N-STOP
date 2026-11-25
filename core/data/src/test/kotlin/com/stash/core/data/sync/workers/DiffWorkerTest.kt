@@ -267,7 +267,7 @@ class DiffWorkerTest {
     }
 
     @Test
-    fun `consecutive ACCUMULATE snapshots queue only newly added undownloaded tracks`() = runBlocking {
+    fun `consecutive ACCUMULATE Spotify snapshots link newly added tracks without downloading`() = runBlocking {
         val playlistId = seedAccumulatePlaylist()
         val trackA = db.trackDao().insert(downloadedTrack("Track A", "spotify:track:a", "/music/a.flac"))
         db.playlistDao().insertCrossRef(
@@ -300,7 +300,7 @@ class DiffWorkerTest {
             setOf(trackA, trackB.id, trackC),
             db.playlistDao().getCrossRefsForPlaylist(playlistId).map { it.trackId }.toSet(),
         )
-        assertEquals(listOf(trackB.id, trackC), queuedTrackIds)
+        assertTrue(queuedTrackIds.isEmpty())
     }
 
     // ── Auto-reconciliation: one batched lookup per playlist ──────────────
@@ -419,7 +419,7 @@ class DiffWorkerTest {
             listOf(studio.id),
             db.playlistDao().getCrossRefsForPlaylist(playlistId).map { it.trackId },
         )
-        assertEquals(listOf(studio.id), queued)
+        assertTrue(queued.isEmpty())
         assertEquals("/music/video000002.opus", db.trackDao().getById(live)?.filePath)
     }
 
@@ -858,7 +858,7 @@ class DiffWorkerTest {
     }
 
     @Test
-    fun `canonical-only duplicates create one offline track and queue entry`() = runBlocking {
+    fun `canonical-only duplicates create one Spotify track without a queue entry`() = runBlocking {
         every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.ACCUMULATE)
         val playlistId = db.playlistDao().insert(
             PlaylistEntity(
@@ -890,9 +890,7 @@ class DiffWorkerTest {
         assertEquals(1, db.trackDao().getAllForIntegrityScan().size)
         assertEquals(6, db.playlistDao().getCrossRefsForPlaylist(playlistId).single().position)
         assertEquals(1, result.outputData.getInt(DiffWorker.KEY_NEW_TRACKS, -1))
-        coVerify(exactly = 1) {
-            downloadQueueDao.insertAll(match { it.size == 1 })
-        }
+        coVerify(exactly = 0) { downloadQueueDao.insertAll(any()) }
     }
 
     @Test
