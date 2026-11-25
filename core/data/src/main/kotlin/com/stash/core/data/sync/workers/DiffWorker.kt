@@ -53,7 +53,12 @@ import kotlinx.coroutines.flow.first
  * decision testable.
  */
 @Suppress("UNUSED_PARAMETER")
-internal fun defaultSyncEnabled(type: PlaylistType, online: Boolean): Boolean = false
+internal fun defaultSyncEnabled(type: PlaylistType, online: Boolean, source: MusicSource? = null): Boolean =
+    source == MusicSource.SPOTIFY && type == PlaylistType.LIKED_SONGS
+
+/** Spotify personal collections are metadata imports; keepOffline drives their download sweep. */
+internal fun isSpotifyPersonalCollection(source: MusicSource, type: PlaylistType): Boolean =
+    source == MusicSource.SPOTIFY && (type == PlaylistType.LIKED_SONGS || type == PlaylistType.CUSTOM)
 
 /**
  * The type to re-write onto an existing playlist row, or null to leave it.
@@ -293,7 +298,7 @@ class DiffWorker @AssistedInject constructor(
                 if (!localPlaylist.syncEnabled &&
                     !localPlaylist.keepOffline &&
                     localPlaylist.type != PlaylistType.DAILY_MIX &&
-                    !streamingMode
+                    (isSpotifyPersonalCollection(localPlaylist.source, localPlaylist.type) || !streamingMode)
                 ) {
                     Log.d(TAG, "Playlist '${playlistSnapshot.playlistName}' sync disabled, skipping")
                     skippedSwitchedOff++
@@ -566,7 +571,7 @@ class DiffWorker @AssistedInject constructor(
             // what they want in the Sync Preferences card (#10). What reaches
             // Home is decided by PlaylistDao.getAllVisible, not by this flag:
             // Online, a playlist holding streamable tracks shows regardless.
-            syncEnabled = defaultSyncEnabled(snapshot.playlistType, streamingMode),
+            syncEnabled = defaultSyncEnabled(snapshot.playlistType, streamingMode, snapshot.source),
         )
         val id = playlistDao.insert(newPlaylist)
         // A playlist or mix that wasn't here before is news — arguably the most
@@ -848,7 +853,9 @@ class DiffWorker @AssistedInject constructor(
         // track of every rotating mix was queued (#368: "it downloads 6000+ from
         // users playlists and Spotify mixes that I don't need"). The protection
         // is now the switch — discovered mixes start off — not the type.
-        if (shouldEnqueueForDownload(streamingMode, localPlaylist.syncEnabled)) {
+        if (!isSpotifyPersonalCollection(localPlaylist.source, localPlaylist.type) &&
+            shouldEnqueueForDownload(streamingMode, localPlaylist.syncEnabled)
+        ) {
             for (batchTrack in newTracks) {
                 val trackId = checkNotNull(batchTrack.persistedId)
                 downloadEntries.add(
@@ -976,6 +983,7 @@ class DiffWorker @AssistedInject constructor(
             trackId = trackId,
             position = position,
             addedAt = batchPrior?.addedAt ?: storedPrior?.addedAt ?: java.time.Instant.now(),
+            locallyAdded = storedPrior?.locallyAdded ?: false,
         )
     }
 
