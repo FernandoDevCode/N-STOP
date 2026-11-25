@@ -223,6 +223,21 @@ class SpotifyApiClientPaginationTest {
         assertTrue(client.getLikedSongs(limit = 50, offset = 100) is SyncResult.Empty)
     }
 
+    @Test fun `empty liked page with a nonzero remaining count is an error`() = runBlocking {
+        pages["fetchLibraryTracks" to 0] = 200 to likedPage(range = 0 until 0, totalCount = 100)
+        assertTrue(client.getLikedSongs(limit = 50, offset = 0) is SyncResult.Error)
+    }
+
+    @Test fun `empty liked page without a total is an error`() = runBlocking {
+        pages["fetchLibraryTracks" to 0] = 200 to likedPage(range = 0 until 0, totalCount = null)
+        assertTrue(client.getLikedSongs(limit = 50, offset = 0) is SyncResult.Error)
+    }
+
+    @Test fun `verified empty liked library is empty`() = runBlocking {
+        pages["fetchLibraryTracks" to 0] = 200 to likedPage(range = 0 until 0, totalCount = 0)
+        assertTrue(client.getLikedSongs(limit = 50, offset = 0) is SyncResult.Empty)
+    }
+
     @Test fun `an unrecognised liked response is an error, not the end of the library`() = runBlocking {
         pages["fetchLibraryTracks" to 50] = 200 to """{"errors":[{"message":"rate limited"}]}"""
 
