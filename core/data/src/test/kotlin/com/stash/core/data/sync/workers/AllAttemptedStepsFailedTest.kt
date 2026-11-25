@@ -50,6 +50,13 @@ class AllAttemptedStepsFailedTest {
         assertFalse(allAttemptedStepsFailed(listOf(step(StepStatus.EMPTY))))
     }
 
+    @Test fun `partial Spotify likes with confirmed additions still reach diff`() {
+        assertFalse(allAttemptedStepsFailed(listOf(
+            step(StepStatus.ERROR),
+            SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.ERROR, itemCount = 20),
+        )))
+    }
+
     @Test fun `a run of only skipped steps is not a failure`() {
         // Nothing was attempted, so there is nothing to have failed.
         assertFalse(allAttemptedStepsFailed(listOf(step(StepStatus.SKIPPED))))
