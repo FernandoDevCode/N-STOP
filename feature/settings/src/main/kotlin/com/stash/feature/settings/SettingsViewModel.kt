@@ -1152,7 +1152,7 @@ class SettingsViewModel @Inject constructor(
      */
     fun onDisconnectSpotify() {
         viewModelScope.launch {
-            musicRepository.cancelPendingDownloadsForSource("SPOTIFY")
+            // Catalog sign-out pauses imports, not local download requests.
             tokenManager.clearAuth(AuthService.SPOTIFY)
             // Nothing left to re-authenticate: the Sync tab's banner stops asking.
             syncStateManager.clearAuthExpiry(spotify = true)
