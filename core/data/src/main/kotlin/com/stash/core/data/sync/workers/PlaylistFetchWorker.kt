@@ -108,7 +108,10 @@ private val DAILY_MIX_NAME = Regex("""Daily Mix \d+""")
  */
 internal fun allAttemptedStepsFailed(diagnostics: List<SyncStepResult>): Boolean {
     val attempted = diagnostics.filter { it.status != StepStatus.SKIPPED }
-    return attempted.isNotEmpty() && attempted.all { it.status == StepStatus.ERROR }
+    // A partial liked walk can still yield confirmed additions for DiffWorker.
+    return attempted.isNotEmpty() && attempted.all {
+        it.status == StepStatus.ERROR && !(it.service == "SPOTIFY" && it.step == "getLikedSongs" && it.itemCount > 0)
+    }
 }
 
 internal fun keepAsLibraryPlaylist(
@@ -646,6 +649,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
             var likedRawWalked = 0
             var likedTotalCount: Int? = null
             var likedPagesFetched = 0
+            val seenLikedUris = mutableSetOf<String>()
 
             while (true) {
                 // Bounded: if the persisted query ever stopped honouring
@@ -660,9 +664,23 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     is SyncResult.Success -> {
                         val page = result.data
                         likedPagesFetched++
-                        allLikedSongs.addAll(page.tracks)
+                        val freshTracks = page.tracks.filter { item ->
+                            item.track?.uri?.let { seenLikedUris.add(it) } == true
+                        }
+                        // Duplicate IDs can mean a repeated page or a library edited mid-walk.
+                        // Unparsed items and a moving/missing total are not proof of removals.
+                        if (freshTracks.size != page.tracks.size ||
+                            page.tracks.size != page.rawItemCount ||
+                            page.totalCount == null ||
+                            (likedTotalCount != null && likedTotalCount != page.totalCount)
+                        ) likedFetchPartial = true
+                        allLikedSongs.addAll(freshTracks)
                         likedRawWalked += page.rawItemCount
                         page.totalCount?.let { likedTotalCount = it }
+                        if (page.tracks.isNotEmpty() && freshTracks.isEmpty()) {
+                            likedFetchPartial = true
+                            break
+                        }
                         Log.d(
                             TAG,
                             "fetchSpotifyPlaylists: liked songs page offset=$likedOffset, " +
@@ -688,9 +706,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
             // Backstop for a silent short walk: Spotify returning a short page
             // early, or an empty one mid-library, ends the loop without an
             // Error. Spotify's own count says whether we saw everything.
-            if (!likedFetchPartial &&
-                com.stash.data.spotify.fetchedBelowExpected(likedRawWalked, likedTotalCount)
-            ) {
+            if (!likedFetchPartial && likedTotalCount != null && likedRawWalked != likedTotalCount) {
                 likedFetchPartial = true
                 Log.w(
                     TAG,
@@ -754,11 +770,12 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     remoteSnapshotDao.insertTrackSnapshots(trackSnapshots)
                     likedSongCount = trackSnapshots.size
                 }
-            } else if (likedFetchError != null) {
+            } else if (likedFetchError != null || likedFetchPartial) {
                 // Nothing fetched because the request FAILED — report it as the
                 // error it is. Recording it EMPTY ("No liked songs found") hid
                 // the failure and kept allAttemptedStepsFailed from seeing it.
-                diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.ERROR, errorMessage = likedFetchError))
+                diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.ERROR,
+                    errorMessage = likedFetchError ?: "Incomplete Spotify liked songs fetch"))
                 Log.e(TAG, "fetchSpotifyPlaylists: liked songs fetch failed: $likedFetchError")
             } else {
                 diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.EMPTY, errorMessage = "No liked songs found"))
