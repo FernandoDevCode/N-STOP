@@ -27,15 +27,19 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-private const val ATLAS_COLUMNS = 8
-private const val ATLAS_ROWS = 10
-private const val FRAMES_PER_ATLAS = ATLAS_COLUMNS * ATLAS_ROWS
+private const val SOURCE_COLUMNS = 8
+private const val SOURCE_ROWS = 10
+private const val SOURCE_CAPACITY = SOURCE_COLUMNS * SOURCE_ROWS
+private const val ATLAS_COLUMNS = 13
+private const val ATLAS_ROWS = 12
 private const val FRAME_PX = 256
 private const val FRAME_COUNT = 154
 private const val INTRO_DURATION_MS = 2560
@@ -43,7 +47,8 @@ private const val INTRO_DURATION_MS = 2560
 /**
  * Canonical Sonora intro. The approved 16 poses are preserved at their original
  * timing, with offline motion interpolation to approximately 60 fps.
- * Two bounded alpha atlases keep decode memory and texture dimensions in check.
+ * Repack both source atlases into one alpha texture off the UI thread. There
+ * is no texture switch at frame 80, when the character is fully visible.
  * No GIF decoding, filters, paths, networking or allocations per moving frame.
  *
  * Keep the MainActivity contract: settle before composing Home, then fade the
@@ -72,13 +77,15 @@ internal fun SonoraColdStartIntro(
             return@LaunchedEffect
         }
         atlas.value = prepared
-        // Both textures are prepared before publishing the state, and the first
-        // stationary draw also submits both to HWUI before starting the clock.
+        // Wait for the first stationary draw to be submitted, then leave two
+        // frame ticks for HWUI before starting motion. Bound the wait if hidden.
+        withTimeoutOrNull(500L) { prepared.firstDraw.await() }
         withFrameNanos { }
         withFrameNanos { }
         formation.animateTo(1f, tween(INTRO_DURATION_MS, easing = LinearEasing))
         // Give the last pose a display frame before composing the real Home.
         withFrameNanos { }
+        prepared.logPacing()
         settled.value()
         delay(520)
         opacity.animateTo(0f, tween(280, easing = LinearEasing))
@@ -108,65 +115,98 @@ internal fun SonoraColdStartIntro(
 internal fun introFrameAt(progress: Float): Int =
     (progress.coerceIn(0f, 1f) * (FRAME_COUNT - 1)).roundToInt()
 
-private class IntroAtlas(
-    private val first: Bitmap,
-    private val second: Bitmap,
-) {
+private class IntroAtlas(private val bitmap: Bitmap) {
     private val source = Rect()
     private val destination = RectF()
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
         color = 0xFFF0F1F3.toInt()
     }
-    private var warmed = false
+    val firstDraw = CompletableDeferred<Unit>()
+    // Debug-only UI draw interval diagnostics. No per-frame logs, no telemetry.
+    // These measure draw submissions, NOT actual GPU presentation times.
+    private var previousIndex = 0
+    private var previousNanos = 0L
+    private var longestNanos = 0L
+    private var longestAt = 0
+    private var slowDraws = 0
+    private var skippedPoses = 0
 
     fun draw(canvas: NativeCanvas, frame: Int, left: Float, top: Float, side: Float) {
+        val x = (frame % ATLAS_COLUMNS) * FRAME_PX
+        val y = (frame / ATLAS_COLUMNS) * FRAME_PX
+        source.set(x, y, x + FRAME_PX, y + FRAME_PX)
         destination.set(left, top, left + side, top + side)
-        if (!warmed) {
-            // Non-zero opacity forces a real texture draw (alpha=0 can be
-            // culled). At 1/255 opacity it is imperceptible behind the mark.
-            drawCell(canvas, second, 0, 1)
-            warmed = true
-        }
-        if (frame < FRAMES_PER_ATLAS) {
-            drawCell(canvas, first, frame, 255)
-        } else {
-            drawCell(canvas, second, frame - FRAMES_PER_ATLAS, 255)
+        canvas.drawBitmap(bitmap, source, destination, paint)
+        if (!firstDraw.isCompleted) firstDraw.complete(Unit)
+        if (BuildConfig.DEBUG && frame > previousIndex) {
+            val now = System.nanoTime()
+            if (previousNanos != 0L) {
+                val gap = now - previousNanos
+                if (gap > 33_333_334L) slowDraws++
+                if (gap > longestNanos) {
+                    longestNanos = gap
+                    longestAt = frame
+                }
+            }
+            skippedPoses += (frame - previousIndex - 1).coerceAtLeast(0)
+            previousIndex = frame
+            previousNanos = now
         }
     }
 
-    private fun drawCell(canvas: NativeCanvas, bitmap: Bitmap, cell: Int, alpha: Int) {
-        val x = (cell % ATLAS_COLUMNS) * FRAME_PX
-        val y = (cell / ATLAS_COLUMNS) * FRAME_PX
-        source.set(x, y, x + FRAME_PX, y + FRAME_PX)
-        paint.alpha = alpha
-        canvas.drawBitmap(bitmap, source, destination, paint)
+    fun logPacing() {
+        if (BuildConfig.DEBUG) {
+            Log.d("SonoraIntro", "draw pacing: slowDraws=$slowDraws skippedPoses=$skippedPoses " +
+                "longestMs=${longestNanos / 1_000_000.0} atFrame=$longestAt")
+        }
     }
 }
 
 /**
- * Decode sequentially off the UI thread; retain only the alpha masks (10 MiB
- * total). prepareToDraw lets HWUI start texture preparation before movement.
- * Do not recycle a published bitmap while RenderThread may still use it.
+ * Repack the existing WebP cells into one 3328 x 3072 ALPHA_8 texture
+ * (~9.75 MiB). Copy each source sequentially, at exact integer coordinates,
+ * without filtering, interpolation or changing the stored poses. The temporary
+ * RGBA source is recycled before decoding the next. A published atlas is
+ * owned by Compose and must not be recycled while HWUI may still use it.
  */
 private fun loadIntroAtlas(resources: Resources): IntroAtlas? {
+    var target: Bitmap? = null
+    var published = false
     return try {
-        val first = loadIntroMask(resources, R.drawable.sonora_intro_morph_atlas)
-            ?: return null
-        val second = loadIntroMask(resources, R.drawable.sonora_intro_morph_atlas_end)
-            ?: return null
-        first.prepareToDraw()
-        second.prepareToDraw()
-        IntroAtlas(first, second)
+        val bitmap = Bitmap.createBitmap(
+            ATLAS_COLUMNS * FRAME_PX,
+            ATLAS_ROWS * FRAME_PX,
+            Bitmap.Config.ALPHA_8,
+        )
+        target = bitmap
+        val canvas = NativeCanvas(bitmap)
+        if (!copyIntroCells(resources, R.drawable.sonora_intro_morph_atlas,
+                canvas, 0, SOURCE_CAPACITY) ||
+            !copyIntroCells(resources, R.drawable.sonora_intro_morph_atlas_end,
+                canvas, SOURCE_CAPACITY, FRAME_COUNT - SOURCE_CAPACITY)
+        ) return null
+        bitmap.prepareToDraw()
+        val atlas = IntroAtlas(bitmap)
+        published = true
+        atlas
     } catch (failure: Exception) {
         Log.w("SonoraIntro", "Unable to load intro; continuing startup", failure)
         null
     } catch (failure: OutOfMemoryError) {
         Log.w("SonoraIntro", "Insufficient memory for intro; continuing startup", failure)
         null
+    } finally {
+        if (!published) target?.recycle()
     }
 }
 
-private fun loadIntroMask(resources: Resources, resourceId: Int): Bitmap? {
+private fun copyIntroCells(
+    resources: Resources,
+    resourceId: Int,
+    canvas: NativeCanvas,
+    firstFrame: Int,
+    count: Int,
+): Boolean {
     val decoded = BitmapFactory.decodeResource(
         resources,
         resourceId,
@@ -174,15 +214,27 @@ private fun loadIntroMask(resources: Resources, resourceId: Int): Bitmap? {
             inScaled = false
             inPreferredConfig = Bitmap.Config.ARGB_8888
         },
-    ) ?: return null
+    ) ?: return false
     return try {
-        if (decoded.width != ATLAS_COLUMNS * FRAME_PX ||
-            decoded.height != ATLAS_ROWS * FRAME_PX
+        if (decoded.width != SOURCE_COLUMNS * FRAME_PX ||
+            decoded.height != SOURCE_ROWS * FRAME_PX
         ) {
             Log.w("SonoraIntro", "Unexpected intro atlas dimensions")
-            null
+            false
         } else {
-            decoded.extractAlpha()
+            val source = Rect()
+            val destination = Rect()
+            for (cell in 0 until count) {
+                val x = (cell % SOURCE_COLUMNS) * FRAME_PX
+                val y = (cell / SOURCE_COLUMNS) * FRAME_PX
+                val frame = firstFrame + cell
+                val dx = (frame % ATLAS_COLUMNS) * FRAME_PX
+                val dy = (frame / ATLAS_COLUMNS) * FRAME_PX
+                source.set(x, y, x + FRAME_PX, y + FRAME_PX)
+                destination.set(dx, dy, dx + FRAME_PX, dy + FRAME_PX)
+                canvas.drawBitmap(decoded, source, destination, null)
+            }
+            true
         }
     } finally {
         decoded.recycle()
