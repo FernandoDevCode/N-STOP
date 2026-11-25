@@ -267,7 +267,7 @@ class SpotifyApiClientPaginationTest {
 
     private fun likedPage(
         range: IntRange,
-        totalCount: Int,
+        totalCount: Int?,
         localAt: Int? = null,
         allLocal: Boolean = false,
     ): String {
@@ -275,6 +275,7 @@ class SpotifyApiClientPaginationTest {
             """{"addedAt":{"isoString":"2026-01-01T00:00:00Z"},""" +
                 """"track":{"data":${trackData(i, local = allLocal || i == localAt)}}}"""
         }
-        return """{"data":{"me":{"library":{"tracks":{"totalCount":$totalCount,"items":[$items]}}}}}"""
+        val count = totalCount?.let { """"totalCount":$it,""" }.orEmpty()
+        return """{"data":{"me":{"library":{"tracks":{$count"items":[$items]}}}}}"""
     }
 }
