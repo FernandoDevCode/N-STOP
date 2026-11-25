@@ -226,6 +226,7 @@ interface DownloadQueueDao {
                 INNER JOIN playlists p ON p.id = pt.playlist_id
                 WHERE pt.removed_at IS NULL
                   AND p.sync_enabled = 1
+                  AND NOT (p.source = 'SPOTIFY' AND p.type IN ('CUSTOM', 'LIKED_SONGS'))
                   AND p.is_active = 1
                   AND p.type != 'STASH_MIX'
             ))
@@ -270,6 +271,7 @@ interface DownloadQueueDao {
               WHERE pt.track_id = t.id
                 AND pt.removed_at IS NULL
                 AND p.sync_enabled = 1
+                AND NOT (p.source = 'SPOTIFY' AND p.type IN ('CUSTOM', 'LIKED_SONGS'))
                 -- Must also be ACTIVE (visible in the Sync UI). A playlist
                 -- can be sync_enabled=1 yet is_active=0 — e.g. a YouTube
                 -- daily mix force-enabled by the one-shot migration, then
@@ -324,6 +326,7 @@ interface DownloadQueueDao {
               WHERE pt.track_id = t.id
                 AND pt.removed_at IS NULL
                 AND p.sync_enabled = 1
+                AND NOT (p.source = 'SPOTIFY' AND p.type IN ('CUSTOM', 'LIKED_SONGS'))
                 -- Must also be ACTIVE (visible in the Sync UI). A playlist
                 -- can be sync_enabled=1 yet is_active=0 — e.g. a YouTube
                 -- daily mix force-enabled by the one-shot migration, then
@@ -780,6 +783,7 @@ interface DownloadQueueDao {
             FROM playlist_tracks pt
             INNER JOIN playlists p ON p.id = pt.playlist_id
             WHERE p.sync_enabled = 1
+              AND NOT (p.source = 'SPOTIFY' AND p.type IN ('CUSTOM', 'LIKED_SONGS'))
               AND p.is_active = 1
               AND pt.removed_at IS NULL
               -- A switched-on mix spares its rows like any playlist (the WHERE
@@ -995,6 +999,7 @@ interface DownloadQueueDao {
               WHERE pt.track_id = t.id
                 AND pt.removed_at IS NULL
                 AND p.sync_enabled = 1
+                AND NOT (p.source = 'SPOTIFY' AND p.type IN ('CUSTOM', 'LIKED_SONGS'))
                 -- Must also be ACTIVE (visible in the Sync UI). A playlist
                 -- can be sync_enabled=1 yet is_active=0 — e.g. a YouTube
                 -- daily mix force-enabled by the one-shot migration, then
@@ -1049,6 +1054,7 @@ interface DownloadQueueDao {
               WHERE pt.track_id = t.id
                 AND pt.removed_at IS NULL
                 AND p.sync_enabled = 1
+                AND NOT (p.source = 'SPOTIFY' AND p.type IN ('CUSTOM', 'LIKED_SONGS'))
                 -- Must also be ACTIVE (visible in the Sync UI). A playlist
                 -- can be sync_enabled=1 yet is_active=0 — e.g. a YouTube
                 -- daily mix force-enabled by the one-shot migration, then
@@ -1117,6 +1123,7 @@ interface DownloadQueueDao {
               INNER JOIN playlists p ON p.id = pt.playlist_id
               WHERE pt.removed_at IS NULL
                 AND p.sync_enabled = 1
+                AND NOT (p.source = 'SPOTIFY' AND p.type IN ('CUSTOM', 'LIKED_SONGS'))
                 -- Only an ACTIVE parent spares a row. A hidden (is_active=0)
                 -- but sync_enabled=1 playlist — e.g. a rotated-out YouTube
                 -- daily mix — does NOT spare its tracks, so this sweep drains
