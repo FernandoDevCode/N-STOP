@@ -830,7 +830,10 @@ class MusicRepositoryImpl @Inject constructor(
         // Stream-only mode never runs the sync's download step, so songs an
         // earlier Download-mode sync queued would wait forever (and count as
         // handled below). Hand them to the drain this starts instead.
-        val moved = if (streamingPreference.current()) downloadQueueDao.moveSyncRowsToDiscovery(playlistId) else 0
+        val playlist = playlistDao.getById(playlistId)
+        val personalSpotify = playlist?.source == com.stash.core.model.MusicSource.SPOTIFY &&
+            playlist.type in setOf(com.stash.core.model.PlaylistType.CUSTOM, com.stash.core.model.PlaylistType.LIKED_SONGS)
+        val moved = if (personalSpotify || streamingPreference.current()) downloadQueueDao.moveSyncRowsToDiscovery(playlistId) else 0
         val tracks = trackDao.getByPlaylist(playlistId, includeStreamable = true)
             .first()
         // A match the user dismissed stays dismissed, and a track with a row
@@ -883,8 +886,11 @@ class MusicRepositoryImpl @Inject constructor(
             // Off stops what hasn't started: the songs still waiting go (a song
             // running now finishes). Songs already downloaded stay (owner's call).
             downloadQueueDao.cancelWaitingForPlaylist(playlistId)
-            if (!streamingPreference.current()) {
-                // Download mode: a synced playlist downloads through sync, so off
+            val playlist = playlistDao.getById(playlistId)
+            val personalSpotify = playlist?.source == com.stash.core.model.MusicSource.SPOTIFY &&
+                playlist.type in setOf(com.stash.core.model.PlaylistType.CUSTOM, com.stash.core.model.PlaylistType.LIKED_SONGS)
+            if (!personalSpotify && !streamingPreference.current()) {
+                // Legacy download mode for other source/type combinations, so off
                 // has to turn that off too, exactly as the Sync tab's switch does:
                 // sync off, then drop sync-queued songs no synced playlist wants.
                 // No Home unpin.
