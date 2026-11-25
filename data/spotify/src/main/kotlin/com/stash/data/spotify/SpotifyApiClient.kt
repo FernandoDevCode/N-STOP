@@ -19,6 +19,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -434,12 +435,18 @@ class SpotifyApiClient @Inject constructor(
             )
 
             if (responseJson != null) {
+                val errors = responseJson["errors"]
+                if (errors != null && (errors !is JsonArray || errors.isNotEmpty())) {
+                    return@withContext SyncResult.Error("Spotify liked songs returned GraphQL errors at offset=$offset")
+                }
                 val page = parseLibraryTracksPage(responseJson)
                 when {
                     page == null ->
                         SyncResult.Error("getLikedSongs: unrecognised response at offset=$offset")
+                    page.rawItemCount == 0 && page.totalCount != offset ->
+                        SyncResult.Error("Spotify liked songs returned an unverified empty page at offset=$offset")
                     page.rawItemCount == 0 ->
-                        SyncResult.Empty("GraphQL returned no liked songs at offset=$offset")
+                        SyncResult.Empty("GraphQL confirmed the end of liked songs at offset=$offset")
                     else -> {
                         Log.d(
                             TAG,
