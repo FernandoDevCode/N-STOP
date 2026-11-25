@@ -111,12 +111,13 @@ class DiffWorkerMixNoDownloadTest {
 
     /** Control: the rule is "the switch decides", not "mixes download". */
     @Test
-    fun `custom playlist still enqueues in offline mode`() = runBlocking {
-        seedPlaylistAndSnapshot(PlaylistType.CUSTOM, "spotify:playlist:mine", "My Playlist", syncEnabled = true)
+    fun `Spotify custom playlist imports without downloading in offline mode`() = runBlocking {
+        val id = seedPlaylistAndSnapshot(PlaylistType.CUSTOM, "spotify:playlist:mine", "My Playlist", syncEnabled = true)
 
         buildWorker().doWork()
 
-        coVerify(atLeast = 1) { downloadQueueDao.insertAll(any()) }
+        coVerify(exactly = 0) { downloadQueueDao.insertAll(any()) }
+        assertEquals(3, db.playlistDao().getTracksForPlaylist(id).size)
     }
 
     @Test
