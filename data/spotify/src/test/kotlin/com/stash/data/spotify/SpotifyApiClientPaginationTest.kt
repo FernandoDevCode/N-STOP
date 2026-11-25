@@ -61,6 +61,16 @@ class SpotifyApiClientPaginationTest {
 
     private val client = SpotifyApiClient(http, tokenManager, authManager)
 
+    @Test fun `library writes are rejected before auth or HTTP`() = runBlocking {
+        val blockedHttp = OkHttpClient.Builder().addInterceptor {
+            error("Spotify library write attempted HTTP")
+        }.build()
+        val blocked = SpotifyApiClient(blockedHttp, mockk<TokenManager>(), mockk<SpotifyAuthManager>())
+        assertTrue(blocked.addToLibrary(listOf("spotify:track:test")) is SpotifyLibraryWriteResult.Failed)
+        assertTrue(blocked.removeFromLibrary(listOf("spotify:track:test")) is SpotifyLibraryWriteResult.Failed)
+        assertTrue(blocked.addToLibrary(emptyList()) is SpotifyLibraryWriteResult.Failed)
+    }
+
     // ── fetchPlaylist (GraphQL) ──────────────────────────────────────────
 
     @Test fun `a failed page after the first marks the playlist partial`() = runBlocking {
