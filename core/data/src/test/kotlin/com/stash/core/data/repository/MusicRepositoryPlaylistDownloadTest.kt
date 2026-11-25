@@ -81,6 +81,16 @@ class MusicRepositoryPlaylistDownloadTest {
         coVerify(exactly = 1) { downloadQueueDao.cancelDownloadsWithNoEnabledPlaylist() }
     }
 
+    @Test fun `turning off Spotify collection download preserves its sync selection`() = runTest {
+        coEvery { streamingPreference.current() } returns false
+        coEvery { playlistDao.getById(KEPT) } returns playlist(KEPT, keepOffline = true)
+            .copy(source = MusicSource.SPOTIFY, syncEnabled = true)
+        repo().setPlaylistDownload(KEPT, on = false)
+        coVerify { playlistDao.setKeepOffline(KEPT, false) }
+        coVerify(exactly = 0) { playlistDao.setSyncEnabled(any(), any()) }
+        coVerify(exactly = 0) { downloadQueueDao.cancelDownloadsWithNoEnabledPlaylist() }
+    }
+
     @Test fun `off in Stream-only mode leaves sync alone`() = runTest {
         coEvery { streamingPreference.current() } returns true
         repo().setPlaylistDownload(KEPT, on = false)
