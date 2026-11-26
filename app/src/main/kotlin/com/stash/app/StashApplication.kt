@@ -45,6 +45,9 @@ import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -274,6 +277,9 @@ class StashApplication : Application(), Configuration.Provider {
             .setWorkerFactory(workerFactory)
             .build()
 
+    // Only speculative work waits; repairs, migrations and actual user actions never do.
+    internal val introStartupGate = SonoraIntroStartupGate()
+
     override fun onCreate() {
         super.onCreate()
         // First thing after super: install the crash-to-file handler so any
@@ -301,6 +307,8 @@ class StashApplication : Application(), Configuration.Provider {
         // Sonora: disabled legacy remote Stash sync / relay endpoint.
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             object : DefaultLifecycleObserver {
+                private var foregroundWarmup: Job? = null
+
                 override fun onStart(owner: LifecycleOwner) {
                     // PARKED 2026-07-01: kennyy + squid are out of the lossless
                     // chain (hosts down for us — see
@@ -314,7 +322,17 @@ class StashApplication : Application(), Configuration.Provider {
                     // controller drops with it; the next tap then pays ~1 s of service
                     // start (Pixel 6, 2026-09-06). Reconnect while the user is still
                     // looking, so the first tap after coming back starts at once.
-                    playerRepository.warmUp()
+                    foregroundWarmup = applicationScope.launch {
+                        introStartupGate.awaitReady()
+                        delay(250)
+                        withContext(Dispatchers.Main.immediate) {
+                            playerRepository.warmUp()
+                        }
+                        // Booting BotGuard can allocate a WebView and compete with HWUI.
+                        // Keep this speculative work off the cinematic and cancel on background.
+                        delay(500)
+                        runCatching { innerTubeClient.warmPoTokens() }
+                    }
                     // Link Stash on the web: is another device's song waiting to be continued here? (at most every 30 s)
         // Sonora: disabled legacy remote Stash sync / relay endpoint.
                     // ...and did a linked browser send something here? (at most every 30 s; nothing in the background)
@@ -324,6 +342,8 @@ class StashApplication : Application(), Configuration.Provider {
                 }
 
                 override fun onStop(owner: LifecycleOwner) {
+                    foregroundWarmup?.cancel()
+                    foregroundWarmup = null
                     // squidCookieAutoRefresher.stop()
                     // kennyyHealthProbe.stop()
                     // The BotGuard WebView is ~50 MB; drop it while backgrounded, it
@@ -349,10 +369,7 @@ class StashApplication : Application(), Configuration.Provider {
                 Log.w("StashStartup", "applying the restored library folder failed", e)
             }
         }
-        // YouTube PO tokens: learn a visitor id and boot BotGuard now, so the
-        // first play's InnerTube URL passes the GVS wall instead of falling to
-        // yt-dlp (13.8 s measured 2026-09-06). Best-effort; failures log only.
-        applicationScope.launch { runCatching { innerTubeClient.warmPoTokens() } }
+        // PO token prewarming now belongs to the foreground observer above.
         applicationScope.launch {
             // Best-effort: a startup DB write that throws (e.g.
             // SQLiteFullException on a device the user filled with FLAC) must
@@ -421,6 +438,8 @@ class StashApplication : Application(), Configuration.Provider {
         // launched here, which woke for the entire life of the process to
         // sweep a map that is empty unless the user is browsing.)
         applicationScope.launch {
+            introStartupGate.awaitReady()
+            delay(1500)
             // Best-effort prewarm: initialize, freshen yt-dlp to the latest
             // nightly, and warm the player-JS + QuickJS + EJS caches so the
             // first real user preview/download pays neither the ~14 s
@@ -443,12 +462,14 @@ class StashApplication : Application(), Configuration.Provider {
                 ytDlpManager.ensureFreshened()
             }
         }
-        // Warm up music.youtube.com TLS + DNS in the first 2s of launch so
+        // Warm up music.youtube.com TLS + DNS after the intro so
         // the first search request doesn't pay the full handshake cost.
         // Search still works in offline mode, so this is gated on having a
         // network at all rather than on the streaming preference — offline
         // it is a guaranteed-to-fail request that wakes the radio.
         applicationScope.launch {
+            introStartupGate.awaitReady()
+            delay(1000)
             if (!connectivityMonitor.isConnected()) return@launch
             runCatching {
                 okHttpClient.newCall(
