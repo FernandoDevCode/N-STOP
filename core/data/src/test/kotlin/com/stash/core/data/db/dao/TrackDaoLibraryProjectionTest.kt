@@ -91,6 +91,23 @@ class TrackDaoLibraryProjectionTest {
         assertEquals(false, rows.last().savedInCollection)
     }
 
+    @Test fun `removing a Spotify like preserves its local like and download`() = runTest {
+        dao.insert(track(1).copy(stashLikedAt = 123L, filePath = "/music/saved.flac"))
+        val playlistId = db.playlistDao().insert(com.stash.core.data.db.entity.PlaylistEntity(
+            name = "Liked Songs", source = MusicSource.SPOTIFY, sourceId = "likes-test",
+            type = com.stash.core.model.PlaylistType.LIKED_SONGS,
+        ))
+        db.playlistDao().insertCrossRef(com.stash.core.data.db.entity.PlaylistTrackCrossRef(
+            playlistId = playlistId, trackId = 1,
+        ))
+        db.playlistDao().removeLikedTrackLocally(1, MusicSource.SPOTIFY)
+        val row = dao.getById(1)!!
+        assertEquals(123L, row.stashLikedAt)
+        assertEquals("/music/saved.flac", row.filePath)
+        assertEquals(true, row.isDownloaded)
+        assertEquals(false, db.playlistDao().getCrossRefsForPlaylist(playlistId).any { it.removedAt == null })
+    }
+
     @Test fun `orders by date added descending`() = runTest {
         dao.insert(track(1, dateAdded = Instant.ofEpochMilli(100)))
         dao.insert(track(2, dateAdded = Instant.ofEpochMilli(300)))
