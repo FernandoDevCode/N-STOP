@@ -253,6 +253,23 @@ class LibraryViewModelTest {
     }
 
     @Test
+    fun playAlbum_online_includes_saved_tracks_without_audio() = runTest {
+        val local = Track(1L, "Local", "Artist", album = "Album", isDownloaded = true, filePath = "/music/a")
+        val remote = Track(2L, "Saved", "Artist", album = "Album", savedInCollection = true)
+        val unavailable = Track(3L, "Unavailable", "Artist", album = "Album", isStreamableCheckedAt = 1L)
+        val musicRepo = mock<MusicRepository> {
+            on { getAllTracks() } doReturn flowOf(listOf(local, remote, unavailable))
+        }
+        val playerRepo = playerRepoMock()
+        val vm = buildVm(musicRepository = musicRepo, playerRepository = playerRepo,
+            playbackPolicy = testPlaybackPolicy())
+        vm.playAlbum("Album", "Artist")
+        runCurrent()
+        verify(playerRepo).setQueue(listOf(local, remote), 0,
+            source = com.stash.core.model.PlaybackSource.Album("Album", "Artist"))
+    }
+
+    @Test
     fun deleteArtist_deletes_only_the_downloaded_songs_on_the_card() = runTest {
         val own = Track(1L, "God's Plan", "Drake", isDownloaded = true, filePath = "/a")
         val ownCollab = Track(2L, "Jimmy Cooks", "Drake, 21 Savage", isDownloaded = true, filePath = "/b")
