@@ -154,7 +154,11 @@ interface DownloadQueueDao {
     suspend fun getByTrackId(trackId: Long): DownloadQueueEntity?
 
     /** Whether the user asked by hand for [trackId] to download: a queue row of theirs (`user_requested`), in any state. */
-    @Query("SELECT EXISTS(SELECT 1 FROM download_queue WHERE track_id = :trackId AND user_requested = 1)")
+    @Query("""
+        SELECT EXISTS(SELECT 1 FROM tracks WHERE id = :trackId AND offline_requested = 1)
+            OR EXISTS(SELECT 1 FROM download_queue WHERE track_id = :trackId
+                      AND user_requested = 1 AND status != 'SKIPPED')
+    """)
     suspend fun hasUserRequest(trackId: Long): Boolean
 
     /**
@@ -918,8 +922,24 @@ interface DownloadQueueDao {
      * the sane default). If cancellation must be permanent, move the
      * tombstone to a dedicated column instead of widening this sweep.
      */
+    @Query("""
+        UPDATE tracks SET offline_requested = 1
+        WHERE id IN (SELECT track_id FROM download_queue
+                     WHERE status = 'COMPLETED' AND user_requested = 1)
+    """)
+    suspend fun preserveCompletedIndividualClaims()
+
     @Query("DELETE FROM download_queue WHERE status IN ('COMPLETED', 'SKIPPED')")
-    suspend fun deleteCompleted()
+    suspend fun deleteTerminalHistoryRows()
+
+    @Transaction
+    suspend fun deleteCompleted() {
+        preserveCompletedIndividualClaims()
+        deleteTerminalHistoryRows()
+    }
+
+    @Query("UPDATE download_queue SET user_requested = 0 WHERE track_id = :trackId")
+    suspend fun clearIndividualQueueClaim(trackId: Long)
 
     /** Reset retry count for all failed entries so they can be retried after a bug fix. */
     @Query("UPDATE download_queue SET retry_count = 0, status = 'FAILED' WHERE status = 'FAILED' AND retry_count >= 3")
