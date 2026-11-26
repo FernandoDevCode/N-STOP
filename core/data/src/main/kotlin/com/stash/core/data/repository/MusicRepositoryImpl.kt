@@ -716,7 +716,7 @@ class MusicRepositoryImpl @Inject constructor(
         // run was cancelled or cut short. "Sync now" downloads on any network,
         // like that sync's own download step (SyncScheduler.triggerManualSync).
         if (queued > 0 || downloadQueueDao.hasPendingDiscoveryDownload()) {
-            startDiscoveryDrain(background = true, anyNetwork = manualSync)
+            startDiscoveryDrain(background = true, anyNetwork = false)
         }
         return queued
     }
@@ -746,7 +746,11 @@ class MusicRepositoryImpl @Inject constructor(
      */
     private suspend fun dropLeftoverDownloads() {
         try {
-            val dropped = downloadQueueDao.cancelLeftoverDiscoveryDownloads()
+            val dropped = downloadJobs.withClaimsHeld {
+                downloadQueueDao.recoverAuthorisedLegacyRequests()
+                downloadQueueDao.cancelDownloadsWithNoEnabledPlaylist() +
+                    downloadQueueDao.cancelLeftoverDiscoveryDownloads()
+            }
             if (dropped > 0) {
                 android.util.Log.i("MusicRepository", "cancelled $dropped leftover download(s) nobody asked for")
             }
