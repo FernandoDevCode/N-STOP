@@ -381,4 +381,8 @@ data class TrackEntity(
      */
     @ColumnInfo(name = "flac_no_match_at")
     val flacNoMatchAt: Long? = null,
+
+    /** Individual offline ownership, independent of transient queue rows and collection switches. */
+    @ColumnInfo(name = "offline_requested", defaultValue = "0")
+    val offlineRequested: Boolean = false,
 )
