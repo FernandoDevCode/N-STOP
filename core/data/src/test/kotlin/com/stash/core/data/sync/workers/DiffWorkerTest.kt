@@ -1227,6 +1227,37 @@ class DiffWorkerTest {
         assertEquals("existing track kept AND the fetched addition merged", 2, activeTrackCount(playlistId))
     }
 
+    @Test
+    fun `partial Spotify snapshot preserves original order and last complete sync`() = runBlocking {
+        val (playlistId, keeper) = seedSyncedPlaylist()
+        val second = db.trackDao().insert(TrackEntity(
+            title = "Second", artist = "Artist", canonicalTitle = "second",
+            canonicalArtist = "artist", spotifyUri = "spotify:track:second",
+        ))
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(
+            playlistId = playlistId, trackId = second, position = 1,
+        ))
+        db.playlistDao().updateTrackCount(playlistId, 2)
+        db.playlistDao().updateLastSynced(playlistId, 1_000L)
+        val before = db.playlistDao().getById(playlistId)?.lastSynced
+        stubSnapshot(partial = true, listedTrackCount = 5, trackSnapshots = listOf(
+            RemoteTrackSnapshotEntity(syncId = 1L, snapshotPlaylistId = 4L,
+                title = "Second", artist = "Artist", spotifyUri = "spotify:track:second", position = 0),
+            RemoteTrackSnapshotEntity(syncId = 1L, snapshotPlaylistId = 4L,
+                title = "Newcomer", artist = "Artist", spotifyUri = "spotify:track:new", position = 1),
+            RemoteTrackSnapshotEntity(syncId = 1L, snapshotPlaylistId = 4L,
+                title = "Keeper", artist = "Artist", spotifyUri = "spotify:track:keeper", position = 2),
+        ))
+
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+        val refs = db.playlistDao().getCrossRefsForPlaylist(playlistId).sortedBy { it.position }
+        assertEquals(listOf(keeper, second), refs.take(2).map { it.trackId })
+        assertEquals(listOf(0, 1, 2), refs.map { it.position })
+        assertEquals(3, db.playlistDao().getById(playlistId)?.trackCount)
+        assertEquals(before, db.playlistDao().getById(playlistId)?.lastSynced)
+        assertEquals("old-snap", db.playlistDao().getSnapshotId(playlistId))
+    }
+
     // ── Type reconcile: which pairs REACH it, not just what it returns ───────
     // ReconciledPlaylistTypeTest is a truth table over the arguments; these
     // drive a real diff so the guard is exercised where the arguments are
