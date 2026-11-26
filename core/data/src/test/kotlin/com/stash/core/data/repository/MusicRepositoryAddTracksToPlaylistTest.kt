@@ -52,6 +52,16 @@ class MusicRepositoryAddTracksToPlaylistTest {
         coEvery { sharedMixDao.forPlaylist(any()) } returns null
     }
 
+    @Test fun `cannot add to imported Spotify playlists through stale selection`() = runTest {
+        coEvery { playlistDao.getById(PID) } returns PlaylistEntity(
+            id = PID, name = "Imported", source = MusicSource.SPOTIFY,
+            sourceId = "remote", type = PlaylistType.CUSTOM)
+        repo().addTrackToPlaylist(1L, PID)
+        repo().addTracksToPlaylist(listOf(1L, 2L), PID)
+        assertEquals(emptyList<Long>(), added)
+        assertEquals(emptyList<List<PlaylistTrackCrossRef>>(), batches)
+    }
+
     @Test fun `adds each id once in order`() = runTest {
         repo().addTracksToPlaylist(listOf(3L, 1L, 2L), PID)
         assertEquals(listOf(3L, 1L, 2L), added)

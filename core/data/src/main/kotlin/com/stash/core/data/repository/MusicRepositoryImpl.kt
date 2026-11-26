@@ -1109,7 +1109,10 @@ class MusicRepositoryImpl @Inject constructor(
         // Defensive pre-check + try/catch so the crash becomes a logged no-op
         // and the user can keep using the app.
         val trackExists = trackDao.getById(trackId) != null
-        val playlistExists = playlistDao.getById(playlistId) != null
+        val destination = playlistDao.getById(playlistId)
+        if (destination?.source == com.stash.core.model.MusicSource.SPOTIFY &&
+            destination.type == com.stash.core.model.PlaylistType.CUSTOM) return
+        val playlistExists = destination != null
         if (!trackExists || !playlistExists) {
             android.util.Log.w(
                 "MusicRepository",
@@ -1173,7 +1176,10 @@ class MusicRepositoryImpl @Inject constructor(
     override suspend fun addTracksToPlaylist(trackIds: List<Long>, playlistId: Long) {
         // ponytail: no app-wide scope exists, so NonCancellable keeps the batch alive.
         withContext(NonCancellable) {
-            if (playlistDao.getById(playlistId) == null) {
+            val destination = playlistDao.getById(playlistId)
+            if (destination?.source == com.stash.core.model.MusicSource.SPOTIFY &&
+                destination.type == com.stash.core.model.PlaylistType.CUSTOM) return@withContext
+            if (destination == null) {
                 android.util.Log.w("MusicRepository", "addTracksToPlaylist: playlist $playlistId is gone")
                 return@withContext
             }
@@ -1255,6 +1261,9 @@ class MusicRepositoryImpl @Inject constructor(
         )
 
     override suspend fun removeTrackFromPlaylist(trackId: Long, playlistId: Long) {
+        val playlist = playlistDao.getById(playlistId)
+        if (playlist?.source == com.stash.core.model.MusicSource.SPOTIFY &&
+            playlist.type == com.stash.core.model.PlaylistType.CUSTOM) return
         playlistDao.softDeleteTrackFromPlaylist(playlistId, trackId)
         // v0.9.37 — count downloaded + streamable. Stream-only tracks
         // (e.g. Liked Songs added from the Now Playing heart on a

@@ -1115,6 +1115,7 @@ interface PlaylistDao {
         SELECT * FROM playlists
         WHERE is_active = 1
           AND type IN ('CUSTOM')
+          AND source != 'SPOTIFY'
           -- An active followed shared mix is read-only (spec §6).
           AND id NOT IN (SELECT playlist_id FROM shared_mixes WHERE role = 'FOLLOWER' AND status = 'ACTIVE')
           AND (

@@ -196,6 +196,7 @@ fun PlaylistDetailScreen(
             ) {
                 // ── Header section ──────────────────────────────────────
                 item(key = "header") {
+                    val copyName = stringResource(R.string.sonora_playlist_copy_name, state.playlist?.name.orEmpty())
                     PlaylistHeader(
                         state = state,
                         bulkPlayInFlight = bulkPlayInFlight,
@@ -206,7 +207,7 @@ fun PlaylistDetailScreen(
                         onShare = { showShareSheet = true },
                         readOnly = readOnly,
                         onCopy = if (imported) {
-                            { viewModel.saveImportedCopy(state.playlist!!.name + " (copy)") }
+                            { viewModel.saveImportedCopy(copyName) }
                         } else null,
                         onSetImage = {
                             imagePickerLauncher.launch(
