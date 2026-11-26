@@ -129,10 +129,9 @@ data class SyncUiState(
      */
     val youtubeLikedStudioOnly: Boolean = false,
     /**
-     * Whether sync discovers the service's own algorithmic mixes. Default true
-     * (opt-out) — see SyncPreferencesManager.discoverAutoMixes.
+     * Whether sync discovers algorithmic mixes. Explicit opt-in.
      */
-    val discoverAutoMixes: Boolean = true,
+    val discoverAutoMixes: Boolean = false,
     /**
      * Days-of-week bitmask for the auto-sync schedule. Bit 0 = Mon … bit 6 = Sun.
      * Default 127 = every day.

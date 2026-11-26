@@ -268,3 +268,5 @@ PR #117, branch única. As alterações de conta, curtidas efetivas e download a
 
 ## 15. Datas de curtidas
 Data remota agora via snapshot e vínculo (nullable), independente de download e histórico de outbound; preservada em backup/undo e usada para ordenar a união de curtidas, mantendo ordem original quando desconhecida. Mudança aditiva na migração ainda não publicada 55→56. Testes de projeção e ordenação adicionados. A v227 foi incorporada no merge 84305390. CI Android ainda enfileirado; schema deve vir do compilador desta revisão, não de revisão anterior. Não concluída a representação de ocorrências repetidas, que exige revisar todos os consumidores de playlist_tracks.
+
+- Descoberta automática de mixes agora opt-in, inclusive fallback de leitura de preferência; escolhas explicitamente gravadas e coleções existentes preservadas. A primeira importação pessoal não autoriza mixes nem downloads.

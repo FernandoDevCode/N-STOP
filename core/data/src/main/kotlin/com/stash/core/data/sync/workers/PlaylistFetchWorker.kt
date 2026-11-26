@@ -513,15 +513,11 @@ class PlaylistFetchWorker @AssistedInject constructor(
         // excludes exactly these instead of everything spotify owns (#354).
         val homeFeedMixIds = mutableSetOf<String>()
 
-        // Auto-mix discovery is opt-OUT (#335, #344). These are playlists the
-        // user never created or saved, so when someone turns them off we must
-        // not fetch them at all — skipping the call is also what makes their
-        // sync shorter, which was half the complaint. Anything already in the
-        // library stays put; the per-mix Home toggle in Manage Playlists still
-        // applies to those. Defaults to true — see SyncPreferencesManager.
+        // Generated collections require explicit opt-in. Existing rows are
+        // preserved and an unreadable preference must not grant new consent.
         val discoverMixes = runCatching {
             syncPreferencesManager.discoverAutoMixes.first()
-        }.onFailure { if (it is CancellationException) throw it }.getOrDefault(true)
+        }.onFailure { if (it is CancellationException) throw it }.getOrDefault(false)
 
         // Fetch Daily Mixes (sp_dc dependent -- may return empty if GraphQL fails).
         if (!discoverMixes) {
