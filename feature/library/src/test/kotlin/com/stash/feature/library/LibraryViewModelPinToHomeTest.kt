@@ -112,6 +112,7 @@ class LibraryViewModelPinToHomeTest {
             on { playerState } doReturn MutableStateFlow(PlayerState())
         }
         return LibraryViewModel(
+            playbackPolicy = testPlaybackPolicy(),
             musicRepository = musicRepository,
             playerRepository = playerRepository,
             tokenManager = mock {
