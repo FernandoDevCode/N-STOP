@@ -63,14 +63,13 @@ class ArtistImageDaoTest {
         assertTrue(artistImageDao.distinctArtistNames().isEmpty())
     }
 
-    @Test fun `excludes not-downloaded members of a live playlist`() = runTest {
-        // Liked songs and synced playlists list these rows; the Artists tab
-        // does not, so a search for them would buy a photo nobody sees.
+    @Test fun `includes saved not-downloaded members of a live playlist`() = runTest {
+        // Saved membership, not audio availability, now defines the Artists tab.
         val unchecked = insertUnchecked(id = 1L, artist = "Aarne")
         val playlistId = playlistDao.insert(activePlaylist())
         playlistDao.insertCrossRef(crossRef(playlistId, unchecked, position = 0))
 
-        assertTrue(artistImageDao.distinctArtistNames().isEmpty())
+        assertEquals(listOf("Aarne"), artistImageDao.distinctArtistNames())
     }
 
     @Test fun `excludes unavailable artists`() = runTest {
