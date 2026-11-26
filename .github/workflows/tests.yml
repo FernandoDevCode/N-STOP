@@ -54,27 +54,12 @@ jobs:
       - name: Compile every module's unit tests
         run: ./gradlew compileDebugUnitTestKotlin --continue --no-daemon
 
-      # Room exports the authoritative schema during compilation. Publish it for
-      # review instead of guessing Room's identity hash or generating SQL by hand.
-      - name: Export generated Room schema
-        run: |
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          root = Path("core/data/schemas/com.stash.core.data.db.StashDatabase")
-          schema = max(root.glob("*.json"), key=lambda p: int(p.stem))
-          data = json.dumps(json.loads(schema.read_text()), separators=(",", ":"))
-          print("Room schema version:", schema.stem)
-          # Only schema metadata, not the database or any user data.
-          for i in range(0, len(data), 1500):
-              print(f"SONORA_ROOM_SCHEMA_CHUNK_{i//1500:04d}={data[i:i+1500]}")
-          PY
-
-      - name: Upload generated Room schema
+      # Room exports the authoritative schema during compilation.
+      - name: Upload generated Room schema v56
         uses: actions/upload-artifact@v6
         with:
-          name: generated-room-schemas
-          path: core/data/schemas/com.stash.core.data.db.StashDatabase/
+          name: generated-room-schema-v56
+          path: core/data/schemas/com.stash.core.data.db.StashDatabase/56.json
           if-no-files-found: error
 
   # The share Worker's tests (mixes, rooms, Community), then the sync Worker, tip jar, lossless relay and Last.fm proxy.
