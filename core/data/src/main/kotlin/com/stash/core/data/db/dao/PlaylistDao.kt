@@ -957,6 +957,34 @@ interface PlaylistDao {
         return deactivateByIdsChunked(missing)
     }
 
+    /**
+     * Freeze copies belonging to an old or unknown account. Imported likes
+     * become a separate saved playlist, rather than joining the new account's
+     * Liked Songs. Never delete a membership, file, or keepOffline request.
+     */
+    @Query("""
+        UPDATE playlists SET sync_enabled = 0,
+            type = CASE WHEN type = 'LIKED_SONGS' THEN 'CUSTOM' ELSE type END
+        WHERE source = 'SPOTIFY' AND substr(source_id, 1, length(:prefix)) != :prefix
+    """)
+    suspend fun archiveForeignSpotifyCollections(prefix: String)
+
+    @Query("""
+        UPDATE playlists SET type = 'LIKED_SONGS'
+        WHERE source = 'SPOTIFY' AND source_id = :sourceId
+    """)
+    suspend fun restoreScopedSpotifyLikesType(sourceId: String)
+
+    /** A disappeared remote collection remains a saved, paused local copy. */
+    @Transaction
+    suspend fun pauseMissingScopedSpotifyPlaylists(prefix: String, currentIds: List<String>) {
+        val present = currentIds.toHashSet()
+        getActivePlaylistsBySource(MusicSource.SPOTIFY)
+            .filter { it.type == PlaylistType.CUSTOM && it.sourceId.startsWith(prefix) &&
+                it.sourceId !in present && !it.sourceId.endsWith(":spotify_liked_songs") }
+            .forEach { setSyncEnabled(it.id, false) }
+    }
+
     /** Flip [is_active] back to 1 for a specific playlist id. Paired with
      *  [deactivateMissingForSource] so a rotating home-feed mix that
      *  returns tomorrow re-surfaces on the Home screen instead of

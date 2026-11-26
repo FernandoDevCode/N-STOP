@@ -120,7 +120,7 @@ internal fun reconciledPlaylistType(
     sourceId: String,
 ): PlaylistType? =
     if (source == MusicSource.SPOTIFY &&
-        !sourceId.startsWith(SpotifyApiClient.SPOTIFY_OWNED_ID_PREFIX) &&
+        !SpotifyAccountScope.raw(sourceId).startsWith(SpotifyApiClient.SPOTIFY_OWNED_ID_PREFIX) &&
         existing == PlaylistType.DAILY_MIX &&
         snapshot == PlaylistType.CUSTOM
     ) {
@@ -269,10 +269,18 @@ class DiffWorker @AssistedInject constructor(
                 // Pick the mode for this specific playlist's source so a
                 // user can Refresh Spotify Daily Mixes while Accumulating
                 // YouTube Liked Music on the same sync run.
-                val playlistSyncMode = when (playlistSnapshot.source) {
-                    MusicSource.YOUTUBE -> youtubeSyncMode
+                val playlistSyncMode = when {
+                    playlistSnapshot.source == MusicSource.SPOTIFY &&
+                        SpotifyAccountScope.isScoped(playlistSnapshot.sourcePlaylistId) &&
+                        isSpotifyPersonalCollection(playlistSnapshot.source, playlistSnapshot.playlistType) -> SyncMode.REFRESH
+                    playlistSnapshot.source == MusicSource.YOUTUBE -> youtubeSyncMode
                     else -> spotifySyncMode
                 }
+                /* legacy mode applies only to non-personal sources */
+                /* when (playlistSnapshot.source) {
+                    MusicSource.YOUTUBE -> youtubeSyncMode
+                    else -> spotifySyncMode
+                } */
 
                 // Find or create the local playlist (writes, but outside
                 // the per-playlist transaction — it owns its own atomicity
@@ -529,7 +537,8 @@ class DiffWorker @AssistedInject constructor(
             // follow the tracks. Other playlist types never rotate here;
             // LIKED_SONGS gets only a missing-art repair during metadata
             // finalization below.
-            val rotatesArt = effectiveType == PlaylistType.DAILY_MIX
+            val rotatesArt = effectiveType == PlaylistType.DAILY_MIX ||
+                (snapshot.source == MusicSource.SPOTIFY && effectiveType == PlaylistType.CUSTOM && !snapshot.partial)
             if (rotatesArt && snapshot.artUrl != null && snapshot.artUrl != existing.artUrl) {
                 playlistDao.updateArtUrl(existing.id, snapshot.artUrl)
             }

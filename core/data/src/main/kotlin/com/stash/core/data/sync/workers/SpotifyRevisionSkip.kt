@@ -146,7 +146,7 @@ internal fun stampToSkipOn(
  * cover follows its first track on every full diff, which a skip wouldn't.
  */
 internal fun isStampable(sourceId: String, type: PlaylistType): Boolean =
-    !sourceId.startsWith(com.stash.data.spotify.SpotifyApiClient.SPOTIFY_OWNED_ID_PREFIX) &&
+    !SpotifyAccountScope.raw(sourceId).startsWith(com.stash.data.spotify.SpotifyApiClient.SPOTIFY_OWNED_ID_PREFIX) &&
         type != PlaylistType.DAILY_MIX
 
 /**
@@ -176,10 +176,11 @@ internal fun spotifyLibraryPlaylistSnapshot(
     syncId: Long,
     partial: Boolean,
     snapshotId: String?,
+    sourceId: String = playlist.id,
 ): RemotePlaylistSnapshotEntity = RemotePlaylistSnapshotEntity(
     syncId = syncId,
     source = MusicSource.SPOTIFY,
-    sourcePlaylistId = playlist.id,
+    sourcePlaylistId = sourceId,
     playlistName = playlist.name,
     playlistType = PlaylistType.CUSTOM,
     trackCount = playlist.tracks?.total ?: 0,

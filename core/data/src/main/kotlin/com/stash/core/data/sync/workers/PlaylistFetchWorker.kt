@@ -245,6 +245,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
     /** The Spotify sync mode this run read, handed to the diff ([KEY_SPOTIFY_SYNC_MODE]). */
     @Volatile
     private var spotifySyncModeThisRun: SyncMode? = null
+    private var spotifyCompleteInventory: List<String>? = null
 
     private fun markYoutubeIncomplete(reason: String) {
         if (youtubeInventoryComplete.compareAndSet(true, false)) {
@@ -407,7 +408,26 @@ class PlaylistFetchWorker @AssistedInject constructor(
             // a source skipped here is exactly a source that didn't count
             // toward keeping the sync alive.
             if (probeResult.fetchSpotify) {
-                fetchSpotifyPlaylists(syncId, diagnostics)
+                val accountId = tokenManager.getSpotifyLibraryAccountId()
+                if (accountId.isNullOrBlank()) {
+                    diagnostics.add(SyncStepResult("SPOTIFY", "accountIdentity", StepStatus.ERROR,
+                        errorMessage = "Couldn't verify the Spotify account. Reconnect and try again."))
+                } else {
+                    val prefix = SpotifyAccountScope.prefix(accountId)
+                    captureUndoPoint(syncUndoDao, syncLog, syncId, TAG)
+                    fetchSpotifyPlaylists(syncId, diagnostics, prefix)
+                    // Do not pass snapshots to DiffWorker if the account changed
+                    // while reading. This precedes all YouTube fetching.
+                    if (tokenManager.getSpotifyLibraryAccountId() != accountId) {
+                        remoteSnapshotDao.deleteAllSnapshotsBySyncId(syncId)
+                        diagnostics.removeAll { it.service == "SPOTIFY" }
+                        diagnostics.add(SyncStepResult("SPOTIFY", "accountIdentity", StepStatus.ERROR,
+                            errorMessage = "Spotify account changed during sync. Previous library kept."))
+                    } else {
+                        playlistDao.archiveForeignSpotifyCollections(prefix)
+                        spotifyCompleteInventory?.let { playlistDao.pauseMissingScopedSpotifyPlaylists(prefix, it) }
+                    }
+                }
             }
             var youtubeComplete = true
             if (probeResult.fetchYoutube) {
@@ -482,7 +502,9 @@ class PlaylistFetchWorker @AssistedInject constructor(
      * @throws SpotifyApiException only if a critical, retryable API error occurs
      *         during track fetching (e.g., client_credentials token endpoint down).
      */
-    private suspend fun fetchSpotifyPlaylists(syncId: Long, diagnostics: MutableList<SyncStepResult>) {
+    private suspend fun fetchSpotifyPlaylists(syncId: Long, diagnostics: MutableList<SyncStepResult>, accountPrefix: String) {
+        fun scoped(id: String) = SpotifyAccountScope.scoped(accountPrefix, id)
+        val likedSourceId = scoped("spotify_liked_songs")
         Log.d(TAG, "fetchSpotifyPlaylists: starting for syncId=$syncId")
         var dailyMixCount = 0
         var likedSongCount = 0
@@ -571,7 +593,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                                 RemotePlaylistSnapshotEntity(
                                     syncId = syncId,
                                     source = MusicSource.SPOTIFY,
-                                    sourcePlaylistId = mix.id,
+                                    sourcePlaylistId = scoped(mix.id),
                                     playlistName = mix.name,
                                     playlistType = PlaylistType.DAILY_MIX,
                                     mixNumber = mixNumber,
@@ -639,10 +661,11 @@ class PlaylistFetchWorker @AssistedInject constructor(
         val likedId = playlistDao.ensurePlaylist(
             PlaylistEntity(
                 name = "Liked Songs", source = MusicSource.SPOTIFY,
-                sourceId = "spotify_liked_songs", type = PlaylistType.LIKED_SONGS,
+                sourceId = likedSourceId, type = PlaylistType.LIKED_SONGS,
                 syncEnabled = true,
             )
         )
+        playlistDao.restoreScopedSpotifyLikesType(likedSourceId)
         val likedSelection = playlistDao.getById(likedId)
         if (likedSelection?.syncEnabled == false) {
             diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.SKIPPED))
@@ -748,7 +771,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     RemotePlaylistSnapshotEntity(
                         syncId = syncId,
                         source = MusicSource.SPOTIFY,
-                        sourcePlaylistId = "spotify_liked_songs",
+                        sourcePlaylistId = likedSourceId,
                         playlistName = "Liked Songs",
                         playlistType = PlaylistType.LIKED_SONGS,
                         trackCount = orderedLikedSongs.size,
@@ -798,7 +821,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     RemotePlaylistSnapshotEntity(
                         syncId = syncId,
                         source = MusicSource.SPOTIFY,
-                        sourcePlaylistId = "spotify_liked_songs",
+                        sourcePlaylistId = likedSourceId,
                         playlistName = "Liked Songs",
                         playlistType = PlaylistType.LIKED_SONGS,
                         trackCount = 0,
@@ -901,10 +924,10 @@ class PlaylistFetchWorker @AssistedInject constructor(
             val mirrorStamps = loadSpotifyMirrorStamps()
             // Read once: what decides the skips also gates hiding missing playlists
             // below. Unreadable: nothing is skipped and nothing is hidden.
-            val spotifySyncMode = runCatching { syncPreferencesManager.spotifySyncMode.first() }
-                .onFailure { if (it is CancellationException) throw it }
-                .getOrNull()
-            spotifySyncModeThisRun = spotifySyncMode
+            // Personal library always reconciles complete snapshots. Keep the
+            // legacy mode for the other types via DiffWorker's preference.
+            val spotifySyncMode = SyncMode.REFRESH
+            spotifySyncModeThisRun = null
             val appVersion = appVersionCode(applicationContext)
             val skipCheckedAtMs = System.currentTimeMillis()
             var skippedUnchanged = 0
@@ -912,12 +935,13 @@ class PlaylistFetchWorker @AssistedInject constructor(
             var catalogOnly = 0
             for (playlist in customPlaylists) {
                 try {
-                    val selected = playlistDao.findBySourceId(playlist.id)
+                    val selected = playlistDao.findBySourceId(scoped(playlist.id))
                     if (selected == null || !selected.syncEnabled) {
                         // Discovery is inventory, not a request to read or download all tracks.
                         remoteSnapshotDao.insertPlaylistSnapshot(
                             spotifyLibraryPlaylistSnapshot(
                                 playlist = playlist, syncId = syncId, partial = true, snapshotId = null,
+                                sourceId = scoped(playlist.id),
                             )
                         )
                         catalogOnly++
@@ -925,7 +949,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                         reportPlaylistFetched()
                         continue
                     }
-                    val trustedStamp = mirrorStamps[playlist.id]
+                    val trustedStamp = mirrorStamps[scoped(playlist.id)]
                         ?.takeIf { isStampable(playlist.id, PlaylistType.CUSTOM) }
                         ?.takeIf { skipCandidate(playlist.revisionId, it.stamp, spotifySyncMode, skipCheckedAtMs, appVersion) != null }
                         ?.let { row ->
@@ -940,7 +964,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                         // sync: no tracks fetched. The row keeps it in this
                         // run's inventory and tells the diff to leave it alone.
                         remoteSnapshotDao.insertPlaylistSnapshot(
-                            unchangedSpotifyPlaylistSnapshot(playlist, trustedStamp, syncId),
+                            unchangedSpotifyPlaylistSnapshot(playlist, trustedStamp, syncId).copy(sourcePlaylistId = scoped(playlist.id)),
                         )
                         skippedUnchanged++
                         userPlaylistCount++
@@ -1009,7 +1033,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
                         spotifyLibraryPlaylistSnapshot(
                             playlist = playlist,
                             syncId = syncId,
-                            partial = fetchFailed || fetchPartial,
+                            partial = fetchFailed || fetchPartial || !countVerified,
+                            sourceId = scoped(playlist.id),
                             // The listing's revision, read before this fetch and
                             // confirmed by it: what the diff stamps once the
                             // tracks are mirrored.
@@ -1060,21 +1085,9 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 )
             }
 
-            if (spotifySyncMode != null && shouldDeactivateMissingPlaylists(spotifySyncMode, inventoryComplete)) {
-                // The first change this sync makes to the library: "Undo last sync"
-                // must restore from before it, or the playlists hidden here never
-                // come back. The diff step keeps this point instead of taking its own.
-                captureUndoPoint(syncUndoDao, syncLog, syncId, TAG)
-                // Observed, not snapshotted — see [spotifyLivenessIds].
-                val currentIds = spotifyLivenessIds(userPlaylists.map { it.id })
-                val hidden = playlistDao.deactivateMissingSpotifyCustomPlaylists(
-                    currentSourceIds = currentIds,
-                    hasCurrentIds = currentIds.isNotEmpty(),
-                )
-                if (hidden > 0) {
-                    Log.i(TAG, "Deactivated $hidden missing Spotify custom playlist(s)")
-                    syncLog.warn("Hid $hidden Spotify playlist(s) no longer in your account")
-                }
+            if (inventoryComplete) {
+                // Only applied after the account identity is checked again.
+                spotifyCompleteInventory = userPlaylists.map { scoped(it.id) }.distinct()
             }
             diagnostics.add(
                 SyncStepResult(

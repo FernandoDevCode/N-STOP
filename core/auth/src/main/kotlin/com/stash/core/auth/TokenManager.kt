@@ -28,6 +28,9 @@ interface TokenManager {
      */
     suspend fun getSpotifyAccessToken(): String?
 
+    /** Account identity from the personal account credential, never a manually entered username. */
+    suspend fun getSpotifyLibraryAccountId(): String? = null
+
     /** Never falls back to the personal sync account. */
     suspend fun getSpotifySearchAccessToken(): String?
     suspend fun forceRefreshSpotifySearchAccessToken(): String?

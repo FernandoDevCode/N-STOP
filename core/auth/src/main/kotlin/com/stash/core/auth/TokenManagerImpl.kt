@@ -196,6 +196,12 @@ class TokenManagerImpl @Inject constructor(
      * Checks the stored user profile first (populated during initial connection),
      * then falls back to the token's scope field which contains "username|clientId".
      */
+    override suspend fun getSpotifyLibraryAccountId(): String? {
+        val token = getSpotifyAccessToken() ?: return null
+        return spotifyAuthManager.extractUsernameFromJwt(token)
+            ?.takeIf { it.isNotBlank() && it != "spotify_user" }
+    }
+
     override suspend fun getSpotifyUsername(): String? {
         // Try the stored user profile (set during connectSpotifyWithCookie).
         val user = tokenStore.spotifyUser.first()

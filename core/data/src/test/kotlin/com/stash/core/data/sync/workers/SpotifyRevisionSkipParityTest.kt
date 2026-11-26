@@ -109,7 +109,7 @@ class SpotifyRevisionSkipParityTest {
     /** The playlist's songs A and B, synced; [withCopyOfA] adds a downloaded copy of A from Search. */
     private suspend fun Library.seed(withCopyOfA: Boolean) {
         db.playlistDao().insert(
-            PlaylistEntity(name = "Road Trip", source = MusicSource.SPOTIFY, sourceId = "pl1", type = PlaylistType.CUSTOM, syncEnabled = true),
+            PlaylistEntity(name = "Road Trip", source = MusicSource.SPOTIFY, sourceId = SpotifyAccountScope.scoped(SpotifyAccountScope.prefix("testuser"), "pl1"), type = PlaylistType.CUSTOM, syncEnabled = true),
         )
         for (title in listOf("A", "B")) {
             db.trackDao().insert(
@@ -257,6 +257,7 @@ class SpotifyRevisionSkipParityTest {
 
     private suspend fun Library.runFetch(playlistDao: PlaylistDao): Data {
         val tokenManager = mockk<TokenManager> {
+            coEvery { getSpotifyLibraryAccountId() } returns "testuser"
             coEvery { isAuthenticated(AuthService.SPOTIFY) } returns true
             coEvery { isAuthenticated(AuthService.YOUTUBE_MUSIC) } returns false
         }

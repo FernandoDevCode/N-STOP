@@ -73,7 +73,9 @@ class PlaylistFetchWorkerRevisionSkipTest {
     private val spotify = mockk<SpotifyApiClient>()
     private val syncPreferencesManager = mockk<SyncPreferencesManager>()
     private val streamingPreference = mockk<StreamingPreference>()
+    private fun scoped(id: String) = SpotifyAccountScope.scoped(SpotifyAccountScope.prefix("testuser"), id)
     private val tokenManager = mockk<TokenManager> {
+        coEvery { getSpotifyLibraryAccountId() } returns "testuser"
         coEvery { isAuthenticated(AuthService.SPOTIFY) } returns true
         coEvery { isAuthenticated(AuthService.YOUTUBE_MUSIC) } returns false
     }
@@ -136,7 +138,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
     ): Long {
         val playlistId = db.playlistDao().insert(
             PlaylistEntity(
-                name = "Playlist pl1", source = MusicSource.SPOTIFY, sourceId = "pl1",
+                name = "Playlist pl1", source = MusicSource.SPOTIFY, sourceId = scoped("pl1"),
                 type = PlaylistType.CUSTOM, syncEnabled = syncEnabled,
             ),
         )
@@ -163,7 +165,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
     }
 
     private suspend fun snapshotOf(sourceId: String, syncId: Long) =
-        db.remoteSnapshotDao().getPlaylistSnapshotsBySyncId(syncId).single { it.sourcePlaylistId == sourceId }
+        db.remoteSnapshotDao().getPlaylistSnapshotsBySyncId(syncId).single { it.sourcePlaylistId == scoped(sourceId) }
 
     private suspend fun userPlaylistsStep(syncId: Long): SyncStepResult =
         Json.decodeFromString<List<SyncStepResult>>(db.syncHistoryDao().getById(syncId)!!.diagnostics!!)
@@ -183,7 +185,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
         coEvery { spotify.getLikedSongs(any(), any()) } returns SyncResult.Error("unavailable")
         val failed = runFetch()
         assertTrue(db.remoteSnapshotDao().getPlaylistSnapshotsBySyncId(failed)
-            .none { it.sourcePlaylistId == "spotify_liked_songs" })
+            .none { it.sourcePlaylistId == scoped("spotify_liked_songs") })
     }
 
     // ── Skip ─────────────────────────────────────────────────────────────
@@ -223,13 +225,14 @@ class PlaylistFetchWorkerRevisionSkipTest {
     @Test fun `a skipped playlist is never hidden as missing from the account`() = runBlocking {
         val playlistId = seedMirroredPlaylist()
         val gone = db.playlistDao().insert(
-            PlaylistEntity(name = "Unsaved", source = MusicSource.SPOTIFY, sourceId = "gone", type = PlaylistType.CUSTOM),
+            PlaylistEntity(name = "Unsaved", source = MusicSource.SPOTIFY, sourceId = scoped("gone"), type = PlaylistType.CUSTOM),
         )
 
         runFetch()
 
         // REFRESH with a complete inventory: the missing-playlist sweep ran...
-        assertFalse(db.playlistDao().getById(gone)!!.isActive)
+        assertTrue(db.playlistDao().getById(gone)!!.isActive)
+        assertFalse(db.playlistDao().getById(gone)!!.syncEnabled)
         // ...and the listed-but-skipped playlist counted as present.
         assertTrue(db.playlistDao().getById(playlistId)!!.isActive)
     }
@@ -321,7 +324,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
     }
 
     @Test fun `a fetch Spotify's count didn't verify carries no revision, so it is read again next time`() = runBlocking {
-        db.playlistDao().insert(PlaylistEntity(name = "Playlist pl1", source = MusicSource.SPOTIFY, sourceId = "pl1", type = PlaylistType.CUSTOM, syncEnabled = true))
+        db.playlistDao().insert(PlaylistEntity(name = "Playlist pl1", source = MusicSource.SPOTIFY, sourceId = scoped("pl1"), type = PlaylistType.CUSTOM, syncEnabled = true))
         coEvery { spotify.getPlaylistTracks(any()) } returns SyncResult.Success(
             SpotifyPlaylistTracks(tracks = listOf(track("A"), track("B")), countVerified = false, revisionId = revision),
         )
@@ -332,7 +335,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
     }
 
     @Test fun `a playlist that changed between the listing and the fetch is mirrored but not stamped`() = runBlocking {
-        db.playlistDao().insert(PlaylistEntity(name = "Playlist pl1", source = MusicSource.SPOTIFY, sourceId = "pl1", type = PlaylistType.CUSTOM, syncEnabled = true))
+        db.playlistDao().insert(PlaylistEntity(name = "Playlist pl1", source = MusicSource.SPOTIFY, sourceId = scoped("pl1"), type = PlaylistType.CUSTOM, syncEnabled = true))
         // The walk's first page reports a newer revision than the listing read just before.
         coEvery { spotify.getPlaylistTracks(any()) } returns SyncResult.Success(
             SpotifyPlaylistTracks(
@@ -349,7 +352,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
     }
 
     @Test fun `a fetch whose first page carried no revision is not stamped`() = runBlocking {
-        db.playlistDao().insert(PlaylistEntity(name = "Playlist pl1", source = MusicSource.SPOTIFY, sourceId = "pl1", type = PlaylistType.CUSTOM, syncEnabled = true))
+        db.playlistDao().insert(PlaylistEntity(name = "Playlist pl1", source = MusicSource.SPOTIFY, sourceId = scoped("pl1"), type = PlaylistType.CUSTOM, syncEnabled = true))
         coEvery { spotify.getPlaylistTracks(any()) } returns SyncResult.Success(
             SpotifyPlaylistTracks(tracks = listOf(track("A"), track("B")), countVerified = true, revisionId = null),
         )
@@ -363,7 +366,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
         val ownedId = "37i9dQZEVXcDiscoverWeekly"
         listing(listed(ownedId, revision))
         val pid = db.playlistDao().insert(
-            PlaylistEntity(name = "Discover Weekly", source = MusicSource.SPOTIFY, sourceId = ownedId, type = PlaylistType.CUSTOM, syncEnabled = true),
+            PlaylistEntity(name = "Discover Weekly", source = MusicSource.SPOTIFY, sourceId = scoped(ownedId), type = PlaylistType.CUSTOM, syncEnabled = true),
         )
         db.playlistDao().updateSnapshotId(
             pid,
@@ -376,7 +379,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
     }
 
     @Test fun `a failed fetch carries no revision`() = runBlocking {
-        db.playlistDao().insert(PlaylistEntity(name = "Playlist pl1", source = MusicSource.SPOTIFY, sourceId = "pl1", type = PlaylistType.CUSTOM, syncEnabled = true))
+        db.playlistDao().insert(PlaylistEntity(name = "Playlist pl1", source = MusicSource.SPOTIFY, sourceId = scoped("pl1"), type = PlaylistType.CUSTOM, syncEnabled = true))
         coEvery { spotify.getPlaylistTracks(any()) } returns SyncResult.Error("boom")
 
         val syncId = runFetch()
@@ -447,7 +450,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
     // ── End to end: read, stamp, then skip ───────────────────────────────
 
     @Test fun `a playlist read and mirrored completely is skipped by the next sync`() = runBlocking {
-        db.playlistDao().insert(PlaylistEntity(name = "Playlist pl1", source = MusicSource.SPOTIFY, sourceId = "pl1", type = PlaylistType.CUSTOM, syncEnabled = true))
+        db.playlistDao().insert(PlaylistEntity(name = "Playlist pl1", source = MusicSource.SPOTIFY, sourceId = scoped("pl1"), type = PlaylistType.CUSTOM, syncEnabled = true))
         // Stream-only: a playlist new to the phone starts switched off, and only
         // there does the diff mirror (and so stamp) a switched-off playlist.
         coEvery { streamingPreference.current() } returns true
