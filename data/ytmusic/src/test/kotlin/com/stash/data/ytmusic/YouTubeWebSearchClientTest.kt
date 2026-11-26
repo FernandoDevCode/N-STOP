@@ -103,15 +103,14 @@ class YouTubeWebSearchClientTest {
         server.start()
         try {
             server.enqueue(MockResponse().setBody(config)); server.enqueue(MockResponse().setBody(fixture()))
-            server.enqueue(MockResponse().setBody(config))
             server.enqueue(MockResponse().setBody("""{"onResponseReceivedCommands":[{"appendContinuationItemsAction":{"targetId":"search-feed","continuationItems":[{"videoRenderer":{"videoId":"9Vz-MkbnSg4","title":{"simpleText":"Garden"}}}]}}]}"""))
             val client = YouTubeWebSearchClient(OkHttpClient(), origin = server.url("/").toString().trimEnd('/'))
             val first = client.search("demo")
             val second = client.search("demo", first.continuation, first.nextRank)
             server.takeRequest()
             assertTrue(server.takeRequest().body.readUtf8().contains("\"query\":\"demo\""))
-            server.takeRequest()
             assertTrue(server.takeRequest().body.readUtf8().contains("\"continuation\":\"page-two\""))
+            assertEquals(3, server.requestCount)
             assertEquals(5, second.videos.single().providerRank)
             assertEquals("9Vz-MkbnSg4", second.videos.single().videoId)
         } finally { server.shutdown() }
@@ -128,15 +127,104 @@ class YouTubeWebSearchClientTest {
         } finally { server.shutdown() }
     }
 
+
+    @Test fun cachedConfigIsReusedAcrossDistinctQueries() = runBlocking {
+        val server = MockWebServer(); server.start()
+        try {
+            server.enqueue(MockResponse().setBody(config))
+            repeat(2) { server.enqueue(MockResponse().setBody(fixture())) }
+            val client = YouTubeWebSearchClient(OkHttpClient(), origin = server.url("/").toString().trimEnd('/'))
+            assertEquals(4, client.search("paramore decode slowed").videos.size)
+            assertEquals(4, client.search("another query").videos.size)
+            assertEquals(3, server.requestCount)
+            assertEquals("GET", server.takeRequest().method)
+            assertEquals("POST", server.takeRequest().method)
+            assertEquals("POST", server.takeRequest().method)
+        } finally { server.shutdown() }
+    }
+
+    @Test fun transientSearchFailureRecoversWithoutReloadingConfig() = runBlocking {
+        val server = MockWebServer(); server.start()
+        try {
+            server.enqueue(MockResponse().setBody(config))
+            server.enqueue(MockResponse().setResponseCode(500))
+            server.enqueue(MockResponse().setBody(fixture()))
+            val client = YouTubeWebSearchClient(OkHttpClient(), origin = server.url("/").toString().trimEnd('/'))
+            assertEquals(4, client.search("demo").videos.size)
+            assertEquals(3, server.requestCount)
+            assertEquals("GET", server.takeRequest().method)
+            assertEquals("POST", server.takeRequest().method)
+            assertEquals("POST", server.takeRequest().method)
+        } finally { server.shutdown() }
+    }
+
+    @Test fun configFailureRecoversAndRejectedConfigIsRefreshed() = runBlocking {
+        val server = MockWebServer(); server.start()
+        try {
+            server.enqueue(MockResponse().setBody("incomplete"))
+            server.enqueue(MockResponse().setBody(config))
+            server.enqueue(MockResponse().setBody(fixture()))
+            server.enqueue(MockResponse().setResponseCode(400))
+            server.enqueue(MockResponse().setBody(config.replace("2.test", "2.new")))
+            server.enqueue(MockResponse().setBody(fixture()))
+            val client = YouTubeWebSearchClient(OkHttpClient(), origin = server.url("/").toString().trimEnd('/'))
+            assertEquals(4, client.search("demo").videos.size)
+            assertEquals(4, client.search("other").videos.size)
+            assertEquals(6, server.requestCount)
+            repeat(5) { server.takeRequest() }
+            assertEquals("2.new", server.takeRequest().getHeader("X-YouTube-Client-Version"))
+        } finally { server.shutdown() }
+    }
+
+    @Test fun rateLimitBlocksFurtherNetworkCallsAndForbiddenIsNotRetried() = runBlocking {
+        val server = MockWebServer(); server.start()
+        try {
+            server.enqueue(MockResponse().setBody(config))
+            server.enqueue(MockResponse().setResponseCode(429).setHeader("Retry-After", "60"))
+            val client = YouTubeWebSearchClient(OkHttpClient(), origin = server.url("/").toString().trimEnd('/'))
+            repeat(2) {
+                try {
+                    client.search("demo")
+                    fail("Expected rate limit")
+                } catch (error: YouTubeWebHttpException) { assertEquals(429, error.statusCode) }
+            }
+            assertEquals(2, server.requestCount)
+            server.enqueue(MockResponse().setBody(config))
+            server.enqueue(MockResponse().setResponseCode(403))
+            val other = YouTubeWebSearchClient(OkHttpClient(), origin = server.url("/").toString().trimEnd('/'))
+            try {
+                other.search("demo")
+                fail("Expected forbidden")
+            } catch (error: YouTubeWebHttpException) { assertEquals(403, error.statusCode) }
+            assertEquals(4, server.requestCount)
+        } finally { server.shutdown() }
+    }
+
+    @Test fun repeatedTransientFailureStopsAfterOneRecovery() = runBlocking {
+        val server = MockWebServer(); server.start()
+        try {
+            server.enqueue(MockResponse().setBody(config))
+            repeat(2) { server.enqueue(MockResponse().setResponseCode(500)) }
+            val client = YouTubeWebSearchClient(OkHttpClient(), origin = server.url("/").toString().trimEnd('/'))
+            try {
+                client.search("demo")
+                fail("Expected failure")
+            } catch (error: YouTubeWebHttpException) { assertEquals(500, error.statusCode) }
+            assertEquals(3, server.requestCount)
+        } finally { server.shutdown() }
+    }
+
     @Test fun timeoutFailsAndCancellationCancelsActualCall() = runBlocking {
         val server = MockWebServer(); server.start()
         try {
+            server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
             server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
             try {
                 YouTubeWebSearchClient(OkHttpClient(), origin = server.url("/").toString().trimEnd('/'), timeoutMs = 100).search("timeout")
                 fail("Expected timeout")
             } catch (_: IOException) { }
-            server.takeRequest(2, TimeUnit.SECONDS)
+            assertNotNull(server.takeRequest(2, TimeUnit.SECONDS))
+            assertNotNull(server.takeRequest(2, TimeUnit.SECONDS))
             val captured = AtomicReference<Call>()
             val canceled = CountDownLatch(1)
             val http = OkHttpClient.Builder().eventListener(object : EventListener() {
