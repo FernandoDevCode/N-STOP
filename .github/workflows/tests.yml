@@ -15,6 +15,11 @@ on:
 permissions:
   contents: read
 
+# Only the newest revision of a PR/branch needs to occupy the test runners.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Compiles the unit-test source set of EVERY module. This is the gate the
   # repo was missing: `unit-tests` below runs only :core:media, and

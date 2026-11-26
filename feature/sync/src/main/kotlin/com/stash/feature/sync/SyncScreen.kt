@@ -246,7 +246,6 @@ fun SyncScreen(
             item {
                 val playlists = uiState.spotifyPlaylists
                 val hasPlaylists = playlists.isNotEmpty()
-                val purple = MaterialTheme.colorScheme.primary
                 com.stash.feature.sync.components.SourcePreferencesCard(
                     name = "Spotify",
                     brandColor = StashTheme.extendedColors.spotifyGreen,
@@ -271,14 +270,7 @@ fun SyncScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        if (hasPlaylists) {
-                            SyncModeChipRow(
-                                mode = uiState.spotifySyncMode,
-                                onChange = viewModel::onSpotifySyncModeChanged,
-                                onRequestRefresh = viewModel::onRequestSpotifyRefresh,
-                                accent = purple,
-                            )
-                        }
+                        // Personal Spotify collections always reconcile complete reads.
                     },
                     onManage = { onManageSource(SyncSource.SPOTIFY) },
                 )

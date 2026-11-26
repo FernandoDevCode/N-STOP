@@ -163,7 +163,7 @@ class SpotifyRevisionSkipParityTest {
         }
     }
 
-    private suspend fun Library.playlistId() = db.playlistDao().findBySourceId("pl1")!!.id
+    private suspend fun Library.playlistId() = db.playlistDao().findBySourceId(SpotifyAccountScope.scoped(SpotifyAccountScope.prefix("testuser"), "pl1"))!!.id
 
     private fun Library.tables(): List<String> {
         val sqlite = db.openHelper.readableDatabase

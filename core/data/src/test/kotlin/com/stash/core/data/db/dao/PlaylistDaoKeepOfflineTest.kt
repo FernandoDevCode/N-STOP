@@ -59,6 +59,29 @@ class PlaylistDaoKeepOfflineTest {
         assertThat(dao.getKeepOfflinePlaylistIds()).containsExactly(kept)
     }
 
+    @Test fun `aggregate likes covers future imports and preserves individual collection choices`() = runTest {
+        val local = dao.ensurePlaylist(PlaylistEntity(name = "Liked Songs", source = MusicSource.BOTH,
+            sourceId = "stash_liked_songs", type = PlaylistType.STASH_LIKED))
+        dao.setAggregateLikesOffline(true)
+        val later = dao.insert(PlaylistEntity(name = "Spotify likes", source = MusicSource.SPOTIFY,
+            sourceId = "later-likes", type = PlaylistType.LIKED_SONGS, syncEnabled = true))
+        val plain = insert("Not a liked collection")
+        val trackId = db.trackDao().insert(com.stash.core.data.db.entity.TrackEntity(title = "New", artist = "Artist"))
+        dao.insertCrossRef(com.stash.core.data.db.entity.PlaylistTrackCrossRef(playlistId = later, trackId = trackId))
+        db.downloadQueueDao().insert(com.stash.core.data.db.entity.DownloadQueueEntity(trackId = trackId))
+        assertThat(dao.getKeepOfflinePlaylistIds()).containsExactly(local, later)
+        assertThat(db.trackDao().hasOfflineCollectionClaim(trackId)).isTrue()
+        assertThat(db.downloadQueueDao().pendingDiscoveryDownloads().map { it.trackId }).containsExactly(trackId)
+        assertThat(dao.isAggregateLikesClaimed(plain)).isFalse()
+        dao.setKeepOffline(later, true)
+        dao.setAggregateLikesOffline(false)
+        assertThat(dao.getKeepOfflinePlaylistIds()).containsExactly(later)
+        assertThat(db.trackDao().hasOfflineCollectionClaim(trackId)).isTrue()
+        dao.setKeepOffline(later, false)
+        assertThat(db.trackDao().hasOfflineCollectionClaim(trackId)).isFalse()
+        assertThat(db.downloadQueueDao().pendingDiscoveryDownloads()).isEmpty()
+    }
+
     private suspend fun insert(name: String, syncEnabled: Boolean = false, isActive: Boolean = true): Long =
         dao.insert(
             PlaylistEntity(

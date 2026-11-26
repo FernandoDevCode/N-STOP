@@ -772,8 +772,14 @@ class SyncViewModel @Inject constructor(
         viewModelScope.launch {
             val accountPrefix = tokenManager.spotifyAuthState.mapLatest { state ->
                 if (state is AuthState.Connected) {
-                    tokenManager.getSpotifyLibraryAccountId()?.takeIf { it.isNotBlank() }
-                        ?.let(com.stash.core.data.sync.workers.SpotifyAccountScope::prefix)
+                    try {
+                        tokenManager.getSpotifyLibraryAccountId()?.takeIf { it.isNotBlank() }
+                            ?.let { com.stash.core.data.sync.workers.SpotifyAccountScope.prefix(it) }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        null
+                    }
                 } else null
             }
             combine(playlistDao.getSpotifyPlaylistsForPreferences(), accountPrefix) { rows, prefix ->

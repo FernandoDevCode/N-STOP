@@ -225,7 +225,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
     @Test fun `a skipped playlist is never hidden as missing from the account`() = runBlocking {
         val playlistId = seedMirroredPlaylist()
         val gone = db.playlistDao().insert(
-            PlaylistEntity(name = "Unsaved", source = MusicSource.SPOTIFY, sourceId = scoped("gone"), type = PlaylistType.CUSTOM),
+            PlaylistEntity(name = "Unsaved", source = MusicSource.SPOTIFY, sourceId = scoped("gone"), type = PlaylistType.CUSTOM, syncEnabled = true),
         )
 
         runFetch()
@@ -235,6 +235,34 @@ class PlaylistFetchWorkerRevisionSkipTest {
         assertFalse(db.playlistDao().getById(gone)!!.syncEnabled)
         // ...and the listed-but-skipped playlist counted as present.
         assertTrue(db.playlistDao().getById(playlistId)!!.isActive)
+    }
+
+    @Test fun `another Spotify account keeps old likes and playlist data apart`() = runBlocking {
+        val oldPlaylist = seedMirroredPlaylist()
+        val oldMembers = activeMemberships(oldPlaylist)
+        val oldLiked = db.playlistDao().insert(PlaylistEntity(
+            name = "Liked Songs", source = MusicSource.SPOTIFY,
+            sourceId = scoped("spotify_liked_songs"), type = PlaylistType.LIKED_SONGS,
+            syncEnabled = true, keepOffline = true,
+        ))
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(
+            playlistId = oldLiked, trackId = oldMembers.first().first,
+        ))
+        coEvery { tokenManager.getSpotifyLibraryAccountId() } returns "otheruser"
+        val newPrefix = SpotifyAccountScope.prefix("otheruser")
+        val runId = runFetch()
+        val snapshots = db.remoteSnapshotDao().getPlaylistSnapshotsBySyncId(runId)
+        assertTrue(snapshots.all { it.sourcePlaylistId.startsWith(newPrefix) })
+        assertTrue(runDiff(runId) is ListenableWorker.Result.Success)
+        assertEquals(oldMembers, activeMemberships(oldPlaylist))
+        assertFalse(db.playlistDao().getById(oldPlaylist)!!.syncEnabled)
+        assertEquals(PlaylistType.CUSTOM, db.playlistDao().getById(oldLiked)!!.type)
+        assertTrue(db.playlistDao().getById(oldLiked)!!.keepOffline)
+        assertEquals(1, activeMemberships(oldLiked).size)
+        val newLiked = db.playlistDao().findBySourceId(SpotifyAccountScope.scoped(newPrefix, "spotify_liked_songs"))!!
+        assertEquals(PlaylistType.LIKED_SONGS, newLiked.type)
+        assertTrue(activeMemberships(newLiked.id).isEmpty())
+        coVerify(exactly = 0) { spotify.getPlaylistTracks("pl1") }
     }
 
     // ── Read ─────────────────────────────────────────────────────────────
@@ -456,7 +484,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
         coEvery { streamingPreference.current() } returns true
         val first = runFetch()
         runDiff(first)
-        val playlistId = db.playlistDao().findBySourceId("pl1")!!.id
+        val playlistId = db.playlistDao().findBySourceId(scoped("pl1"))!!.id
         assertTrue("stamped by the diff", SpotifyMirrorStamp.decode(db.playlistDao().getSnapshotId(playlistId)) != null)
 
         runFetch()

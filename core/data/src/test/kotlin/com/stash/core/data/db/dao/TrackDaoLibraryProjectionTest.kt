@@ -108,6 +108,26 @@ class TrackDaoLibraryProjectionTest {
         assertEquals(false, db.playlistDao().getCrossRefsForPlaylist(playlistId).any { it.removedAt == null })
     }
 
+    @Test fun `effective heart follows imported membership not historical outbound saves`() = runTest {
+        val trackId = dao.insert(track(1).copy(spotifySavedAt = 123L, filePath = "/music/file.flac"))
+        val playlistId = db.playlistDao().insert(com.stash.core.data.db.entity.PlaylistEntity(
+            name = "Liked Songs", source = MusicSource.SPOTIFY, sourceId = "imported-heart-test",
+            type = com.stash.core.model.PlaylistType.LIKED_SONGS, syncEnabled = true,
+        ))
+        assertEquals(false, dao.observeLikeState(trackId).first()!!.isLikedInSonora)
+        db.playlistDao().insertCrossRef(com.stash.core.data.db.entity.PlaylistTrackCrossRef(
+            playlistId = playlistId, trackId = trackId,
+        ))
+        assertEquals(true, dao.observeLikeState(trackId).first()!!.isLikedInSonora)
+        assertEquals(true, dao.observeByIdWithLikes(trackId).first()!!.importedLiked)
+        db.playlistDao().removeLikedTrackLocally(trackId, null, 1000L)
+        assertEquals(false, dao.observeLikeState(trackId).first()!!.isLikedInSonora)
+        assertEquals("/music/file.flac", dao.getById(trackId)!!.filePath)
+        db.playlistDao().restoreSuppressedImportedLikes(trackId)
+        assertEquals(true, dao.observeLikeState(trackId).first()!!.isLikedInSonora)
+        assertEquals(null, dao.getById(trackId)!!.stashLikedAt)
+    }
+
     @Test fun `orders by date added descending`() = runTest {
         dao.insert(track(1, dateAdded = Instant.ofEpochMilli(100)))
         dao.insert(track(2, dateAdded = Instant.ofEpochMilli(300)))

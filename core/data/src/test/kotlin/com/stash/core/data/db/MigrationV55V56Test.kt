@@ -51,6 +51,10 @@ class MigrationV55V56Test {
         try {
             val db = room.openHelper.writableDatabase
             assertEquals(56, db.version)
+            db.query("SELECT aggregate_likes_offline FROM playlists WHERE id = 9").use { c ->
+                c.moveToFirst()
+                assertEquals(0, c.getInt(0))
+            }
             db.query("SELECT id, offline_requested, is_downloaded, file_path FROM tracks ORDER BY id").use { c ->
                 val rows = buildList {
                     while (c.moveToNext()) add(listOf(c.getLong(0), c.getInt(1), c.getInt(2), c.getString(3)))

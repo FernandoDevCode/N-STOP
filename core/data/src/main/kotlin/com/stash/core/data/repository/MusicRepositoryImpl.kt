@@ -441,10 +441,10 @@ class MusicRepositoryImpl @Inject constructor(
         trackDao.observeLikeState(trackId)
 
     override fun observeTrackById(trackId: Long): Flow<Track?> =
-        trackDao.observeByIdWithLikes(trackId).map { row -> row?.track?.toDomain()?.copy(importedLiked = row.importedLiked) }
+        trackDao.observeByIdWithLikes(trackId).map { row -> row?.let { it.track.toDomain().copy(importedLiked = it.importedLiked) } }
 
     override fun observeTrackByYoutubeId(youtubeId: String): Flow<Track?> =
-        trackDao.observeByYoutubeIdWithLikes(youtubeId).map { row -> row?.track?.toDomain()?.copy(importedLiked = row.importedLiked) }
+        trackDao.observeByYoutubeIdWithLikes(youtubeId).map { row -> row?.let { it.track.toDomain().copy(importedLiked = it.importedLiked) } }
 
     override fun observeDownloadStatus(trackId: Long): Flow<com.stash.core.model.DownloadStatus?> =
         downloadQueueDao.observeStatusForTrack(trackId).distinctUntilChanged()

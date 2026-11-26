@@ -1258,6 +1258,44 @@ class DiffWorkerTest {
         assertEquals("old-snap", db.playlistDao().getSnapshotId(playlistId))
     }
 
+    @Test
+    fun `scoped Spotify likes clear suppression only after confirmed absence and preserve audio`() = runBlocking {
+        every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.ACCUMULATE)
+        val sourceId = SpotifyAccountScope.scoped(SpotifyAccountScope.prefix("account"), "spotify_liked_songs")
+        val pid = db.playlistDao().insert(PlaylistEntity(name = "Liked Songs", source = MusicSource.SPOTIFY,
+            sourceId = sourceId, type = PlaylistType.LIKED_SONGS, syncEnabled = true))
+        val tid = db.trackDao().insert(TrackEntity(title = "Saved", artist = "Artist", spotifyUri = "spotify:track:saved",
+            canonicalTitle = "saved", canonicalArtist = "artist", isDownloaded = true,
+            offlineRequested = true, filePath = "/music/saved.flac"))
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = pid, trackId = tid))
+        db.playlistDao().removeLikedTrackLocally(tid, null, 1000L)
+        val remote = RemoteTrackSnapshotEntity(syncId = 1L, snapshotPlaylistId = 4L,
+            title = "Saved", artist = "Artist", spotifyUri = "spotify:track:saved")
+        fun snapshot(partial: Boolean, tracks: List<RemoteTrackSnapshotEntity>) {
+            coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns listOf(
+                RemotePlaylistSnapshotEntity(id = 4L, syncId = 1L, source = MusicSource.SPOTIFY,
+                    sourcePlaylistId = sourceId, playlistName = "Liked Songs",
+                    playlistType = PlaylistType.LIKED_SONGS, trackCount = tracks.size,
+                    expectedCount = tracks.size, partial = partial),
+            )
+            coEvery { remoteSnapshotDao.getTrackSnapshotsByPlaylistId(4L) } returns tracks
+        }
+        snapshot(false, listOf(remote))
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+        assertTrue(db.playlistDao().getCrossRef(pid, tid)?.removedAt != null)
+        snapshot(true, emptyList())
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+        assertTrue(db.playlistDao().getCrossRef(pid, tid)?.removedAt != null)
+        snapshot(false, emptyList())
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+        assertNull(db.playlistDao().getCrossRef(pid, tid))
+        snapshot(false, listOf(remote))
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+        assertTrue(db.playlistDao().getCrossRef(pid, tid) != null)
+        assertNull(db.playlistDao().getCrossRef(pid, tid)?.removedAt)
+        assertEquals("/music/saved.flac", db.trackDao().getById(tid)?.filePath)
+    }
+
     // ── Type reconcile: which pairs REACH it, not just what it returns ───────
     // ReconciledPlaylistTypeTest is a truth table over the arguments; these
     // drive a real diff so the guard is exercised where the arguments are
