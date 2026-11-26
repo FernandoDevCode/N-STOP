@@ -448,7 +448,21 @@ interface DownloadQueueDao {
                completed_at = :completedAt
          WHERE id = :id AND status = 'IN_PROGRESS'
     """)
-    suspend fun completeIfInProgress(id: Long, completedAt: Long): Int
+    suspend fun completeIfInProgressRaw(id: Long, completedAt: Long): Int
+
+    @Query("""
+        UPDATE tracks SET offline_requested = 1
+        WHERE id IN (SELECT track_id FROM download_queue
+                     WHERE id = :queueId AND status = 'COMPLETED' AND user_requested = 1)
+    """)
+    suspend fun preserveIndividualClaimForCompletedRow(queueId: Long)
+
+    @Transaction
+    suspend fun completeIfInProgress(id: Long, completedAt: Long): Int {
+        val changed = completeIfInProgressRaw(id, completedAt)
+        if (changed > 0) preserveIndividualClaimForCompletedRow(id)
+        return changed
+    }
 
     /** Fails only the worker claim that is still in progress. */
     @Query("""
