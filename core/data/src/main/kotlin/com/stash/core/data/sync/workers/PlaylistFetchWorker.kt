@@ -644,7 +644,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
             )
         )
         val likedSelection = playlistDao.getById(likedId)
-        if (likedSelection?.syncEnabled == false && !likedSelection.keepOffline) {
+        if (likedSelection?.syncEnabled == false) {
             diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.SKIPPED))
         } else try {
             val allLikedSongs = mutableListOf<com.stash.data.spotify.model.SpotifyTrackItem>()
@@ -913,7 +913,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
             for (playlist in customPlaylists) {
                 try {
                     val selected = playlistDao.findBySourceId(playlist.id)
-                    if (selected == null || (!selected.syncEnabled && !selected.keepOffline)) {
+                    if (selected == null || !selected.syncEnabled) {
                         // Discovery is inventory, not a request to read or download all tracks.
                         remoteSnapshotDao.insertPlaylistSnapshot(
                             spotifyLibraryPlaylistSnapshot(
