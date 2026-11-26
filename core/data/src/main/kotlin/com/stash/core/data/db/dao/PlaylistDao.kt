@@ -659,6 +659,38 @@ interface PlaylistDao {
     @Query("DELETE FROM playlist_tracks WHERE track_id = :trackId")
     suspend fun deleteAllCrossRefsForTrack(trackId: Long)
 
+    /** Local suppression of a liked membership. Never delete TrackEntity or audio. */
+    @Query("""
+        UPDATE playlist_tracks SET removed_at = :removedAtMs
+        WHERE track_id = :trackId AND removed_at IS NULL
+          AND playlist_id IN (
+              SELECT id FROM playlists
+              WHERE type IN ('LIKED_SONGS', 'STASH_LIKED')
+                AND (:source IS NULL OR playlists.source = :source)
+          )
+    """)
+    suspend fun suppressLikedMemberships(trackId: Long, source: MusicSource?, removedAtMs: Long)
+
+    @Query("UPDATE tracks SET stash_liked_at = NULL WHERE id = :trackId")
+    suspend fun clearLocalLikeForCollection(trackId: Long)
+
+    @Query("""
+        UPDATE playlists SET track_count = (
+            SELECT COUNT(*) FROM playlist_tracks pt
+            WHERE pt.playlist_id = playlists.id AND pt.removed_at IS NULL
+        )
+        WHERE type IN ('LIKED_SONGS', 'STASH_LIKED')
+          AND (:source IS NULL OR playlists.source = :source)
+    """)
+    suspend fun recountLikedCollections(source: MusicSource?)
+
+    @Transaction
+    suspend fun removeLikedTrackLocally(trackId: Long, source: MusicSource?, removedAtMs: Long) {
+        suppressLikedMemberships(trackId, source, removedAtMs)
+        if (source == null || source == MusicSource.BOTH) clearLocalLikeForCollection(trackId)
+        recountLikedCollections(source)
+    }
+
     /** Every playlist holding [trackId], so a block can recount their song counts. */
     @Query("SELECT DISTINCT playlist_id FROM playlist_tracks WHERE track_id = :trackId")
     suspend fun playlistIdsForTrack(trackId: Long): List<Long>
