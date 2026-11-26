@@ -63,4 +63,7 @@
     <string name="shared_mix_unfollow">Unfollow</string>
     <string name="shared_mix_follow">Follow</string>
     <string name="shared_mix_save_copy">Save a copy</string>
+    <string name="sonora_likes_keep_offline">Keep liked songs offline</string>
+    <string name="sonora_likes_stop_offline">Stop automatic downloads for liked songs</string>
+    <string name="sonora_likes_download_progress">%1$d of %2$d downloaded</string>
 </resources>
