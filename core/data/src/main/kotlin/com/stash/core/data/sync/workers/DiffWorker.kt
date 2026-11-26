@@ -276,11 +276,6 @@ class DiffWorker @AssistedInject constructor(
                     playlistSnapshot.source == MusicSource.YOUTUBE -> youtubeSyncMode
                     else -> spotifySyncMode
                 }
-                /* legacy mode applies only to non-personal sources */
-                /* when (playlistSnapshot.source) {
-                    MusicSource.YOUTUBE -> youtubeSyncMode
-                    else -> spotifySyncMode
-                } */
 
                 // Find or create the local playlist (writes, but outside
                 // the per-playlist transaction — it owns its own atomicity
@@ -617,6 +612,20 @@ class DiffWorker @AssistedInject constructor(
         val existingCrossRefs = playlistDao.getCrossRefsForPlaylist(localPlaylist.id)
             .associateBy { it.trackId }
 
+        val scopedLikes = localPlaylist.source == MusicSource.SPOTIFY &&
+            localPlaylist.type == PlaylistType.LIKED_SONGS &&
+            SpotifyAccountScope.isScoped(localPlaylist.sourceId)
+        val complete = !snapshotUnreliable(playlistSnapshot, trackSnapshots)
+        val remoteMemberIds = hashSetOf<Long>()
+        suspend fun expireAbsentLikeSuppressions() {
+            if (!scopedLikes || !complete) return
+            existingCrossRefs.values.filter {
+                it.removedAt != null && !it.locallyAdded && it.trackId !in remoteMemberIds
+            }.map { it.trackId }.chunked(800).forEach {
+                playlistDao.deleteAbsentLikedTombstones(localPlaylist.id, it)
+            }
+        }
+
         if (syncMode == SyncMode.REFRESH) {
             // #343: NEVER mirror-clear against a fetch that admits (or looks
             // like) incompleteness — one flaky API call was emptying whole
@@ -644,6 +653,7 @@ class DiffWorker @AssistedInject constructor(
         }
 
         if (trackSnapshots.isEmpty()) {
+            expireAbsentLikeSuppressions()
             finalizePlaylistMetadata(playlistSnapshot, localPlaylist, trackSnapshots, syncMode)
             return 0
         }
@@ -856,6 +866,7 @@ class DiffWorker @AssistedInject constructor(
         // Preserve every existing membership (including suppression markers).
         // Add new identities after the previous tail, exactly once.
         fun link(trackId: Long, position: Int) {
+            remoteMemberIds.add(trackId)
             if (mergeOnly) {
                 if (trackId in existingCrossRefs || trackId in crossRefsToInsert) return
                 addCrossRefIfNotSoftDeleted(localPlaylist.id, trackId, nextAppendPosition++,
@@ -959,6 +970,10 @@ class DiffWorker @AssistedInject constructor(
                 }
             }
         }
+
+        // Only a fully identified read can retire an absent unlike marker.
+        if (allowedSnapshots.size == trackSnapshots.size &&
+            trackSnapshots.all { !it.spotifyUri.isNullOrBlank() }) expireAbsentLikeSuppressions()
 
         // ── Flush batched writes ─────────────────────────────────────────
         if (crossRefsToInsert.isNotEmpty()) {

@@ -88,14 +88,14 @@ class SharedTrackViewModel @Inject constructor(
     fun play() = safely("play") { track ->
         val id = musicRepository.ensureTrackPersisted(track.toTrack())
         val t = musicRepository.observeTrackById(id).first() ?: return@safely
-        _liked.value = t.stashLikedAt != null
+        _liked.value = t.isLikedInSonora
         playerRepository.setQueue(listOf(t), 0)
     }
 
     fun like() = safely("add") { track ->
         val id = musicRepository.ensureTrackPersisted(track.toTrack())
         likeCoordinator.setLiked(id, true)
-        _liked.value = musicRepository.observeTrackById(id).first()?.stashLikedAt != null
+        _liked.value = musicRepository.observeTrackById(id).first()?.isLikedInSonora == true
     }
 
     private var busy = false

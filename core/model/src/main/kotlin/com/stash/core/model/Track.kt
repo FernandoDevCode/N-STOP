@@ -120,4 +120,8 @@ data class Track(
     val savedInCollection: Boolean = false,
     /** Explicit individual offline ownership, including protected legacy files. */
     val offlineRequested: Boolean = false,
-)
+    /** Derived active imported membership, never an outbound Spotify save timestamp. */
+    val importedLiked: Boolean = false,
+) {
+    val isLikedInSonora: Boolean get() = stashLikedAt != null || importedLiked
+}

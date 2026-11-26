@@ -355,6 +355,10 @@ interface PlaylistDao {
               -- A playlist the user made (createPlaylist, incl. a saved copy of a shared mix)
               -- shows in Library with downloads off. Android Auto filters these back out.
               OR p.source_id LIKE 'custom_%'
+              OR (p.source = 'SPOTIFY' AND p.type = 'CUSTOM' AND (
+                  p.last_synced IS NOT NULL OR EXISTS (SELECT 1 FROM playlist_tracks saved
+                      WHERE saved.playlist_id = p.id AND saved.removed_at IS NULL)
+              ))
               OR EXISTS (
                   SELECT 1 FROM playlist_tracks pt
                   JOIN tracks t ON pt.track_id = t.id
@@ -690,6 +694,28 @@ interface PlaylistDao {
         if (source == null || source == MusicSource.BOTH) clearLocalLikeForCollection(trackId)
         recountLikedCollections(source)
     }
+
+    @Query("""
+        UPDATE playlist_tracks SET removed_at = NULL
+        WHERE track_id = :trackId AND removed_at IS NOT NULL
+          AND playlist_id IN (
+              SELECT id FROM playlists WHERE is_active = 1 AND type = 'LIKED_SONGS'
+          )
+    """)
+    suspend fun restoreSuppressedImportedLikesRaw(trackId: Long)
+
+    @Transaction
+    suspend fun restoreSuppressedImportedLikes(trackId: Long) {
+        restoreSuppressedImportedLikesRaw(trackId)
+        recountLikedCollections(null)
+    }
+
+    /** Remove a suppression marker only when a complete remote read proves absence. */
+    @Query("""
+        DELETE FROM playlist_tracks WHERE playlist_id = :playlistId
+            AND track_id IN (:trackIds) AND removed_at IS NOT NULL AND locally_added = 0
+    """)
+    suspend fun deleteAbsentLikedTombstones(playlistId: Long, trackIds: List<Long>)
 
     /** Every playlist holding [trackId], so a block can recount their song counts. */
     @Query("SELECT DISTINCT playlist_id FROM playlist_tracks WHERE track_id = :trackId")

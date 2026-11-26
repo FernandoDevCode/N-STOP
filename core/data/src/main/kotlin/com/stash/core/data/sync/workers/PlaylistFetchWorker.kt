@@ -425,6 +425,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                             errorMessage = "Spotify account changed during sync. Previous library kept."))
                     } else {
                         playlistDao.archiveForeignSpotifyCollections(prefix)
+                        playlistDao.restoreScopedSpotifyLikesType(SpotifyAccountScope.scoped(prefix, "spotify_liked_songs"))
                         spotifyCompleteInventory?.let { playlistDao.pauseMissingScopedSpotifyPlaylists(prefix, it) }
                     }
                 }
@@ -665,7 +666,6 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 syncEnabled = true,
             )
         )
-        playlistDao.restoreScopedSpotifyLikesType(likedSourceId)
         val likedSelection = playlistDao.getById(likedId)
         if (likedSelection?.syncEnabled == false) {
             diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.SKIPPED))
@@ -927,7 +927,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
             // Personal library always reconciles complete snapshots. Keep the
             // legacy mode for the other types via DiffWorker's preference.
             val spotifySyncMode = SyncMode.REFRESH
-            spotifySyncModeThisRun = null
+            spotifySyncModeThisRun = runCatching { syncPreferencesManager.spotifySyncMode.first() }
+                .onFailure { if (it is CancellationException) throw it }.getOrNull()
             val appVersion = appVersionCode(applicationContext)
             val skipCheckedAtMs = System.currentTimeMillis()
             var skippedUnchanged = 0

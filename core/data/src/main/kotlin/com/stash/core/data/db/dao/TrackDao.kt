@@ -53,6 +53,14 @@ data class TrackLikeState(
     @androidx.room.ColumnInfo(name = "stash_liked_at") val stashLikedAt: Long?,
     @androidx.room.ColumnInfo(name = "spotify_saved_at") val spotifySavedAt: Long?,
     @androidx.room.ColumnInfo(name = "ytmusic_saved_at") val ytMusicSavedAt: Long?,
+    @androidx.room.ColumnInfo(name = "imported_liked") val importedLiked: Boolean = false,
+) {
+    val isLikedInSonora: Boolean get() = stashLikedAt != null || importedLiked
+}
+
+data class TrackWithImportedLikes(
+    @androidx.room.Embedded val track: TrackEntity,
+    @androidx.room.ColumnInfo(name = "imported_liked") val importedLiked: Boolean,
 )
 
 /**
@@ -1707,7 +1715,14 @@ interface TrackDao {
      * persisted state on every screen open, not the stale snapshot
      * cached in the player's in-memory Track.
      */
-    @Query("SELECT id, stash_liked_at, spotify_saved_at, ytmusic_saved_at FROM tracks WHERE id = :trackId")
+    @Query("""
+        SELECT t.id, t.stash_liked_at, t.spotify_saved_at, t.ytmusic_saved_at, EXISTS (
+            SELECT 1 FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
+            WHERE pt.track_id = t.id AND pt.removed_at IS NULL AND p.is_active = 1
+              AND p.type = 'LIKED_SONGS'
+        ) AS imported_liked
+        FROM tracks t WHERE t.id = :trackId
+    """)
     fun observeLikeState(trackId: Long): Flow<TrackLikeState?>
 
     /**
@@ -1717,7 +1732,14 @@ interface TrackDao {
      * synthetic `videoId.hashCode().toLong()` that doesn't match any
      * `tracks.id` (issue #105 follow-up).
      */
-    @Query("SELECT id, stash_liked_at, spotify_saved_at, ytmusic_saved_at FROM tracks WHERE youtube_id = :youtubeId LIMIT 1")
+    @Query("""
+        SELECT t.id, t.stash_liked_at, t.spotify_saved_at, t.ytmusic_saved_at, EXISTS (
+            SELECT 1 FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
+            WHERE pt.track_id = t.id AND pt.removed_at IS NULL AND p.is_active = 1
+              AND p.type = 'LIKED_SONGS'
+        ) AS imported_liked
+        FROM tracks t WHERE t.youtube_id = :youtubeId LIMIT 1
+    """)
     fun observeLikeStateByYoutubeId(youtubeId: String): Flow<TrackLikeState?>
 
     /**
@@ -1744,6 +1766,26 @@ interface TrackDao {
      */
     @Query("SELECT * FROM tracks WHERE youtube_id = :youtubeId LIMIT 1")
     fun observeByYoutubeId(youtubeId: String): Flow<TrackEntity?>
+
+    @Query("""
+        SELECT t.*, EXISTS (
+            SELECT 1 FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
+            WHERE pt.track_id = t.id AND pt.removed_at IS NULL AND p.is_active = 1
+              AND p.type = 'LIKED_SONGS'
+        ) AS imported_liked
+        FROM tracks t WHERE t.id = :trackId
+    """)
+    fun observeByIdWithLikes(trackId: Long): Flow<TrackWithImportedLikes?>
+
+    @Query("""
+        SELECT t.*, EXISTS (
+            SELECT 1 FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
+            WHERE pt.track_id = t.id AND pt.removed_at IS NULL AND p.is_active = 1
+              AND p.type = 'LIKED_SONGS'
+        ) AS imported_liked
+        FROM tracks t WHERE t.youtube_id = :youtubeId LIMIT 1
+    """)
+    fun observeByYoutubeIdWithLikes(youtubeId: String): Flow<TrackWithImportedLikes?>
 
     /**
      * v0.9.13: Count of tracks marked as auto-saved to Spotify since

@@ -270,7 +270,7 @@ class TokenManagerImpl @Inject constructor(
     // -- Mutators -------------------------------------------------------------
 
     override suspend fun saveSpotifyAuth(token: ServiceToken, user: UserInfo) {
-        tokenStore.saveSpotifyToken(token, user)
+        spotifyRefreshLock.withLock { tokenStore.saveSpotifyToken(token, user) }
     }
 
     /**
@@ -419,7 +419,7 @@ class TokenManagerImpl @Inject constructor(
             Log.w("StashSync", "No username available — playlists may not sync")
             UserInfo(id = "spotify_user", displayName = "Spotify User")
         }
-        tokenStore.saveSpotifyToken(updatedToken, user)
+        spotifyRefreshLock.withLock { tokenStore.saveSpotifyToken(updatedToken, user) }
         return true
     }
 

@@ -1511,7 +1511,7 @@ class StashPlaybackService : MediaLibraryService() {
                         else trackDao.observeLikeStateByYoutubeId(youtubeId)
                     }
                 likeFlow.collect { state ->
-                    val isLiked = state?.stashLikedAt != null
+                    val isLiked = state?.isLikedInSonora == true
                     if (isLiked != lastIsLiked) {
                         lastIsLiked = isLiked
                         pushLayout(session, player, lastIsLiked)

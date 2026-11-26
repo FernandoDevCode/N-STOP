@@ -83,7 +83,7 @@ class CommunityPostViewModel @Inject constructor(
         if (post.kind == "song") {
             songRow(post)?.let { row ->
                 // As SharedTrackViewModel.play: the row says whether the song is liked here.
-                update { it.copy(liked = row.stashLikedAt != null) }
+                update { it.copy(liked = row.isLikedInSonora) }
                 playerRepository.setQueue(listOf(row), 0)
             }
         } else {
@@ -143,7 +143,7 @@ class CommunityPostViewModel @Inject constructor(
     /** Is the posted song already liked here: a read-only lookup, so opening a post never adds a row. */
     private suspend fun likedAlready(post: CommunityPost): Boolean {
         val yt = post.track?.youtubeId ?: return false
-        return try { musicRepository.observeTrackByYoutubeId(yt).first()?.stashLikedAt != null }
+        return try { musicRepository.observeTrackByYoutubeId(yt).first()?.isLikedInSonora == true }
         catch (e: CancellationException) { throw e } catch (e: Exception) { false }
     }
 
