@@ -1022,7 +1022,12 @@ class DiffWorker @AssistedInject constructor(
             // and then the mirror it vouches for still stands.
             return
         }
-        playlistDao.updateTrackCount(localPlaylist.id, trackSnapshots.size)
+        // Personal collections count live memberships, not raw remote
+        // rows: local additions, suppression and duplicate IDs may differ.
+        val count = if (isSpotifyPersonalCollection(localPlaylist.source, localPlaylist.type)) {
+            playlistDao.getCrossRefsForPlaylist(localPlaylist.id).count { it.removedAt == null }
+        } else trackSnapshots.size
+        playlistDao.updateTrackCount(localPlaylist.id, count)
         // After the count: the stamp's digest covers it.
         recordMirrorStamp(playlistSnapshot, localPlaylist, syncMode)
 
