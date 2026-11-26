@@ -200,6 +200,15 @@ interface DownloadQueueDao {
     """)
     suspend fun moveSyncRowsToDiscovery(playlistId: Long): Int
 
+    /** Rehome pre-separation requests that are still authorised, without restarting active jobs. */
+    @Query("""
+        UPDATE download_queue SET sync_id = NULL
+        WHERE sync_id IS NOT NULL
+          AND status IN ('PENDING', 'FAILED', 'WAITING_FOR_LOSSLESS')
+          AND (user_requested = 1 OR """ + WANTED_BY_A_PLAYLIST + """)
+    """)
+    suspend fun recoverAuthorisedLegacyRequests(): Int
+
     /** Reactive count of tracks deferred because no lossless source could serve them. */
     @Query("SELECT COUNT(*) FROM download_queue WHERE status = 'WAITING_FOR_LOSSLESS'")
     fun waitingForLosslessCount(): Flow<Int>
