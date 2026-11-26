@@ -73,6 +73,24 @@ class TrackDaoLibraryProjectionTest {
         assertEquals(listOf(3L, 1L), rows.map { it.id })
     }
 
+    @Test fun `saved streaming track survives removing its download while an unsaved stub is excluded`() = runTest {
+        dao.insert(track(1, downloaded = true))
+        dao.insert(track(2, downloaded = false))
+        dao.insert(track(3, downloaded = false))
+        val playlistId = db.playlistDao().insert(com.stash.core.data.db.entity.PlaylistEntity(
+            name = "Liked Songs", source = MusicSource.SPOTIFY, sourceId = "saved-test",
+            type = com.stash.core.model.PlaylistType.LIKED_SONGS, syncEnabled = true,
+        ))
+        db.playlistDao().insertCrossRef(com.stash.core.data.db.entity.PlaylistTrackCrossRef(
+            playlistId = playlistId, trackId = 2,
+        ))
+        val rows = dao.getLibraryByDateAdded().first()
+        assertEquals(listOf(2L, 1L), rows.map { it.id })
+        assertEquals(true, rows.first().savedInCollection)
+        assertEquals(false, rows.first().isDownloaded)
+        assertEquals(false, rows.last().savedInCollection)
+    }
+
     @Test fun `orders by date added descending`() = runTest {
         dao.insert(track(1, dateAdded = Instant.ofEpochMilli(100)))
         dao.insert(track(2, dateAdded = Instant.ofEpochMilli(300)))
