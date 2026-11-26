@@ -894,13 +894,19 @@ class MusicRepositoryImpl @Inject constructor(
             return
         }
         KEEP_OFFLINE_LOCK.withLock {
-            // Off stops what hasn't started: the songs still waiting go (a song
-            // running now finishes). Songs already downloaded stay (owner's call).
+            // Cancel requests that have not started. Personal collections also
+            // release completed downloads that no individual or collection owns.
             downloadQueueDao.cancelWaitingForPlaylist(playlistId)
             val playlist = playlistDao.getById(playlistId)
             val personalSpotify = playlist?.source == com.stash.core.model.MusicSource.SPOTIFY &&
                 playlist.type in setOf(com.stash.core.model.PlaylistType.CUSTOM, com.stash.core.model.PlaylistType.LIKED_SONGS)
-            if (!personalSpotify && !streamingPreference.current()) {
+            val personalLocal = playlist?.source in setOf(com.stash.core.model.MusicSource.BOTH, com.stash.core.model.MusicSource.LOCAL) &&
+                playlist?.type in setOf(com.stash.core.model.PlaylistType.CUSTOM, com.stash.core.model.PlaylistType.STASH_LIKED)
+            if ((personalSpotify || personalLocal) && playlist?.keepOffline == false) {
+                // Existing v55 files carry a protective individual claim after migration.
+                // Only new collection-owned files with no remaining claim are released.
+                removeDownloadsForPlaylist(playlistId)
+            } else if (!personalSpotify && !personalLocal && !streamingPreference.current()) {
                 // Legacy download mode for other source/type combinations, so off
                 // has to turn that off too, exactly as the Sync tab's switch does:
                 // sync off, then drop sync-queued songs no synced playlist wants.
@@ -927,21 +933,27 @@ class MusicRepositoryImpl @Inject constructor(
             .first()
         var removed = 0
         for (entity in tracks.filter { it.isDownloaded }) {
-            // Conservative until durable individual download ownership is migrated:
-            // never remove a user's imported file or a track claimed by another collection.
+            // Imported media, migrated legacy files and explicit requests are not
+            // owned solely by the collection. A different saved (but not offline)
+            // playlist is not in itself a reason to retain a new download.
             if (entity.source == com.stash.core.model.MusicSource.LOCAL ||
-                downloadQueueDao.hasUserRequest(entity.id) ||
-                trackDao.countOtherPlaylistsClaimingTrack(entity.id, playlistId) > 0
+                entity.offlineRequested || downloadQueueDao.hasUserRequest(entity.id) ||
+                trackDao.hasOfflineCollectionClaim(entity.id)
             ) continue
             downloadJobs.withClaimsHeld {
                 val current = trackDao.getById(entity.id) ?: return@withClaimsHeld
                 val queue = downloadQueueDao.getByTrackId(entity.id)
                 if (queue != null && downloadJobs.isLive(queue.id)) return@withClaimsHeld
                 if (!current.isDownloaded || current.offlineRequested || current.filePath != entity.filePath ||
+                    current.source == com.stash.core.model.MusicSource.LOCAL ||
                     downloadQueueDao.hasUserRequest(entity.id) ||
-                    trackDao.countOtherPlaylistsClaimingTrack(entity.id, playlistId) > 0
+                    trackDao.hasOfflineCollectionClaim(entity.id)
                 ) return@withClaimsHeld
-                current.filePath?.let { deleteTrackAudio(current.id, it) }
+                // Do not forget a real file if SAF or filesystem removal failed.
+                val path = current.filePath
+                if (path != null && !trackDao.fileUsedByAnotherTrack(path, current.id) &&
+                    !deleteTrackFile(path)
+                ) return@withClaimsHeld
                 downloadQueueDao.deleteByTrackId(current.id)
                 trackDao.clearDownloadState(current.id)
                 removed++
