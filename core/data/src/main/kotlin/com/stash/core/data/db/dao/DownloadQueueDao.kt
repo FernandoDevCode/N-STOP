@@ -778,12 +778,12 @@ interface DownloadQueueDao {
           -- made. Without this, tapping Download on a track that lives only in a
           -- mix silently produced nothing.
           AND sync_id IS NOT NULL
+          AND user_requested = 0
           AND track_id NOT IN (
             SELECT DISTINCT pt.track_id
             FROM playlist_tracks pt
             INNER JOIN playlists p ON p.id = pt.playlist_id
-            WHERE p.sync_enabled = 1
-              AND NOT (p.source = 'SPOTIFY' AND p.type IN ('CUSTOM', 'LIKED_SONGS'))
+            WHERE (p.keep_offline = 1 OR (p.sync_enabled = 1 AND NOT (p.source = 'SPOTIFY' AND p.type IN ('CUSTOM', 'LIKED_SONGS'))))
               AND p.is_active = 1
               AND pt.removed_at IS NULL
               -- A switched-on mix spares its rows like any playlist (the WHERE
@@ -1118,12 +1118,12 @@ interface DownloadQueueDao {
           -- manual (sync_id NULL) row is a download the user asked for; sweeping
           -- it is how search-tab downloads went missing on relaunch.
           AND sync_id IS NOT NULL
+          AND user_requested = 0
           AND track_id NOT IN (
               SELECT pt.track_id FROM playlist_tracks pt
               INNER JOIN playlists p ON p.id = pt.playlist_id
               WHERE pt.removed_at IS NULL
-                AND p.sync_enabled = 1
-                AND NOT (p.source = 'SPOTIFY' AND p.type IN ('CUSTOM', 'LIKED_SONGS'))
+                AND (p.keep_offline = 1 OR (p.sync_enabled = 1 AND NOT (p.source = 'SPOTIFY' AND p.type IN ('CUSTOM', 'LIKED_SONGS'))))
                 -- Only an ACTIVE parent spares a row. A hidden (is_active=0)
                 -- but sync_enabled=1 playlist — e.g. a rotated-out YouTube
                 -- daily mix — does NOT spare its tracks, so this sweep drains
