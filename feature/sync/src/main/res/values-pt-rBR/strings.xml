@@ -96,4 +96,11 @@
     <string name="sync_status_interrupted_saved">Interrompido — %1$d salvos</string>
     <string name="sync_status_interrupted">Interrompido</string>
     <string name="sync_status_failed">Falha na sincronização</string>
+    <string name="sonora_sync_liked_title">Músicas curtidas</string>
+    <string name="sonora_sync_selected_playlists">Playlists · %1$d/%2$d selecionadas</string>
+    <string name="sonora_sync_import_explanation">Escolha o que importar. Toque em Sincronizar para atualizar sua seleção. Baixe músicas separadamente, na própria coleção.</string>
+    <string name="sonora_sync_select_all">Selecionar todas</string>
+    <string name="sonora_sync_select_none">Desmarcar todas</string>
+    <string name="sonora_sync_spotify_first_import">Sincronize para encontrar suas curtidas e playlists. Coleções pessoais são importadas sem baixar áudio automaticamente.</string>
+    <string name="sonora_sync_spotify_read_only">O Sonora importa sua biblioteca sem alterar suas curtidas no Spotify.</string>
 </resources>
