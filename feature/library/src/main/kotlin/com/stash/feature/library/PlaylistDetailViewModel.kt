@@ -352,8 +352,9 @@ class PlaylistDetailViewModel @Inject constructor(
      * `stash-resolve://` placeholder inside [PlayerRepository.setQueue]).
      * Until 2026-09-17 Offline mode narrowed this to downloaded rows.
      */
-    private suspend fun playableTracks(): List<Track> =
-        LibraryPlaybackPolicy(connectivityMonitor, streamingPreference).eligible(uiState.value.tracks)
+    private val playbackPolicy = LibraryPlaybackPolicy(connectivityMonitor, streamingPreference)
+
+    private suspend fun playableTracks(): List<Track> = playbackPolicy.eligible(uiState.value.tracks)
 
     /** Shuffles the whole playlist and begins playback. */
     fun shuffleAll() {
@@ -397,7 +398,11 @@ class PlaylistDetailViewModel @Inject constructor(
      */
     fun playNext(track: Track) {
         viewModelScope.launch {
-            playerRepository.addNext(track)
+            if (playbackPolicy.eligible(listOf(track)).isNotEmpty()) {
+                playerRepository.addNext(track)
+            } else {
+                _userMessages.tryEmit("This song is unavailable for playback right now.")
+            }
         }
     }
 
@@ -406,7 +411,11 @@ class PlaylistDetailViewModel @Inject constructor(
      */
     fun addToQueue(track: Track) {
         viewModelScope.launch {
-            playerRepository.addToQueue(track)
+            if (playbackPolicy.eligible(listOf(track)).isNotEmpty()) {
+                playerRepository.addToQueue(track)
+            } else {
+                _userMessages.tryEmit("This song is unavailable for playback right now.")
+            }
         }
     }
 
@@ -489,7 +498,7 @@ class PlaylistDetailViewModel @Inject constructor(
      */
     fun playSelectedNext(tracks: List<Track>) {
         viewModelScope.launch {
-            tracks.forEach {
+            playbackPolicy.eligible(tracks).forEach {
                 runCatching { playerRepository.addNext(it) }
                     .onFailure { e -> if (e is CancellationException) throw e }
             }
@@ -502,7 +511,8 @@ class PlaylistDetailViewModel @Inject constructor(
      */
     fun addSelectedToQueue(tracks: List<Track>) {
         viewModelScope.launch {
-            playerRepository.addToQueue(tracks)
+            val playable = playbackPolicy.eligible(tracks)
+            if (playable.isNotEmpty()) playerRepository.addToQueue(playable)
         }
     }
 
