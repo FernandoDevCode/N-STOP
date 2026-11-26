@@ -5,6 +5,13 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
 import okhttp3.*
@@ -28,49 +35,135 @@ data class YouTubeWebSearchPage(
     val nextRank: Int,
 )
 
-class YouTubeWebHttpException(val statusCode: Int) : IOException("YouTube search HTTP $statusCode")
+class YouTubeWebHttpException(
+    val statusCode: Int,
+    val stage: String = "search",
+    val hasRetryAfter: Boolean = false,
+) : IOException("YouTube WEB $stage HTTP $statusCode")
+
+class YouTubeWebTransportException(
+    val stage: String,
+    cause: IOException,
+) : IOException("YouTube WEB $stage transport failure", cause)
 
 /** Independent anonymous WEB transport; does not share YTM auth or player context. */
 class YouTubeWebSearchClient(
     client: OkHttpClient,
     private val json: Json = Json { ignoreUnknownKeys = true },
     private val origin: String = "https://www.youtube.com",
-    timeoutMs: Long = 15_000,
+    timeoutMs: Long = 7_000,
 ) {
     private val http = client.newBuilder().callTimeout(timeoutMs, TimeUnit.MILLISECONDS).build()
     private val userAgent = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36"
 
-    suspend fun search(query: String, continuation: String? = null, rankOffset: Int = 0): YouTubeWebSearchPage = withContext(Dispatchers.Default) {
-        require(query.isNotBlank())
-        require(rankOffset >= 0)
-        // Discover the actual WEB build instead of synthesizing a Music client version.
-        val html = request(Request.Builder().url("$origin/").header("User-Agent", userAgent).build())
+    private class WebConfig(val version: String, val key: String, val loadedAtNanos: Long)
+    private val configMutex = Mutex()
+    private var cachedConfig: WebConfig? = null
+    private val blockedUntilMs = AtomicLong(0)
+
+    suspend fun search(query: String, continuation: String? = null, rankOffset: Int = 0): YouTubeWebSearchPage =
+        withContext(Dispatchers.Default) {
+            require(query.isNotBlank())
+            require(rankOffset >= 0)
+            // At most one explicit recovery for the entire search, not per HTTP request.
+            var recovered = false
+            while (true) {
+                currentCoroutineContext().ensureActive()
+                var config: WebConfig? = null
+                try {
+                    config = getConfig()
+                    return@withContext searchWithConfig(query, continuation, rankOffset, config)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: IOException) {
+                    currentCoroutineContext().ensureActive()
+                    // A rejected WEB configuration must not poison subsequent searches.
+                    if (config != null && error is YouTubeWebHttpException && error.statusCode == 400) {
+                        configMutex.withLock {
+                            if (cachedConfig === config) cachedConfig = null
+                        }
+                    }
+                    val recoverable = when (error) {
+                        is YouTubeWebHttpException ->
+                            !error.hasRetryAfter && (error.statusCode == 408 ||
+                                error.statusCode in 500..599 ||
+                                (error.statusCode == 400 && config != null && continuation == null))
+                        else -> true
+                    }
+                    if (recovered || !recoverable) throw error
+                    recovered = true
+                    delay(300)
+                }
+            }
+            @Suppress("UNREACHABLE_CODE")
+            error("Unreachable")
+        }
+
+    private suspend fun getConfig(): WebConfig = configMutex.withLock {
+        cachedConfig?.takeIf {
+            System.nanoTime() - it.loadedAtNanos < TimeUnit.MINUTES.toNanos(30)
+        }?.let { return@withLock it }
+
+        val html = request(Request.Builder().url("$origin/").header("User-Agent", userAgent).build(), "config")
         fun config(name: String): String = Regex("\"$name\"\\s*:\\s*\"([^\"]+)\"")
-            .find(html)?.groupValues?.get(1) ?: throw IOException("Missing YouTube WEB config: $name")
-        val version = config("INNERTUBE_CLIENT_VERSION")
-        val key = config("INNERTUBE_API_KEY")
+            .find(html)?.groupValues?.get(1)
+            ?: throw YouTubeWebTransportException("config", IOException("Missing WEB configuration"))
+        WebConfig(config("INNERTUBE_CLIENT_VERSION"), config("INNERTUBE_API_KEY"), System.nanoTime())
+            .also { cachedConfig = it }
+    }
+
+    private suspend fun searchWithConfig(
+        query: String,
+        continuation: String?,
+        rankOffset: Int,
+        config: WebConfig,
+    ): YouTubeWebSearchPage {
         val body = buildJsonObject {
             putJsonObject("context") { putJsonObject("client") {
-                put("clientName", "WEB"); put("clientVersion", version)
+                put("clientName", "WEB"); put("clientVersion", config.version)
                 put("hl", "en"); put("gl", "US")
             } }
             if (continuation == null) put("query", query) else put("continuation", continuation)
         }
-        val url = "$origin/youtubei/v1/search".toHttpUrlBuilder(key)
+        val url = "$origin/youtubei/v1/search".toHttpUrlBuilder(config.key)
         val response = request(Request.Builder().url(url)
             .header("User-Agent", userAgent)
             .header("Origin", origin).header("Referer", "$origin/")
-            .header("X-YouTube-Client-Name", "1").header("X-YouTube-Client-Version", version)
-            .post(body.toString().toRequestBody("application/json".toMediaType())).build())
-        parse(response, rankOffset)
+            .header("X-YouTube-Client-Name", "1").header("X-YouTube-Client-Version", config.version)
+            .post(body.toString().toRequestBody("application/json".toMediaType())).build(), "search")
+        return parse(response, rankOffset)
     }
 
     private fun String.toHttpUrlBuilder(key: String): String =
         this + "?key=" + java.net.URLEncoder.encode(key, "UTF-8") + "&prettyPrint=false"
 
-    private suspend fun request(request: Request): String = http.newCall(request).awaitSearchResponse {
-        if (!it.isSuccessful) throw YouTubeWebHttpException(it.code)
-        it.body?.string() ?: throw IOException("Empty YouTube response body")
+    private suspend fun request(request: Request, stage: String): String {
+        currentCoroutineContext().ensureActive()
+        if (System.currentTimeMillis() < blockedUntilMs.get()) {
+            throw YouTubeWebHttpException(429, stage, hasRetryAfter = true)
+        }
+        return try {
+            http.newCall(request).awaitSearchResponse {
+                if (!it.isSuccessful) {
+                    val retryAfter = it.header("Retry-After")
+                    if (it.code == 429 || (it.code == 503 && retryAfter != null)) {
+                        val now = System.currentTimeMillis()
+                        val waitMs = retryAfter?.toLongOrNull()?.takeIf { seconds -> seconds >= 0 }
+                            ?.let { seconds -> TimeUnit.SECONDS.toMillis(seconds) }
+                            ?: it.headers.getDate("Retry-After")?.let { date -> (date.time - now).coerceAtLeast(0) }
+                            ?: 30_000L
+                        val until = now + waitMs.coerceAtMost(Long.MAX_VALUE - now)
+                        blockedUntilMs.updateAndGet { previous -> maxOf(previous, until) }
+                    }
+                    throw YouTubeWebHttpException(it.code, stage, retryAfter != null)
+                }
+                it.body?.string() ?: throw IOException("Empty YouTube response body")
+            }
+        } catch (error: YouTubeWebHttpException) {
+            throw error
+        } catch (error: IOException) {
+            throw YouTubeWebTransportException(stage, error)
+        }
     }
 
     internal fun parse(raw: String, rankOffset: Int = 0): YouTubeWebSearchPage {

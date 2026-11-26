@@ -6,6 +6,7 @@ import androidx.annotation.MainThread
 import com.stash.data.ytmusic.SearchUnavailableException
 import com.stash.data.ytmusic.YTMusicApiClient
 import com.stash.data.ytmusic.YouTubeWebHttpException
+import com.stash.data.ytmusic.YouTubeWebTransportException
 import com.stash.data.ytmusic.YouTubeWebSearchClient
 import com.stash.feature.search.SearchSourcePreferences
 import com.stash.feature.search.contract.CatalogIdentity
@@ -63,7 +64,7 @@ class UniversalSearchSessionFactory @Inject internal constructor(
         onPlay: (UniversalSearchResult, String?) -> Unit,
     ): UniversalSearchSession = UniversalSearchSession(
         scope, providers, preferences.read(), preferences::save, history,
-        onNavigate, onOpenRecent, play = onPlay,
+        onNavigate, onOpenRecent, play = onPlay, webTimeoutMs = 30_000,
     )
 }
 
@@ -83,6 +84,7 @@ class UniversalSearchSession internal constructor(
     private val timeoutMs: Long = 15_000,
     private val artwork: suspend (UniversalSearchResult) -> String? = { null },
     private val play: (UniversalSearchResult, String?) -> Unit = { _, _ -> },
+    private val webTimeoutMs: Long = timeoutMs,
 ) : UniversalSearchActions {
     private val mutableState = MutableStateFlow(
         UniversalSearchEngine.aggregate("", initialSelection.normalizedVisibleFilters(), emptyMap()),
@@ -214,11 +216,14 @@ class UniversalSearchSession internal constructor(
         jobs[source] = scope.launch {
             val status = try {
                 val search = providers.getValue(source)
-                val items = withTimeoutOrNull(timeoutMs) {
+                val items = withTimeoutOrNull(if (source == CatalogSource.YOUTUBE) webTimeoutMs else timeoutMs) {
                     search(query.trim()).distinctBy(UniversalSearchResult::stableKey)
                 }
                 when {
-                    items == null -> SourceSearchState.Error(query, "Search timed out", canRetry = true)
+                    items == null -> {
+                        Log.w("UniversalSearch", "source=$source failure=timeout")
+                        SourceSearchState.Error(query, "Search timed out", canRetry = true)
+                    }
                     items.any { it.identity.source != source } ->
                         SourceSearchState.Error(query, "Invalid catalog response", canRetry = false)
                     items.isEmpty() -> SourceSearchState.Empty(query)
@@ -227,6 +232,14 @@ class UniversalSearchSession internal constructor(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
+                if (source == CatalogSource.YOUTUBE) {
+                    val detail = when (error) {
+                        is YouTubeWebHttpException -> "stage=${error.stage} status=${error.statusCode}"
+                        is YouTubeWebTransportException -> "stage=${error.stage} kind=${error.cause?.javaClass?.simpleName}"
+                        else -> "kind=${error.javaClass.simpleName}"
+                    }
+                    Log.w("UniversalSearch", "source=YOUTUBE $detail")
+                }
                 failure(query, error)
             }
             ensureActive()
