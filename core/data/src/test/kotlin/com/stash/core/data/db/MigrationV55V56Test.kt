@@ -44,10 +44,11 @@ class MigrationV55V56Test {
         // Open the old file with the actual generated Room implementation.
         // Room itself validates every table and index on migration, even when
         // the new exported JSON has not yet been copied into test assets.
-        Room.databaseBuilder(
+        val room = Room.databaseBuilder(
             ApplicationProvider.getApplicationContext<android.content.Context>(),
             StashDatabase::class.java, name,
-        ).addMigrations(StashDatabase.MIGRATION_55_56).allowMainThreadQueries().build().use { room ->
+        ).addMigrations(StashDatabase.MIGRATION_55_56).allowMainThreadQueries().build()
+        try {
             val db = room.openHelper.writableDatabase
             assertEquals(56, db.version)
             db.query("SELECT id, offline_requested, is_downloaded, file_path FROM tracks ORDER BY id").use { c ->
@@ -69,6 +70,8 @@ class MigrationV55V56Test {
                 c.moveToFirst()
                 assertEquals(2, c.getInt(0))
             }
+        } finally {
+            room.close()
         }
     }
 }
