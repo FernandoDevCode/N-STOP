@@ -4,10 +4,15 @@ import android.util.Base64
 import android.util.Log
 import com.stash.core.auth.model.ServiceToken
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
@@ -23,6 +28,7 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -483,6 +489,8 @@ class SpotifyAuthManager @Inject constructor(
                 // system BoringSSL which has a Chrome-like TLS fingerprint.
                 val url = java.net.URL(SpotifyAuthConfig.CLIENT_TOKEN_ENDPOINT)
                 val conn = url.openConnection() as java.net.HttpURLConnection
+                conn.connectTimeout = 15_000
+                conn.readTimeout = 15_000
                 conn.requestMethod = "POST"
                 conn.doOutput = true
                 conn.setRequestProperty("Content-Type", "application/json")
@@ -520,6 +528,101 @@ class SpotifyAuthManager @Inject constructor(
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "getClientToken failed", e)
+                null
+            }
+        }
+    }
+
+    /**
+     * Ask Spotify directly which account owns this exact personal access token.
+     * Adapted from upstream Stash's read-only profileAttributes lookup.
+     * Never uses the manual username, catalog credentials or a third-party server.
+     */
+    suspend fun fetchProfileAccountId(accessToken: String, clientId: String): String? =
+        withContext(Dispatchers.IO) {
+            if (accessToken.isBlank() || clientId.isBlank()) return@withContext null
+            try {
+                val clientToken = getClientToken(clientId) ?: return@withContext null
+                lookUpProfileAccountId(accessToken, clientToken)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Spotify profile identity lookup failed: ${e.javaClass.simpleName}")
+                null
+            }
+        }
+
+    internal suspend fun lookUpProfileAccountId(accessToken: String, clientToken: String): String? {
+        val seed = SpotifyAuthConfig.HASH_PROFILE_ATTRIBUTES
+        val initial = profileAttributesBody(accessToken, clientToken, seed) ?: return null
+        parseProfileAccountId(initial)?.let { return it }
+        if (!initial.contains("PersistedQueryNotFound", ignoreCase = true)) return null
+        val fresh = withContext(Dispatchers.IO) {
+            scrapePersistedQueryHash(SpotifyAuthConfig.OP_PROFILE_ATTRIBUTES, seed)
+        } ?: return null
+        return profileAttributesBody(accessToken, clientToken, fresh)?.let(::parseProfileAccountId)
+    }
+
+    internal fun parseProfileAccountId(body: String): String? {
+        val root = runCatching { json.parseToJsonElement(body) as? JsonObject }.getOrNull() ?: return null
+        val errors = root["errors"]
+        if (errors != null && (errors !is JsonArray || errors.isNotEmpty())) return null
+        val profile = ((root["data"] as? JsonObject)?.get("me") as? JsonObject)
+            ?.get("profile") as? JsonObject ?: return null
+        fun string(key: String): String? = (profile[key] as? JsonPrimitive)
+            ?.takeIf { it.isString }?.contentOrNull
+        val username = validAccountId(string("username"))
+        val uri = string("uri")?.takeIf { it.startsWith("spotify:user:") }
+            ?.removePrefix("spotify:user:")?.takeIf { ':' !in it }
+        val uriId = validAccountId(uri)
+        if (username != null && uriId != null && !username.equals(uriId, ignoreCase = true)) return null
+        return username ?: uriId
+    }
+
+    private val profileHttp by lazy {
+        okHttpClient.newBuilder().callTimeout(10, TimeUnit.SECONDS).build()
+    }
+
+    private suspend fun profileAttributesBody(accessToken: String, clientToken: String, hash: String): String? {
+        val extensions = buildJsonObject {
+            putJsonObject("persistedQuery") {
+                put("version", 1)
+                put("sha256Hash", hash)
+            }
+        }.toString()
+        val url = SpotifyAuthConfig.GRAPHQL_ENDPOINT +
+            "?operationName=${SpotifyAuthConfig.OP_PROFILE_ATTRIBUTES}" +
+            "&variables=${java.net.URLEncoder.encode("{}", "UTF-8")}" +
+            "&extensions=${java.net.URLEncoder.encode(extensions, "UTF-8")}"
+        val version = withContext(Dispatchers.IO) { getClientVersion() }
+        val request = Request.Builder().url(url).get()
+            .header("Authorization", "Bearer $accessToken")
+            .header("Client-Token", clientToken)
+            .header("Accept", "application/json")
+            .header("App-Platform", "WebPlayer")
+            .header("Spotify-App-Version", version)
+            .header("Origin", "https://open.spotify.com")
+            .header("Referer", "https://open.spotify.com/")
+            .header("User-Agent", WEB_UA)
+            .build()
+        val call = profileHttp.newCall(request)
+        val (code, body) = suspendCancellableCoroutine<Pair<Int, String?>> { cont ->
+            cont.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : okhttp3.Callback {
+                override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
+                    if (cont.isActive) cont.resumeWith(Result.failure(e))
+                }
+                override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                    val read = runCatching { response.use { it.code to it.body?.string() } }
+                    if (cont.isActive) cont.resumeWith(read)
+                }
+            })
+        }
+        return when {
+            code in 200..299 -> body
+            body?.contains("PersistedQueryNotFound", ignoreCase = true) == true -> body
+            else -> {
+                Log.w(TAG, "Spotify profile identity lookup HTTP $code")
                 null
             }
         }

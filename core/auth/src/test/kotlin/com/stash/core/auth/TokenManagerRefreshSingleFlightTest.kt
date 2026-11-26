@@ -115,12 +115,38 @@ class TokenManagerRefreshSingleFlightTest {
             every { extractUsernameFromJwt(any()) } returns null
             coEvery { refreshAccessToken("cookie-A") } returns
                 ServiceToken("opaque", "cookie-A", expiry, "|client|identity-v1:")
+            coEvery { fetchProfileAccountId("opaque", "client") } returns null
         }
         val manager = TokenManagerImpl(store, auth, mockk(relaxed = true))
         try {
             assertEquals(null, manager.getSpotifyLibraryAccountId())
             assertEquals(null, manager.getSpotifyLibraryAccountId())
             coVerify(exactly = 1) { auth.refreshAccessToken("cookie-A") }
+        } finally {
+            manager.close()
+            manager.awaitClosed()
+        }
+    }
+
+    @Test fun `opaque v230 session uses authenticated profile and caches only its own proof`() = runTest {
+        val expiry = Instant.now().epochSecond + 3_600
+        val stored = MutableStateFlow<ServiceToken?>(ServiceToken("opaque-A", "cookie-A", expiry, "|client|identity-v1:"))
+        val store = identityStore(stored)
+        val auth = mockk<SpotifyAuthManager> {
+            every { extractUsernameFromJwt(any()) } returns null
+            coEvery { fetchProfileAccountId("opaque-A", "client") } returns "verifiedA"
+            coEvery { fetchProfileAccountId("opaque-B", "client") } returns "verifiedB"
+        }
+        val manager = TokenManagerImpl(store, auth, mockk(relaxed = true))
+        try {
+            assertEquals("verifiedA", manager.getSpotifyLibraryAccountId())
+            assertEquals("verifiedA", manager.getSpotifyLibraryAccountId())
+            assertEquals("verifiedA|client|identity-v1:verifiedA", stored.value?.scope)
+            coVerify(exactly = 1) { auth.fetchProfileAccountId("opaque-A", "client") }
+            stored.value = ServiceToken("opaque-B", "cookie-B", expiry, "manual|client|identity-v1:")
+            assertEquals("verifiedB", manager.getSpotifyLibraryAccountId())
+            coVerify(exactly = 1) { auth.fetchProfileAccountId("opaque-B", "client") }
+            coVerify(exactly = 0) { auth.refreshAccessToken(any()) }
         } finally {
             manager.close()
             manager.awaitClosed()

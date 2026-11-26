@@ -197,17 +197,32 @@ class TokenManagerImpl @Inject constructor(
      */
     override suspend fun getSpotifyLibraryAccountId(): String? = spotifyRefreshLock.withLock {
         val current = tokenStore.spotifyToken.first() ?: return@withLock null
-        if (!current.isExpired && !current.isExpiringSoon) {
-            verifiedSpotifyIdentity(current)?.let { return@withLock it }
-            // A fresh token already exchanged by the new code had no proof.
-            // Do not hammer the token endpoint on every sync in that case.
-            if (spotifyIdentityProof(current) != null) return@withLock null
-        }
-        val cookie = current.refreshToken.takeIf { it.isNotBlank() } ?: return@withLock null
-        val refreshed = spotifyAuthManager.refreshAccessToken(cookie) ?: return@withLock null
-        val identity = verifiedSpotifyIdentity(refreshed)
+        val fresh = !current.isExpired && !current.isExpiringSoon
+        if (fresh) verifiedSpotifyIdentity(current)?.let { return@withLock it }
+
+        // Preserve the v230 migration of two-part legacy scopes. A fresh token
+        // carrying an empty proof is not invalid: it may be opaque.
+        val token = if (!fresh || spotifyIdentityProof(current) == null) {
+            val cookie = current.refreshToken.takeIf { it.isNotBlank() } ?: return@withLock null
+            spotifyAuthManager.refreshAccessToken(cookie) ?: return@withLock null
+        } else current
+        val clientId = token.scope.split(SpotifyAuthManager.SCOPE_DELIMITER).getOrNull(1).orEmpty()
+        val identity = verifiedSpotifyIdentity(token)
+            ?: SpotifyAuthManager.validAccountId(
+                spotifyAuthManager.fetchProfileAccountId(token.accessToken, clientId),
+            )
+
+        // Persist proof only for the credential that actually answered. The
+        // same refresh/connect/disconnect lock prevents an account swap here.
+        // Never carry an old proof over to a different access token.
         val existingUser = tokenStore.spotifyUser.first()
-        tokenStore.saveSpotifyToken(refreshed, identity?.let { UserInfo(it, it) } ?: existingUser)
+        val verified = if (identity != null) token.copy(
+            scope = listOf(identity, clientId, SpotifyAuthManager.ACCOUNT_PROOF_PREFIX + identity)
+                .joinToString(SpotifyAuthManager.SCOPE_DELIMITER),
+        ) else token
+        if (verified != current) {
+            tokenStore.saveSpotifyToken(verified, identity?.let { UserInfo(it, it) } ?: existingUser)
+        }
         identity
     }
 
