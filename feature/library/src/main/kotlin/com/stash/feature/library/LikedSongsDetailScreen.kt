@@ -58,6 +58,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -99,6 +100,7 @@ fun LikedSongsDetailScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val tappedTrackId by viewModel.tappedTrackId.collectAsStateWithLifecycle()
     val bulkPlayInFlight by viewModel.bulkPlayInFlight.collectAsStateWithLifecycle()
+    val collectionDownload by viewModel.downloadButton.collectAsStateWithLifecycle()
     val extendedColors = StashTheme.extendedColors
 
     // Bottom sheet state for the long-press / ⋮ track menu.
@@ -167,6 +169,8 @@ fun LikedSongsDetailScreen(
                             onPlayAll = { viewModel.playAll() },
                             onShuffle = { viewModel.shuffleAll() },
                             onToggleSearch = { viewModel.toggleSearch() },
+                            collectionDownload = collectionDownload,
+                            onToggleDownload = viewModel::toggleCollectionDownload,
                         )
                     }
 
@@ -517,6 +521,8 @@ private fun LikedSongsHeader(
     onPlayAll: () -> Unit,
     onShuffle: () -> Unit,
     onToggleSearch: () -> Unit,
+    collectionDownload: DownloadButtonState?,
+    onToggleDownload: () -> Unit,
 ) {
     val extendedColors = StashTheme.extendedColors
 
@@ -530,7 +536,7 @@ private fun LikedSongsHeader(
                     Brush.linearGradient(
                         colors = listOf(
                             MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
-                            extendedColors.purpleDark.copy(alpha = 0.4f),
+                            MaterialTheme.colorScheme.surfaceVariant,
                             MaterialTheme.colorScheme.background,
                         ),
                     ),
@@ -622,6 +628,30 @@ private fun LikedSongsHeader(
             }
 
             Spacer(modifier = Modifier.height(16.dp))
+
+            collectionDownload?.let { button ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    IconButton(onClick = onToggleDownload, enabled = button.total > 0 || button.on) {
+                        Icon(
+                            imageVector = if (button.complete) Icons.Default.DownloadDone else Icons.Default.Download,
+                            contentDescription = stringResource(
+                                if (button.on) R.string.sonora_likes_stop_offline else R.string.sonora_likes_keep_offline
+                            ),
+                            tint = if (button.on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text(
+                        text = if (button.on) stringResource(R.string.sonora_likes_download_progress, button.downloaded, button.total)
+                        else stringResource(R.string.sonora_likes_keep_offline),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
 
             // Action buttons: Play All + Shuffle
             Row(
