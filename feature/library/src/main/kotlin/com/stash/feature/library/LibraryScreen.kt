@@ -411,12 +411,15 @@ fun LibraryScreen(
         val batchTracks = (if (state.activeTab == LibraryTab.LIKED) likedTracks else state.tracks)
             .filter { it.id in selection.selectedIds }
         val n = batchTracks.size
+        val removingLikes = state.activeTab == LibraryTab.LIKED
         var alsoBlacklist by remember(showBatchDelete) { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { showBatchDelete = false },
-            title = { Text("Delete $n song${if (n != 1) "s" else ""}?") },
+            title = { Text(if (removingLikes) stringResource(R.string.sonora_likes_remove_title) else "Delete $n song${if (n != 1) "s" else ""}?") },
             text = {
-                Column {
+                if (removingLikes) {
+                    Text(stringResource(R.string.sonora_likes_remove_message))
+                } else Column {
                     Text(
                         "${n} song${if (n != 1) "s" else ""} will be removed from your " +
                             "library and deleted from disk.",
@@ -448,13 +451,13 @@ fun LibraryScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.deleteSelected(batchTracks, alsoBlacklist)
+                        viewModel.deleteSelected(batchTracks, !removingLikes && alsoBlacklist)
                         showBatchDelete = false
                         selection.clear()
                     },
                 ) {
                     Text(
-                        text = if (alsoBlacklist) "Delete & Block" else "Delete",
+                        text = if (removingLikes) stringResource(R.string.sonora_likes_remove_action) else if (alsoBlacklist) "Delete & Block" else "Delete",
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
@@ -1088,54 +1091,17 @@ private fun LikedTab(
         )
     }
 
-    // ── Delete confirmation dialog ──────────────────────────────────────
+    // Removing a like never deletes the underlying track or audio.
     trackToDelete?.let { track ->
-        var alsoBlacklist by remember(track.id) { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { trackToDelete = null },
-            title = { Text("Delete \"${track.title}\"?") },
-            text = {
-                Column {
-                    Text(
-                        "\"${track.title}\" by ${track.artist} will be removed from " +
-                            "your library and deleted from disk.",
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable { alsoBlacklist = !alsoBlacklist },
-                    ) {
-                        androidx.compose.material3.Checkbox(
-                            checked = alsoBlacklist,
-                            onCheckedChange = { alsoBlacklist = it },
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = stringResource(R.string.nostop_library_block_song),
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                            Text(
-                                text = stringResource(R.string.nostop_library_block_hint),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
-            },
+            title = { Text(stringResource(R.string.sonora_likes_remove_title)) },
+            text = { Text(stringResource(R.string.sonora_likes_remove_message)) },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        onDeleteTrack(track, alsoBlacklist)
-                        trackToDelete = null
-                    },
-                ) {
-                    Text(
-                        text = if (alsoBlacklist) "Delete & Block" else "Delete",
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
+                TextButton(onClick = {
+                    onDeleteTrack(track, false)
+                    trackToDelete = null
+                }) { Text(stringResource(R.string.sonora_likes_remove_action)) }
             },
             dismissButton = {
                 TextButton(onClick = { trackToDelete = null }) {
