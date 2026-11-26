@@ -108,6 +108,7 @@ class LibraryViewModelLikedOrderTest {
             on { getTracksByPlaylist(eq(42L)) } doReturn flowOf(listOf(apple, mango, plum))
         }
         return LibraryViewModel(
+            playbackPolicy = testPlaybackPolicy(),
             musicRepository = musicRepository,
             playerRepository = mock { on { playerState } doReturn MutableStateFlow(PlayerState()) },
             tokenManager = mock {
