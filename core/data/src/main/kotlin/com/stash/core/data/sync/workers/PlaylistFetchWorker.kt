@@ -792,6 +792,19 @@ class PlaylistFetchWorker @AssistedInject constructor(
             } else {
                 diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.EMPTY, errorMessage = "No liked songs found"))
                 Log.d(TAG, "fetchSpotifyPlaylists: liked songs empty after pagination")
+                // getLikedSongs emits Empty only when its raw count and total
+                // agree. A confirmed zero is a valid snapshot; an error is not.
+                remoteSnapshotDao.insertPlaylistSnapshot(
+                    RemotePlaylistSnapshotEntity(
+                        syncId = syncId,
+                        source = MusicSource.SPOTIFY,
+                        sourcePlaylistId = "spotify_liked_songs",
+                        playlistName = "Liked Songs",
+                        playlistType = PlaylistType.LIKED_SONGS,
+                        trackCount = 0,
+                        expectedCount = 0,
+                    )
+                )
             }
         } catch (e: Exception) {
             if (e is CancellationException) throw e
