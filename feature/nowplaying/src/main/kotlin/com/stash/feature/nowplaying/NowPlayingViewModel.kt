@@ -822,7 +822,8 @@ class NowPlayingViewModel @Inject constructor(
                 val trackKey = if (durationOverlaid?.id == 0L) durationOverlaid.youtubeId.hashCode().toLong() else durationOverlaid?.id
                 val finalTrack = if (durationOverlaid != null && trackKey != null && optimistic.containsKey(trackKey)) {
                     val optLiked = optimistic[trackKey]!!
-                    durationOverlaid.copy(stashLikedAt = if (optLiked) System.currentTimeMillis() else null)
+                    durationOverlaid.copy(stashLikedAt = if (optLiked) System.currentTimeMillis() else null,
+                        importedLiked = optLiked && durationOverlaid.importedLiked)
                 } else {
                     durationOverlaid
                 }
@@ -1429,7 +1430,7 @@ class NowPlayingViewModel @Inject constructor(
      */
     fun onLikeTap() {
         val track = _uiState.value.currentTrack ?: return
-        val wasLiked = track.stashLikedAt != null
+        val wasLiked = track.isLikedInSonora
 
         // Optimistic UI: flip the state in our local map immediately.
         // The combine() block in observePlayerStateLive merges this so

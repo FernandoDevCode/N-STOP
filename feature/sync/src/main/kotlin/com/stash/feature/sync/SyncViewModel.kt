@@ -129,10 +129,9 @@ data class SyncUiState(
      */
     val youtubeLikedStudioOnly: Boolean = false,
     /**
-     * Whether sync discovers the service's own algorithmic mixes. Default true
-     * (opt-out) — see SyncPreferencesManager.discoverAutoMixes.
+     * Whether sync discovers algorithmic mixes. Explicit opt-in.
      */
-    val discoverAutoMixes: Boolean = true,
+    val discoverAutoMixes: Boolean = false,
     /**
      * Days-of-week bitmask for the auto-sync schedule. Bit 0 = Mon … bit 6 = Sun.
      * Default 127 = every day.
@@ -770,7 +769,21 @@ class SyncViewModel @Inject constructor(
 
     private fun observeSpotifyPlaylists() {
         viewModelScope.launch {
-            playlistDao.getSpotifyPlaylistsForPreferences().collect { entities ->
+            val accountPrefix = tokenManager.spotifyAuthState.mapLatest { state ->
+                if (state is AuthState.Connected) {
+                    try {
+                        tokenManager.getSpotifyLibraryAccountId()?.takeIf { it.isNotBlank() }
+                            ?.let { com.stash.core.data.sync.workers.SpotifyAccountScope.prefix(it) }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        null
+                    }
+                } else null
+            }
+            combine(playlistDao.getSpotifyPlaylistsForPreferences(), accountPrefix) { rows, prefix ->
+                rows.filter { prefix != null && it.sourceId.startsWith(prefix) }
+            }.collect { entities ->
                 _uiState.update {
                     it.copy(
                         spotifyPlaylists = entities.map { e ->

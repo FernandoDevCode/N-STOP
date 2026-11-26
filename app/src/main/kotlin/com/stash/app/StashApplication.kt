@@ -616,7 +616,7 @@ class StashApplication : Application(), Configuration.Provider {
         listeningRecorder.start()
         // Sonora: excluded account/scrobble/lossless background service disabled.
         youTubeHistoryScrobbler.start()
-        autoSaveScrobbler.start()
+        // Sonora: Spotify is read-only; never start automatic library writes.
         // Sonora: excluded account/scrobble/lossless background service disabled.
         // Generic listen sinks (ListenBrainz). No-ops until connected.
         // Sonora: excluded account/scrobble/lossless background service disabled.

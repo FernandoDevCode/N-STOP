@@ -63,4 +63,16 @@
     <string name="shared_mix_unfollow">Deixar de seguir</string>
     <string name="shared_mix_follow">Seguir</string>
     <string name="shared_mix_save_copy">Salvar uma cópia</string>
+    <string name="sonora_likes_keep_offline">Baixar músicas curtidas</string>
+    <string name="sonora_likes_stop_offline">Parar downloads automáticos das curtidas</string>
+    <string name="sonora_likes_download_progress">%1$d de %2$d baixadas</string>
+    <string name="sonora_likes_remove_title">Remover das músicas curtidas?</string>
+    <string name="sonora_likes_remove_message">A curtida será removida apenas no Sonora. Seus downloads e curtidas no Spotify serão preservados.</string>
+    <string name="sonora_likes_remove_action">Remover curtida</string>
+    <string name="sonora_likes_aggregate_controls">Controlado por Todas as curtidas</string>
+    <string name="sonora_playlist_copy_name">%1$s (cópia)</string>
+    <string name="sonora_playlist_remove_occurrence_title">Remover %1$s desta playlist?</string>
+    <string name="sonora_playlist_remove_occurrence_message">Apenas esta ocorrência será removida. Sua biblioteca e seus downloads serão preservados.</string>
+    <string name="sonora_playlist_remove_selection_message">Apenas as entradas selecionadas serão removidas da playlist. Sua biblioteca e seus downloads serão preservados.</string>
+    <string name="sonora_playlist_remove_occurrence_action">Remover</string>
 </resources>

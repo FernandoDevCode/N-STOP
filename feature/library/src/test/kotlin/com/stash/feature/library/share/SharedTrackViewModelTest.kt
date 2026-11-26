@@ -108,13 +108,22 @@ class SharedTrackViewModelTest {
     }
 
     @Test fun `play shows an existing like and a double tap runs once`() = runTest(dispatcher) {
-        val saved = mockk<Track> { every { stashLikedAt } returns 1L }
+        val saved = Track(id = 7L, title = "Teardrop", artist = "Massive Attack", stashLikedAt = 1L)
         coEvery { music.ensureTrackPersisted(any()) } returns 7L
         every { music.observeTrackById(7L) } returns flowOf(saved)
         val vm = vm()
         vm.play(); vm.play(); advanceUntilIdle()
         coVerify(exactly = 1) { music.ensureTrackPersisted(any()) }
         coVerify(exactly = 1) { player.setQueue(listOf(saved), 0, any()) }
+        assertThat(vm.liked.value).isTrue()
+    }
+
+    @Test fun `play also shows an imported like without a local timestamp`() = runTest(dispatcher) {
+        val saved = Track(id = 7L, title = "Teardrop", artist = "Massive Attack", importedLiked = true)
+        coEvery { music.ensureTrackPersisted(any()) } returns 7L
+        every { music.observeTrackById(7L) } returns flowOf(saved)
+        val vm = vm()
+        vm.play(); advanceUntilIdle()
         assertThat(vm.liked.value).isTrue()
     }
 

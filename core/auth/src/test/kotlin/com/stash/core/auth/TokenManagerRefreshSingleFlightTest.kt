@@ -68,6 +68,7 @@ class TokenManagerRefreshSingleFlightTest {
         coVerify(exactly = 1) { store.saveSpotifyToken(any(), any()) }
         // Close the TokenManager's independent Flow observers before @After resets Main.
         manager.close()
+        manager.awaitClosed()
     }
 
     @Test fun `catalog credentials and disconnect cannot touch the sync token`() = runTest {
@@ -94,5 +95,6 @@ class TokenManagerRefreshSingleFlightTest {
         coVerify(exactly = 1) { store.clearSpotifySearch() }
         coVerify(exactly = 0) { store.clearSpotify() }
         manager.close()
+        manager.awaitClosed()
     }
 }

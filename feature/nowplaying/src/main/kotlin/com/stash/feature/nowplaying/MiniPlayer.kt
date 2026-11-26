@@ -279,8 +279,8 @@ fun MiniPlayer(
                 ) {
                     MiniIconButton(onClick = viewModel::onLikeTap) {
                         Icon(
-                            imageVector = if (track?.stashLikedAt != null) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                            contentDescription = stringResource(if (track?.stashLikedAt != null) R.string.mini_unlike else R.string.mini_like),
+                            imageVector = if (track?.isLikedInSonora == true) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                            contentDescription = stringResource(if (track?.isLikedInSonora == true) R.string.mini_unlike else R.string.mini_like),
                             tint = Color.White,
                             modifier = Modifier.size(25.dp),
                         )

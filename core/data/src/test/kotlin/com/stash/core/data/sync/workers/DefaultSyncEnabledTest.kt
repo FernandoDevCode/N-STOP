@@ -36,6 +36,14 @@ class DefaultSyncEnabledTest {
         assertThat(defaultSyncEnabled(PlaylistType.LIKED_SONGS, online = true)).isFalse()
     }
 
+    @Test
+    fun `Spotify liked songs import by default in either mode`() {
+        for (online in listOf(true, false)) {
+            assertThat(defaultSyncEnabled(PlaylistType.LIKED_SONGS, online, com.stash.core.model.MusicSource.SPOTIFY)).isTrue()
+            assertThat(defaultSyncEnabled(PlaylistType.CUSTOM, online, com.stash.core.model.MusicSource.SPOTIFY)).isFalse()
+        }
+    }
+
     // STASH_MIX is a "mix" by name and sits next to DAILY_MIX in findOrCreatePlaylist's
     // art-refresh logic — guard against a future refactor broadening the check to
     // "mix-like" types and accidentally auto-enabling locally-generated mixes.

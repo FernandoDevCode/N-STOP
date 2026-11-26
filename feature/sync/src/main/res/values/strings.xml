@@ -96,4 +96,11 @@
     <string name="sync_status_interrupted_saved">Interrupted — %1$d saved</string>
     <string name="sync_status_interrupted">Interrupted</string>
     <string name="sync_status_failed">Sync failed</string>
+    <string name="sonora_sync_liked_title">Liked songs</string>
+    <string name="sonora_sync_selected_playlists">Playlists · %1$d/%2$d selected</string>
+    <string name="sonora_sync_import_explanation">Choose what to import. Tap Sync to update your selection. Download music separately in the collection.</string>
+    <string name="sonora_sync_select_all">Select all</string>
+    <string name="sonora_sync_select_none">Select none</string>
+    <string name="sonora_sync_spotify_first_import">Sync to discover your liked songs and playlists. Personal collections are imported without automatic audio downloads.</string>
+    <string name="sonora_sync_spotify_read_only">Sonora imports your library without changing your Spotify likes.</string>
 </resources>

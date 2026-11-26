@@ -31,7 +31,7 @@ import nonstop.artlab.renderer.*
 
 internal fun NowPlayingUiState.v8State(positionMs: Long) = PlayerState(
     progress = if (durationMs > 0) (positionMs.toDouble() / durationMs).toFloat().coerceIn(0f, 1f) else 0f,
-    playing = playWhenReady, liked = currentTrack?.stashLikedAt != null,
+    playing = playWhenReady, liked = currentTrack?.isLikedInSonora == true,
     shuffle = shuffleEnabled, repeat = repeatMode != RepeatMode.OFF,
 )
 

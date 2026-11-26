@@ -110,6 +110,7 @@ internal fun mergeDuplicateAlbums(albums: List<AlbumInfo>): List<AlbumInfo> =
 class LibraryViewModel @Inject constructor(
     private val musicRepository: MusicRepository,
     private val playerRepository: PlayerRepository,
+    private val playbackPolicy: LibraryPlaybackPolicy,
     private val tokenManager: TokenManager,
     private val playlistImageHelper: PlaylistImageHelper,
     private val localImportCoordinator: LocalImportCoordinator,
@@ -280,9 +281,9 @@ class LibraryViewModel @Inject constructor(
      * Songs and [LibraryUiState.librarySongCount] the moment Remove download is tapped, not
      * when the file goes.
      */
-    private val downloadedTracks: Flow<List<Track>> =
+    private val savedTracks: Flow<List<Track>> =
         combine(musicRepository.getAllTracks(), downloadRemoval.hiddenIds) { tracks, hidden ->
-            if (hidden.isEmpty()) tracks else tracks.filterNot { it.id in hidden }
+            if (hidden.isEmpty()) tracks else tracks.filterNot { it.id in hidden && !it.savedInCollection }
         }
 
     /**
@@ -336,7 +337,7 @@ class LibraryViewModel @Inject constructor(
      */
     val uiState: StateFlow<LibraryUiState> = combine(
         pipelineControls,
-        downloadedTracks,
+        savedTracks,
         libraryDataFlow,
         musicRepository.getAllArtists(),
         musicRepository.getAllAlbums(),
@@ -543,7 +544,7 @@ class LibraryViewModel @Inject constructor(
                 flowOf(emptyList())
             } else {
                 combine(playlists.map { musicRepository.getTracksByPlaylist(it.id) }) { arrays ->
-                    arrays.flatMap { it.toList() }.distinctBy { it.id }
+                    mergeLikedMemberships(arrays.flatMap { it.toList() })
                 }
             }
         }.let { likedFlow ->
@@ -565,9 +566,12 @@ class LibraryViewModel @Inject constructor(
     fun playLiked(track: Track) {
         viewModelScope.launch {
             val all = likedTracks.value
-            val playable = all
-            if (playable.isEmpty()) return@launch
-            val index = playable.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+            val playable = playbackPolicy.eligible(all)
+            val index = playable.indexOfFirst { it.id == track.id }
+            if (index < 0) {
+                _userMessages.tryEmit("This song is unavailable for playback right now.")
+                return@launch
+            }
             playerRepository.setQueue(
                 playable,
                 index,
@@ -588,7 +592,7 @@ class LibraryViewModel @Inject constructor(
     fun shuffleLiked() {
         viewModelScope.launch {
             val all = likedTracks.value
-            val playable = all
+            val playable = playbackPolicy.eligible(all)
             if (playable.isEmpty()) return@launch
             playerRepository.setQueue(
                 playable.shuffled(),
@@ -646,7 +650,7 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch {
             // Streaming is always allowed: every track is playable, and a
             // not-downloaded one streams when it is reached.
-            val playable = allTracks
+            val playable = playbackPolicy.eligible(allTracks)
             val index = playable.indexOfFirst { it.id == track.id }
             if (index >= 0) {
                 playerRepository.setQueue(playable, index, source = com.stash.core.model.PlaybackSource.Library)
@@ -655,7 +659,9 @@ class LibraryViewModel @Inject constructor(
                 // Added rail is its own query, so a streamable track can be absent
                 // from the Songs list). Play it on its own rather than no-op — a
                 // tap that does nothing is the bug being fixed here.
-                playerRepository.setQueue(listOf(track), 0, source = com.stash.core.model.PlaybackSource.Library)
+                val single = playbackPolicy.eligible(listOf(track))
+                if (single.isNotEmpty()) playerRepository.setQueue(single, 0, source = com.stash.core.model.PlaybackSource.Library)
+                else _userMessages.tryEmit("This song is unavailable for playback right now.")
             }
         }
     }
@@ -665,7 +671,11 @@ class LibraryViewModel @Inject constructor(
      */
     fun playNext(track: Track) {
         viewModelScope.launch {
-            playerRepository.addNext(track)
+            if (playbackPolicy.eligible(listOf(track)).isNotEmpty()) {
+                playerRepository.addNext(track)
+            } else {
+                _userMessages.tryEmit("This song is unavailable for playback right now.")
+            }
         }
     }
 
@@ -674,7 +684,11 @@ class LibraryViewModel @Inject constructor(
      */
     fun addToQueue(track: Track) {
         viewModelScope.launch {
-            playerRepository.addToQueue(track)
+            if (playbackPolicy.eligible(listOf(track)).isNotEmpty()) {
+                playerRepository.addToQueue(track)
+            } else {
+                _userMessages.tryEmit("This song is unavailable for playback right now.")
+            }
         }
     }
 
@@ -686,9 +700,20 @@ class LibraryViewModel @Inject constructor(
      * the next sync if a playlist still references its identity. Matches
      * the Home/Playlist-detail UX — "Delete" vs. "Delete & Block".
      */
+    private fun likedSourceForRemoval(): MusicSource? = when (_likedFilter.value) {
+        LikedFilter.STASH -> MusicSource.BOTH
+        LikedFilter.SPOTIFY -> MusicSource.SPOTIFY
+        LikedFilter.YOUTUBE -> MusicSource.YOUTUBE
+        LikedFilter.ALL -> null
+    }
+
     fun deleteTrack(track: Track, alsoBlacklist: Boolean = false) {
+        val fromLikes = _controls.value.activeTab == LibraryTab.LIKED
+        val source = likedSourceForRemoval()
         viewModelScope.launch {
-            if (alsoBlacklist) {
+            if (fromLikes) {
+                musicRepository.removeLikedTrack(track.id, source)
+            } else if (alsoBlacklist) {
                 musicRepository.blacklistTrack(track.id)
             } else {
                 musicRepository.deleteTrack(track)
@@ -712,7 +737,7 @@ class LibraryViewModel @Inject constructor(
      */
     fun playSelectedNext(tracks: List<Track>) {
         viewModelScope.launch {
-            tracks.forEach {
+            playbackPolicy.eligible(tracks).forEach {
                 runCatching { playerRepository.addNext(it) }
                     .onFailure { e -> if (e is CancellationException) throw e }
             }
@@ -725,7 +750,8 @@ class LibraryViewModel @Inject constructor(
      */
     fun addSelectedToQueue(tracks: List<Track>) {
         viewModelScope.launch {
-            playerRepository.addToQueue(tracks)
+            val playable = playbackPolicy.eligible(tracks)
+            if (playable.isNotEmpty()) playerRepository.addToQueue(playable)
         }
     }
 
@@ -782,11 +808,15 @@ class LibraryViewModel @Inject constructor(
      * otherwise). Per-item failures are isolated; emits one roll-up Snackbar.
      */
     fun deleteSelected(tracks: List<Track>, alsoBlacklist: Boolean = false) {
+        val fromLikes = _controls.value.activeTab == LibraryTab.LIKED
+        val source = likedSourceForRemoval()
         viewModelScope.launch {
             var deleted = 0
             tracks.forEach { track ->
                 runCatching {
-                    if (alsoBlacklist) {
+                    if (fromLikes) {
+                        musicRepository.removeLikedTrack(track.id, source)
+                    } else if (alsoBlacklist) {
                         musicRepository.blacklistTrack(track.id)
                     } else {
                         musicRepository.deleteTrack(track)
@@ -795,7 +825,10 @@ class LibraryViewModel @Inject constructor(
                     .onFailure { e -> if (e is CancellationException) throw e }
             }
             if (deleted > 0) {
-                _userMessages.tryEmit("Deleted $deleted ${songs(deleted)}.")
+                _userMessages.tryEmit(
+                    if (fromLikes) "Removed $deleted ${songs(deleted)} from Liked Songs."
+                    else "Deleted $deleted ${songs(deleted)}."
+                )
             }
         }
     }
@@ -857,7 +890,7 @@ class LibraryViewModel @Inject constructor(
     fun playPlaylist(playlist: Playlist) {
         viewModelScope.launch {
             val tracks = musicRepository.getTracksByPlaylist(playlist.id).first()
-            val downloaded = tracks.filter { it.filePath != null }
+            val downloaded = playbackPolicy.eligible(tracks)
             if (downloaded.isNotEmpty()) {
                 playerRepository.setQueue(
                     downloaded,
@@ -874,7 +907,7 @@ class LibraryViewModel @Inject constructor(
     fun addPlaylistToQueue(playlist: Playlist) {
         viewModelScope.launch {
             val tracks = musicRepository.getTracksByPlaylist(playlist.id).first()
-            val downloaded = tracks.filter { it.filePath != null }
+            val downloaded = playbackPolicy.eligible(tracks)
             downloaded.forEach { playerRepository.addToQueue(it) }
         }
     }
@@ -1006,7 +1039,7 @@ class LibraryViewModel @Inject constructor(
     fun playArtist(artistName: String) {
         viewModelScope.launch {
             val tracks = musicRepository.getTracksByArtist(artistName).first()
-            val downloaded = tracks.filter { it.filePath != null }
+            val downloaded = playbackPolicy.eligible(tracks)
             if (downloaded.isNotEmpty()) {
                 playerRepository.setQueue(
                     downloaded,
@@ -1023,7 +1056,7 @@ class LibraryViewModel @Inject constructor(
     fun addArtistToQueue(artistName: String) {
         viewModelScope.launch {
             val tracks = musicRepository.getTracksByArtist(artistName).first()
-            val downloaded = tracks.filter { it.filePath != null }
+            val downloaded = playbackPolicy.eligible(tracks)
             downloaded.forEach { playerRepository.addToQueue(it) }
         }
     }
@@ -1064,11 +1097,10 @@ class LibraryViewModel @Inject constructor(
     fun playAlbum(albumName: String, artist: String) {
         viewModelScope.launch {
             val allTracks = musicRepository.getAllTracks().first()
-            val downloaded = allTracks.filter {
+            val downloaded = playbackPolicy.eligible(allTracks.filter {
                 it.album.equals(albumName, ignoreCase = true)
                     && matchesArtistCredits(it.artist, it.albumArtist, artist)
-                    && it.filePath != null
-            }
+            })
             if (downloaded.isNotEmpty()) {
                 playerRepository.setQueue(
                     downloaded,
@@ -1086,11 +1118,10 @@ class LibraryViewModel @Inject constructor(
     fun addAlbumToQueue(albumName: String, artist: String) {
         viewModelScope.launch {
             val allTracks = musicRepository.getAllTracks().first()
-            val downloaded = allTracks.filter {
+            val downloaded = playbackPolicy.eligible(allTracks.filter {
                 it.album.equals(albumName, ignoreCase = true)
                     && matchesArtistCredits(it.artist, it.albumArtist, artist)
-                    && it.filePath != null
-            }
+            })
             downloaded.forEach { playerRepository.addToQueue(it) }
         }
     }
@@ -1176,7 +1207,15 @@ internal fun sortLikedTracks(tracks: List<Track>, order: SortOrder): List<Track>
 }
 
 private fun Track.likedAtOrNull(): Long? =
-    listOfNotNull(stashLikedAt, spotifySavedAt, ytMusicSavedAt, lastFmLovedAt).maxOrNull()
+    listOfNotNull(stashLikedAt, remoteMembershipAddedAt).maxOrNull()
+
+/** Preserve first-seen order when dates are unavailable; combine only like metadata. */
+internal fun mergeLikedMemberships(tracks: List<Track>): List<Track> =
+    tracks.groupBy { it.id }.values.map { copies ->
+        copies.first().copy(
+            remoteMembershipAddedAt = copies.mapNotNull { it.remoteMembershipAddedAt }.maxOrNull(),
+        )
+    }
 
 /** How long a typed Library query must sit still before the list pipeline re-runs on it. */
 private const val SEARCH_SETTLE_MS = 150L

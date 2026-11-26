@@ -14,6 +14,7 @@ import com.stash.core.auth.model.AuthService
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.RemoteSnapshotDao
 import com.stash.core.data.db.dao.SyncHistoryDao
+import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.RemotePlaylistSnapshotEntity
 import com.stash.core.data.db.entity.RemoteTrackSnapshotEntity
 import com.stash.core.data.db.entity.SyncHistoryEntity
@@ -108,7 +109,10 @@ private val DAILY_MIX_NAME = Regex("""Daily Mix \d+""")
  */
 internal fun allAttemptedStepsFailed(diagnostics: List<SyncStepResult>): Boolean {
     val attempted = diagnostics.filter { it.status != StepStatus.SKIPPED }
-    return attempted.isNotEmpty() && attempted.all { it.status == StepStatus.ERROR }
+    // A partial liked walk can still yield confirmed additions for DiffWorker.
+    return attempted.isNotEmpty() && attempted.all {
+        it.status == StepStatus.ERROR && !(it.service == "SPOTIFY" && it.step == "getLikedSongs" && it.itemCount > 0)
+    }
 }
 
 internal fun keepAsLibraryPlaylist(
@@ -241,6 +245,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
     /** The Spotify sync mode this run read, handed to the diff ([KEY_SPOTIFY_SYNC_MODE]). */
     @Volatile
     private var spotifySyncModeThisRun: SyncMode? = null
+    private var spotifyCompleteInventory: List<String>? = null
 
     private fun markYoutubeIncomplete(reason: String) {
         if (youtubeInventoryComplete.compareAndSet(true, false)) {
@@ -403,7 +408,27 @@ class PlaylistFetchWorker @AssistedInject constructor(
             // a source skipped here is exactly a source that didn't count
             // toward keeping the sync alive.
             if (probeResult.fetchSpotify) {
-                fetchSpotifyPlaylists(syncId, diagnostics)
+                val accountId = tokenManager.getSpotifyLibraryAccountId()
+                if (accountId.isNullOrBlank()) {
+                    diagnostics.add(SyncStepResult("SPOTIFY", "accountIdentity", StepStatus.ERROR,
+                        errorMessage = "Couldn't verify the Spotify account. Reconnect and try again."))
+                } else {
+                    val prefix = SpotifyAccountScope.prefix(accountId)
+                    captureUndoPoint(syncUndoDao, syncLog, syncId, TAG)
+                    fetchSpotifyPlaylists(syncId, diagnostics, prefix)
+                    // Do not pass snapshots to DiffWorker if the account changed
+                    // while reading. This precedes all YouTube fetching.
+                    if (tokenManager.getSpotifyLibraryAccountId() != accountId) {
+                        remoteSnapshotDao.deleteAllSnapshotsBySyncId(syncId)
+                        diagnostics.removeAll { it.service == "SPOTIFY" }
+                        diagnostics.add(SyncStepResult("SPOTIFY", "accountIdentity", StepStatus.ERROR,
+                            errorMessage = "Spotify account changed during sync. Previous library kept."))
+                    } else {
+                        playlistDao.archiveForeignSpotifyCollections(prefix)
+                        playlistDao.restoreScopedSpotifyLikesType(SpotifyAccountScope.scoped(prefix, "spotify_liked_songs"))
+                        spotifyCompleteInventory?.let { playlistDao.pauseMissingScopedSpotifyPlaylists(prefix, it) }
+                    }
+                }
             }
             var youtubeComplete = true
             if (probeResult.fetchYoutube) {
@@ -478,7 +503,9 @@ class PlaylistFetchWorker @AssistedInject constructor(
      * @throws SpotifyApiException only if a critical, retryable API error occurs
      *         during track fetching (e.g., client_credentials token endpoint down).
      */
-    private suspend fun fetchSpotifyPlaylists(syncId: Long, diagnostics: MutableList<SyncStepResult>) {
+    private suspend fun fetchSpotifyPlaylists(syncId: Long, diagnostics: MutableList<SyncStepResult>, accountPrefix: String) {
+        fun scoped(id: String) = SpotifyAccountScope.scoped(accountPrefix, id)
+        val likedSourceId = scoped("spotify_liked_songs")
         Log.d(TAG, "fetchSpotifyPlaylists: starting for syncId=$syncId")
         var dailyMixCount = 0
         var likedSongCount = 0
@@ -486,15 +513,11 @@ class PlaylistFetchWorker @AssistedInject constructor(
         // excludes exactly these instead of everything spotify owns (#354).
         val homeFeedMixIds = mutableSetOf<String>()
 
-        // Auto-mix discovery is opt-OUT (#335, #344). These are playlists the
-        // user never created or saved, so when someone turns them off we must
-        // not fetch them at all — skipping the call is also what makes their
-        // sync shorter, which was half the complaint. Anything already in the
-        // library stays put; the per-mix Home toggle in Manage Playlists still
-        // applies to those. Defaults to true — see SyncPreferencesManager.
+        // Generated collections require explicit opt-in. Existing rows are
+        // preserved and an unreadable preference must not grant new consent.
         val discoverMixes = runCatching {
             syncPreferencesManager.discoverAutoMixes.first()
-        }.onFailure { if (it is CancellationException) throw it }.getOrDefault(true)
+        }.onFailure { if (it is CancellationException) throw it }.getOrDefault(false)
 
         // Fetch Daily Mixes (sp_dc dependent -- may return empty if GraphQL fails).
         if (!discoverMixes) {
@@ -567,7 +590,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                                 RemotePlaylistSnapshotEntity(
                                     syncId = syncId,
                                     source = MusicSource.SPOTIFY,
-                                    sourcePlaylistId = mix.id,
+                                    sourcePlaylistId = scoped(mix.id),
                                     playlistName = mix.name,
                                     playlistType = PlaylistType.DAILY_MIX,
                                     mixNumber = mixNumber,
@@ -630,8 +653,19 @@ class PlaylistFetchWorker @AssistedInject constructor(
         }
 
         // Fetch Liked Songs with pagination (sp_dc dependent).
-        // Spotify returns max 50 per page; we loop until we get all tracks.
-        try {
+        // Seed the choice before any liked-tracks request, even if the API fails.
+        // Existing selections are never overwritten.
+        val likedId = playlistDao.ensurePlaylist(
+            PlaylistEntity(
+                name = "Liked Songs", source = MusicSource.SPOTIFY,
+                sourceId = likedSourceId, type = PlaylistType.LIKED_SONGS,
+                syncEnabled = true,
+            )
+        )
+        val likedSelection = playlistDao.getById(likedId)
+        if (likedSelection?.syncEnabled == false) {
+            diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.SKIPPED))
+        } else try {
             val allLikedSongs = mutableListOf<com.stash.data.spotify.model.SpotifyTrackItem>()
             var likedOffset = 0
             val likedPageSize = 50
@@ -646,6 +680,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
             var likedRawWalked = 0
             var likedTotalCount: Int? = null
             var likedPagesFetched = 0
+            val seenLikedUris = mutableSetOf<String>()
 
             while (true) {
                 // Bounded: if the persisted query ever stopped honouring
@@ -660,9 +695,23 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     is SyncResult.Success -> {
                         val page = result.data
                         likedPagesFetched++
-                        allLikedSongs.addAll(page.tracks)
+                        val freshTracks = page.tracks.filter { item ->
+                            item.track?.uri?.let { seenLikedUris.add(it) } == true
+                        }
+                        // Duplicate IDs can mean a repeated page or a library edited mid-walk.
+                        // Unparsed items and a moving/missing total are not proof of removals.
+                        if (freshTracks.size != page.tracks.size ||
+                            page.tracks.size != page.rawItemCount ||
+                            page.totalCount == null ||
+                            (likedTotalCount != null && likedTotalCount != page.totalCount)
+                        ) likedFetchPartial = true
+                        allLikedSongs.addAll(freshTracks)
                         likedRawWalked += page.rawItemCount
                         page.totalCount?.let { likedTotalCount = it }
+                        if (page.tracks.isNotEmpty() && freshTracks.isEmpty()) {
+                            likedFetchPartial = true
+                            break
+                        }
                         Log.d(
                             TAG,
                             "fetchSpotifyPlaylists: liked songs page offset=$likedOffset, " +
@@ -688,9 +737,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
             // Backstop for a silent short walk: Spotify returning a short page
             // early, or an empty one mid-library, ends the loop without an
             // Error. Spotify's own count says whether we saw everything.
-            if (!likedFetchPartial &&
-                com.stash.data.spotify.fetchedBelowExpected(likedRawWalked, likedTotalCount)
-            ) {
+            if (!likedFetchPartial && likedTotalCount != null && likedRawWalked != likedTotalCount) {
                 likedFetchPartial = true
                 Log.w(
                     TAG,
@@ -706,14 +753,21 @@ class PlaylistFetchWorker @AssistedInject constructor(
             val orderedLikedSongs = sortLikedSongsByAddedAtDesc(allLikedSongs)
 
             if (orderedLikedSongs.isNotEmpty()) {
-                diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.SUCCESS, orderedLikedSongs.size))
+                diagnostics.add(
+                    SyncStepResult(
+                        "SPOTIFY", "getLikedSongs",
+                        if (likedFetchPartial) StepStatus.ERROR else StepStatus.SUCCESS,
+                        orderedLikedSongs.size,
+                        errorMessage = if (likedFetchPartial) "Incomplete Spotify liked songs fetch" else null,
+                    )
+                )
                 Log.d(TAG, "fetchSpotifyPlaylists: found ${orderedLikedSongs.size} liked songs total")
 
                 val likedPlaylistId = remoteSnapshotDao.insertPlaylistSnapshot(
                     RemotePlaylistSnapshotEntity(
                         syncId = syncId,
                         source = MusicSource.SPOTIFY,
-                        sourcePlaylistId = "spotify_liked_songs",
+                        sourcePlaylistId = likedSourceId,
                         playlistName = "Liked Songs",
                         playlistType = PlaylistType.LIKED_SONGS,
                         trackCount = orderedLikedSongs.size,
@@ -741,21 +795,38 @@ class PlaylistFetchWorker @AssistedInject constructor(
                         position = index,
                         isrc = track.isrc,
                         explicit = track.explicit,
+                        remoteAddedAt = item.addedAt?.let { raw ->
+                            runCatching { java.time.Instant.parse(raw).toEpochMilli() }.getOrNull()
+                        },
                     )
                 }
                 if (trackSnapshots.isNotEmpty()) {
                     remoteSnapshotDao.insertTrackSnapshots(trackSnapshots)
                     likedSongCount = trackSnapshots.size
                 }
-            } else if (likedFetchError != null) {
+            } else if (likedFetchError != null || likedFetchPartial) {
                 // Nothing fetched because the request FAILED — report it as the
                 // error it is. Recording it EMPTY ("No liked songs found") hid
                 // the failure and kept allAttemptedStepsFailed from seeing it.
-                diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.ERROR, errorMessage = likedFetchError))
+                diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.ERROR,
+                    errorMessage = likedFetchError ?: "Incomplete Spotify liked songs fetch"))
                 Log.e(TAG, "fetchSpotifyPlaylists: liked songs fetch failed: $likedFetchError")
             } else {
                 diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.EMPTY, errorMessage = "No liked songs found"))
                 Log.d(TAG, "fetchSpotifyPlaylists: liked songs empty after pagination")
+                // getLikedSongs emits Empty only when its raw count and total
+                // agree. A confirmed zero is a valid snapshot; an error is not.
+                remoteSnapshotDao.insertPlaylistSnapshot(
+                    RemotePlaylistSnapshotEntity(
+                        syncId = syncId,
+                        source = MusicSource.SPOTIFY,
+                        sourcePlaylistId = likedSourceId,
+                        playlistName = "Liked Songs",
+                        playlistType = PlaylistType.LIKED_SONGS,
+                        trackCount = 0,
+                        expectedCount = 0,
+                    )
+                )
             }
         } catch (e: Exception) {
             if (e is CancellationException) throw e
@@ -852,17 +923,33 @@ class PlaylistFetchWorker @AssistedInject constructor(
             val mirrorStamps = loadSpotifyMirrorStamps()
             // Read once: what decides the skips also gates hiding missing playlists
             // below. Unreadable: nothing is skipped and nothing is hidden.
-            val spotifySyncMode = runCatching { syncPreferencesManager.spotifySyncMode.first() }
-                .onFailure { if (it is CancellationException) throw it }
-                .getOrNull()
-            spotifySyncModeThisRun = spotifySyncMode
+            // Personal library always reconciles complete snapshots. Keep the
+            // legacy mode for the other types via DiffWorker's preference.
+            val spotifySyncMode = SyncMode.REFRESH
+            spotifySyncModeThisRun = runCatching { syncPreferencesManager.spotifySyncMode.first() }
+                .onFailure { if (it is CancellationException) throw it }.getOrNull()
             val appVersion = appVersionCode(applicationContext)
             val skipCheckedAtMs = System.currentTimeMillis()
             var skippedUnchanged = 0
 
+            var catalogOnly = 0
             for (playlist in customPlaylists) {
                 try {
-                    val trustedStamp = mirrorStamps[playlist.id]
+                    val selected = playlistDao.findBySourceId(scoped(playlist.id))
+                    if (selected == null || !selected.syncEnabled) {
+                        // Discovery is inventory, not a request to read or download all tracks.
+                        remoteSnapshotDao.insertPlaylistSnapshot(
+                            spotifyLibraryPlaylistSnapshot(
+                                playlist = playlist, syncId = syncId, partial = true, snapshotId = null,
+                                sourceId = scoped(playlist.id),
+                            )
+                        )
+                        catalogOnly++
+                        userPlaylistCount++
+                        reportPlaylistFetched()
+                        continue
+                    }
+                    val trustedStamp = mirrorStamps[scoped(playlist.id)]
                         ?.takeIf { isStampable(playlist.id, PlaylistType.CUSTOM) }
                         ?.takeIf { skipCandidate(playlist.revisionId, it.stamp, spotifySyncMode, skipCheckedAtMs, appVersion) != null }
                         ?.let { row ->
@@ -877,7 +964,7 @@ class PlaylistFetchWorker @AssistedInject constructor(
                         // sync: no tracks fetched. The row keeps it in this
                         // run's inventory and tells the diff to leave it alone.
                         remoteSnapshotDao.insertPlaylistSnapshot(
-                            unchangedSpotifyPlaylistSnapshot(playlist, trustedStamp, syncId),
+                            unchangedSpotifyPlaylistSnapshot(playlist, trustedStamp, syncId).copy(sourcePlaylistId = scoped(playlist.id)),
                         )
                         skippedUnchanged++
                         userPlaylistCount++
@@ -946,7 +1033,8 @@ class PlaylistFetchWorker @AssistedInject constructor(
                         spotifyLibraryPlaylistSnapshot(
                             playlist = playlist,
                             syncId = syncId,
-                            partial = fetchFailed || fetchPartial,
+                            partial = fetchFailed || fetchPartial || !countVerified,
+                            sourceId = scoped(playlist.id),
                             // The listing's revision, read before this fetch and
                             // confirmed by it: what the diff stamps once the
                             // tracks are mirrored.
@@ -972,6 +1060,9 @@ class PlaylistFetchWorker @AssistedInject constructor(
                             position = index,
                             isrc = track.isrc,
                             explicit = track.explicit,
+                            remoteAddedAt = item.addedAt?.let { raw ->
+                                runCatching { java.time.Instant.parse(raw).toEpochMilli() }.getOrNull()
+                            },
                         )
                     }
                     if (trackSnapshots.isNotEmpty()) {
@@ -997,21 +1088,9 @@ class PlaylistFetchWorker @AssistedInject constructor(
                 )
             }
 
-            if (spotifySyncMode != null && shouldDeactivateMissingPlaylists(spotifySyncMode, inventoryComplete)) {
-                // The first change this sync makes to the library: "Undo last sync"
-                // must restore from before it, or the playlists hidden here never
-                // come back. The diff step keeps this point instead of taking its own.
-                captureUndoPoint(syncUndoDao, syncLog, syncId, TAG)
-                // Observed, not snapshotted — see [spotifyLivenessIds].
-                val currentIds = spotifyLivenessIds(userPlaylists.map { it.id })
-                val hidden = playlistDao.deactivateMissingSpotifyCustomPlaylists(
-                    currentSourceIds = currentIds,
-                    hasCurrentIds = currentIds.isNotEmpty(),
-                )
-                if (hidden > 0) {
-                    Log.i(TAG, "Deactivated $hidden missing Spotify custom playlist(s)")
-                    syncLog.warn("Hid $hidden Spotify playlist(s) no longer in your account")
-                }
+            if (inventoryComplete) {
+                // Only applied after the account identity is checked again.
+                spotifyCompleteInventory = userPlaylists.map { scoped(it.id) }.distinct()
             }
             diagnostics.add(
                 SyncStepResult(
@@ -1021,7 +1100,11 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     userPlaylistCount,
                     errorMessage = if (inventoryComplete) null else "inventory incomplete — a page/folder/track fetch failed mid-walk",
                     // A shared diagnostics bundle shows how many weren't re-read.
-                    note = if (skippedUnchanged > 0) "$skippedUnchanged unchanged since the last sync, not re-read" else null,
+                    note = when {
+                        catalogOnly > 0 -> "$skippedUnchanged unchanged; $catalogOnly catalog-only"
+                        skippedUnchanged > 0 -> "$skippedUnchanged unchanged since the last sync, not re-read"
+                        else -> null
+                    },
                 )
             )
         } catch (e: SpotifyApiException) {

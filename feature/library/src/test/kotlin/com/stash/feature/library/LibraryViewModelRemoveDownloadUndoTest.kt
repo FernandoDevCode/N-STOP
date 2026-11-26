@@ -94,6 +94,7 @@ class LibraryViewModelRemoveDownloadUndoTest {
     }
 
     private fun buildVm(musicRepository: MusicRepository): LibraryViewModel = LibraryViewModel(
+        playbackPolicy = testPlaybackPolicy(),
         musicRepository = musicRepository,
         playerRepository = mock { on { playerState } doReturn MutableStateFlow(PlayerState()) },
         tokenManager = mock<TokenManager> {

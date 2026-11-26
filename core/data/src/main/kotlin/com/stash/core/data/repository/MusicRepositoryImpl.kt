@@ -319,8 +319,16 @@ class MusicRepositoryImpl @Inject constructor(
     // Tap-time playability is governed by live connectivity, not a preference.
     @OptIn(ExperimentalCoroutinesApi::class)
     override fun getTracksByPlaylist(playlistId: Long): Flow<List<Track>> =
-        trackDao.getByPlaylist(playlistId, includeStreamable = true)
-            .map { entities -> entities.map { it.toDomain() } }
+        trackDao.getByPlaylistWithMembershipDate(playlistId, includeStreamable = true)
+            .map { rows ->
+                val expanded = rows.flatMap { row ->
+                    val track = row.track.toDomain().copy(remoteMembershipAddedAt = row.remoteAddedAt)
+                    com.stash.core.data.db.entity.decodePlaylistPositions(row.position, row.repeatPositions)
+                        .map { track.copy(collectionPosition = it) }
+                }
+                if (rows.any { !it.repeatPositions.isNullOrBlank() }) expanded.sortedBy { it.collectionPosition }
+                else expanded
+            }
             // Off Main, as getAllTracks: a 5K-song Liked playlist converted per tracks write.
             .flowOn(Dispatchers.Default)
 
@@ -334,10 +342,10 @@ class MusicRepositoryImpl @Inject constructor(
      * for exactly the artists the tab lists.
      */
     override fun getAllArtists(): Flow<List<ArtistSummary>> =
-        trackDao.getAllArtists(includeStreamable = false)
+        trackDao.getAllArtists(includeStreamable = true)
 
     override fun getAllAlbums(): Flow<List<AlbumSummary>> =
-        trackDao.getAllAlbums(includeStreamable = false)
+        trackDao.getAllAlbums(includeStreamable = true)
 
     override fun getRecentlyAdded(limit: Int): Flow<List<Track>> =
         trackDao.getRecentlyAdded(limit).map { entities -> entities.map { it.toDomain() } }
@@ -441,10 +449,10 @@ class MusicRepositoryImpl @Inject constructor(
         trackDao.observeLikeState(trackId)
 
     override fun observeTrackById(trackId: Long): Flow<Track?> =
-        trackDao.observeById(trackId).map { it?.toDomain() }
+        trackDao.observeByIdWithLikes(trackId).map { row -> row?.let { it.track.toDomain().copy(importedLiked = it.importedLiked) } }
 
     override fun observeTrackByYoutubeId(youtubeId: String): Flow<Track?> =
-        trackDao.observeByYoutubeId(youtubeId).map { it?.toDomain() }
+        trackDao.observeByYoutubeIdWithLikes(youtubeId).map { row -> row?.let { it.track.toDomain().copy(importedLiked = it.importedLiked) } }
 
     override fun observeDownloadStatus(trackId: Long): Flow<com.stash.core.model.DownloadStatus?> =
         downloadQueueDao.observeStatusForTrack(trackId).distinctUntilChanged()
@@ -590,6 +598,10 @@ class MusicRepositoryImpl @Inject constructor(
         if (trustIsrc) incoming.isrc?.takeIf { it.isNotBlank() }?.let { trackDao.backfillIsrcIfMissing(existing.id, it) }
     }
 
+    override suspend fun removeLikedTrack(trackId: Long, source: com.stash.core.model.MusicSource?) {
+        playlistDao.removeLikedTrackLocally(trackId, source, System.currentTimeMillis())
+    }
+
     override suspend fun deleteTrack(track: Track): Boolean {
         // Best-effort file deletion -- the file may already be gone.
         track.filePath?.let { deleteTrackAudio(track.id, it) }
@@ -611,7 +623,10 @@ class MusicRepositoryImpl @Inject constructor(
 
     override suspend fun queueDownload(trackId: Long): Boolean {
         val entity = trackDao.getById(trackId) ?: return false
-        if (entity.isDownloaded) return false
+        if (entity.isDownloaded) {
+            downloadJobs.withClaimsHeld { trackDao.setOfflineRequested(trackId, true) }
+            return false
+        }
 
         // Reuse an existing queue row if there is one; otherwise insert a fresh
         // manual (discovery-partition) row. A manual tap is an explicit
@@ -676,6 +691,10 @@ class MusicRepositoryImpl @Inject constructor(
 
     override suspend fun removeDownload(trackId: Long) {
         val entity = trackDao.getById(trackId) ?: return
+        // Release only the individual claim. A kept collection still owns the audio.
+        trackDao.setOfflineRequested(trackId, false)
+        downloadQueueDao.clearIndividualQueueClaim(trackId)
+        if (trackDao.hasOfflineCollectionClaim(trackId)) return
         entity.filePath?.let { deleteTrackAudio(trackId, it) }
         // Drop pending/in-flight queue entries so a fresh download can't
         // immediately repopulate the file we just removed.
@@ -705,7 +724,7 @@ class MusicRepositoryImpl @Inject constructor(
         // run was cancelled or cut short. "Sync now" downloads on any network,
         // like that sync's own download step (SyncScheduler.triggerManualSync).
         if (queued > 0 || downloadQueueDao.hasPendingDiscoveryDownload()) {
-            startDiscoveryDrain(background = true, anyNetwork = manualSync)
+            startDiscoveryDrain(background = true, anyNetwork = false)
         }
         return queued
     }
@@ -735,7 +754,11 @@ class MusicRepositoryImpl @Inject constructor(
      */
     private suspend fun dropLeftoverDownloads() {
         try {
-            val dropped = downloadQueueDao.cancelLeftoverDiscoveryDownloads()
+            val dropped = downloadJobs.withClaimsHeld {
+                downloadQueueDao.recoverAuthorisedLegacyRequests()
+                downloadQueueDao.cancelDownloadsWithNoEnabledPlaylist() +
+                    downloadQueueDao.cancelLeftoverDiscoveryDownloads()
+            }
             if (dropped > 0) {
                 android.util.Log.i("MusicRepository", "cancelled $dropped leftover download(s) nobody asked for")
             }
@@ -830,7 +853,10 @@ class MusicRepositoryImpl @Inject constructor(
         // Stream-only mode never runs the sync's download step, so songs an
         // earlier Download-mode sync queued would wait forever (and count as
         // handled below). Hand them to the drain this starts instead.
-        val moved = if (streamingPreference.current()) downloadQueueDao.moveSyncRowsToDiscovery(playlistId) else 0
+        val playlist = playlistDao.getById(playlistId)
+        val personalSpotify = playlist?.source == com.stash.core.model.MusicSource.SPOTIFY &&
+            playlist.type in setOf(com.stash.core.model.PlaylistType.CUSTOM, com.stash.core.model.PlaylistType.LIKED_SONGS)
+        val moved = if (personalSpotify || streamingPreference.current()) downloadQueueDao.moveSyncRowsToDiscovery(playlistId) else 0
         val tracks = trackDao.getByPlaylist(playlistId, includeStreamable = true)
             .first()
         // A match the user dismissed stays dismissed, and a track with a row
@@ -861,13 +887,39 @@ class MusicRepositoryImpl @Inject constructor(
      * later waits for the lock, then deletes what this queued.
      */
     private suspend fun insertKeptPlaylist(playlistId: Long): Int = KEEP_OFFLINE_LOCK.withLock {
-        val kept: suspend () -> Boolean = { playlistDao.getById(playlistId)?.keepOffline == true }
+        val kept: suspend () -> Boolean = { playlistDao.getById(playlistId)?.keepOffline == true ||
+            playlistDao.isAggregateLikesClaimed(playlistId) }
         if (kept()) insertDownloadsForPlaylist(playlistId, stillWanted = kept) else 0
     }
 
     /** A kept playlist's missing songs, queued and started like a tap. */
     internal suspend fun queueKeptPlaylist(playlistId: Long) {
-        if (insertKeptPlaylist(playlistId) > 0) startDiscoveryDrain(background = false)
+        if (insertKeptPlaylist(playlistId) > 0) startDiscoveryDrain(background = true)
+    }
+
+    override suspend fun setAllLikedOffline(on: Boolean) {
+        if (on) {
+            playlistDao.ensurePlaylist(com.stash.core.data.db.entity.PlaylistEntity(
+                name = "Liked Songs",
+                source = com.stash.core.model.MusicSource.BOTH,
+                sourceId = "stash_liked_songs",
+                type = com.stash.core.model.PlaylistType.STASH_LIKED,
+                syncEnabled = true,
+            ))
+        }
+        playlistDao.setAggregateLikesOffline(on)
+        if (on) {
+            queueKeptPlaylists()
+            return
+        }
+        KEEP_OFFLINE_LOCK.withLock {
+            for (id in playlistDao.getActiveLikedCollectionIds()) {
+                if (playlistDao.isAggregateLikesClaimed(id) ||
+                    playlistDao.getById(id)?.keepOffline == true) continue
+                downloadQueueDao.cancelWaitingForPlaylist(id)
+                removeDownloadsForPlaylist(id)
+            }
+        }
     }
 
     override suspend fun setPlaylistDownload(playlistId: Long, on: Boolean) {
@@ -880,11 +932,21 @@ class MusicRepositoryImpl @Inject constructor(
             return
         }
         KEEP_OFFLINE_LOCK.withLock {
-            // Off stops what hasn't started: the songs still waiting go (a song
-            // running now finishes). Songs already downloaded stay (owner's call).
+            // Cancel requests that have not started. Personal collections also
+            // release completed downloads that no individual or collection owns.
+            if (playlistDao.isAggregateLikesClaimed(playlistId)) return@withLock
             downloadQueueDao.cancelWaitingForPlaylist(playlistId)
-            if (!streamingPreference.current()) {
-                // Download mode: a synced playlist downloads through sync, so off
+            val playlist = playlistDao.getById(playlistId)
+            val personalSpotify = playlist?.source == com.stash.core.model.MusicSource.SPOTIFY &&
+                playlist.type in setOf(com.stash.core.model.PlaylistType.CUSTOM, com.stash.core.model.PlaylistType.LIKED_SONGS)
+            val personalLocal = playlist?.source in setOf(com.stash.core.model.MusicSource.BOTH, com.stash.core.model.MusicSource.LOCAL) &&
+                playlist?.type in setOf(com.stash.core.model.PlaylistType.CUSTOM, com.stash.core.model.PlaylistType.STASH_LIKED)
+            if ((personalSpotify || personalLocal) && playlist?.keepOffline == false) {
+                // Existing v55 files carry a protective individual claim after migration.
+                // Only new collection-owned files with no remaining claim are released.
+                removeDownloadsForPlaylist(playlistId)
+            } else if (!personalSpotify && !personalLocal && !streamingPreference.current()) {
+                // Legacy download mode for other source/type combinations, so off
                 // has to turn that off too, exactly as the Sync tab's switch does:
                 // sync off, then drop sync-queued songs no synced playlist wants.
                 // No Home unpin.
@@ -897,7 +959,7 @@ class MusicRepositoryImpl @Inject constructor(
     /** A playlist kept on the phone (#474) downloads what the user adds to it. Never fails the add. */
     private suspend fun queueIfKeptOffline(playlistId: Long) {
         try {
-            if (playlistDao.getById(playlistId)?.keepOffline == true) queueKeptPlaylist(playlistId)
+            if (playlistDao.getById(playlistId)?.keepOffline == true || playlistDao.isAggregateLikesClaimed(playlistId)) queueKeptPlaylist(playlistId)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -908,15 +970,35 @@ class MusicRepositoryImpl @Inject constructor(
     override suspend fun removeDownloadsForPlaylist(playlistId: Long): Int {
         val tracks = trackDao.getByPlaylist(playlistId, includeStreamable = true)
             .first()
-        val downloaded = tracks.filter { it.isDownloaded }
-        for (entity in downloaded) {
-            // Two of the playlist's songs on one file: it goes with the second,
-            // once the first's row no longer records it.
-            entity.filePath?.let { deleteTrackAudio(entity.id, it) }
-            downloadQueueDao.deleteByTrackId(entity.id)
-            trackDao.clearDownloadState(entity.id)
+        var removed = 0
+        for (entity in tracks.filter { it.isDownloaded }) {
+            // Imported media, migrated legacy files and explicit requests are not
+            // owned solely by the collection. A different saved (but not offline)
+            // playlist is not in itself a reason to retain a new download.
+            if (entity.source == com.stash.core.model.MusicSource.LOCAL ||
+                entity.offlineRequested || downloadQueueDao.hasUserRequest(entity.id) ||
+                trackDao.hasOfflineCollectionClaim(entity.id)
+            ) continue
+            downloadJobs.withClaimsHeld {
+                val current = trackDao.getById(entity.id) ?: return@withClaimsHeld
+                val queue = downloadQueueDao.getByTrackId(entity.id)
+                if (queue != null && downloadJobs.isLive(queue.id)) return@withClaimsHeld
+                if (!current.isDownloaded || current.offlineRequested || current.filePath != entity.filePath ||
+                    current.source == com.stash.core.model.MusicSource.LOCAL ||
+                    downloadQueueDao.hasUserRequest(entity.id) ||
+                    trackDao.hasOfflineCollectionClaim(entity.id)
+                ) return@withClaimsHeld
+                // Do not forget a real file if SAF or filesystem removal failed.
+                val path = current.filePath
+                if (path != null && !trackDao.fileUsedByAnotherTrack(path, current.id) &&
+                    !deleteTrackFile(path)
+                ) return@withClaimsHeld
+                downloadQueueDao.deleteByTrackId(current.id)
+                trackDao.clearDownloadState(current.id)
+                removed++
+            }
         }
-        return downloaded.size
+        return removed
     }
 
     override suspend fun removePlaylist(playlist: Playlist) {
@@ -942,7 +1024,8 @@ class MusicRepositoryImpl @Inject constructor(
      */
     private suspend fun downloadsItsSongs(playlistId: Long): Boolean {
         val playlist = playlistDao.getById(playlistId) ?: return false
-        return playlist.keepOffline || (playlist.syncEnabled && playlist.sourceId.startsWith("share:"))
+        return playlist.keepOffline || playlistDao.isAggregateLikesClaimed(playlistId) ||
+            (playlist.syncEnabled && playlist.sourceId.startsWith("share:"))
     }
 
     /**
@@ -973,6 +1056,19 @@ class MusicRepositoryImpl @Inject constructor(
     }
 
     // ── Custom playlist management ──────────────────────────────────────
+
+    override suspend fun copyPlaylist(playlistId: Long, name: String): Long {
+        val original = playlistDao.getById(playlistId) ?: error("Playlist unavailable")
+        val ids = getTracksByPlaylist(playlistId).first().map { it.id }
+        return playlistDao.createPlaylistCopy(
+            com.stash.core.data.db.entity.PlaylistEntity(
+                name = name, source = com.stash.core.model.MusicSource.BOTH,
+                sourceId = "custom_${java.util.UUID.randomUUID()}",
+                type = com.stash.core.model.PlaylistType.CUSTOM,
+                artUrl = original.artUrl, syncEnabled = true,
+            ), ids,
+        )
+    }
 
     override suspend fun createPlaylist(name: String): Long {
         val entity = com.stash.core.data.db.entity.PlaylistEntity(
@@ -1013,7 +1109,10 @@ class MusicRepositoryImpl @Inject constructor(
         // Defensive pre-check + try/catch so the crash becomes a logged no-op
         // and the user can keep using the app.
         val trackExists = trackDao.getById(trackId) != null
-        val playlistExists = playlistDao.getById(playlistId) != null
+        val destination = playlistDao.getById(playlistId)
+        if (destination?.source == com.stash.core.model.MusicSource.SPOTIFY &&
+            destination.type == com.stash.core.model.PlaylistType.CUSTOM) return
+        val playlistExists = destination != null
         if (!trackExists || !playlistExists) {
             android.util.Log.w(
                 "MusicRepository",
@@ -1077,7 +1176,10 @@ class MusicRepositoryImpl @Inject constructor(
     override suspend fun addTracksToPlaylist(trackIds: List<Long>, playlistId: Long) {
         // ponytail: no app-wide scope exists, so NonCancellable keeps the batch alive.
         withContext(NonCancellable) {
-            if (playlistDao.getById(playlistId) == null) {
+            val destination = playlistDao.getById(playlistId)
+            if (destination?.source == com.stash.core.model.MusicSource.SPOTIFY &&
+                destination.type == com.stash.core.model.PlaylistType.CUSTOM) return@withContext
+            if (destination == null) {
                 android.util.Log.w("MusicRepository", "addTracksToPlaylist: playlist $playlistId is gone")
                 return@withContext
             }
@@ -1140,6 +1242,7 @@ class MusicRepositoryImpl @Inject constructor(
     }
 
     override suspend fun linkTrackToDownloadsMix(trackId: Long) {
+        trackDao.setOfflineRequested(trackId, true)
         val playlistId = playlistDao.ensurePlaylistAndActiveCrossRef(
             playlist = downloadsMixEntity(),
             trackId = trackId,
@@ -1158,6 +1261,9 @@ class MusicRepositoryImpl @Inject constructor(
         )
 
     override suspend fun removeTrackFromPlaylist(trackId: Long, playlistId: Long) {
+        val playlist = playlistDao.getById(playlistId)
+        if (playlist?.source == com.stash.core.model.MusicSource.SPOTIFY &&
+            playlist.type == com.stash.core.model.PlaylistType.CUSTOM) return
         playlistDao.softDeleteTrackFromPlaylist(playlistId, trackId)
         // v0.9.37 — count downloaded + streamable. Stream-only tracks
         // (e.g. Liked Songs added from the Now Playing heart on a
@@ -1204,17 +1310,38 @@ class MusicRepositoryImpl @Inject constructor(
 
     // ── Blacklist + cascade deletion ────────────────────────────────────
 
+    override suspend fun removeLocalPlaylistOccurrence(playlistId: Long, trackId: Long, position: Int?): Boolean {
+        if (sharedMixDao.forPlaylist(playlistId)?.let {
+                it.role == com.stash.core.data.db.entity.SharedMixEntity.ROLE_FOLLOWER &&
+                    it.status == com.stash.core.data.db.entity.SharedMixEntity.STATUS_ACTIVE
+            } == true) return false
+        val removed = playlistDao.removeLocalPlaylistOccurrence(playlistId, trackId, position)
+        if (removed && sharedMixDao.forPlaylist(playlistId)?.role == com.stash.core.data.db.entity.SharedMixEntity.ROLE_OWNER) {
+            com.stash.core.data.share.SharedMixPublishWorker.enqueue(context, delaySeconds = 30)
+        }
+        return removed
+    }
+
     override suspend fun removeTrackFromPlaylistAndMaybeDelete(
         trackId: Long,
         fromPlaylistId: Long,
         alsoBlacklist: Boolean,
-    ): MusicRepository.CascadeRemovalSummary =
-        removeAndMaybeDelete(trackId, fromPlaylistId, alsoBlacklist).also {
+    ): MusicRepository.CascadeRemovalSummary {
+        val playlist = playlistDao.getById(fromPlaylistId)
+        if (playlist?.type == com.stash.core.model.PlaylistType.CUSTOM) {
+            if (playlist.source == com.stash.core.model.MusicSource.SPOTIFY) return MusicRepository.CascadeRemovalSummary(0, 0, 0, 0)
+            if (!alsoBlacklist && playlist.source in setOf(com.stash.core.model.MusicSource.BOTH, com.stash.core.model.MusicSource.LOCAL)) {
+                removeLocalPlaylistOccurrence(fromPlaylistId, trackId, null)
+                return MusicRepository.CascadeRemovalSummary(0, 0, 0, 0)
+            }
+        }
+        return removeAndMaybeDelete(trackId, fromPlaylistId, alsoBlacklist).also {
             // Every path detaches the track, so the Library card's count must follow.
             // A block also recounts every other playlist that held it (BlocklistGuard.block).
             val count = trackDao.getByPlaylist(fromPlaylistId, includeStreamable = true).first().size
             playlistDao.updateTrackCount(fromPlaylistId, count)
         }
+    }
 
     private suspend fun removeAndMaybeDelete(
         trackId: Long,

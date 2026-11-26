@@ -198,21 +198,21 @@ class LibraryViewModelTest {
     fun playAlbum_queues_every_downloaded_track_with_matching_artist_credits() = runTest {
         val album = "HEROES & VILLAINS"
         val onAlbum = listOf(
-            Track(1L, "Superhero", "Metro Boomin, Future", album = album, filePath = "/a"),
-            Track(2L, "Trance", "Metro Boomin, Travis Scott", album = album, filePath = "/b"),
+            Track(1L, "Superhero", "Metro Boomin, Future", album = album, isDownloaded = true, filePath = "/a"),
+            Track(2L, "Trance", "Metro Boomin, Travis Scott", album = album, isDownloaded = true, filePath = "/b"),
             // Same album but not downloaded — must NOT be queued.
             Track(3L, "Creepin'", "Metro Boomin, The Weeknd, 21 Savage", album = album, filePath = null),
             // Same album but credited without the primary act — dropped by matchesArtistCredits.
-            Track(4L, "Private Dancer", "Don Toliver", album = album, filePath = "/e"),
+            Track(4L, "Private Dancer", "Don Toliver", album = album, isDownloaded = true, filePath = "/e"),
         )
         // Different album by a different artist — must NOT leak in.
-        val offAlbum = Track(5L, "Highest in the Room", "Travis Scott", album = "JACKBOYS", filePath = "/d")
+        val offAlbum = Track(5L, "Highest in the Room", "Travis Scott", album = "JACKBOYS", isDownloaded = true, filePath = "/d")
         val musicRepo = mock<MusicRepository> {
             on { getAllTracks() } doReturn flowOf(onAlbum + offAlbum)
         }
 
         val playerRepo = playerRepoMock()
-        val vm = buildVm(musicRepository = musicRepo, playerRepository = playerRepo)
+        val vm = buildVm(musicRepository = musicRepo, playerRepository = playerRepo, playbackPolicy = testPlaybackPolicy(online = false))
 
         vm.playAlbum(album, "Metro Boomin")
         runCurrent()
@@ -229,18 +229,18 @@ class LibraryViewModelTest {
     fun addAlbumToQueue_appends_every_downloaded_track_with_matching_artist_credits() = runTest {
         val album = "HEROES & VILLAINS"
         val onAlbum = listOf(
-            Track(1L, "Superhero", "Metro Boomin, Future", album = album, filePath = "/a"),
-            Track(2L, "Trance", "Metro Boomin, Travis Scott", album = album, filePath = "/b"),
+            Track(1L, "Superhero", "Metro Boomin, Future", album = album, isDownloaded = true, filePath = "/a"),
+            Track(2L, "Trance", "Metro Boomin, Travis Scott", album = album, isDownloaded = true, filePath = "/b"),
             Track(3L, "Creepin'", "Metro Boomin, The Weeknd, 21 Savage", album = album, filePath = null),
-            Track(4L, "Private Dancer", "Don Toliver", album = album, filePath = "/e"),
+            Track(4L, "Private Dancer", "Don Toliver", album = album, isDownloaded = true, filePath = "/e"),
         )
-        val offAlbum = Track(5L, "Highest in the Room", "Travis Scott", album = "JACKBOYS", filePath = "/d")
+        val offAlbum = Track(5L, "Highest in the Room", "Travis Scott", album = "JACKBOYS", isDownloaded = true, filePath = "/d")
         val musicRepo = mock<MusicRepository> {
             on { getAllTracks() } doReturn flowOf(onAlbum + offAlbum)
         }
 
         val playerRepo = playerRepoMock()
-        val vm = buildVm(musicRepository = musicRepo, playerRepository = playerRepo)
+        val vm = buildVm(musicRepository = musicRepo, playerRepository = playerRepo, playbackPolicy = testPlaybackPolicy(online = false))
 
         vm.addAlbumToQueue(album, "Metro Boomin")
         runCurrent()
@@ -250,6 +250,23 @@ class LibraryViewModelTest {
         verify(playerRepo, org.mockito.kotlin.never()).addToQueue(onAlbum[2])
         verify(playerRepo, org.mockito.kotlin.never()).addToQueue(onAlbum[3])
         verify(playerRepo, org.mockito.kotlin.never()).addToQueue(offAlbum)
+    }
+
+    @Test
+    fun playAlbum_online_includes_saved_tracks_without_audio() = runTest {
+        val local = Track(1L, "Local", "Artist", album = "Album", isDownloaded = true, filePath = "/music/a")
+        val remote = Track(2L, "Saved", "Artist", album = "Album", savedInCollection = true)
+        val unavailable = Track(3L, "Unavailable", "Artist", album = "Album", isStreamableCheckedAt = 1L)
+        val musicRepo = mock<MusicRepository> {
+            on { getAllTracks() } doReturn flowOf(listOf(local, remote, unavailable))
+        }
+        val playerRepo = playerRepoMock()
+        val vm = buildVm(musicRepository = musicRepo, playerRepository = playerRepo,
+            playbackPolicy = testPlaybackPolicy())
+        vm.playAlbum("Album", "Artist")
+        runCurrent()
+        verify(playerRepo).setQueue(listOf(local, remote), 0,
+            source = com.stash.core.model.PlaybackSource.Album("Album", "Artist"))
     }
 
     @Test
@@ -355,6 +372,7 @@ class LibraryViewModelTest {
      * collaborator pass in their own configured mock.
      */
     private fun buildVm(
+        playbackPolicy: LibraryPlaybackPolicy = testPlaybackPolicy(),
         playerRepository: PlayerRepository = playerRepoMock(),
         musicRepository: MusicRepository = musicRepoMock(),
         tokenManager: TokenManager = tokenManagerMock(),
@@ -366,6 +384,7 @@ class LibraryViewModelTest {
         libraryPreferencesStore: LibraryPreferencesStore = libraryPreferencesStoreMock(),
         artistImageDao: ArtistImageDao = mock { on { observeAll() } doReturn flowOf(emptyList()) },
     ): LibraryViewModel = LibraryViewModel(
+        playbackPolicy = playbackPolicy,
         musicRepository = musicRepository,
         playerRepository = playerRepository,
         tokenManager = tokenManager,

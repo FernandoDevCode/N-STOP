@@ -95,7 +95,7 @@ class DownloadQueueDaoMixExclusionTest {
     @Test fun `a switched-on mix makes its track requeue-eligible, a switched-off one does not`() = runTest {
         val eligible = dao.getUnqueuedTrackIds(listOf(MusicSource.SPOTIFY.name))
         assertThat(eligible).contains(dailyMixUnqueued)
-        assertThat(eligible).contains(customUnqueued)
+        assertThat(eligible).doesNotContain(customUnqueued)
         assertThat(eligible).doesNotContain(dailyMixOffUnqueued)
     }
 
@@ -103,7 +103,7 @@ class DownloadQueueDaoMixExclusionTest {
         dao.deleteOrphanedQueueEntries()
 
         assertThat(dao.getByTrackId(dailyMixQueued)).isNotNull()
-        assertThat(dao.getByTrackId(customQueued)).isNotNull()
+        assertThat(dao.getByTrackId(customQueued)).isNull()
         assertThat(dao.getByTrackId(dailyMixOffQueued)).isNull()
         assertThat(dao.getByTrackId(stashMixQueued)).isNull()
     }
@@ -112,7 +112,7 @@ class DownloadQueueDaoMixExclusionTest {
         dao.cancelDownloadsWithNoEnabledPlaylist()
 
         assertThat(dao.getByTrackId(dailyMixQueued)).isNotNull()
-        assertThat(dao.getByTrackId(customQueued)).isNotNull()
+        assertThat(dao.getByTrackId(customQueued)).isNull()
         assertThat(dao.getByTrackId(dailyMixOffQueued)).isNull()
         assertThat(dao.getByTrackId(stashMixQueued)).isNull()
     }

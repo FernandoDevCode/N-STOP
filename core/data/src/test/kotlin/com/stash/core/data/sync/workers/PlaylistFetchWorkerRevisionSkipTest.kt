@@ -73,7 +73,9 @@ class PlaylistFetchWorkerRevisionSkipTest {
     private val spotify = mockk<SpotifyApiClient>()
     private val syncPreferencesManager = mockk<SyncPreferencesManager>()
     private val streamingPreference = mockk<StreamingPreference>()
+    private fun scoped(id: String) = SpotifyAccountScope.scoped(SpotifyAccountScope.prefix("testuser"), id)
     private val tokenManager = mockk<TokenManager> {
+        coEvery { getSpotifyLibraryAccountId() } returns "testuser"
         coEvery { isAuthenticated(AuthService.SPOTIFY) } returns true
         coEvery { isAuthenticated(AuthService.YOUTUBE_MUSIC) } returns false
     }
@@ -136,7 +138,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
     ): Long {
         val playlistId = db.playlistDao().insert(
             PlaylistEntity(
-                name = "Playlist pl1", source = MusicSource.SPOTIFY, sourceId = "pl1",
+                name = "Playlist pl1", source = MusicSource.SPOTIFY, sourceId = scoped("pl1"),
                 type = PlaylistType.CUSTOM, syncEnabled = syncEnabled,
             ),
         )
@@ -163,7 +165,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
     }
 
     private suspend fun snapshotOf(sourceId: String, syncId: Long) =
-        db.remoteSnapshotDao().getPlaylistSnapshotsBySyncId(syncId).single { it.sourcePlaylistId == sourceId }
+        db.remoteSnapshotDao().getPlaylistSnapshotsBySyncId(syncId).single { it.sourcePlaylistId == scoped(sourceId) }
 
     private suspend fun userPlaylistsStep(syncId: Long): SyncStepResult =
         Json.decodeFromString<List<SyncStepResult>>(db.syncHistoryDao().getById(syncId)!!.diagnostics!!)
@@ -174,6 +176,17 @@ class PlaylistFetchWorkerRevisionSkipTest {
             .filter { it.removedAt == null }
             .map { it.trackId to it.position }
             .sortedBy { it.second }
+
+    @Test fun `confirmed empty Spotify likes are distinct from fetch failure`() = runBlocking {
+        val empty = snapshotOf("spotify_liked_songs", runFetch())
+        assertEquals(0, empty.expectedCount)
+        assertFalse(empty.partial)
+
+        coEvery { spotify.getLikedSongs(any(), any()) } returns SyncResult.Error("unavailable")
+        val failed = runFetch()
+        assertTrue(db.remoteSnapshotDao().getPlaylistSnapshotsBySyncId(failed)
+            .none { it.sourcePlaylistId == scoped("spotify_liked_songs") })
+    }
 
     // ── Skip ─────────────────────────────────────────────────────────────
 
@@ -212,15 +225,44 @@ class PlaylistFetchWorkerRevisionSkipTest {
     @Test fun `a skipped playlist is never hidden as missing from the account`() = runBlocking {
         val playlistId = seedMirroredPlaylist()
         val gone = db.playlistDao().insert(
-            PlaylistEntity(name = "Unsaved", source = MusicSource.SPOTIFY, sourceId = "gone", type = PlaylistType.CUSTOM),
+            PlaylistEntity(name = "Unsaved", source = MusicSource.SPOTIFY, sourceId = scoped("gone"), type = PlaylistType.CUSTOM, syncEnabled = true),
         )
 
         runFetch()
 
         // REFRESH with a complete inventory: the missing-playlist sweep ran...
-        assertFalse(db.playlistDao().getById(gone)!!.isActive)
+        assertTrue(db.playlistDao().getById(gone)!!.isActive)
+        assertFalse(db.playlistDao().getById(gone)!!.syncEnabled)
         // ...and the listed-but-skipped playlist counted as present.
         assertTrue(db.playlistDao().getById(playlistId)!!.isActive)
+    }
+
+    @Test fun `another Spotify account keeps old likes and playlist data apart`() = runBlocking {
+        val oldPlaylist = seedMirroredPlaylist()
+        val oldMembers = activeMemberships(oldPlaylist)
+        val oldLiked = db.playlistDao().insert(PlaylistEntity(
+            name = "Liked Songs", source = MusicSource.SPOTIFY,
+            sourceId = scoped("spotify_liked_songs"), type = PlaylistType.LIKED_SONGS,
+            syncEnabled = true, keepOffline = true,
+        ))
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(
+            playlistId = oldLiked, trackId = oldMembers.first().first,
+        ))
+        coEvery { tokenManager.getSpotifyLibraryAccountId() } returns "otheruser"
+        val newPrefix = SpotifyAccountScope.prefix("otheruser")
+        val runId = runFetch()
+        val snapshots = db.remoteSnapshotDao().getPlaylistSnapshotsBySyncId(runId)
+        assertTrue(snapshots.all { it.sourcePlaylistId.startsWith(newPrefix) })
+        assertTrue(runDiff(runId) is ListenableWorker.Result.Success)
+        assertEquals(oldMembers, activeMemberships(oldPlaylist))
+        assertFalse(db.playlistDao().getById(oldPlaylist)!!.syncEnabled)
+        assertEquals(PlaylistType.CUSTOM, db.playlistDao().getById(oldLiked)!!.type)
+        assertTrue(db.playlistDao().getById(oldLiked)!!.keepOffline)
+        assertEquals(1, activeMemberships(oldLiked).size)
+        val newLiked = db.playlistDao().findBySourceId(SpotifyAccountScope.scoped(newPrefix, "spotify_liked_songs"))!!
+        assertEquals(PlaylistType.LIKED_SONGS, newLiked.type)
+        assertTrue(activeMemberships(newLiked.id).isEmpty())
+        coVerify(exactly = 0) { spotify.getPlaylistTracks("pl1") }
     }
 
     // ── Read ─────────────────────────────────────────────────────────────
@@ -248,10 +290,12 @@ class PlaylistFetchWorkerRevisionSkipTest {
         assertNull("nothing to stamp it with", snapshotOf("pl1", syncId).snapshotId)
     }
 
-    @Test fun `a playlist new to this phone is read`() = runBlocking {
-        runFetch()
-
-        coVerify(exactly = 1) { spotify.getPlaylistTracks("pl1") }
+    @Test fun `a playlist new to this phone is catalogued without importing tracks`() = runBlocking {
+        val syncId = runFetch()
+        val snapshot = snapshotOf("pl1", syncId)
+        assertTrue(snapshot.partial)
+        assertNull(snapshot.snapshotId)
+        coVerify(exactly = 0) { spotify.getPlaylistTracks("pl1") }
     }
 
     @Test fun `a playlist whose last full sync is a week old is read however unchanged`() = runBlocking {
@@ -308,6 +352,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
     }
 
     @Test fun `a fetch Spotify's count didn't verify carries no revision, so it is read again next time`() = runBlocking {
+        db.playlistDao().insert(PlaylistEntity(name = "Playlist pl1", source = MusicSource.SPOTIFY, sourceId = scoped("pl1"), type = PlaylistType.CUSTOM, syncEnabled = true))
         coEvery { spotify.getPlaylistTracks(any()) } returns SyncResult.Success(
             SpotifyPlaylistTracks(tracks = listOf(track("A"), track("B")), countVerified = false, revisionId = revision),
         )
@@ -318,6 +363,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
     }
 
     @Test fun `a playlist that changed between the listing and the fetch is mirrored but not stamped`() = runBlocking {
+        db.playlistDao().insert(PlaylistEntity(name = "Playlist pl1", source = MusicSource.SPOTIFY, sourceId = scoped("pl1"), type = PlaylistType.CUSTOM, syncEnabled = true))
         // The walk's first page reports a newer revision than the listing read just before.
         coEvery { spotify.getPlaylistTracks(any()) } returns SyncResult.Success(
             SpotifyPlaylistTracks(
@@ -334,6 +380,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
     }
 
     @Test fun `a fetch whose first page carried no revision is not stamped`() = runBlocking {
+        db.playlistDao().insert(PlaylistEntity(name = "Playlist pl1", source = MusicSource.SPOTIFY, sourceId = scoped("pl1"), type = PlaylistType.CUSTOM, syncEnabled = true))
         coEvery { spotify.getPlaylistTracks(any()) } returns SyncResult.Success(
             SpotifyPlaylistTracks(tracks = listOf(track("A"), track("B")), countVerified = true, revisionId = null),
         )
@@ -347,7 +394,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
         val ownedId = "37i9dQZEVXcDiscoverWeekly"
         listing(listed(ownedId, revision))
         val pid = db.playlistDao().insert(
-            PlaylistEntity(name = "Discover Weekly", source = MusicSource.SPOTIFY, sourceId = ownedId, type = PlaylistType.CUSTOM),
+            PlaylistEntity(name = "Discover Weekly", source = MusicSource.SPOTIFY, sourceId = scoped(ownedId), type = PlaylistType.CUSTOM, syncEnabled = true),
         )
         db.playlistDao().updateSnapshotId(
             pid,
@@ -360,6 +407,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
     }
 
     @Test fun `a failed fetch carries no revision`() = runBlocking {
+        db.playlistDao().insert(PlaylistEntity(name = "Playlist pl1", source = MusicSource.SPOTIFY, sourceId = scoped("pl1"), type = PlaylistType.CUSTOM, syncEnabled = true))
         coEvery { spotify.getPlaylistTracks(any()) } returns SyncResult.Error("boom")
 
         val syncId = runFetch()
@@ -386,7 +434,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
         return copy to failedId
     }
 
-    @Test fun `a song downloaded elsewhere makes the next sync read the playlist and link it in`() = runBlocking {
+    @Test fun `a downloaded approximation triggers a read but cannot fabricate a playlist occurrence`() = runBlocking {
         val playlistId = seedMirroredPlaylist()
         val (copy, failedId) = downloadCopyOfA(playlistId)
 
@@ -394,10 +442,12 @@ class PlaylistFetchWorkerRevisionSkipTest {
         runDiff(syncId)
 
         coVerify(exactly = 1) { spotify.getPlaylistTracks("pl1") }
-        // Exactly what a full sync always did: the copy joins at the stub's position
-        // and the stub's failed download is closed.
-        assertEquals(0, db.playlistDao().getCrossRefsForPlaylist(playlistId).single { it.trackId == copy }.position)
-        assertEquals(DownloadStatus.COMPLETED, db.downloadQueueDao().getStatusById(failedId))
+        // Canonical title/artist is not proof of remote membership or a completed download.
+        val refs = db.playlistDao().getCrossRefsForPlaylist(playlistId)
+        assertEquals(listOf(0, 1), refs.map { it.position }.sorted())
+        assertTrue(refs.none { it.trackId == copy })
+        assertEquals("/music/a.flac", db.trackDao().getById(copy)?.filePath)
+        assertEquals(DownloadStatus.FAILED, db.downloadQueueDao().getStatusById(failedId))
         // The new stamp vouches for the new state: the sync after skips again.
         runFetch()
         coVerify(exactly = 1) { spotify.getPlaylistTracks("pl1") }
@@ -430,12 +480,13 @@ class PlaylistFetchWorkerRevisionSkipTest {
     // ── End to end: read, stamp, then skip ───────────────────────────────
 
     @Test fun `a playlist read and mirrored completely is skipped by the next sync`() = runBlocking {
+        db.playlistDao().insert(PlaylistEntity(name = "Playlist pl1", source = MusicSource.SPOTIFY, sourceId = scoped("pl1"), type = PlaylistType.CUSTOM, syncEnabled = true))
         // Stream-only: a playlist new to the phone starts switched off, and only
         // there does the diff mirror (and so stamp) a switched-off playlist.
         coEvery { streamingPreference.current() } returns true
         val first = runFetch()
         runDiff(first)
-        val playlistId = db.playlistDao().findBySourceId("pl1")!!.id
+        val playlistId = db.playlistDao().findBySourceId(scoped("pl1"))!!.id
         assertTrue("stamped by the diff", SpotifyMirrorStamp.decode(db.playlistDao().getSnapshotId(playlistId)) != null)
 
         runFetch()
@@ -443,7 +494,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
         coVerify(exactly = 1) { spotify.getPlaylistTracks("pl1") }
     }
 
-    @Test fun `switching on a skipped playlist's download still queues its songs`() = runBlocking {
+    @Test fun `switching on import for a skipped playlist does not queue downloads`() = runBlocking {
         // Download mode, switched off: skipped by the fetch, and the diff never
         // touches a switched-off playlist anyway. The songs it holds are what the
         // sync's download step queues for a switched-on playlist, so they must
@@ -456,7 +507,8 @@ class PlaylistFetchWorkerRevisionSkipTest {
         db.playlistDao().setSyncEnabledAndPin(playlistId, enabled = true, now = System.currentTimeMillis())
 
         val queued = db.downloadQueueDao().getUnqueuedTrackIds(listOf("SPOTIFY", "BOTH"))
-        assertEquals(activeMemberships(playlistId).map { it.first }.toSet(), queued.toSet())
+        assertTrue(activeMemberships(playlistId).isNotEmpty())
+        assertTrue(queued.isEmpty())
     }
 
     // ── Runners ──────────────────────────────────────────────────────────

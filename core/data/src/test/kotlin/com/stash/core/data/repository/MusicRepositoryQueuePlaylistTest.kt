@@ -266,10 +266,10 @@ class MusicRepositoryQueuePlaylistTest {
         )
     }
 
-    @Test fun `a manual sync downloads kept playlists on any network, even with Wi-Fi only on`() = runTest {
+    @Test fun `a manual sync respects Wi-Fi only for kept playlists`() = runTest {
         member(playlist("Kept", keepOffline = true), 0, track("A"))
         assertEquals(1, repo(wifiOnly = true).queueKeptPlaylists(manualSync = true))
-        assertEquals(listOf(WorkInfo.State.ENQUEUED to NetworkType.CONNECTED), liveDrains())
+        assertEquals(listOf(WorkInfo.State.ENQUEUED to NetworkType.UNMETERED), liveDrains())
     }
 
     /** A cold start and a sync can both look for a waiting run at once; only one may start one. */

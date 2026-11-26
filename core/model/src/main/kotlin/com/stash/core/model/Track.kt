@@ -116,4 +116,16 @@ data class Track(
      * fetches the picked video.
      */
     val matchPickedAt: Long? = null,
-)
+    /** Derived from active saved-collection membership for the library feed, not persisted as a track flag. */
+    val savedInCollection: Boolean = false,
+    /** Explicit individual offline ownership, including protected legacy files. */
+    val offlineRequested: Boolean = false,
+    /** Derived active imported membership, never an outbound Spotify save timestamp. */
+    val importedLiked: Boolean = false,
+    /** Date from the current remote collection membership, not a global like flag. */
+    val remoteMembershipAddedAt: Long? = null,
+    /** Position in a collection; does not change persistent track identity. */
+    val collectionPosition: Int? = null,
+) {
+    val isLikedInSonora: Boolean get() = stashLikedAt != null || importedLiked
+}

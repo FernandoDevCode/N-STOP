@@ -1,12 +1,9 @@
 package com.stash.feature.settings
 
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlayCircle
-import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -21,7 +18,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.stash.feature.settings.components.SonoraSettingsCard as GlassCard
 import com.stash.feature.settings.components.AccountConnectionCard
 import com.stash.feature.settings.components.SettingsScaffold
 import com.stash.feature.settings.components.SettingsSectionLabel
@@ -128,17 +124,6 @@ fun SettingsAccountsScreen(
     }
 
     SettingsScaffold(title = stringResource(R.string.nostop_nav_accounts), onBack = onBack, modifier = modifier) {
-        // Like-mirroring opt-in ack. Rendered at the top of the scaffold so it
-        // overlays the content. Confirming writes the pref; dismissing leaves
-        // mirroring off (no writes without this ack).
-        uiState.pendingMirrorWarning?.let { dest ->
-            com.stash.feature.settings.components.LikeMirrorWarningDialog(
-                serviceName = if (dest == com.stash.core.data.social.Destination.SPOTIFY) "Spotify" else "YouTube Music",
-                onConfirm = viewModel::onMirrorWarningConfirmed,
-                onDismiss = viewModel::onMirrorWarningDismissed,
-            )
-        }
-
         SettingsSectionLabel(stringResource(R.string.nostop_accounts_connections))
 
         // Disconnecting a source also drops its queued downloads, so each asks
@@ -179,17 +164,6 @@ fun SettingsAccountsScreen(
             expired = authExpiry.spotifyExpired,
             onConnect = viewModel::onConnectSpotify,
             onDisconnect = { confirmSpotifyDisconnect = true },
-            extraContent = {
-                com.stash.feature.settings.components.SpotifyAutoSaveSection(
-                    enabled = uiState.autoSaveEnabled,
-                    threshold = uiState.autoSaveThreshold,
-                    autoSavedCountLast7Days = uiState.autoSavedCountLast7Days,
-                    spotifyConnected = uiState.spotifyAuthState is com.stash.core.auth.model.AuthState.Connected,
-                    onToggle = viewModel::onAutoSaveEnabledChanged,
-                    onThresholdChanged = viewModel::onAutoSaveThresholdChanged,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                )
-            },
         )
 
         AccountConnectionCard(
@@ -213,18 +187,5 @@ fun SettingsAccountsScreen(
             },
         )
 
-        SettingsSectionLabel(stringResource(R.string.nostop_accounts_mirror_likes), beta = true)
-
-        GlassCard {
-            com.stash.feature.settings.components.LikeMirrorSection(
-                spotifyEnabled = uiState.mirrorLikesSpotify,
-                ytMusicEnabled = uiState.mirrorLikesYtMusic,
-                spotifyConnected = uiState.spotifyAuthState is com.stash.core.auth.model.AuthState.Connected,
-                ytConnected = uiState.youTubeAuthState is com.stash.core.auth.model.AuthState.Connected,
-                onSpotifyToggle = { viewModel.onMirrorToggleRequested(com.stash.core.data.social.Destination.SPOTIFY, it) },
-                onYtMusicToggle = { viewModel.onMirrorToggleRequested(com.stash.core.data.social.Destination.YT_MUSIC, it) },
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            )
-        }
     }
 }

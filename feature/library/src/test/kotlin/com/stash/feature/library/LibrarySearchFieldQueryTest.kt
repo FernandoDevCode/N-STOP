@@ -92,6 +92,7 @@ class LibrarySearchFieldQueryTest {
             on { getPlaylistsByType(eq(PlaylistType.LIKED_SONGS)) } doReturn flowOf(emptyList())
         }
         return LibraryViewModel(
+            playbackPolicy = testPlaybackPolicy(),
             musicRepository = musicRepository,
             playerRepository = mock { on { playerState } doReturn MutableStateFlow(PlayerState()) },
             tokenManager = mock {

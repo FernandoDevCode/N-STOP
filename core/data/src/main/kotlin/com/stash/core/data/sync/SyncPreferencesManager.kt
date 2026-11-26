@@ -147,15 +147,11 @@ class SyncPreferencesManager @Inject constructor(
      * in the library stay until removed, and can be hidden from Home
      * individually in Manage Playlists.
      *
-     * **Defaults to TRUE — deliberately opt-OUT, not opt-in.** The "Made for
-     * you" rail is a headline surface; defaulting this off would silently strip
-     * it from every existing library on upgrade, and leave a fresh install
-     * looking empty. The complaint was never "these exist", it was "I can't
-     * stop them" — so this gives the off switch rather than flipping the
-     * experience for everyone.
+     * Discovery is opt-in. An explicitly stored previous choice remains valid;
+     * absence of consent must not import generated collections by default.
      */
     val discoverAutoMixes: Flow<Boolean> =
-        context.syncPrefsDataStore.data.map { it[Keys.DISCOVER_AUTO_MIXES] ?: true }
+        context.syncPrefsDataStore.data.map { it[Keys.DISCOVER_AUTO_MIXES] ?: false }
 
     /**
      * Reactive stream of the days-of-week bitmask. Read via .first() inside

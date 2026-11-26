@@ -143,6 +143,7 @@ class LibraryViewModelMixTest {
         libraryPreferencesStore: LibraryPreferencesStore = libraryPreferencesStoreMock(),
         artistImageDao: ArtistImageDao = mock { on { observeAll() } doReturn flowOf(emptyList()) },
     ): LibraryViewModel = LibraryViewModel(
+        playbackPolicy = testPlaybackPolicy(),
         musicRepository = musicRepository,
         playerRepository = playerRepository,
         tokenManager = tokenManager,

@@ -126,8 +126,8 @@ class PlaylistDetailViewModelTest {
         assertEquals(true, downloadButton(playlist(keepOffline = true), streamOnly = true)?.on)
     }
 
-    @Test fun `download mode also shows on for a playlist the Sync tab downloads`() = runTest {
-        assertEquals(true, downloadButton(playlist(syncEnabled = true), streamOnly = false)?.on)
+    @Test fun `Spotify import selection never turns the download button on`() = runTest {
+        assertEquals(false, downloadButton(playlist(syncEnabled = true), streamOnly = false)?.on)
         assertEquals(true, downloadButton(playlist(keepOffline = true), streamOnly = false)?.on)
         assertEquals(false, downloadButton(playlist(), streamOnly = false)?.on)
     }
@@ -137,7 +137,7 @@ class PlaylistDetailViewModelTest {
         assertEquals(false, downloadButton(playlist(type = com.stash.core.model.PlaylistType.CUSTOM))?.on)
         assertEquals(null, downloadButton(playlist(type = com.stash.core.model.PlaylistType.STASH_MIX)))
         assertEquals(null, downloadButton(playlist(type = com.stash.core.model.PlaylistType.DOWNLOADS_MIX)))
-        assertEquals(null, downloadButton(playlist(type = com.stash.core.model.PlaylistType.LIKED_SONGS)))
+        assertEquals(false, downloadButton(playlist(type = com.stash.core.model.PlaylistType.LIKED_SONGS))?.on)
     }
 
     @Test fun `a read-only followed mix has its button in the follow block, on with Download this mix`() = runTest {
@@ -167,19 +167,19 @@ class PlaylistDetailViewModelTest {
         assertEquals("Downloaded", done.label)
     }
 
-    @Test fun `a song that won't download leaves the count, so a finished playlist says Downloaded`() = runTest {
+    @Test fun `a failed song keeps the collection incomplete`() = runTest {
         // 12 songs: 11 downloaded, 1 given up (failed, cancelled or its match dismissed).
         val tracks = (1L..12L).map { track(it, downloaded = it <= 11) }
         val button = checkNotNull(downloadButton(playlist(keepOffline = true), tracks = tracks, givenUp = listOf(12L)))
-        assertEquals(DownloadButtonState(on = true, downloaded = 11, total = 11), button)
-        assertEquals("Downloaded", button.label)
+        assertEquals(DownloadButtonState(on = true, downloaded = 11, total = 12, incomplete = 1), button)
+        assertEquals("11 of 12 downloaded · 1 incomplete", button.label)
     }
 
-    @Test fun `a given-up song leaves the total, a pending one still counts`() = runTest {
+    @Test fun `given-up and pending songs both count in the total`() = runTest {
         // 12 songs: 10 downloaded, 1 given up, 1 pending (say, waiting for Wi-Fi).
         val tracks = (1L..12L).map { track(it, downloaded = it <= 10) }
         val button = checkNotNull(downloadButton(playlist(keepOffline = true), tracks = tracks, givenUp = listOf(11L)))
-        assertEquals("Downloading 10 of 11", button.label)
+        assertEquals("10 of 12 downloaded · 1 incomplete", button.label)
     }
 
     @Test fun `the list, the download button and the build state share one tracks query`() = runTest {
@@ -222,7 +222,7 @@ class PlaylistDetailViewModelTest {
         val allThere = listOf(track(1L, downloaded = true))
         // Off: on, with the number of songs still to come. On: off, keeping what's downloaded.
         assertEquals(true to "Downloading 2 songs", tapPlaylist(playlist(), someMissing))
-        assertEquals(false to "Stopped. Downloaded songs stay on your phone.", tapPlaylist(playlist(keepOffline = true), someMissing))
+        assertEquals(false to "Automatic downloads stopped.", tapPlaylist(playlist(keepOffline = true), someMissing))
         assertEquals(true to "Every song is already on your phone.", tapPlaylist(playlist(), allThere))
     }
 
@@ -603,7 +603,7 @@ class PlaylistDetailViewModelTest {
             onBlocking { current() } doReturn true
             on { enabled } doReturn flowOf(true)
         },
-        connectivityMonitor: ConnectivityMonitor = mock(),
+        connectivityMonitor: ConnectivityMonitor = mock { on { isConnected() } doReturn true },
         recipeDao: StashMixRecipeDao = mock {
             on { observeAll() } doReturn flowOf(emptyList())
         },

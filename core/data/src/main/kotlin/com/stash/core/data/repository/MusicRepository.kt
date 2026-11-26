@@ -214,6 +214,9 @@ interface MusicRepository {
      */
     suspend fun deleteTrack(track: Track): Boolean
 
+    /** Remove liked memberships locally without deleting audio, history or the track. */
+    suspend fun removeLikedTrack(trackId: Long, source: com.stash.core.model.MusicSource? = null)
+
     /**
      * Queue [trackId] for a user-initiated download. Inserts a row into
      * `download_queue` with `sync_id = null` (distinguishing it from
@@ -283,6 +286,9 @@ interface MusicRepository {
      */
     suspend fun setPlaylistDownload(playlistId: Long, on: Boolean)
 
+    /** Persistent union of current and future liked memberships, independent of per-source switches. */
+    suspend fun setAllLikedOffline(on: Boolean)
+
     /**
      * Bulk removeDownload for every downloaded track in [playlistId].
      * Returns the number of tracks whose downloads were removed.
@@ -350,6 +356,9 @@ interface MusicRepository {
     /** Create a new empty custom playlist. Returns the playlist ID. */
     suspend fun createPlaylist(name: String): Long
 
+    /** Save an independent local copy in the same occurrence order. */
+    suspend fun copyPlaylist(playlistId: Long, name: String): Long
+
     /**
      * #304: the custom playlist keyed by [sourceId], created on first use with
      * [name] and [artUrl]. Every later call returns the existing one, so a
@@ -376,6 +385,9 @@ interface MusicRepository {
 
     /** Remove a track from a playlist (soft delete). */
     suspend fun removeTrackFromPlaylist(trackId: Long, playlistId: Long)
+
+    /** Remove a local playlist occurrence, preserving the track and audio. Null removes all occurrences of the ID. */
+    suspend fun removeLocalPlaylistOccurrence(playlistId: Long, trackId: Long, position: Int?): Boolean = false
 
     /** Get all user-created custom playlists. */
     fun getUserCreatedPlaylists(): Flow<List<Playlist>>

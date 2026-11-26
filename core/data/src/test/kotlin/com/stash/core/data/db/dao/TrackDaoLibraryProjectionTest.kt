@@ -73,6 +73,80 @@ class TrackDaoLibraryProjectionTest {
         assertEquals(listOf(3L, 1L), rows.map { it.id })
     }
 
+    @Test fun `saved streaming track survives removing its download while an unsaved stub is excluded`() = runTest {
+        dao.insert(track(1, downloaded = true))
+        dao.insert(track(2, downloaded = false))
+        dao.insert(track(3, downloaded = false))
+        val playlistId = db.playlistDao().insert(com.stash.core.data.db.entity.PlaylistEntity(
+            name = "Liked Songs", source = MusicSource.SPOTIFY, sourceId = "saved-test",
+            type = com.stash.core.model.PlaylistType.LIKED_SONGS, syncEnabled = true,
+        ))
+        db.playlistDao().insertCrossRef(com.stash.core.data.db.entity.PlaylistTrackCrossRef(
+            playlistId = playlistId, trackId = 2,
+        ))
+        val rows = dao.getLibraryByDateAdded().first()
+        assertEquals(listOf(2L, 1L), rows.map { it.id })
+        assertEquals(true, rows.first().savedInCollection)
+        assertEquals(false, rows.first().isDownloaded)
+        assertEquals(false, rows.last().savedInCollection)
+    }
+
+    @Test fun `removing a Spotify like preserves its local like and download`() = runTest {
+        dao.insert(track(1).copy(stashLikedAt = 123L, filePath = "/music/saved.flac"))
+        val playlistId = db.playlistDao().insert(com.stash.core.data.db.entity.PlaylistEntity(
+            name = "Liked Songs", source = MusicSource.SPOTIFY, sourceId = "likes-test",
+            type = com.stash.core.model.PlaylistType.LIKED_SONGS,
+        ))
+        db.playlistDao().insertCrossRef(com.stash.core.data.db.entity.PlaylistTrackCrossRef(
+            playlistId = playlistId, trackId = 1,
+        ))
+        db.playlistDao().removeLikedTrackLocally(1, MusicSource.SPOTIFY, 456L)
+        val row = dao.getById(1)!!
+        assertEquals(123L, row.stashLikedAt)
+        assertEquals("/music/saved.flac", row.filePath)
+        assertEquals(true, row.isDownloaded)
+        assertEquals(false, db.playlistDao().getCrossRefsForPlaylist(playlistId).any { it.removedAt == null })
+    }
+
+    @Test fun `effective heart follows imported membership not historical outbound saves`() = runTest {
+        val trackId = dao.insert(track(1).copy(spotifySavedAt = 123L, filePath = "/music/file.flac"))
+        val playlistId = db.playlistDao().insert(com.stash.core.data.db.entity.PlaylistEntity(
+            name = "Liked Songs", source = MusicSource.SPOTIFY, sourceId = "imported-heart-test",
+            type = com.stash.core.model.PlaylistType.LIKED_SONGS, syncEnabled = true,
+        ))
+        assertEquals(false, dao.observeLikeState(trackId).first()!!.isLikedInSonora)
+        db.playlistDao().insertCrossRef(com.stash.core.data.db.entity.PlaylistTrackCrossRef(
+            playlistId = playlistId, trackId = trackId,
+        ))
+        assertEquals(true, dao.observeLikeState(trackId).first()!!.isLikedInSonora)
+        assertEquals(true, dao.observeByIdWithLikes(trackId).first()!!.importedLiked)
+        db.playlistDao().removeLikedTrackLocally(trackId, null, 1000L)
+        assertEquals(false, dao.observeLikeState(trackId).first()!!.isLikedInSonora)
+        assertEquals("/music/file.flac", dao.getById(trackId)!!.filePath)
+        db.playlistDao().restoreSuppressedImportedLikes(trackId)
+        assertEquals(true, dao.observeLikeState(trackId).first()!!.isLikedInSonora)
+        assertEquals(null, dao.getById(trackId)!!.stashLikedAt)
+    }
+
+    @Test fun `remote dates are membership specific and survive undo capture`() = runTest {
+        val tid = dao.insert(track(1))
+        val pid = db.playlistDao().insert(com.stash.core.data.db.entity.PlaylistEntity(
+            name = "Likes", source = MusicSource.SPOTIFY, sourceId = "date-test",
+            type = com.stash.core.model.PlaylistType.LIKED_SONGS))
+        val other = db.playlistDao().insert(com.stash.core.data.db.entity.PlaylistEntity(
+            name = "Other", source = MusicSource.SPOTIFY, sourceId = "other-date-test"))
+        db.playlistDao().insertCrossRef(com.stash.core.data.db.entity.PlaylistTrackCrossRef(
+            playlistId = pid, trackId = tid, remoteAddedAt = 1234L))
+        db.playlistDao().insertCrossRef(com.stash.core.data.db.entity.PlaylistTrackCrossRef(
+            playlistId = other, trackId = tid))
+        assertEquals(1234L, dao.getByPlaylistWithMembershipDate(pid, true).first().single().remoteAddedAt)
+        assertEquals(null, dao.getByPlaylistWithMembershipDate(other, true).first().single().remoteAddedAt)
+        db.syncUndoDao().captureMemberships(99L)
+        db.playlistDao().clearSyncedPlaylistTracks(pid)
+        db.syncUndoDao().restoreMemberships(99L)
+        assertEquals(1234L, db.playlistDao().getCrossRef(pid, tid)?.remoteAddedAt)
+    }
+
     @Test fun `orders by date added descending`() = runTest {
         dao.insert(track(1, dateAdded = Instant.ofEpochMilli(100)))
         dao.insert(track(2, dateAdded = Instant.ofEpochMilli(300)))

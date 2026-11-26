@@ -51,7 +51,10 @@ data class DownloadManagementRow(
  */
 private const val DOWNLOADS_ITS_SONGS = """
     p.is_active = 1
-    AND (p.keep_offline = 1 OR (p.sync_enabled = 1 AND p.id IN (
+    AND (p.keep_offline = 1 OR (p.type IN ('LIKED_SONGS', 'STASH_LIKED') AND EXISTS (
+                      SELECT 1 FROM playlists likes_pref WHERE likes_pref.source_id = 'stash_liked_songs'
+                        AND likes_pref.aggregate_likes_offline = 1
+                  )) OR (p.sync_enabled = 1 AND p.id IN (
         SELECT sm.playlist_id FROM shared_mixes sm WHERE sm.role = 'FOLLOWER' AND sm.status = 'ACTIVE'
     )))
 """
@@ -154,7 +157,11 @@ interface DownloadQueueDao {
     suspend fun getByTrackId(trackId: Long): DownloadQueueEntity?
 
     /** Whether the user asked by hand for [trackId] to download: a queue row of theirs (`user_requested`), in any state. */
-    @Query("SELECT EXISTS(SELECT 1 FROM download_queue WHERE track_id = :trackId AND user_requested = 1)")
+    @Query("""
+        SELECT EXISTS(SELECT 1 FROM tracks WHERE id = :trackId AND offline_requested = 1)
+            OR EXISTS(SELECT 1 FROM download_queue WHERE track_id = :trackId
+                      AND user_requested = 1 AND status != 'SKIPPED')
+    """)
     suspend fun hasUserRequest(trackId: Long): Boolean
 
     /**
@@ -196,6 +203,15 @@ interface DownloadQueueDao {
     """)
     suspend fun moveSyncRowsToDiscovery(playlistId: Long): Int
 
+    /** Rehome pre-separation requests that are still authorised, without restarting active jobs. */
+    @Query("""
+        UPDATE download_queue SET sync_id = NULL
+        WHERE sync_id IS NOT NULL
+          AND status IN ('PENDING', 'FAILED', 'WAITING_FOR_LOSSLESS')
+          AND (user_requested = 1 OR """ + WANTED_BY_A_PLAYLIST + """)
+    """)
+    suspend fun recoverAuthorisedLegacyRequests(): Int
+
     /** Reactive count of tracks deferred because no lossless source could serve them. */
     @Query("SELECT COUNT(*) FROM download_queue WHERE status = 'WAITING_FOR_LOSSLESS'")
     fun waitingForLosslessCount(): Flow<Int>
@@ -226,6 +242,7 @@ interface DownloadQueueDao {
                 INNER JOIN playlists p ON p.id = pt.playlist_id
                 WHERE pt.removed_at IS NULL
                   AND p.sync_enabled = 1
+                  AND NOT (p.source = 'SPOTIFY' AND p.type IN ('CUSTOM', 'LIKED_SONGS'))
                   AND p.is_active = 1
                   AND p.type != 'STASH_MIX'
             ))
@@ -270,6 +287,7 @@ interface DownloadQueueDao {
               WHERE pt.track_id = t.id
                 AND pt.removed_at IS NULL
                 AND p.sync_enabled = 1
+                AND NOT (p.source = 'SPOTIFY' AND p.type IN ('CUSTOM', 'LIKED_SONGS'))
                 -- Must also be ACTIVE (visible in the Sync UI). A playlist
                 -- can be sync_enabled=1 yet is_active=0 — e.g. a YouTube
                 -- daily mix force-enabled by the one-shot migration, then
@@ -324,6 +342,7 @@ interface DownloadQueueDao {
               WHERE pt.track_id = t.id
                 AND pt.removed_at IS NULL
                 AND p.sync_enabled = 1
+                AND NOT (p.source = 'SPOTIFY' AND p.type IN ('CUSTOM', 'LIKED_SONGS'))
                 -- Must also be ACTIVE (visible in the Sync UI). A playlist
                 -- can be sync_enabled=1 yet is_active=0 — e.g. a YouTube
                 -- daily mix force-enabled by the one-shot migration, then
@@ -441,7 +460,21 @@ interface DownloadQueueDao {
                completed_at = :completedAt
          WHERE id = :id AND status = 'IN_PROGRESS'
     """)
-    suspend fun completeIfInProgress(id: Long, completedAt: Long): Int
+    suspend fun completeIfInProgressRaw(id: Long, completedAt: Long): Int
+
+    @Query("""
+        UPDATE tracks SET offline_requested = 1
+        WHERE id IN (SELECT track_id FROM download_queue
+                     WHERE id = :queueId AND status = 'COMPLETED' AND user_requested = 1)
+    """)
+    suspend fun preserveIndividualClaimForCompletedRow(queueId: Long)
+
+    @Transaction
+    suspend fun completeIfInProgress(id: Long, completedAt: Long): Int {
+        val changed = completeIfInProgressRaw(id, completedAt)
+        if (changed > 0) preserveIndividualClaimForCompletedRow(id)
+        return changed
+    }
 
     /** Fails only the worker claim that is still in progress. */
     @Query("""
@@ -775,11 +808,15 @@ interface DownloadQueueDao {
           -- made. Without this, tapping Download on a track that lives only in a
           -- mix silently produced nothing.
           AND sync_id IS NOT NULL
+          AND user_requested = 0
           AND track_id NOT IN (
             SELECT DISTINCT pt.track_id
             FROM playlist_tracks pt
             INNER JOIN playlists p ON p.id = pt.playlist_id
-            WHERE p.sync_enabled = 1
+            WHERE (p.keep_offline = 1 OR (p.type IN ('LIKED_SONGS', 'STASH_LIKED') AND EXISTS (
+                      SELECT 1 FROM playlists likes_pref WHERE likes_pref.source_id = 'stash_liked_songs'
+                        AND likes_pref.aggregate_likes_offline = 1
+                  )) OR (p.sync_enabled = 1 AND NOT (p.source = 'SPOTIFY' AND p.type IN ('CUSTOM', 'LIKED_SONGS'))))
               AND p.is_active = 1
               AND pt.removed_at IS NULL
               -- A switched-on mix spares its rows like any playlist (the WHERE
@@ -914,8 +951,24 @@ interface DownloadQueueDao {
      * the sane default). If cancellation must be permanent, move the
      * tombstone to a dedicated column instead of widening this sweep.
      */
+    @Query("""
+        UPDATE tracks SET offline_requested = 1
+        WHERE id IN (SELECT track_id FROM download_queue
+                     WHERE status = 'COMPLETED' AND user_requested = 1)
+    """)
+    suspend fun preserveCompletedIndividualClaims()
+
     @Query("DELETE FROM download_queue WHERE status IN ('COMPLETED', 'SKIPPED')")
-    suspend fun deleteCompleted()
+    suspend fun deleteTerminalHistoryRows()
+
+    @Transaction
+    suspend fun deleteCompleted() {
+        preserveCompletedIndividualClaims()
+        deleteTerminalHistoryRows()
+    }
+
+    @Query("UPDATE download_queue SET user_requested = 0 WHERE track_id = :trackId")
+    suspend fun clearIndividualQueueClaim(trackId: Long)
 
     /** Reset retry count for all failed entries so they can be retried after a bug fix. */
     @Query("UPDATE download_queue SET retry_count = 0, status = 'FAILED' WHERE status = 'FAILED' AND retry_count >= 3")
@@ -995,6 +1048,7 @@ interface DownloadQueueDao {
               WHERE pt.track_id = t.id
                 AND pt.removed_at IS NULL
                 AND p.sync_enabled = 1
+                AND NOT (p.source = 'SPOTIFY' AND p.type IN ('CUSTOM', 'LIKED_SONGS'))
                 -- Must also be ACTIVE (visible in the Sync UI). A playlist
                 -- can be sync_enabled=1 yet is_active=0 — e.g. a YouTube
                 -- daily mix force-enabled by the one-shot migration, then
@@ -1049,6 +1103,7 @@ interface DownloadQueueDao {
               WHERE pt.track_id = t.id
                 AND pt.removed_at IS NULL
                 AND p.sync_enabled = 1
+                AND NOT (p.source = 'SPOTIFY' AND p.type IN ('CUSTOM', 'LIKED_SONGS'))
                 -- Must also be ACTIVE (visible in the Sync UI). A playlist
                 -- can be sync_enabled=1 yet is_active=0 — e.g. a YouTube
                 -- daily mix force-enabled by the one-shot migration, then
@@ -1112,11 +1167,15 @@ interface DownloadQueueDao {
           -- manual (sync_id NULL) row is a download the user asked for; sweeping
           -- it is how search-tab downloads went missing on relaunch.
           AND sync_id IS NOT NULL
+          AND user_requested = 0
           AND track_id NOT IN (
               SELECT pt.track_id FROM playlist_tracks pt
               INNER JOIN playlists p ON p.id = pt.playlist_id
               WHERE pt.removed_at IS NULL
-                AND p.sync_enabled = 1
+                AND (p.keep_offline = 1 OR (p.type IN ('LIKED_SONGS', 'STASH_LIKED') AND EXISTS (
+                      SELECT 1 FROM playlists likes_pref WHERE likes_pref.source_id = 'stash_liked_songs'
+                        AND likes_pref.aggregate_likes_offline = 1
+                  )) OR (p.sync_enabled = 1 AND NOT (p.source = 'SPOTIFY' AND p.type IN ('CUSTOM', 'LIKED_SONGS'))))
                 -- Only an ACTIVE parent spares a row. A hidden (is_active=0)
                 -- but sync_enabled=1 playlist — e.g. a rotated-out YouTube
                 -- daily mix — does NOT spare its tracks, so this sweep drains

@@ -42,6 +42,7 @@ class LikedSongsDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val musicRepository: MusicRepository,
     private val playerRepository: PlayerRepository,
+    private val playbackPolicy: LibraryPlaybackPolicy,
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
 ) : ViewModel() {
 
@@ -64,20 +65,53 @@ class LikedSongsDetailViewModel @Inject constructor(
         if (!_showSearch.value) _searchQuery.value = ""
     }
 
-    private val tracksFlow = musicRepository.getPlaylistsByType(PlaylistType.LIKED_SONGS)
-        .map { playlists ->
-            if (sourceFilter != null) playlists.filter { it.source == sourceFilter }
-            else playlists
-        }
-        .flatMapLatest { playlists ->
-            if (playlists.isEmpty()) {
-                flowOf(emptyList())
-            } else {
-                combine(playlists.map { musicRepository.getTracksByPlaylist(it.id) }) { arrays ->
-                    arrays.flatMap { it.toList() }.distinctBy { it.id }
-                }
+    private val allCollections = combine(
+        musicRepository.getPlaylistsByType(PlaylistType.LIKED_SONGS),
+        musicRepository.getPlaylistsByType(PlaylistType.STASH_LIKED),
+    ) { imported, local ->
+        (imported + local).distinctBy { it.id }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val collections = allCollections.map { rows ->
+        rows.filter { sourceFilter == null || it.source == sourceFilter }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val tracksFlow = collections.flatMapLatest { playlists ->
+        if (playlists.isEmpty()) {
+            flowOf(emptyList())
+        } else {
+            combine(playlists.map { musicRepository.getTracksByPlaylist(it.id) }) { arrays ->
+                sortLikedTracks(mergeLikedMemberships(arrays.flatMap { it.toList() }), SortOrder.RECENT)
             }
         }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val downloadButton: StateFlow<DownloadButtonState?> = combine(collections, tracksFlow, allCollections) { playlists, tracks, all ->
+        val aggregate = all.any { it.type == PlaylistType.STASH_LIKED && it.aggregateLikesOffline }
+        if (sourceFilter != null && playlists.isEmpty()) null else DownloadButtonState(
+            on = if (sourceFilter == null) aggregate else aggregate || playlists.all { it.keepOffline },
+            downloaded = tracks.count { it.isDownloaded },
+            total = tracks.size,
+            lockedByAggregate = sourceFilter != null && aggregate,
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun toggleCollectionDownload() {
+        val state = downloadButton.value ?: return
+        if (state.lockedByAggregate) return
+        val on = !state.on
+        viewModelScope.launch {
+            try {
+                if (sourceFilter == null) musicRepository.setAllLikedOffline(on)
+                else for (playlist in collections.value) musicRepository.setPlaylistDownload(playlist.id, on)
+                if (!on) _userMessages.tryEmit("Automatic downloads stopped.")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _userMessages.tryEmit("Couldn't change all downloads. Try again.")
+            }
+        }
+    }
 
     val uiState: StateFlow<LikedSongsDetailUiState> = combine(
         tracksFlow.withSearchFilter(_searchQuery),
@@ -111,9 +145,13 @@ class LikedSongsDetailViewModel @Inject constructor(
             try {
                 // Streaming is always allowed: the whole list is playable, and
                 // streamable tracks resolve inside setQueue when reached.
-                val playable = uiState.value.tracks
+                val playable = playbackPolicy.eligible(uiState.value.tracks)
                 if (playable.isEmpty()) return@launch
-                val index = playable.indexOfFirst { it.id == trackId }.coerceAtLeast(0)
+                val index = playable.indexOfFirst { it.id == trackId }
+                if (index < 0) {
+                    _userMessages.tryEmit("This song is unavailable for playback right now.")
+                    return@launch
+                }
                 playerRepository.setQueue(playable, index)
             } finally {
                 _tappedTrackId.value = null
@@ -123,7 +161,7 @@ class LikedSongsDetailViewModel @Inject constructor(
 
     fun shuffleAll() {
         viewModelScope.launch {
-            val playable = uiState.value.tracks
+            val playable = playbackPolicy.eligible(uiState.value.tracks)
             if (playable.isEmpty()) return@launch
             val shuffled = playable.shuffled()
             _tappedTrackId.value = shuffled[0].id
@@ -139,7 +177,7 @@ class LikedSongsDetailViewModel @Inject constructor(
 
     fun playAll() {
         viewModelScope.launch {
-            val playable = uiState.value.tracks
+            val playable = playbackPolicy.eligible(uiState.value.tracks)
             if (playable.isEmpty()) return@launch
             _tappedTrackId.value = playable[0].id
             _bulkPlayInFlight.value = BulkPlayAction.PLAY_ALL
@@ -153,15 +191,27 @@ class LikedSongsDetailViewModel @Inject constructor(
     }
 
     fun playNext(track: Track) {
-        viewModelScope.launch { playerRepository.addNext(track) }
+        viewModelScope.launch {
+            if (playbackPolicy.eligible(listOf(track)).isNotEmpty()) {
+                playerRepository.addNext(track)
+            } else {
+                _userMessages.tryEmit("This song is unavailable for playback right now.")
+            }
+        }
     }
 
     fun addToQueue(track: Track) {
-        viewModelScope.launch { playerRepository.addToQueue(track) }
+        viewModelScope.launch {
+            if (playbackPolicy.eligible(listOf(track)).isNotEmpty()) {
+                playerRepository.addToQueue(track)
+            } else {
+                _userMessages.tryEmit("This song is unavailable for playback right now.")
+            }
+        }
     }
 
     fun deleteTrack(track: Track) {
-        viewModelScope.launch { musicRepository.deleteTrack(track) }
+        viewModelScope.launch { musicRepository.removeLikedTrack(track.id, sourceFilter) }
     }
 
     fun queueDownload(trackId: Long) {
@@ -188,7 +238,7 @@ class LikedSongsDetailViewModel @Inject constructor(
      */
     fun playSelectedNext(tracks: List<Track>) {
         viewModelScope.launch {
-            tracks.forEach {
+            playbackPolicy.eligible(tracks).forEach {
                 runCatching { playerRepository.addNext(it) }
                     .onFailure { e -> if (e is CancellationException) throw e }
             }
@@ -201,7 +251,8 @@ class LikedSongsDetailViewModel @Inject constructor(
      */
     fun addSelectedToQueue(tracks: List<Track>) {
         viewModelScope.launch {
-            playerRepository.addToQueue(tracks)
+            val playable = playbackPolicy.eligible(tracks)
+            if (playable.isNotEmpty()) playerRepository.addToQueue(playable)
         }
     }
 
@@ -263,7 +314,7 @@ class LikedSongsDetailViewModel @Inject constructor(
         viewModelScope.launch {
             var removed = 0
             tracks.forEach { track ->
-                runCatching { musicRepository.deleteTrack(track) }
+                runCatching { musicRepository.removeLikedTrack(track.id, sourceFilter) }
                     .onSuccess { removed++ }
                     .onFailure { e -> if (e is CancellationException) throw e }
             }

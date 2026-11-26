@@ -105,6 +105,19 @@ class MusicRepositorySharedFileTest {
         assertThat(paths[1L]).isNull()
     }
 
+    @Test
+    fun `removing an individual download preserves audio requested by another collection`() = runTest {
+        paths[2L] = file.absolutePath
+        coEvery { trackDao.hasOfflineCollectionClaim(2L) } returns true
+
+        repo().removeDownload(2L)
+
+        assertThat(file.exists()).isTrue()
+        assertThat(paths[2L]).isEqualTo(file.absolutePath)
+        coVerify { trackDao.setOfflineRequested(2L, false) }
+        coVerify(exactly = 0) { trackDao.clearDownloadState(2L) }
+    }
+
     // ── removeDownloadsForPlaylist ──────────────────────────────────────
 
     @Test
@@ -121,7 +134,7 @@ class MusicRepositorySharedFileTest {
 
     /** Both owners are in the playlist: the file goes with the second. */
     @Test
-    fun `removing a playlist's downloads deletes a shared file with its last owner`() = runTest {
+    fun `removing a playlist download preserves its locally imported owner`() = runTest {
         paths[1L] = file.absolutePath
         paths[2L] = file.absolutePath
         every { trackDao.getByPlaylist(PLAYLIST, true) } returns
@@ -129,8 +142,41 @@ class MusicRepositorySharedFileTest {
 
         repo().removeDownloadsForPlaylist(PLAYLIST)
 
+        assertThat(file.exists()).isTrue()
+        assertThat(paths[1L]).isEqualTo(file.absolutePath)
+        assertThat(paths[2L]).isNull()
+    }
+
+    @Test
+    fun `bulk release preserves a new download claimed by another offline collection`() = runTest {
+        paths[2L] = file.absolutePath
+        every { trackDao.getByPlaylist(PLAYLIST, true) } returns flowOf(listOf(entity(2L, file.absolutePath)))
+        coEvery { trackDao.hasOfflineCollectionClaim(2L) } returns true
+
+        assertThat(repo().removeDownloadsForPlaylist(PLAYLIST)).isEqualTo(0)
+        assertThat(file.exists()).isTrue()
+        coVerify(exactly = 0) { trackDao.clearDownloadState(2L) }
+    }
+
+    @Test
+    fun `bulk release preserves a migrated or manually owned download`() = runTest {
+        paths[2L] = file.absolutePath
+        val protected = entity(2L, file.absolutePath).copy(offlineRequested = true)
+        every { trackDao.getByPlaylist(PLAYLIST, true) } returns flowOf(listOf(protected))
+        coEvery { trackDao.getById(2L) } returns protected
+
+        assertThat(repo().removeDownloadsForPlaylist(PLAYLIST)).isEqualTo(0)
+        assertThat(file.exists()).isTrue()
+    }
+
+    @Test
+    fun `bulk release deletes a new collection-only file without other claims`() = runTest {
+        paths[2L] = file.absolutePath
+        every { trackDao.getByPlaylist(PLAYLIST, true) } returns flowOf(listOf(entity(2L, file.absolutePath)))
+
+        assertThat(repo().removeDownloadsForPlaylist(PLAYLIST)).isEqualTo(1)
         assertThat(file.exists()).isFalse()
-        assertThat(paths.values.filterNotNull()).isEmpty()
+        assertThat(paths[2L]).isNull()
     }
 
     // ── removeTrackFromPlaylistAndMaybeDelete ───────────────────────────

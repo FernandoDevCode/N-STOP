@@ -53,6 +53,21 @@ data class TrackLikeState(
     @androidx.room.ColumnInfo(name = "stash_liked_at") val stashLikedAt: Long?,
     @androidx.room.ColumnInfo(name = "spotify_saved_at") val spotifySavedAt: Long?,
     @androidx.room.ColumnInfo(name = "ytmusic_saved_at") val ytMusicSavedAt: Long?,
+    @androidx.room.ColumnInfo(name = "imported_liked") val importedLiked: Boolean = false,
+) {
+    val isLikedInSonora: Boolean get() = stashLikedAt != null || importedLiked
+}
+
+data class TrackWithMembershipDate(
+    @androidx.room.Embedded val track: TrackEntity,
+    @androidx.room.ColumnInfo(name = "membership_remote_added_at") val remoteAddedAt: Long?,
+    @androidx.room.ColumnInfo(name = "membership_position") val position: Int,
+    @androidx.room.ColumnInfo(name = "membership_repeat_positions") val repeatPositions: String?,
+)
+
+data class TrackWithImportedLikes(
+    @androidx.room.Embedded val track: TrackEntity,
+    @androidx.room.ColumnInfo(name = "imported_liked") val importedLiked: Boolean,
 )
 
 /**
@@ -111,6 +126,8 @@ data class LibraryTrackRow(
     @androidx.room.ColumnInfo(name = "is_streamable_checked_at") val isStreamableCheckedAt: Long?,
     @androidx.room.ColumnInfo(name = "metadata_embedded_at") val metadataEmbeddedAt: Long?,
     @androidx.room.ColumnInfo(name = "lyrics_fetched_at") val lyricsFetchedAt: Long?,
+    @androidx.room.ColumnInfo(name = "saved_in_collection") val savedInCollection: Boolean = false,
+    @androidx.room.ColumnInfo(name = "offline_requested") val offlineRequested: Boolean = false,
 )
 
 /**
@@ -570,15 +587,24 @@ interface TrackDao {
                t.explicit, t.bits_per_sample, t.sample_rate_hz,
                t.spotify_saved_at, t.ytmusic_saved_at, t.lastfm_loved_at,
                t.stash_liked_at, t.is_streamable, t.is_streamable_checked_at,
-               t.metadata_embedded_at, t.lyrics_fetched_at
+               t.metadata_embedded_at, t.lyrics_fetched_at, t.offline_requested,
+               (t.stash_liked_at IS NOT NULL OR EXISTS (
+            SELECT 1 FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
+            WHERE pt.track_id = t.id AND pt.removed_at IS NULL AND p.is_active = 1
+              AND p.type IN ('CUSTOM', 'LIKED_SONGS', 'STASH_LIKED')
+        )) AS saved_in_collection
         FROM tracks t
         LEFT JOIN track_blocklist bl
             ON bl.canonical_key = (t.canonical_artist || '|' || t.canonical_title)
             OR (bl.spotify_uri IS NOT NULL AND bl.spotify_uri = t.spotify_uri)
             OR (bl.youtube_id  IS NOT NULL AND bl.youtube_id  = t.youtube_id)
         WHERE bl.canonical_key IS NULL
-          AND t.is_downloaded = 1
-        ORDER BY t.date_added DESC
+          AND (t.is_downloaded = 1 OR (t.stash_liked_at IS NOT NULL OR EXISTS (
+            SELECT 1 FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
+            WHERE pt.track_id = t.id AND pt.removed_at IS NULL AND p.is_active = 1
+              AND p.type IN ('CUSTOM', 'LIKED_SONGS', 'STASH_LIKED')
+        )))
+        ORDER BY t.date_added DESC, t.id ASC
         """
     )
     fun getLibraryByDateAdded(): Flow<List<LibraryTrackRow>>
@@ -599,12 +625,17 @@ interface TrackDao {
      */
     @Query(
         """
-        SELECT * FROM tracks
-        WHERE artist = :artist
-           OR album_artist = :artist
-           OR artist LIKE '%' || :artist || '%'
-           OR album_artist LIKE '%' || :artist || '%'
-        ORDER BY album ASC, title ASC
+        SELECT t.* FROM tracks t
+        WHERE (t.artist = :artist
+           OR t.album_artist = :artist
+           OR t.artist LIKE '%' || :artist || '%'
+           OR t.album_artist LIKE '%' || :artist || '%')
+          AND (t.is_downloaded = 1 OR (t.stash_liked_at IS NOT NULL OR EXISTS (
+            SELECT 1 FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
+            WHERE pt.track_id = t.id AND pt.removed_at IS NULL AND p.is_active = 1
+              AND p.type IN ('CUSTOM', 'LIKED_SONGS', 'STASH_LIKED')
+        )))
+        ORDER BY t.album ASC, t.title ASC
         """,
     )
     fun getByArtist(artist: String): Flow<List<TrackEntity>>
@@ -668,6 +699,34 @@ interface TrackDao {
     )
     fun getByPlaylist(playlistId: Long, includeStreamable: Boolean): Flow<List<TrackEntity>>
 
+    @Transaction
+    @Query(
+        """
+        SELECT t.*, pt.remote_added_at AS membership_remote_added_at,
+               pt.position AS membership_position, pt.repeat_positions AS membership_repeat_positions FROM tracks t
+        INNER JOIN playlist_tracks pt ON t.id = pt.track_id
+        INNER JOIN playlists p ON pt.playlist_id = p.id
+        LEFT JOIN track_blocklist bl
+            ON bl.canonical_key = (t.canonical_artist || '|' || t.canonical_title)
+            OR (bl.spotify_uri IS NOT NULL AND bl.spotify_uri = t.spotify_uri)
+            OR (bl.youtube_id  IS NOT NULL AND bl.youtube_id  = t.youtube_id)
+        WHERE pt.playlist_id = :playlistId
+          AND pt.removed_at IS NULL
+          AND bl.canonical_key IS NULL
+          AND (
+              t.is_downloaded = 1
+              OR :includeStreamable
+              OR (p.type = 'STASH_MIX' AND t.is_streamable = 1)
+          )
+        ORDER BY
+            CASE WHEN p.type = 'DAILY_MIX' THEN pt.added_at END DESC,
+            pt.position ASC,
+            pt.added_at ASC,
+            t.id ASC
+        """
+    )
+    fun getByPlaylistWithMembershipDate(playlistId: Long, includeStreamable: Boolean): Flow<List<TrackWithMembershipDate>>
+
     /**
      * How many rows [getByPlaylist] would emit — same joins, same filters —
      * without materialising them, for the cached `track_count` badge.
@@ -681,7 +740,8 @@ interface TrackDao {
      */
     @Query(
         """
-        SELECT COUNT(*) FROM tracks t
+        SELECT COALESCE(SUM(1 + CASE WHEN pt.repeat_positions IS NULL OR pt.repeat_positions = '' THEN 0
+            ELSE 1 + LENGTH(pt.repeat_positions) - LENGTH(REPLACE(pt.repeat_positions, ',', '')) END), 0) FROM tracks t
         INNER JOIN playlist_tracks pt ON t.id = pt.track_id
         INNER JOIN playlists p ON pt.playlist_id = p.id
         LEFT JOIN track_blocklist bl
@@ -1691,7 +1751,14 @@ interface TrackDao {
      * persisted state on every screen open, not the stale snapshot
      * cached in the player's in-memory Track.
      */
-    @Query("SELECT id, stash_liked_at, spotify_saved_at, ytmusic_saved_at FROM tracks WHERE id = :trackId")
+    @Query("""
+        SELECT t.id, t.stash_liked_at, t.spotify_saved_at, t.ytmusic_saved_at, EXISTS (
+            SELECT 1 FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
+            WHERE pt.track_id = t.id AND pt.removed_at IS NULL AND p.is_active = 1
+              AND p.type = 'LIKED_SONGS'
+        ) AS imported_liked
+        FROM tracks t WHERE t.id = :trackId
+    """)
     fun observeLikeState(trackId: Long): Flow<TrackLikeState?>
 
     /**
@@ -1701,7 +1768,14 @@ interface TrackDao {
      * synthetic `videoId.hashCode().toLong()` that doesn't match any
      * `tracks.id` (issue #105 follow-up).
      */
-    @Query("SELECT id, stash_liked_at, spotify_saved_at, ytmusic_saved_at FROM tracks WHERE youtube_id = :youtubeId LIMIT 1")
+    @Query("""
+        SELECT t.id, t.stash_liked_at, t.spotify_saved_at, t.ytmusic_saved_at, EXISTS (
+            SELECT 1 FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
+            WHERE pt.track_id = t.id AND pt.removed_at IS NULL AND p.is_active = 1
+              AND p.type = 'LIKED_SONGS'
+        ) AS imported_liked
+        FROM tracks t WHERE t.youtube_id = :youtubeId LIMIT 1
+    """)
     fun observeLikeStateByYoutubeId(youtubeId: String): Flow<TrackLikeState?>
 
     /**
@@ -1728,6 +1802,26 @@ interface TrackDao {
      */
     @Query("SELECT * FROM tracks WHERE youtube_id = :youtubeId LIMIT 1")
     fun observeByYoutubeId(youtubeId: String): Flow<TrackEntity?>
+
+    @Query("""
+        SELECT t.*, EXISTS (
+            SELECT 1 FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
+            WHERE pt.track_id = t.id AND pt.removed_at IS NULL AND p.is_active = 1
+              AND p.type = 'LIKED_SONGS'
+        ) AS imported_liked
+        FROM tracks t WHERE t.id = :trackId
+    """)
+    fun observeByIdWithLikes(trackId: Long): Flow<TrackWithImportedLikes?>
+
+    @Query("""
+        SELECT t.*, EXISTS (
+            SELECT 1 FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
+            WHERE pt.track_id = t.id AND pt.removed_at IS NULL AND p.is_active = 1
+              AND p.type = 'LIKED_SONGS'
+        ) AS imported_liked
+        FROM tracks t WHERE t.youtube_id = :youtubeId LIMIT 1
+    """)
+    fun observeByYoutubeIdWithLikes(youtubeId: String): Flow<TrackWithImportedLikes?>
 
     /**
      * v0.9.13: Count of tracks marked as auto-saved to Spotify since
@@ -1786,7 +1880,20 @@ interface TrackDao {
         """
         SELECT t.* FROM tracks t
         WHERE t.is_downloaded = 1
-          AND t.source NOT IN ('BOTH', 'LOCAL')
+          -- Spotify catalog membership is no longer proof of audio ownership.
+          -- Until durable ownership exists, never sweep its downloaded files.
+          AND t.source NOT IN ('BOTH', 'LOCAL', 'SPOTIFY')
+          AND (t.spotify_uri IS NULL OR t.spotify_uri = '')
+          AND t.stash_liked_at IS NULL
+          AND t.offline_requested = 0
+          AND NOT EXISTS (
+              SELECT 1 FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
+              WHERE pt.track_id = t.id AND p.type IN ('LIKED_SONGS', 'STASH_LIKED')
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM download_queue dq
+              WHERE dq.track_id = t.id AND dq.user_requested = 1
+          )
           AND t.id NOT IN (
               SELECT pt.track_id FROM playlist_tracks pt
               WHERE pt.removed_at IS NULL
@@ -1861,6 +1968,7 @@ interface TrackDao {
         WHERE id IN (:ids)
           AND is_downloaded = 0
           AND stash_liked_at IS NULL AND spotify_saved_at IS NULL AND ytmusic_saved_at IS NULL
+          AND offline_requested = 0
           AND id NOT IN (SELECT track_id FROM playlist_tracks WHERE removed_at IS NULL)
           AND id NOT IN (SELECT track_id FROM listening_events)
           AND id NOT IN (SELECT track_id FROM track_skip_events)
@@ -2019,8 +2127,12 @@ interface TrackDao {
                COUNT(*) AS trackCount,
                SUM(duration_ms) AS totalDurationMs,
                MAX(album_art_url) AS artUrl
-        FROM tracks
-        WHERE is_downloaded = 1 OR (:includeStreamable AND is_streamable = 1)
+        FROM tracks t
+        WHERE t.is_downloaded = 1 OR (:includeStreamable AND (t.stash_liked_at IS NOT NULL OR EXISTS (
+            SELECT 1 FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
+            WHERE pt.track_id = t.id AND pt.removed_at IS NULL AND p.is_active = 1
+              AND p.type IN ('CUSTOM', 'LIKED_SONGS', 'STASH_LIKED')
+        )))
         GROUP BY artist
         ORDER BY COUNT(*) DESC, artist ASC
         """
@@ -2071,7 +2183,11 @@ interface TrackDao {
                MAX(t.album_art_url) AS artUrl
         FROM tracks t
         WHERE t.album != ''
-          AND (t.is_downloaded = 1 OR (:includeStreamable AND t.is_streamable = 1))
+          AND (t.is_downloaded = 1 OR (:includeStreamable AND (t.stash_liked_at IS NOT NULL OR EXISTS (
+            SELECT 1 FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
+            WHERE pt.track_id = t.id AND pt.removed_at IS NULL AND p.is_active = 1
+              AND p.type IN ('CUSTOM', 'LIKED_SONGS', 'STASH_LIKED')
+        ))))
         GROUP BY t.album, t.album_artist
         ORDER BY COUNT(*) DESC, t.album ASC
         """
@@ -2281,6 +2397,32 @@ interface TrackDao {
         """
     )
     suspend fun clearDownloadState(trackId: Long)
+
+    @Query("UPDATE tracks SET offline_requested = :requested WHERE id = :trackId")
+    suspend fun setOfflineRequested(trackId: Long, requested: Boolean)
+
+    @Query("""
+        SELECT EXISTS (
+            SELECT 1 FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
+            WHERE pt.track_id = :trackId AND pt.removed_at IS NULL AND p.is_active = 1
+              AND (
+                  p.keep_offline = 1
+                  OR (p.type IN ('LIKED_SONGS', 'STASH_LIKED') AND EXISTS (
+                      SELECT 1 FROM playlists likes_pref WHERE likes_pref.source_id = 'stash_liked_songs'
+                        AND likes_pref.aggregate_likes_offline = 1
+                  ))
+                  OR (p.sync_enabled = 1 AND p.id IN (
+                      SELECT playlist_id FROM shared_mixes WHERE role = 'FOLLOWER' AND status = 'ACTIVE'
+                  ))
+                  -- Legacy sync-driven collections retain their existing files.
+                  OR (p.sync_enabled = 1 AND (
+                      (p.source IN ('SPOTIFY', 'YOUTUBE') AND p.type = 'DAILY_MIX')
+                      OR (p.source = 'YOUTUBE' AND p.type IN ('CUSTOM', 'LIKED_SONGS'))
+                  ))
+              )
+        )
+    """)
+    suspend fun hasOfflineCollectionClaim(trackId: Long): Boolean
 
     /**
      * Duration-only sibling of [fillMissingMetadata]. Used by the primary

@@ -53,7 +53,12 @@ import kotlinx.coroutines.flow.first
  * decision testable.
  */
 @Suppress("UNUSED_PARAMETER")
-internal fun defaultSyncEnabled(type: PlaylistType, online: Boolean): Boolean = false
+internal fun defaultSyncEnabled(type: PlaylistType, online: Boolean, source: MusicSource? = null): Boolean =
+    source == MusicSource.SPOTIFY && type == PlaylistType.LIKED_SONGS
+
+/** Spotify personal collections are metadata imports; keepOffline drives their download sweep. */
+internal fun isSpotifyPersonalCollection(source: MusicSource, type: PlaylistType): Boolean =
+    source == MusicSource.SPOTIFY && (type == PlaylistType.LIKED_SONGS || type == PlaylistType.CUSTOM)
 
 /**
  * The type to re-write onto an existing playlist row, or null to leave it.
@@ -115,7 +120,7 @@ internal fun reconciledPlaylistType(
     sourceId: String,
 ): PlaylistType? =
     if (source == MusicSource.SPOTIFY &&
-        !sourceId.startsWith(SpotifyApiClient.SPOTIFY_OWNED_ID_PREFIX) &&
+        !SpotifyAccountScope.raw(sourceId).startsWith(SpotifyApiClient.SPOTIFY_OWNED_ID_PREFIX) &&
         existing == PlaylistType.DAILY_MIX &&
         snapshot == PlaylistType.CUSTOM
     ) {
@@ -264,8 +269,11 @@ class DiffWorker @AssistedInject constructor(
                 // Pick the mode for this specific playlist's source so a
                 // user can Refresh Spotify Daily Mixes while Accumulating
                 // YouTube Liked Music on the same sync run.
-                val playlistSyncMode = when (playlistSnapshot.source) {
-                    MusicSource.YOUTUBE -> youtubeSyncMode
+                val playlistSyncMode = when {
+                    playlistSnapshot.source == MusicSource.SPOTIFY &&
+                        SpotifyAccountScope.isScoped(playlistSnapshot.sourcePlaylistId) &&
+                        isSpotifyPersonalCollection(playlistSnapshot.source, playlistSnapshot.playlistType) -> SyncMode.REFRESH
+                    playlistSnapshot.source == MusicSource.YOUTUBE -> youtubeSyncMode
                     else -> spotifySyncMode
                 }
 
@@ -291,9 +299,8 @@ class DiffWorker @AssistedInject constructor(
                 // Download switch needs what the playlist gained linked here, or the
                 // sweep below has nothing new to queue.
                 if (!localPlaylist.syncEnabled &&
-                    !localPlaylist.keepOffline &&
-                    localPlaylist.type != PlaylistType.DAILY_MIX &&
-                    !streamingMode
+                    (isSpotifyPersonalCollection(localPlaylist.source, localPlaylist.type) ||
+                        (!localPlaylist.keepOffline && localPlaylist.type != PlaylistType.DAILY_MIX && !streamingMode))
                 ) {
                     Log.d(TAG, "Playlist '${playlistSnapshot.playlistName}' sync disabled, skipping")
                     skippedSwitchedOff++
@@ -525,7 +532,8 @@ class DiffWorker @AssistedInject constructor(
             // follow the tracks. Other playlist types never rotate here;
             // LIKED_SONGS gets only a missing-art repair during metadata
             // finalization below.
-            val rotatesArt = effectiveType == PlaylistType.DAILY_MIX
+            val rotatesArt = effectiveType == PlaylistType.DAILY_MIX ||
+                (snapshot.source == MusicSource.SPOTIFY && effectiveType == PlaylistType.CUSTOM && !snapshot.partial)
             if (rotatesArt && snapshot.artUrl != null && snapshot.artUrl != existing.artUrl) {
                 playlistDao.updateArtUrl(existing.id, snapshot.artUrl)
             }
@@ -566,7 +574,7 @@ class DiffWorker @AssistedInject constructor(
             // what they want in the Sync Preferences card (#10). What reaches
             // Home is decided by PlaylistDao.getAllVisible, not by this flag:
             // Online, a playlist holding streamable tracks shows regardless.
-            syncEnabled = defaultSyncEnabled(snapshot.playlistType, streamingMode),
+            syncEnabled = defaultSyncEnabled(snapshot.playlistType, streamingMode, snapshot.source),
         )
         val id = playlistDao.insert(newPlaylist)
         // A playlist or mix that wasn't here before is news — arguably the most
@@ -604,6 +612,20 @@ class DiffWorker @AssistedInject constructor(
         val existingCrossRefs = playlistDao.getCrossRefsForPlaylist(localPlaylist.id)
             .associateBy { it.trackId }
 
+        val scopedLikes = localPlaylist.source == MusicSource.SPOTIFY &&
+            localPlaylist.type == PlaylistType.LIKED_SONGS &&
+            SpotifyAccountScope.isScoped(localPlaylist.sourceId)
+        val complete = !snapshotUnreliable(playlistSnapshot, trackSnapshots)
+        val remoteMemberIds = hashSetOf<Long>()
+        suspend fun expireAbsentLikeSuppressions() {
+            if (!scopedLikes || !complete) return
+            existingCrossRefs.values.filter {
+                it.removedAt != null && !it.locallyAdded && it.trackId !in remoteMemberIds
+            }.map { it.trackId }.chunked(800).forEach {
+                playlistDao.deleteAbsentLikedTombstones(localPlaylist.id, it)
+            }
+        }
+
         if (syncMode == SyncMode.REFRESH) {
             // #343: NEVER mirror-clear against a fetch that admits (or looks
             // like) incompleteness — one flaky API call was emptying whole
@@ -631,6 +653,7 @@ class DiffWorker @AssistedInject constructor(
         }
 
         if (trackSnapshots.isEmpty()) {
+            expireAbsentLikeSuppressions()
             finalizePlaylistMetadata(playlistSnapshot, localPlaylist, trackSnapshots, syncMode)
             return 0
         }
@@ -836,10 +859,39 @@ class DiffWorker @AssistedInject constructor(
 
         val crossRefsToInsert = linkedMapOf<Long, PlaylistTrackCrossRef>()
         val downloadEntries = mutableListOf<DownloadQueueEntity>()
+        val mergeOnly = snapshotUnreliable(playlistSnapshot, trackSnapshots)
+        val preserveOccurrences = localPlaylist.source == MusicSource.SPOTIFY &&
+            localPlaylist.type == PlaylistType.CUSTOM && SpotifyAccountScope.isScoped(localPlaylist.sourceId)
+        var nextAppendPosition = (existingCrossRefs.values.maxOfOrNull { it.position } ?: -1) + 1
+
+        // An incomplete response is evidence of presence, not order or absence.
+        // Preserve every existing membership (including suppression markers).
+        // Add new identities after the previous tail, exactly once.
+        fun link(trackId: Long, position: Int, remoteAddedAt: Long?) {
+            remoteMemberIds.add(trackId)
+            if (mergeOnly) {
+                if (trackId in existingCrossRefs || trackId in crossRefsToInsert) return
+                addCrossRefIfNotSoftDeleted(localPlaylist.id, trackId, nextAppendPosition++,
+                    existingCrossRefs, crossRefsToInsert, remoteAddedAt)
+            } else {
+                val prior = crossRefsToInsert[trackId]
+                addCrossRefIfNotSoftDeleted(localPlaylist.id, trackId, position,
+                    existingCrossRefs, crossRefsToInsert, remoteAddedAt)
+                if (preserveOccurrences) {
+                    crossRefsToInsert[trackId]?.let { current ->
+                        val positions = (prior?.positions().orEmpty() + position).distinct().sorted()
+                        crossRefsToInsert[trackId] = current.copy(
+                            position = positions.last(),
+                            repeatPositions = com.stash.core.data.db.entity.encodeEarlierPlaylistPositions(positions),
+                        )
+                    }
+                }
+            }
+        }
 
         for ((batchTrack, snapshot) in newOccurrences) {
             val trackId = checkNotNull(batchTrack.persistedId)
-            addCrossRefIfNotSoftDeleted(localPlaylist.id, trackId, snapshot.position, existingCrossRefs, crossRefsToInsert)
+            link(trackId, snapshot.position, snapshot.remoteAddedAt)
         }
 
         // Downloads follow the playlist's own switch, mixes included: in Download
@@ -848,7 +900,9 @@ class DiffWorker @AssistedInject constructor(
         // track of every rotating mix was queued (#368: "it downloads 6000+ from
         // users playlists and Spotify mixes that I don't need"). The protection
         // is now the switch — discovered mixes start off — not the type.
-        if (shouldEnqueueForDownload(streamingMode, localPlaylist.syncEnabled)) {
+        if (!isSpotifyPersonalCollection(localPlaylist.source, localPlaylist.type) &&
+            shouldEnqueueForDownload(streamingMode, localPlaylist.syncEnabled)
+        ) {
             for (batchTrack in newTracks) {
                 val trackId = checkNotNull(batchTrack.persistedId)
                 downloadEntries.add(
@@ -896,7 +950,13 @@ class DiffWorker @AssistedInject constructor(
         // design, usually a different video than the stub's.
         fun reconcileKey(track: TrackEntity) =
             CanonicalKey(track.canonicalTitle.lowercase(), track.canonicalArtist.lowercase())
+        // Scoped personal collections mirror remote identity and occurrence order.
+        // A second membership based only on canonical words would fabricate a
+        // remote like or playlist position, and could bypass local suppression.
+        val allowLegacyTwinLink = !SpotifyAccountScope.isScoped(localPlaylist.sourceId) ||
+            !isSpotifyPersonalCollection(localPlaylist.source, localPlaylist.type)
         val reconcileKeys = existingPairs
+            .filter { allowLegacyTwinLink }
             .map { it.first.entity }
             .filter { !it.isDownloaded && !it.matchDismissed }
             .map { reconcileKey(it) }
@@ -914,13 +974,13 @@ class DiffWorker @AssistedInject constructor(
         }
         for ((batchTrack, snapshot) in existingPairs) {
             val existingTrack = batchTrack.entity
-            addCrossRefIfNotSoftDeleted(localPlaylist.id, existingTrack.id, snapshot.position, existingCrossRefs, crossRefsToInsert)
+            link(existingTrack.id, snapshot.position, snapshot.remoteAddedAt)
 
-            if (!existingTrack.isDownloaded && !existingTrack.matchDismissed) {
+            if (allowLegacyTwinLink && !existingTrack.isDownloaded && !existingTrack.matchDismissed) {
                 val downloadedMatch = downloadedByKey[reconcileKey(existingTrack)]
                     ?.firstOrNull { TrackCanonical.sameVersion(it.title, existingTrack.title) }
                 if (downloadedMatch != null && downloadedMatch.id != existingTrack.id) {
-                    addCrossRefIfNotSoftDeleted(localPlaylist.id, downloadedMatch.id, snapshot.position, existingCrossRefs, crossRefsToInsert)
+                    link(downloadedMatch.id, snapshot.position, snapshot.remoteAddedAt)
                     val failedEntry = downloadQueueDao.getFailedByTrackId(existingTrack.id)
                     if (failedEntry != null) {
                         downloadQueueDao.updateStatus(id = failedEntry.id, status = DownloadStatus.COMPLETED)
@@ -928,6 +988,10 @@ class DiffWorker @AssistedInject constructor(
                 }
             }
         }
+
+        // Only a fully identified read can retire an absent unlike marker.
+        if (allowedSnapshots.size == trackSnapshots.size &&
+            trackSnapshots.all { !it.spotifyUri.isNullOrBlank() }) expireAbsentLikeSuppressions()
 
         // ── Flush batched writes ─────────────────────────────────────────
         if (crossRefsToInsert.isNotEmpty()) {
@@ -964,6 +1028,7 @@ class DiffWorker @AssistedInject constructor(
         position: Int,
         existingByTrackId: Map<Long, PlaylistTrackCrossRef>,
         out: MutableMap<Long, PlaylistTrackCrossRef>,
+        remoteAddedAt: Long? = null,
     ) {
         val storedPrior = existingByTrackId[trackId]
         if (storedPrior != null && storedPrior.removedAt != null) {
@@ -976,6 +1041,8 @@ class DiffWorker @AssistedInject constructor(
             trackId = trackId,
             position = position,
             addedAt = batchPrior?.addedAt ?: storedPrior?.addedAt ?: java.time.Instant.now(),
+            locallyAdded = storedPrior?.locallyAdded ?: false,
+            remoteAddedAt = remoteAddedAt ?: batchPrior?.remoteAddedAt ?: storedPrior?.remoteAddedAt,
         )
     }
 
@@ -1003,7 +1070,6 @@ class DiffWorker @AssistedInject constructor(
         trackSnapshots: List<RemoteTrackSnapshotEntity>,
         syncMode: SyncMode,
     ) {
-        playlistDao.updateLastSynced(localPlaylist.id, System.currentTimeMillis())
         if (snapshotUnreliable(playlistSnapshot, trackSnapshots)) {
             // #343: an unreliable fetch was NOT mirrored (see processPlaylist).
             // Stamping it would make the next sync skip this playlist as
@@ -1012,9 +1078,20 @@ class DiffWorker @AssistedInject constructor(
             // content. Leave the count as it was, and an older stamp too: it no
             // longer matches this pass's merged rows unless nothing was merged,
             // and then the mirror it vouches for still stands.
+            // lastSynced denotes the last complete read, not this attempt.
+            if (isSpotifyPersonalCollection(localPlaylist.source, localPlaylist.type)) {
+                playlistDao.updateTrackCount(localPlaylist.id,
+                    playlistDao.getCrossRefsForPlaylist(localPlaylist.id).filter { it.removedAt == null }.sumOf { it.positions().size })
+            }
             return
         }
-        playlistDao.updateTrackCount(localPlaylist.id, trackSnapshots.size)
+        playlistDao.updateLastSynced(localPlaylist.id, System.currentTimeMillis())
+        // Personal collections count live memberships, not raw remote
+        // rows: local additions, suppression and duplicate IDs may differ.
+        val count = if (isSpotifyPersonalCollection(localPlaylist.source, localPlaylist.type)) {
+            playlistDao.getCrossRefsForPlaylist(localPlaylist.id).filter { it.removedAt == null }.sumOf { it.positions().size }
+        } else trackSnapshots.size
+        playlistDao.updateTrackCount(localPlaylist.id, count)
         // After the count: the stamp's digest covers it.
         recordMirrorStamp(playlistSnapshot, localPlaylist, syncMode)
 

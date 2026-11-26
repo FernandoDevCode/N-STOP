@@ -61,6 +61,16 @@ class SpotifyApiClientPaginationTest {
 
     private val client = SpotifyApiClient(http, tokenManager, authManager)
 
+    @Test fun `library writes are rejected before auth or HTTP`() = runBlocking {
+        val blockedHttp = OkHttpClient.Builder().addInterceptor {
+            error("Spotify library write attempted HTTP")
+        }.build()
+        val blocked = SpotifyApiClient(blockedHttp, mockk<TokenManager>(), mockk<SpotifyAuthManager>())
+        assertTrue(blocked.addToLibrary(listOf("spotify:track:test")) is SpotifyLibraryWriteResult.Failed)
+        assertTrue(blocked.removeFromLibrary(listOf("spotify:track:test")) is SpotifyLibraryWriteResult.Failed)
+        assertTrue(blocked.addToLibrary(emptyList()) is SpotifyLibraryWriteResult.Failed)
+    }
+
     // ── fetchPlaylist (GraphQL) ──────────────────────────────────────────
 
     @Test fun `a failed page after the first marks the playlist partial`() = runBlocking {
@@ -213,6 +223,21 @@ class SpotifyApiClientPaginationTest {
         assertTrue(client.getLikedSongs(limit = 50, offset = 100) is SyncResult.Empty)
     }
 
+    @Test fun `empty liked page with a nonzero remaining count is an error`() = runBlocking {
+        pages["fetchLibraryTracks" to 0] = 200 to likedPage(range = 0 until 0, totalCount = 100)
+        assertTrue(client.getLikedSongs(limit = 50, offset = 0) is SyncResult.Error)
+    }
+
+    @Test fun `empty liked page without a total is an error`() = runBlocking {
+        pages["fetchLibraryTracks" to 0] = 200 to likedPage(range = 0 until 0, totalCount = null)
+        assertTrue(client.getLikedSongs(limit = 50, offset = 0) is SyncResult.Error)
+    }
+
+    @Test fun `verified empty liked library is empty`() = runBlocking {
+        pages["fetchLibraryTracks" to 0] = 200 to likedPage(range = 0 until 0, totalCount = 0)
+        assertTrue(client.getLikedSongs(limit = 50, offset = 0) is SyncResult.Empty)
+    }
+
     @Test fun `an unrecognised liked response is an error, not the end of the library`() = runBlocking {
         pages["fetchLibraryTracks" to 50] = 200 to """{"errors":[{"message":"rate limited"}]}"""
 
@@ -242,7 +267,7 @@ class SpotifyApiClientPaginationTest {
 
     private fun likedPage(
         range: IntRange,
-        totalCount: Int,
+        totalCount: Int?,
         localAt: Int? = null,
         allLocal: Boolean = false,
     ): String {
@@ -250,6 +275,7 @@ class SpotifyApiClientPaginationTest {
             """{"addedAt":{"isoString":"2026-01-01T00:00:00Z"},""" +
                 """"track":{"data":${trackData(i, local = allLocal || i == localAt)}}}"""
         }
-        return """{"data":{"me":{"library":{"tracks":{"totalCount":$totalCount,"items":[$items]}}}}}"""
+        val count = totalCount?.let { """"totalCount":$it,""" }.orEmpty()
+        return """{"data":{"me":{"library":{"tracks":{$count"items":[$items]}}}}}"""
     }
 }

@@ -267,7 +267,7 @@ class DiffWorkerTest {
     }
 
     @Test
-    fun `consecutive ACCUMULATE snapshots queue only newly added undownloaded tracks`() = runBlocking {
+    fun `consecutive ACCUMULATE Spotify snapshots link newly added tracks without downloading`() = runBlocking {
         val playlistId = seedAccumulatePlaylist()
         val trackA = db.trackDao().insert(downloadedTrack("Track A", "spotify:track:a", "/music/a.flac"))
         db.playlistDao().insertCrossRef(
@@ -300,7 +300,7 @@ class DiffWorkerTest {
             setOf(trackA, trackB.id, trackC),
             db.playlistDao().getCrossRefsForPlaylist(playlistId).map { it.trackId }.toSet(),
         )
-        assertEquals(listOf(trackB.id, trackC), queuedTrackIds)
+        assertTrue(queuedTrackIds.isEmpty())
     }
 
     // ── Auto-reconciliation: one batched lookup per playlist ──────────────
@@ -333,6 +333,38 @@ class DiffWorkerTest {
             setOf(streamOnly, downloadedTwin),
             db.playlistDao().getCrossRefsForPlaylist(playlistId).map { it.trackId }.toSet(),
         )
+    }
+
+    @Test
+    fun `scoped Spotify playlist preserves repeated positions without linking a different downloaded URI`() = runBlocking {
+        coEvery { streamingPreference.current() } returns true
+        every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.ACCUMULATE)
+        val sourceId = SpotifyAccountScope.scoped(SpotifyAccountScope.prefix("account"), "playlist")
+        val playlistId = db.playlistDao().insert(
+            PlaylistEntity(name = "Personal", source = MusicSource.SPOTIFY,
+                sourceId = sourceId, type = PlaylistType.CUSTOM, syncEnabled = true),
+        )
+        val original = db.trackDao().insert(
+            TrackEntity(title = "Track A", artist = "Artist",
+                canonicalTitle = "track a", canonicalArtist = "artist",
+                spotifyUri = "spotify:track:a-stream"),
+        )
+        val twin = db.trackDao().insert(downloadedTrack("Track A", "spotify:track:a-file", "/music/a.flac"))
+        coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns listOf(
+            RemotePlaylistSnapshotEntity(id = 21L, syncId = 1L, source = MusicSource.SPOTIFY,
+                sourcePlaylistId = sourceId, playlistName = "Personal",
+                playlistType = PlaylistType.CUSTOM, trackCount = 2, expectedCount = 2),
+        )
+        coEvery { remoteSnapshotDao.getTrackSnapshotsByPlaylistId(21L) } returns listOf(
+            remoteTrack("Track A", "spotify:track:a-stream", 0).copy(id = 51L),
+            remoteTrack("Track A", "spotify:track:a-stream", 2).copy(id = 52L),
+        )
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+        val refs = db.playlistDao().getCrossRefsForPlaylist(playlistId)
+        assertEquals(original, refs.single().trackId)
+        assertEquals(listOf(0, 2), refs.single().positions())
+        assertEquals("/music/a.flac", db.trackDao().getById(twin)?.filePath)
+        assertEquals(2, db.playlistDao().getById(playlistId)?.trackCount)
     }
 
     @Test
@@ -419,7 +451,7 @@ class DiffWorkerTest {
             listOf(studio.id),
             db.playlistDao().getCrossRefsForPlaylist(playlistId).map { it.trackId },
         )
-        assertEquals(listOf(studio.id), queued)
+        assertTrue(queued.isEmpty())
         assertEquals("/music/video000002.opus", db.trackDao().getById(live)?.filePath)
     }
 
@@ -858,7 +890,7 @@ class DiffWorkerTest {
     }
 
     @Test
-    fun `canonical-only duplicates create one offline track and queue entry`() = runBlocking {
+    fun `canonical-only duplicates create one Spotify track without a queue entry`() = runBlocking {
         every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.ACCUMULATE)
         val playlistId = db.playlistDao().insert(
             PlaylistEntity(
@@ -890,9 +922,7 @@ class DiffWorkerTest {
         assertEquals(1, db.trackDao().getAllForIntegrityScan().size)
         assertEquals(6, db.playlistDao().getCrossRefsForPlaylist(playlistId).single().position)
         assertEquals(1, result.outputData.getInt(DiffWorker.KEY_NEW_TRACKS, -1))
-        coVerify(exactly = 1) {
-            downloadQueueDao.insertAll(match { it.size == 1 })
-        }
+        coVerify(exactly = 0) { downloadQueueDao.insertAll(any()) }
     }
 
     @Test
@@ -1227,6 +1257,75 @@ class DiffWorkerTest {
 
         assertTrue(result is androidx.work.ListenableWorker.Result.Success)
         assertEquals("existing track kept AND the fetched addition merged", 2, activeTrackCount(playlistId))
+    }
+
+    @Test
+    fun `partial Spotify snapshot preserves original order and last complete sync`() = runBlocking {
+        val (playlistId, keeper) = seedSyncedPlaylist()
+        val second = db.trackDao().insert(TrackEntity(
+            title = "Second", artist = "Artist", canonicalTitle = "second",
+            canonicalArtist = "artist", spotifyUri = "spotify:track:second",
+        ))
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(
+            playlistId = playlistId, trackId = second, position = 1,
+        ))
+        db.playlistDao().updateTrackCount(playlistId, 2)
+        db.playlistDao().updateLastSynced(playlistId, 1_000L)
+        val before = db.playlistDao().getById(playlistId)?.lastSynced
+        stubSnapshot(partial = true, listedTrackCount = 5, trackSnapshots = listOf(
+            RemoteTrackSnapshotEntity(syncId = 1L, snapshotPlaylistId = 4L,
+                title = "Second", artist = "Artist", spotifyUri = "spotify:track:second", position = 0),
+            RemoteTrackSnapshotEntity(syncId = 1L, snapshotPlaylistId = 4L,
+                title = "Newcomer", artist = "Artist", spotifyUri = "spotify:track:new", position = 1),
+            RemoteTrackSnapshotEntity(syncId = 1L, snapshotPlaylistId = 4L,
+                title = "Keeper", artist = "Artist", spotifyUri = "spotify:track:keeper", position = 2),
+        ))
+
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+        val refs = db.playlistDao().getCrossRefsForPlaylist(playlistId).sortedBy { it.position }
+        assertEquals(listOf(keeper, second), refs.take(2).map { it.trackId })
+        assertEquals(listOf(0, 1, 2), refs.map { it.position })
+        assertEquals(3, db.playlistDao().getById(playlistId)?.trackCount)
+        assertEquals(before, db.playlistDao().getById(playlistId)?.lastSynced)
+        assertEquals("old-snap", db.playlistDao().getSnapshotId(playlistId))
+    }
+
+    @Test
+    fun `scoped Spotify likes clear suppression only after confirmed absence and preserve audio`() = runBlocking {
+        every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.ACCUMULATE)
+        val sourceId = SpotifyAccountScope.scoped(SpotifyAccountScope.prefix("account"), "spotify_liked_songs")
+        val pid = db.playlistDao().insert(PlaylistEntity(name = "Liked Songs", source = MusicSource.SPOTIFY,
+            sourceId = sourceId, type = PlaylistType.LIKED_SONGS, syncEnabled = true))
+        val tid = db.trackDao().insert(TrackEntity(title = "Saved", artist = "Artist", spotifyUri = "spotify:track:saved",
+            canonicalTitle = "saved", canonicalArtist = "artist", isDownloaded = true,
+            offlineRequested = true, filePath = "/music/saved.flac"))
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = pid, trackId = tid))
+        db.playlistDao().removeLikedTrackLocally(tid, null, 1000L)
+        val remote = RemoteTrackSnapshotEntity(syncId = 1L, snapshotPlaylistId = 4L,
+            title = "Saved", artist = "Artist", spotifyUri = "spotify:track:saved")
+        fun snapshot(partial: Boolean, tracks: List<RemoteTrackSnapshotEntity>) {
+            coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns listOf(
+                RemotePlaylistSnapshotEntity(id = 4L, syncId = 1L, source = MusicSource.SPOTIFY,
+                    sourcePlaylistId = sourceId, playlistName = "Liked Songs",
+                    playlistType = PlaylistType.LIKED_SONGS, trackCount = tracks.size,
+                    expectedCount = tracks.size, partial = partial),
+            )
+            coEvery { remoteSnapshotDao.getTrackSnapshotsByPlaylistId(4L) } returns tracks
+        }
+        snapshot(false, listOf(remote))
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+        assertTrue(db.playlistDao().getCrossRef(pid, tid)?.removedAt != null)
+        snapshot(true, emptyList())
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+        assertTrue(db.playlistDao().getCrossRef(pid, tid)?.removedAt != null)
+        snapshot(false, emptyList())
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+        assertNull(db.playlistDao().getCrossRef(pid, tid))
+        snapshot(false, listOf(remote))
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+        assertTrue(db.playlistDao().getCrossRef(pid, tid) != null)
+        assertNull(db.playlistDao().getCrossRef(pid, tid)?.removedAt)
+        assertEquals("/music/saved.flac", db.trackDao().getById(tid)?.filePath)
     }
 
     // ── Type reconcile: which pairs REACH it, not just what it returns ───────

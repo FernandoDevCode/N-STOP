@@ -60,7 +60,8 @@ class MusicRepositoryPlaylistDownloadTest {
         coVerify(exactly = 2) { downloadQueueDao.cancelWaitingForPlaylist(KEPT) }
     }
 
-    @Test fun `off clears the flag and deletes nothing`() = runTest {
+    @Test fun `legacy YouTube off clears the flag and deletes nothing`() = runTest {
+        coEvery { playlistDao.getById(KEPT) } returns playlist(KEPT, keepOffline = true).copy(source = MusicSource.YOUTUBE)
         coEvery { streamingPreference.current() } returns false
         val repo = repo()
         repo.setPlaylistDownload(KEPT, on = false)
@@ -72,13 +73,32 @@ class MusicRepositoryPlaylistDownloadTest {
         coVerify(exactly = 0) { repo.queueKeptPlaylist(any()) }
     }
 
-    @Test fun `off in Download mode also turns sync off`() = runTest {
+    @Test fun `legacy YouTube off in Download mode also turns sync off`() = runTest {
+        coEvery { playlistDao.getById(KEPT) } returns playlist(KEPT, keepOffline = true).copy(source = MusicSource.YOUTUBE)
         coEvery { streamingPreference.current() } returns false
         repo().setPlaylistDownload(KEPT, on = false)
         coVerify(exactly = 1) { playlistDao.setSyncEnabled(KEPT, false) }
         coVerify(exactly = 0) { playlistDao.setSyncEnabledAndPin(any(), any(), any()) }
         // And, like the Sync tab's off, drops sync-queued songs no synced playlist wants.
         coVerify(exactly = 1) { downloadQueueDao.cancelDownloadsWithNoEnabledPlaylist() }
+    }
+
+    @Test fun `turning off Spotify collection download preserves its sync selection`() = runTest {
+        coEvery { streamingPreference.current() } returns false
+        coEvery { playlistDao.getById(KEPT) } returns playlist(KEPT, keepOffline = true)
+            .copy(source = MusicSource.SPOTIFY, syncEnabled = true, keepOffline = false)
+        repo().setPlaylistDownload(KEPT, on = false)
+        coVerify { playlistDao.setKeepOffline(KEPT, false) }
+        coVerify(exactly = 0) { playlistDao.setSyncEnabled(any(), any()) }
+        coVerify(exactly = 0) { downloadQueueDao.cancelDownloadsWithNoEnabledPlaylist() }
+    }
+
+    @Test fun `local playlist download off releases files without changing import selection`() = runTest {
+        coEvery { playlistDao.getById(KEPT) } returns playlist(KEPT, keepOffline = false)
+        val repo = repo()
+        repo.setPlaylistDownload(KEPT, on = false)
+        coVerify { repo.removeDownloadsForPlaylist(KEPT) }
+        coVerify(exactly = 0) { playlistDao.setSyncEnabled(any(), any()) }
     }
 
     @Test fun `off in Stream-only mode leaves sync alone`() = runTest {

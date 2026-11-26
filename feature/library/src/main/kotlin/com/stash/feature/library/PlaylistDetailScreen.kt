@@ -130,7 +130,9 @@ fun PlaylistDetailScreen(
     val bulkPlayInFlight by viewModel.bulkPlayInFlight.collectAsStateWithLifecycle()
     // An active follow (spec §6) is read-only: no delete, no batch delete, no cover change.
     val follow by viewModel.follow.collectAsStateWithLifecycle()
-    val readOnly = follow?.readOnly == true
+    val imported = state.playlist?.let { it.source == com.stash.core.model.MusicSource.SPOTIFY && it.type == PlaylistType.CUSTOM } == true
+    val readOnly = follow?.readOnly == true || imported
+    val localPlaylistEdit = state.playlist.isEditableLocalPlaylist() && !readOnly
     // The page's Download button (#474); null on pages that have none.
     val downloadButton by viewModel.downloadButton.collectAsStateWithLifecycle()
     val extendedColors = StashTheme.extendedColors
@@ -195,6 +197,7 @@ fun PlaylistDetailScreen(
             ) {
                 // ── Header section ──────────────────────────────────────
                 item(key = "header") {
+                    val copyName = stringResource(R.string.sonora_playlist_copy_name, state.playlist?.name.orEmpty())
                     PlaylistHeader(
                         state = state,
                         bulkPlayInFlight = bulkPlayInFlight,
@@ -204,6 +207,9 @@ fun PlaylistDetailScreen(
                         onToggleSearch = { viewModel.toggleSearch() },
                         onShare = { showShareSheet = true },
                         readOnly = readOnly,
+                        onCopy = if (imported) {
+                            { viewModel.saveImportedCopy(copyName) }
+                        } else null,
                         onSetImage = {
                             imagePickerLauncher.launch(
                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
@@ -331,7 +337,7 @@ fun PlaylistDetailScreen(
                 // ── Track list ──────────────────────────────────────────
                 itemsIndexed(
                     items = state.tracks,
-                    key = { _, track -> track.id },
+                    key = { index, track -> "${track.id}:${track.collectionPosition ?: index}" },
                 ) { index, track ->
                     DetailTrackRow(
                         track = track,
@@ -339,7 +345,7 @@ fun PlaylistDetailScreen(
                         isPlaying = track.id == state.currentlyPlayingTrackId,
                         onClick = {
                             if (selection.isActive) selection.toggle(track.id)
-                            else viewModel.playTrack(track.id)
+                            else viewModel.playTrack(track.id, track.collectionPosition)
                         },
                         onLongPress = { if (!selection.isActive) selectedTrack = track else selection.toggle(track.id) },
                         isResolving = track.id == tappedTrackId,
@@ -541,20 +547,23 @@ fun PlaylistDetailScreen(
             onDismissRequest = { trackToDelete = null },
             title = {
                 Text(
-                    if (isDownloadsMix) "Delete from library?" else "Delete ${track.title}?"
+                    if (localPlaylistEdit) stringResource(R.string.sonora_playlist_remove_occurrence_title, track.title)
+                    else if (isDownloadsMix) "Delete from library?" else "Delete ${track.title}?"
                 )
             },
             text = {
                 Column {
                     Text(
-                        text = if (isDownloadsMix) {
+                        text = if (localPlaylistEdit) {
+                            stringResource(R.string.sonora_playlist_remove_occurrence_message)
+                        } else if (isDownloadsMix) {
                             "This track will be deleted from your library and the audio file removed from disk."
                         } else {
                             "Removes the song from this playlist. If it's also in Liked Songs or an in-app playlist, the file stays so those lists keep playing."
                         },
                         style = MaterialTheme.typography.bodyMedium,
                     )
-                    if (!isDownloadsMix) {
+                    if (!isDownloadsMix && !localPlaylistEdit) {
                         Spacer(modifier = Modifier.height(12.dp))
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -583,12 +592,13 @@ fun PlaylistDetailScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.deleteTrackFromPlaylist(track, alsoBlacklist)
+                        viewModel.deleteTrackFromPlaylist(track, alsoBlacklist && !localPlaylistEdit)
                         trackToDelete = null
                     },
                 ) {
                     Text(
-                        text = if (isDownloadsMix) "Delete" else if (alsoBlacklist) "Delete & Block" else "Delete",
+                        text = if (localPlaylistEdit) stringResource(R.string.sonora_playlist_remove_occurrence_action)
+                        else if (isDownloadsMix) "Delete" else if (alsoBlacklist) "Delete & Block" else "Delete",
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
@@ -618,14 +628,16 @@ fun PlaylistDetailScreen(
             text = {
                 Column {
                     Text(
-                        text = if (isDownloadsMix) {
+                        text = if (localPlaylistEdit) {
+                            stringResource(R.string.sonora_playlist_remove_selection_message)
+                        } else if (isDownloadsMix) {
                             "These tracks will be deleted from your library and their audio files removed from disk."
                         } else {
                             "Removes the songs from this playlist. If any are also in Liked Songs or an in-app playlist, the file stays so those lists keep playing."
                         },
                         style = MaterialTheme.typography.bodyMedium,
                     )
-                    if (!isDownloadsMix) {
+                    if (!isDownloadsMix && !localPlaylistEdit) {
                         Spacer(modifier = Modifier.height(12.dp))
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -654,13 +666,14 @@ fun PlaylistDetailScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.deleteSelected(batchTracks, alsoBlacklist)
+                        viewModel.deleteSelected(batchTracks, alsoBlacklist && !localPlaylistEdit)
                         showBatchDelete = false
                         selection.clear()
                     },
                 ) {
                     Text(
-                        text = if (isDownloadsMix) "Delete" else if (alsoBlacklist) "Delete & Block" else "Delete",
+                        text = if (localPlaylistEdit) stringResource(R.string.sonora_playlist_remove_occurrence_action)
+                        else if (isDownloadsMix) "Delete" else if (alsoBlacklist) "Delete & Block" else "Delete",
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
@@ -698,6 +711,7 @@ private fun PlaylistHeader(
     onToggleSearch: () -> Unit,
     onShare: () -> Unit,
     readOnly: Boolean,
+    onCopy: (() -> Unit)? = null,
     onSetImage: () -> Unit,
 ) {
     val playlist = state.playlist ?: return
@@ -806,6 +820,10 @@ private fun PlaylistHeader(
                             leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
                             onClick = { actionsExpanded = false; onShare() },
                         )
+                        if (onCopy != null) {
+                            DropdownMenuItem(text = { Text(stringResource(R.string.shared_mix_save_copy)) },
+                                onClick = { actionsExpanded = false; onCopy() })
+                        }
                         if (mayEditCover) {
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.nonstop_collection_cover)) },

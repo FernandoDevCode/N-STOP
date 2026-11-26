@@ -42,6 +42,33 @@ class DownloadQueueDaoManagementTest {
 
     @After fun tearDown() = db.close()
 
+    @Test fun completed_individual_claim_survives_history_cleanup() = runTest {
+        seedTrack(1, "Manual", "Artist", "Album", null)
+        seedTrack(2, "Collection", "Artist", "Album", null)
+        dao.insert(DownloadQueueEntity(id = 1, trackId = 1, status = DownloadStatus.IN_PROGRESS, userRequested = true))
+        dao.insert(DownloadQueueEntity(id = 2, trackId = 2, status = DownloadStatus.IN_PROGRESS))
+        assertEquals(1, dao.completeIfInProgress(1, completedAt = 500))
+        assertEquals(1, dao.completeIfInProgress(2, completedAt = 500))
+        assertEquals(true, trackDao.getById(1)?.offlineRequested)
+        assertEquals(false, trackDao.getById(2)?.offlineRequested)
+        dao.deleteCompleted()
+        assertNull(dao.getById(1))
+        assertEquals(true, dao.hasUserRequest(1))
+        assertEquals(false, dao.hasUserRequest(2))
+    }
+
+    @Test fun kept_collection_claim_is_independent_of_import() = runTest {
+        seedTrack(1, "Shared", "Artist", "Album", null)
+        val p = db.playlistDao().insert(PlaylistEntity(
+            name = "Offline", source = MusicSource.SPOTIFY, sourceId = "offline-claim",
+            keepOffline = true, syncEnabled = false,
+        ))
+        db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = p, trackId = 1))
+        assertEquals(true, trackDao.hasOfflineCollectionClaim(1))
+        db.playlistDao().setKeepOffline(p, false)
+        assertEquals(false, trackDao.hasOfflineCollectionClaim(1))
+    }
+
     @Test fun active_feed_joins_metadata_and_orders_oldest_first() = runTest {
         seedTrack(1, "Newest", "Artist C", "Album C", "art-c")
         seedTrack(2, "Oldest", "Artist A", "Album A", "art-a")
@@ -233,7 +260,7 @@ class DownloadQueueDaoManagementTest {
             PlaylistEntity(
                 id = trackId * 1000,
                 name = "Playlist $trackId",
-                source = MusicSource.SPOTIFY,
+                source = MusicSource.YOUTUBE,
                 syncEnabled = true,
                 isActive = true,
             )

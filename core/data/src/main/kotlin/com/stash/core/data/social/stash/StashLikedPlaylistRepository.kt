@@ -45,7 +45,10 @@ class StashLikedPlaylistRepository @Inject constructor(
         }
         val playlistId = ensureSeeded(trackArt)
         val existing = playlistDao.getCrossRef(playlistId, trackId)
-        if (existing != null && existing.removedAt == null) return
+        if (existing != null && existing.removedAt == null) {
+            playlistDao.restoreSuppressedImportedLikes(trackId)
+            return
+        }
         // Order matters: mark the timestamp FIRST so the Room observation
         // that fires after `insertCrossRef` already sees `stashLikedAt`
         // set. Without this, the observer emits the row twice — once with
@@ -57,6 +60,7 @@ class StashLikedPlaylistRepository @Inject constructor(
         // Reuse existing helper for trackCount + position handling.
         // Mirrors linkTrackToDownloadsMix at MusicRepositoryImpl.kt:294.
         musicRepository.addTrackToPlaylist(trackId = trackId, playlistId = playlistId)
+        playlistDao.restoreSuppressedImportedLikes(trackId)
     }
 
     /**
@@ -114,17 +118,9 @@ class StashLikedPlaylistRepository @Inject constructor(
      * locally does not unsave externally.
      */
     suspend fun remove(trackId: Long) {
-        val playlistId = playlistDao.findBySourceId(STASH_LIKED_SOURCE_ID)?.id ?: run {
-            // No Stash Liked playlist exists yet → nothing to remove.
-            // Still clear the timestamp in case it's somehow set.
-            trackDao.clearStashLiked(trackId)
-            return
-        }
-        // Clear FIRST for the same Room-emission-ordering reason as `add` —
-        // observers see one update with stashLikedAt = null, not a brief
-        // un-red→red flicker if cross-ref removal is observed first.
-        trackDao.clearStashLiked(trackId)
-        musicRepository.removeTrackFromPlaylist(trackId = trackId, playlistId = playlistId)
+        // One local transaction clears the effective heart, including
+        // imported memberships. No Spotify/YT write and no audio deletion.
+        playlistDao.removeLikedTrackLocally(trackId, null, System.currentTimeMillis())
     }
 
     /**
@@ -154,7 +150,7 @@ class StashLikedPlaylistRepository @Inject constructor(
             artUrl = trackArt?.takeUnless { it.isBlank() },
             syncEnabled = true,
         )
-        return playlistDao.insert(entity)
+        return playlistDao.ensurePlaylist(entity)
     }
 
     companion object {

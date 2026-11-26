@@ -55,8 +55,8 @@ class LibraryViewModelLikedOrderTest {
     // In the library since 1000, liked in Stash at 5000 — the newest like of all.
     private val zebra = Track(id = 1L, title = "Zebra", artist = "A", dateAdded = 1_000L, stashLikedAt = 5_000L)
     // Spotify likes, playlist-position order: Apple then Mango.
-    private val apple = Track(id = 2L, title = "Apple", artist = "B", dateAdded = 2_000L, spotifySavedAt = 3_000L)
-    private val mango = Track(id = 3L, title = "Mango", artist = "C", dateAdded = 4_000L, spotifySavedAt = 4_500L)
+    private val apple = Track(id = 2L, title = "Apple", artist = "B", dateAdded = 2_000L, remoteMembershipAddedAt = 3_000L)
+    private val mango = Track(id = 3L, title = "Mango", artist = "C", dateAdded = 4_000L, remoteMembershipAddedAt = 4_500L)
     // No like timestamp at all (a synced like): keeps its incoming position order, after
     // the stamped likes. dateAdded is download time, so it must NOT decide the order.
     private val plum = Track(id = 4L, title = "Plum", artist = "D", dateAdded = 6_000L)
@@ -81,6 +81,16 @@ class LibraryViewModelLikedOrderTest {
         val ids = sortLikedTracks(listOf(a, b, c), SortOrder.RECENT).map { it.id }
 
         assertThat(ids).containsExactly(10L, 11L, 12L).inOrder()
+    }
+
+    @Test fun historical_outbound_saves_do_not_count_as_remote_like_dates() {
+        val old = plum.copy(spotifySavedAt = 99_000L)
+        assertThat(sortLikedTracks(listOf(old, apple), SortOrder.RECENT).map { it.id })
+            .containsExactly(apple.id, old.id).inOrder()
+        val duplicate = apple.copy(remoteMembershipAddedAt = 8_000L)
+        val merged = mergeLikedMemberships(listOf(apple, zebra, duplicate))
+        assertThat(sortLikedTracks(merged, SortOrder.RECENT).map { it.id })
+            .containsExactly(apple.id, zebra.id).inOrder()
     }
 
     @Test fun the_sort_control_applies_to_the_liked_tab() = runTest {
@@ -108,6 +118,7 @@ class LibraryViewModelLikedOrderTest {
             on { getTracksByPlaylist(eq(42L)) } doReturn flowOf(listOf(apple, mango, plum))
         }
         return LibraryViewModel(
+            playbackPolicy = testPlaybackPolicy(),
             musicRepository = musicRepository,
             playerRepository = mock { on { playerState } doReturn MutableStateFlow(PlayerState()) },
             tokenManager = mock {

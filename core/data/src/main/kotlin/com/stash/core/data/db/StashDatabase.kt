@@ -99,7 +99,7 @@ import com.stash.core.data.db.entity.TrackTagEntity
         ArtistImageEntity::class,
         SharedMixEntity::class,
     ],
-    version = 55,
+    version = 56,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -1448,6 +1448,28 @@ abstract class StashDatabase : RoomDatabase() {
             }
         }
 
+        // Legacy files have ambiguous ownership. Preserve all downloaded media,
+        // and recover explicit pending/completed requests; no I/O or deletes.
+        val MIGRATION_55_56 = object : Migration(55, 56) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE tracks ADD COLUMN offline_requested INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE playlists ADD COLUMN aggregate_likes_offline INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE playlist_tracks ADD COLUMN remote_added_at INTEGER")
+                db.execSQL("ALTER TABLE remote_track_snapshots ADD COLUMN remote_added_at INTEGER")
+                db.execSQL("ALTER TABLE sync_undo_memberships ADD COLUMN remote_added_at INTEGER")
+                db.execSQL("ALTER TABLE playlist_tracks ADD COLUMN repeat_positions TEXT")
+                db.execSQL("ALTER TABLE sync_undo_memberships ADD COLUMN repeat_positions TEXT")
+                db.execSQL("""
+                    UPDATE tracks SET offline_requested = 1
+                    WHERE is_downloaded = 1 OR EXISTS (
+                        SELECT 1 FROM download_queue dq
+                        WHERE dq.track_id = tracks.id AND dq.user_requested = 1
+                          AND dq.status != 'SKIPPED'
+                    )
+                """.trimIndent())
+            }
+        }
+
         /**
          * The complete migration chain, shared by every builder of a
          * [StashDatabase]: the DI singleton in
@@ -1516,6 +1538,7 @@ abstract class StashDatabase : RoomDatabase() {
                 MIGRATION_52_53,
                 MIGRATION_53_54,
                 MIGRATION_54_55,
+                MIGRATION_55_56,
             )
         }
     }

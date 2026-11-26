@@ -246,7 +246,6 @@ fun SyncScreen(
             item {
                 val playlists = uiState.spotifyPlaylists
                 val hasPlaylists = playlists.isNotEmpty()
-                val purple = MaterialTheme.colorScheme.primary
                 com.stash.feature.sync.components.SourcePreferencesCard(
                     name = "Spotify",
                     brandColor = StashTheme.extendedColors.spotifyGreen,
@@ -261,21 +260,17 @@ fun SyncScreen(
                             )
                         } else {
                             SourceEmptyHint(
-                                "Your Spotify playlists and daily mixes will appear here after " +
-                                    "the first sync. Tap Sync Now to load them — nothing downloads " +
-                                    "until you toggle it on.",
+                                stringResource(R.string.sonora_sync_spotify_first_import),
                             )
                         }
                     },
                     modeChips = {
-                        if (hasPlaylists) {
-                            SyncModeChipRow(
-                                mode = uiState.spotifySyncMode,
-                                onChange = viewModel::onSpotifySyncModeChanged,
-                                onRequestRefresh = viewModel::onRequestSpotifyRefresh,
-                                accent = purple,
-                            )
-                        }
+                        Text(
+                            text = stringResource(R.string.sonora_sync_spotify_read_only),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        // Personal Spotify collections always reconcile complete reads.
                     },
                     onManage = { onManageSource(SyncSource.SPOTIFY) },
                 )

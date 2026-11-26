@@ -21,7 +21,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/** Deleting a song from a playlist must update the count the Library card shows. */
+/** Editing local composition updates the Library card count without deleting the track. */
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [33])
 class MusicRepositoryCascadeTrackCountTest {
@@ -42,20 +42,25 @@ class MusicRepositoryCascadeTrackCountTest {
 
     @After fun tearDown() = db.close()
 
-    @Test fun `removing a song kept by Liked Songs updates the count`() = runTest {
+    @Test fun `removing a local playlist song keeps its liked membership and updates the count`() = runTest {
         val liked = db.playlistDao().insert(playlist("Liked Songs", PlaylistType.LIKED_SONGS, "liked"))
         db.playlistDao().insertCrossRef(PlaylistTrackCrossRef(playlistId = liked, trackId = 2L, position = 0))
 
         val summary = repo().removeTrackFromPlaylistAndMaybeDelete(2L, playlistId, alsoBlacklist = false)
 
-        assertEquals(1, summary.keptProtected)
+        assertEquals(0, summary.deleted)
+        assertEquals(null, db.playlistDao().getCrossRef(playlistId, 2L))
+        assertEquals(2L, db.playlistDao().getCrossRef(liked, 2L)?.trackId)
+        assertEquals(2L, db.trackDao().getById(2L)?.id)
         assertEquals(1, db.playlistDao().getById(playlistId)?.trackCount)
     }
 
-    @Test fun `deleting a song nothing else holds updates the count`() = runTest {
+    @Test fun `removing the last local playlist membership preserves the track and updates the count`() = runTest {
         val summary = repo().removeTrackFromPlaylistAndMaybeDelete(2L, playlistId, alsoBlacklist = false)
 
-        assertEquals(1, summary.deleted)
+        assertEquals(0, summary.deleted)
+        assertEquals(null, db.playlistDao().getCrossRef(playlistId, 2L))
+        assertEquals(2L, db.trackDao().getById(2L)?.id)
         assertEquals(1, db.playlistDao().getById(playlistId)?.trackCount)
     }
 

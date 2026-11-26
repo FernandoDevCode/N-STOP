@@ -232,6 +232,7 @@ class ArtistDetailViewModelTest {
             mapOf("artistName" to "Artist"),
         ),
     ): ArtistDetailViewModel = ArtistDetailViewModel(
+        playbackPolicy = testPlaybackPolicy(),
         savedStateHandle = savedStateHandle,
         musicRepository = musicRepository,
         playerRepository = playerRepository,

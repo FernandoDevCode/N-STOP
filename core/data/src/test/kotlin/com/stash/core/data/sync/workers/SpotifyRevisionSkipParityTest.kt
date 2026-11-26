@@ -109,7 +109,7 @@ class SpotifyRevisionSkipParityTest {
     /** The playlist's songs A and B, synced; [withCopyOfA] adds a downloaded copy of A from Search. */
     private suspend fun Library.seed(withCopyOfA: Boolean) {
         db.playlistDao().insert(
-            PlaylistEntity(name = "Road Trip", source = MusicSource.SPOTIFY, sourceId = "pl1", type = PlaylistType.CUSTOM, syncEnabled = true),
+            PlaylistEntity(name = "Road Trip", source = MusicSource.SPOTIFY, sourceId = SpotifyAccountScope.scoped(SpotifyAccountScope.prefix("testuser"), "pl1"), type = PlaylistType.CUSTOM, syncEnabled = true),
         )
         for (title in listOf("A", "B")) {
             db.trackDao().insert(
@@ -163,7 +163,7 @@ class SpotifyRevisionSkipParityTest {
         }
     }
 
-    private suspend fun Library.playlistId() = db.playlistDao().findBySourceId("pl1")!!.id
+    private suspend fun Library.playlistId() = db.playlistDao().findBySourceId(SpotifyAccountScope.scoped(SpotifyAccountScope.prefix("testuser"), "pl1"))!!.id
 
     private fun Library.tables(): List<String> {
         val sqlite = db.openHelper.readableDatabase
@@ -192,10 +192,10 @@ class SpotifyRevisionSkipParityTest {
     @Test fun `with nothing changed the playlist is skipped, and that is a full read's result`() =
         assertParity(check = { coVerify(exactly = 1) { spotify.getPlaylistTracks("pl1") } })
 
-    @Test fun `D1 a download that failed after the stamp is closed as a full sync closes it`() = assertParity(
+    @Test fun `D1 a failed download stays failed when only an approximate copy exists`() = assertParity(
         seed = {
             seed(withCopyOfA = true)
-            // A was still waiting when the copy got linked, so nothing was closed then.
+            // An approximate copy is not a verified completed download for A.
             db.downloadQueueDao().insert(DownloadQueueEntity(trackId = trackId("A", MusicSource.SPOTIFY), searchQuery = "Artist - A"))
         },
         perturb = {
@@ -204,7 +204,10 @@ class SpotifyRevisionSkipParityTest {
         },
         check = {
             val row = db.downloadQueueDao().getByTrackId(trackId("A", MusicSource.SPOTIFY))!!
-            assertEquals(DownloadStatus.COMPLETED, row.status)
+            assertEquals(DownloadStatus.FAILED, row.status)
+            val copy = trackId("A", MusicSource.YOUTUBE)
+            assertTrue(db.playlistDao().getCrossRefsForPlaylist(playlistId()).none { it.trackId == copy })
+            assertEquals("/music/a.flac", db.trackDao().getById(copy)?.filePath)
         },
     )
 
@@ -257,6 +260,7 @@ class SpotifyRevisionSkipParityTest {
 
     private suspend fun Library.runFetch(playlistDao: PlaylistDao): Data {
         val tokenManager = mockk<TokenManager> {
+            coEvery { getSpotifyLibraryAccountId() } returns "testuser"
             coEvery { isAuthenticated(AuthService.SPOTIFY) } returns true
             coEvery { isAuthenticated(AuthService.YOUTUBE_MUSIC) } returns false
         }

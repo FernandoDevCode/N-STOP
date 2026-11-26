@@ -60,6 +60,7 @@ class AlbumDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val musicRepository: MusicRepository,
     private val playerRepository: PlayerRepository,
+    private val playbackPolicy: LibraryPlaybackPolicy,
 ) : ViewModel() {
 
     /** The album name extracted from the navigation route arguments. */
@@ -139,9 +140,10 @@ class AlbumDetailViewModel @Inject constructor(
         viewModelScope.launch {
             _tappedTrackId.value = trackId
             try {
-                val downloaded = uiState.value.tracks.filter { it.filePath != null }
+                val downloaded = playbackPolicy.eligible(uiState.value.tracks)
                 if (downloaded.isEmpty()) return@launch
-                val index = downloaded.indexOfFirst { it.id == trackId }.coerceAtLeast(0)
+                val index = downloaded.indexOfFirst { it.id == trackId }
+                if (index < 0) return@launch
                 playerRepository.setQueue(downloaded, index)
             } finally {
                 _tappedTrackId.value = null
@@ -158,7 +160,7 @@ class AlbumDetailViewModel @Inject constructor(
      */
     fun shuffleAll() {
         viewModelScope.launch {
-            val downloaded = uiState.value.tracks.filter { it.filePath != null }
+            val downloaded = playbackPolicy.eligible(uiState.value.tracks)
             if (downloaded.isEmpty()) return@launch
             val shuffled = downloaded.shuffled()
             _tappedTrackId.value = shuffled[0].id
@@ -175,14 +177,22 @@ class AlbumDetailViewModel @Inject constructor(
     /** Inserts [track] immediately after the currently-playing track in the queue. */
     fun playNext(track: Track) {
         viewModelScope.launch {
-            playerRepository.addNext(track)
+            if (playbackPolicy.eligible(listOf(track)).isNotEmpty()) {
+                playerRepository.addNext(track)
+            } else {
+                _userMessages.tryEmit("This song is unavailable for playback right now.")
+            }
         }
     }
 
     /** Appends [track] to the end of the current playback queue. */
     fun addToQueue(track: Track) {
         viewModelScope.launch {
-            playerRepository.addToQueue(track)
+            if (playbackPolicy.eligible(listOf(track)).isNotEmpty()) {
+                playerRepository.addToQueue(track)
+            } else {
+                _userMessages.tryEmit("This song is unavailable for playback right now.")
+            }
         }
     }
 
@@ -230,7 +240,7 @@ class AlbumDetailViewModel @Inject constructor(
      */
     fun playSelectedNext(tracks: List<Track>) {
         viewModelScope.launch {
-            tracks.forEach {
+            playbackPolicy.eligible(tracks).forEach {
                 runCatching { playerRepository.addNext(it) }
                     .onFailure { e -> if (e is CancellationException) throw e }
             }
@@ -243,7 +253,8 @@ class AlbumDetailViewModel @Inject constructor(
      */
     fun addSelectedToQueue(tracks: List<Track>) {
         viewModelScope.launch {
-            playerRepository.addToQueue(tracks)
+            val playable = playbackPolicy.eligible(tracks)
+            if (playable.isNotEmpty()) playerRepository.addToQueue(playable)
         }
     }
 

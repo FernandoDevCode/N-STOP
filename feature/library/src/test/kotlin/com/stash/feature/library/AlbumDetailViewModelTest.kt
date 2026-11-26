@@ -253,6 +253,7 @@ class AlbumDetailViewModelTest {
             mapOf("albumName" to "Album", "artistName" to "Artist"),
         ),
     ): AlbumDetailViewModel = AlbumDetailViewModel(
+        playbackPolicy = testPlaybackPolicy(),
         savedStateHandle = savedStateHandle,
         musicRepository = musicRepository,
         playerRepository = playerRepository,

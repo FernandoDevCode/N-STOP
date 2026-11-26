@@ -49,6 +49,11 @@ class TokenManagerImpl @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     override fun close() { scope.coroutineContext[kotlinx.coroutines.Job]?.cancel() }
 
+    /** Await observer shutdown before disposing a host's main dispatcher. */
+    internal suspend fun awaitClosed() {
+        scope.coroutineContext[kotlinx.coroutines.Job]?.join()
+    }
+
     // -- Spotify state --------------------------------------------------------
 
     private val _spotifyAuthState = MutableStateFlow<AuthState>(AuthState.NotConnected)
@@ -191,6 +196,12 @@ class TokenManagerImpl @Inject constructor(
      * Checks the stored user profile first (populated during initial connection),
      * then falls back to the token's scope field which contains "username|clientId".
      */
+    override suspend fun getSpotifyLibraryAccountId(): String? {
+        val token = getSpotifyAccessToken() ?: return null
+        return spotifyAuthManager.extractUsernameFromJwt(token)
+            ?.takeIf { it.isNotBlank() && it != "spotify_user" }
+    }
+
     override suspend fun getSpotifyUsername(): String? {
         // Try the stored user profile (set during connectSpotifyWithCookie).
         val user = tokenStore.spotifyUser.first()
@@ -259,7 +270,7 @@ class TokenManagerImpl @Inject constructor(
     // -- Mutators -------------------------------------------------------------
 
     override suspend fun saveSpotifyAuth(token: ServiceToken, user: UserInfo) {
-        tokenStore.saveSpotifyToken(token, user)
+        spotifyRefreshLock.withLock { tokenStore.saveSpotifyToken(token, user) }
     }
 
     /**
@@ -408,7 +419,7 @@ class TokenManagerImpl @Inject constructor(
             Log.w("StashSync", "No username available — playlists may not sync")
             UserInfo(id = "spotify_user", displayName = "Spotify User")
         }
-        tokenStore.saveSpotifyToken(updatedToken, user)
+        spotifyRefreshLock.withLock { tokenStore.saveSpotifyToken(updatedToken, user) }
         return true
     }
 

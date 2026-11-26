@@ -143,6 +143,19 @@ interface PlaylistDao {
         return playlistId
     }
 
+    /** Copy ordered occurrences atomically while sharing original track rows. */
+    @Transaction
+    suspend fun createPlaylistCopy(playlist: PlaylistEntity, orderedTrackIds: List<Long>): Long {
+        val id = insert(playlist)
+        val refs = orderedTrackIds.withIndex().groupBy({ it.value }, { it.index }).map { (trackId, positions) ->
+            PlaylistTrackCrossRef(playlistId = id, trackId = trackId, position = positions.last(),
+                locallyAdded = true, repeatPositions = com.stash.core.data.db.entity.encodeEarlierPlaylistPositions(positions))
+        }
+        if (refs.isNotEmpty()) insertAllCrossRefs(refs)
+        updateTrackCount(id, orderedTrackIds.size)
+        return id
+    }
+
     /**
      * Returns the existing cross-reference for (playlistId, trackId) if any,
      * so the caller can preserve `addedAt` when re-inserting (otherwise
@@ -355,6 +368,10 @@ interface PlaylistDao {
               -- A playlist the user made (createPlaylist, incl. a saved copy of a shared mix)
               -- shows in Library with downloads off. Android Auto filters these back out.
               OR p.source_id LIKE 'custom_%'
+              OR (p.source = 'SPOTIFY' AND p.type = 'CUSTOM' AND (
+                  p.last_synced IS NOT NULL OR EXISTS (SELECT 1 FROM playlist_tracks saved
+                      WHERE saved.playlist_id = p.id AND saved.removed_at IS NULL)
+              ))
               OR EXISTS (
                   SELECT 1 FROM playlist_tracks pt
                   JOIN tracks t ON pt.track_id = t.id
@@ -562,6 +579,7 @@ interface PlaylistDao {
         """
         SELECT pt.playlist_id AS playlistId, pt.track_id AS trackId, pt.position AS position,
                (pt.removed_at IS NOT NULL) AS removed, pt.locally_added AS locallyAdded,
+               pt.repeat_positions AS repeatPositions, pt.remote_added_at AS remoteAddedAt,
                EXISTS(SELECT 1 FROM download_queue dq WHERE dq.track_id = pt.track_id AND dq.status = 'FAILED') AS failed
         FROM playlist_tracks pt WHERE pt.playlist_id = :playlistId
         """
@@ -649,6 +667,23 @@ interface PlaylistDao {
     @Query("DELETE FROM playlist_tracks WHERE playlist_id = :playlistId AND track_id = :trackId")
     suspend fun removeTrackFromPlaylist(playlistId: Long, trackId: Long)
 
+    /** Local composition edit only: never delete the track row or its audio. Null position removes all occurrences. */
+    @Transaction
+    suspend fun removeLocalPlaylistOccurrence(playlistId: Long, trackId: Long, position: Int?): Boolean {
+        val playlist = getById(playlistId) ?: return false
+        if (playlist.type != PlaylistType.CUSTOM || playlist.source !in setOf(MusicSource.BOTH, MusicSource.LOCAL)) return false
+        val ref = getCrossRef(playlistId, trackId)?.takeIf { it.removedAt == null } ?: return false
+        val positions = ref.positions()
+        if (position != null && position !in positions) return false
+        val remaining = if (position == null) emptyList() else positions.filterNot { it == position }
+        if (remaining.isEmpty()) removeTrackFromPlaylist(playlistId, trackId)
+        else insertCrossRef(ref.copy(position = remaining.last(),
+            repeatPositions = com.stash.core.data.db.entity.encodeEarlierPlaylistPositions(remaining)))
+        updateTrackCount(playlistId, getCrossRefsForPlaylist(playlistId)
+            .filter { it.removedAt == null }.sumOf { it.positions().size })
+        return true
+    }
+
     /**
      * v0.9.15: Hard-delete every cross-ref for [trackId] across all
      * playlists. Used by [com.stash.core.data.blocklist.BlocklistGuard.block]
@@ -658,6 +693,60 @@ interface PlaylistDao {
      */
     @Query("DELETE FROM playlist_tracks WHERE track_id = :trackId")
     suspend fun deleteAllCrossRefsForTrack(trackId: Long)
+
+    /** Local suppression of a liked membership. Never delete TrackEntity or audio. */
+    @Query("""
+        UPDATE playlist_tracks SET removed_at = :removedAtMs
+        WHERE track_id = :trackId AND removed_at IS NULL
+          AND playlist_id IN (
+              SELECT id FROM playlists
+              WHERE type IN ('LIKED_SONGS', 'STASH_LIKED')
+                AND (:source IS NULL OR playlists.source = :source)
+          )
+    """)
+    suspend fun suppressLikedMemberships(trackId: Long, source: MusicSource?, removedAtMs: Long)
+
+    @Query("UPDATE tracks SET stash_liked_at = NULL WHERE id = :trackId")
+    suspend fun clearLocalLikeForCollection(trackId: Long)
+
+    @Query("""
+        UPDATE playlists SET track_count = (
+            SELECT COUNT(*) FROM playlist_tracks pt
+            WHERE pt.playlist_id = playlists.id AND pt.removed_at IS NULL
+        )
+        WHERE type IN ('LIKED_SONGS', 'STASH_LIKED')
+          AND (:source IS NULL OR playlists.source = :source)
+    """)
+    suspend fun recountLikedCollections(source: MusicSource?)
+
+    @Transaction
+    suspend fun removeLikedTrackLocally(trackId: Long, source: MusicSource?, removedAtMs: Long) {
+        suppressLikedMemberships(trackId, source, removedAtMs)
+        if (source == null || source == MusicSource.BOTH) clearLocalLikeForCollection(trackId)
+        recountLikedCollections(source)
+    }
+
+    @Query("""
+        UPDATE playlist_tracks SET removed_at = NULL
+        WHERE track_id = :trackId AND removed_at IS NOT NULL
+          AND playlist_id IN (
+              SELECT id FROM playlists WHERE is_active = 1 AND type = 'LIKED_SONGS'
+          )
+    """)
+    suspend fun restoreSuppressedImportedLikesRaw(trackId: Long)
+
+    @Transaction
+    suspend fun restoreSuppressedImportedLikes(trackId: Long) {
+        restoreSuppressedImportedLikesRaw(trackId)
+        recountLikedCollections(null)
+    }
+
+    /** Remove a suppression marker only when a complete remote read proves absence. */
+    @Query("""
+        DELETE FROM playlist_tracks WHERE playlist_id = :playlistId
+            AND track_id IN (:trackIds) AND removed_at IS NOT NULL AND locally_added = 0
+    """)
+    suspend fun deleteAbsentLikedTombstones(playlistId: Long, trackIds: List<Long>)
 
     /** Every playlist holding [trackId], so a block can recount their song counts. */
     @Query("SELECT DISTINCT playlist_id FROM playlist_tracks WHERE track_id = :trackId")
@@ -817,8 +906,29 @@ interface PlaylistDao {
     suspend fun setKeepOffline(playlistId: Long, on: Boolean)
 
     /** Active playlists with the Download switch on: the post-sync sweep queues each one (#474). */
-    @Query("SELECT id FROM playlists WHERE keep_offline = 1 AND is_active = 1")
+    @Query("""
+        SELECT p.id FROM playlists p WHERE p.is_active = 1
+          AND (p.keep_offline = 1 OR (p.type IN ('LIKED_SONGS', 'STASH_LIKED') AND EXISTS (
+                      SELECT 1 FROM playlists likes_pref WHERE likes_pref.source_id = 'stash_liked_songs'
+                        AND likes_pref.aggregate_likes_offline = 1
+                  )))
+    """)
     suspend fun getKeepOfflinePlaylistIds(): List<Long>
+
+    @Query("""
+        SELECT EXISTS (SELECT 1 FROM playlists p WHERE p.id = :playlistId
+            AND p.is_active = 1 AND (p.type IN ('LIKED_SONGS', 'STASH_LIKED') AND EXISTS (
+                      SELECT 1 FROM playlists likes_pref WHERE likes_pref.source_id = 'stash_liked_songs'
+                        AND likes_pref.aggregate_likes_offline = 1
+                  )))
+    """)
+    suspend fun isAggregateLikesClaimed(playlistId: Long): Boolean
+
+    @Query("UPDATE playlists SET aggregate_likes_offline = :on WHERE source_id = 'stash_liked_songs'")
+    suspend fun setAggregateLikesOffline(on: Boolean)
+
+    @Query("SELECT id FROM playlists WHERE is_active = 1 AND type IN ('LIKED_SONGS', 'STASH_LIKED')")
+    suspend fun getActiveLikedCollectionIds(): List<Long>
 
     /**
      * One-shot data migration: hide every YouTube playlist that currently
@@ -925,6 +1035,34 @@ interface PlaylistDao {
         return deactivateByIdsChunked(missing)
     }
 
+    /**
+     * Freeze copies belonging to an old or unknown account. Imported likes
+     * become a separate saved playlist, rather than joining the new account's
+     * Liked Songs. Never delete a membership, file, or keepOffline request.
+     */
+    @Query("""
+        UPDATE playlists SET sync_enabled = 0,
+            type = CASE WHEN type = 'LIKED_SONGS' THEN 'CUSTOM' ELSE type END
+        WHERE source = 'SPOTIFY' AND substr(source_id, 1, length(:prefix)) != :prefix
+    """)
+    suspend fun archiveForeignSpotifyCollections(prefix: String)
+
+    @Query("""
+        UPDATE playlists SET type = 'LIKED_SONGS'
+        WHERE source = 'SPOTIFY' AND source_id = :sourceId
+    """)
+    suspend fun restoreScopedSpotifyLikesType(sourceId: String)
+
+    /** A disappeared remote collection remains a saved, paused local copy. */
+    @Transaction
+    suspend fun pauseMissingScopedSpotifyPlaylists(prefix: String, currentIds: List<String>) {
+        val present = currentIds.toHashSet()
+        getActivePlaylistsBySource(MusicSource.SPOTIFY)
+            .filter { it.type == PlaylistType.CUSTOM && it.sourceId.startsWith(prefix) &&
+                it.sourceId !in present && !it.sourceId.endsWith(":spotify_liked_songs") }
+            .forEach { setSyncEnabled(it.id, false) }
+    }
+
     /** Flip [is_active] back to 1 for a specific playlist id. Paired with
      *  [deactivateMissingForSource] so a rotating home-feed mix that
      *  returns tomorrow re-surfaces on the Home screen instead of
@@ -994,6 +1132,7 @@ interface PlaylistDao {
         SELECT * FROM playlists
         WHERE is_active = 1
           AND type IN ('CUSTOM')
+          AND source != 'SPOTIFY'
           -- An active followed shared mix is read-only (spec §6).
           AND id NOT IN (SELECT playlist_id FROM shared_mixes WHERE role = 'FOLLOWER' AND status = 'ACTIVE')
           AND (

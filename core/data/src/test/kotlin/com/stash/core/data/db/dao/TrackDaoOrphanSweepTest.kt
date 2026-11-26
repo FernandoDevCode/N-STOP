@@ -47,7 +47,7 @@ class TrackDaoOrphanSweepTest {
     private fun track(
         id: Long,
         downloaded: Boolean = true,
-        source: MusicSource = MusicSource.SPOTIFY,
+        source: MusicSource = MusicSource.YOUTUBE,
     ) = TrackEntity(
         id = id, title = "T$id", artist = "a",
         canonicalTitle = "t$id", canonicalArtist = "a",
@@ -94,6 +94,13 @@ class TrackDaoOrphanSweepTest {
         val survivors = trackDao.getByIds(listOf(1L, 2L, 3L, 4L, 5L, 6L))
         assertEquals(setOf(2L, 3L, 4L, 5L, 6L), survivors.map { it.id }.toSet())
         assertEquals(setOf(2L, 3L, 4L, 6L), survivors.filter { it.isDownloaded }.map { it.id }.toSet())
+    }
+
+    @Test fun `Spotify downloaded orphan survives sync cleanup`() = runTest {
+        trackDao.insert(track(1, source = MusicSource.SPOTIFY))
+        val sweep = trackDao.deleteOrphanedDownloadedTracks()
+        assertEquals(0, sweep.deleted.size + sweep.undownloaded.size)
+        assertEquals("/music/1.flac", trackDao.getById(1)?.filePath)
     }
 
     @Test fun `an orphan with listening history keeps its row and plays, losing only its download`() = runTest {

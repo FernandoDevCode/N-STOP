@@ -15,6 +15,11 @@ on:
 permissions:
   contents: read
 
+# Only the newest revision of a PR/branch needs to occupy the test runners.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Compiles the unit-test source set of EVERY module. This is the gate the
   # repo was missing: `unit-tests` below runs only :core:media, and
@@ -53,6 +58,14 @@ jobs:
       # in one module otherwise hides every other module's.
       - name: Compile every module's unit tests
         run: ./gradlew compileDebugUnitTestKotlin --continue --no-daemon
+
+      # Room exports the authoritative schema during compilation.
+      - name: Upload generated Room schema v56
+        uses: actions/upload-artifact@v6
+        with:
+          name: generated-room-schema-v56
+          path: core/data/schemas/com.stash.core.data.db.StashDatabase/56.json
+          if-no-files-found: error
 
   # The share Worker's tests (mixes, rooms, Community), then the sync Worker, tip jar, lossless relay and Last.fm proxy.
   # They import only local files, so no npm install.

@@ -37,6 +37,14 @@ class PlaylistDaoFollowedPickerTest {
         assertThat(dao.getPickablePlaylists().first().map { it.id }).containsExactly(mine, followed)
     }
 
+    @Test fun `Spotify imports remain visible but cannot be picked for editing`() = runTest {
+        val dao = db.playlistDao()
+        val imported = dao.insert(PlaylistEntity(name = "Remote", source = MusicSource.SPOTIFY,
+            sourceId = "spotify-import", type = PlaylistType.CUSTOM, syncEnabled = true))
+        assertThat(dao.getAllVisible(includeStreamable = true).first().map { it.id }).contains(imported)
+        assertThat(dao.getPickablePlaylists().first().map { it.id }).doesNotContain(imported)
+    }
+
     @Test fun `your own playlist shows with downloads off and nothing downloaded`() = runTest {
         val dao = db.playlistDao()
         val mine = dao.insert(PlaylistEntity(name = "Saved copy", source = MusicSource.BOTH, sourceId = "custom_2", type = PlaylistType.CUSTOM, syncEnabled = false))

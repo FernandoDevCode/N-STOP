@@ -83,19 +83,19 @@ class DiffWorkerOnlineMembershipTest {
     fun tearDown() { db.close() }
 
     @Test
-    fun `an un-opted playlist still gets its tracks in online mode`() = runBlocking {
+    fun `unselected Spotify playlist does not import tracks in online mode`() = runBlocking {
         coEvery { streamingPreference.current() } returns true
         val id = seed(PlaylistType.CUSTOM, "spotify:playlist:mine", "My Playlist")
 
         buildWorker().doWork()
 
-        assertEquals(3, db.playlistDao().getTracksForPlaylist(id).size)
+        assertEquals(0, db.playlistDao().getTracksForPlaylist(id).size)
     }
 
     @Test
-    fun `liked songs fills in online mode too`() = runBlocking {
+    fun `selected liked songs imports without downloading`() = runBlocking {
         coEvery { streamingPreference.current() } returns true
-        val id = seed(PlaylistType.LIKED_SONGS, "spotify:collection:tracks", "Liked Songs")
+        val id = seed(PlaylistType.LIKED_SONGS, "spotify:collection:tracks", "Liked Songs", selected = true)
 
         buildWorker().doWork()
 
@@ -141,6 +141,7 @@ class DiffWorkerOnlineMembershipTest {
         type: PlaylistType,
         sourceId: String,
         name: String,
+        selected: Boolean = false,
     ): Long {
         val id = db.playlistDao().insert(
             PlaylistEntity(
@@ -149,7 +150,7 @@ class DiffWorkerOnlineMembershipTest {
                 sourceId = sourceId,
                 type = type,
                 trackCount = 3,
-                syncEnabled = false,
+                syncEnabled = selected,
             )
         )
 

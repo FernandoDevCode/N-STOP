@@ -859,7 +859,7 @@ private fun PlayerV7Content(
                         progress = progress,
                         info = {
                             TrackInfoBlock(track, resolvingArtist, viewModel::onTrackInfoTapped,
-                                track?.stashLikedAt != null,
+                                track?.isLikedInSonora == true,
                                 resolvedDirection.accents.firstOrNull { it.red > it.green * 1.3f && it.red > it.blue * 1.2f }
                                     ?.let { androidx.compose.ui.graphics.lerp(it, Color.White, .18f) } ?: dynamicProgress,
                                 viewModel::onLikeTap)
@@ -880,7 +880,7 @@ private fun PlayerV7Content(
                             modifier = Modifier.padding(start = 24.dp, end = 12.dp, top = 4.dp)
                                 .playerV7VerticalGesture(onDown = viewModel::onDismissLyrics),
                         ) {
-                            PlayerV7Heart(isLiked = track?.stashLikedAt != null,
+                            PlayerV7Heart(isLiked = track?.isLikedInSonora == true,
                                 onClick = viewModel::onLikeTap, accent = dynamicProgress, size = 24.dp)
                             LyricsMenuButton(items = lyricMenu, liveEnabled = liveLyricsEnabled,
                                 onLiveToggle = { viewModel.setLiveLyricsBarEnabled(it) },

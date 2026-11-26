@@ -144,18 +144,16 @@ class PlaylistDaoMirrorDigestTest {
         assertNotEquals(before, digest())
     }
 
-    @Test fun `a song swept as an orphan takes its removal mark along, and that moves the digest`() = runTest {
-        // Removed from the playlist (a tombstone), downloaded, held by nothing else:
-        // the orphan sweep deletes it, the tombstone cascades away, and a full sync
-        // would then re-add the song. The stamp must stop matching for that.
+    @Test fun `a Spotify orphan keeps its removal mark and mirror digest`() = runTest {
+        // A Spotify download and its removal marker are preserved by sync cleanup.
         dao.softDeleteTrackFromPlaylist(playlistId, trackIds[1])
         trackDao.markAsDownloaded(trackIds[1], filePath = "/music/song1.mp3", fileSizeBytes = 1_000)
         val afterRemoval = digest()
 
         val swept = trackDao.deleteOrphanedDownloadedTracks()
 
-        assertEquals(listOf(trackIds[1]), swept.deleted.map { it.id })
-        assertNotEquals(afterRemoval, digest())
+        assertEquals(emptyList<Long>(), swept.deleted.map { it.id })
+        assertEquals(afterRemoval, digest())
     }
 
     @Test fun `a recount moves the digest`() = runTest {

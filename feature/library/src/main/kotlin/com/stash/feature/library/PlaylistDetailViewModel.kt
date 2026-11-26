@@ -44,6 +44,9 @@ import javax.inject.Inject
  * @property currentlyPlayingTrackId The ID of the track currently playing, used
  *                                   to highlight the active row in the list.
  */
+internal fun Playlist?.isEditableLocalPlaylist(): Boolean =
+    this != null && type == PlaylistType.CUSTOM && source in setOf(com.stash.core.model.MusicSource.BOTH, com.stash.core.model.MusicSource.LOCAL)
+
 data class PlaylistDetailUiState(
     val playlist: Playlist? = null,
     val tracks: List<Track> = emptyList(),
@@ -63,13 +66,17 @@ data class DownloadButtonState(
     val downloaded: Int,
     val total: Int,
     val followed: Boolean = false,
+    val incomplete: Int = 0,
+    val lockedByAggregate: Boolean = false,
 ) {
     /** On, and every song is on the phone. */
-    val complete: Boolean get() = on && downloaded == total
+    val complete: Boolean get() = on && total > 0 && downloaded == total
 
     val label: String get() = when {
         !on -> "Download"
         complete -> "Downloaded"
+        total == 0 -> "No songs"
+        incomplete > 0 -> "$downloaded of $total downloaded · $incomplete incomplete"
         else -> "Downloading $downloaded of $total"
     }
 }
@@ -167,7 +174,9 @@ class PlaylistDetailViewModel @Inject constructor(
         val on = when {
             playlist == null -> null
             followed -> playlist.syncEnabled
-            playlist.type in DOWNLOAD_BUTTON_TYPES -> playlist.keepOffline || (!streamOnly && playlist.syncEnabled)
+            playlist.type in DOWNLOAD_BUTTON_TYPES -> playlist.keepOffline ||
+                (playlist.source == com.stash.core.model.MusicSource.YOUTUBE && !streamOnly && playlist.syncEnabled) ||
+                (playlist.type == PlaylistType.DAILY_MIX && !streamOnly && playlist.syncEnabled)
             else -> null
         }
         // A downloaded song always counts, even if a stale emission still lists it as given up.
@@ -175,8 +184,9 @@ class PlaylistDetailViewModel @Inject constructor(
         on?.let {
             DownloadButtonState(
                 on = it,
-                downloaded = tracks.count { t -> t.isDownloaded },
-                total = tracks.count { t -> t.isDownloaded || t.id !in givenUp },
+                downloaded = tracks.distinctBy { it.id }.count { t -> t.isDownloaded },
+                total = tracks.distinctBy { t -> t.id }.size,
+                incomplete = tracks.distinctBy { it.id }.count { t -> !t.isDownloaded && t.id in givenUp },
                 followed = followed,
             )
         }
@@ -198,7 +208,7 @@ class PlaylistDetailViewModel @Inject constructor(
             _userMessages.tryEmit(
                 when {
                     !changed -> "Couldn't change that. Try again."
-                    !on -> "Stopped. Downloaded songs stay on your phone."
+                    !on -> "Automatic downloads stopped."
                     missing > 0 -> "Downloading $missing ${songs(missing)}"
                     else -> "Every song is already on your phone."
                 },
@@ -308,7 +318,7 @@ class PlaylistDetailViewModel @Inject constructor(
      * track matching [trackId]. Keyed by id rather than position so the
      * caller never depends on the queue and the list being the same shape.
      */
-    fun playTrack(trackId: Long) {
+    fun playTrack(trackId: Long, collectionPosition: Int? = null) {
         // ── Stream-only tap guard ──
         // A track with no local audio needs a live connection; without one the
         // player would fail it silently, so bail out early with a Snackbar so
@@ -328,7 +338,12 @@ class PlaylistDetailViewModel @Inject constructor(
             try {
                 val playable = playableTracks()
                 if (playable.isEmpty()) return@launch
-                val index = playable.indexOfFirst { it.id == trackId }.coerceAtLeast(0)
+                val index = playable.indexOfFirst { it.id == trackId &&
+                    (collectionPosition == null || it.collectionPosition == collectionPosition) }
+                if (index < 0) {
+                    _userMessages.tryEmit("This song is unavailable for playback right now.")
+                    return@launch
+                }
                 playerRepository.setQueue(playable, index)
             } finally {
                 _tappedTrackId.value = null
@@ -342,7 +357,9 @@ class PlaylistDetailViewModel @Inject constructor(
      * `stash-resolve://` placeholder inside [PlayerRepository.setQueue]).
      * Until 2026-09-17 Offline mode narrowed this to downloaded rows.
      */
-    private suspend fun playableTracks(): List<Track> = uiState.value.tracks
+    private val playbackPolicy = LibraryPlaybackPolicy(connectivityMonitor, streamingPreference)
+
+    private suspend fun playableTracks(): List<Track> = playbackPolicy.eligible(uiState.value.tracks)
 
     /** Shuffles the whole playlist and begins playback. */
     fun shuffleAll() {
@@ -386,7 +403,11 @@ class PlaylistDetailViewModel @Inject constructor(
      */
     fun playNext(track: Track) {
         viewModelScope.launch {
-            playerRepository.addNext(track)
+            if (playbackPolicy.eligible(listOf(track)).isNotEmpty()) {
+                playerRepository.addNext(track)
+            } else {
+                _userMessages.tryEmit("This song is unavailable for playback right now.")
+            }
         }
     }
 
@@ -395,7 +416,11 @@ class PlaylistDetailViewModel @Inject constructor(
      */
     fun addToQueue(track: Track) {
         viewModelScope.launch {
-            playerRepository.addToQueue(track)
+            if (playbackPolicy.eligible(listOf(track)).isNotEmpty()) {
+                playerRepository.addToQueue(track)
+            } else {
+                _userMessages.tryEmit("This song is unavailable for playback right now.")
+            }
         }
     }
 
@@ -436,6 +461,11 @@ class PlaylistDetailViewModel @Inject constructor(
 
     fun deleteTrackFromPlaylist(track: Track, alsoBlacklist: Boolean) {
         viewModelScope.launch {
+            if (uiState.value.playlist.isEditableLocalPlaylist() && !alsoBlacklist) {
+                val removed = musicRepository.removeLocalPlaylistOccurrence(playlistId, track.id, track.collectionPosition)
+                _userMessages.tryEmit(if (removed) "Removed from this playlist." else "Playlist changed. Please try again.")
+                return@launch
+            }
             val isDownloadsMix = uiState.value.playlist?.type == PlaylistType.DOWNLOADS_MIX
             val summary = musicRepository.removeTrackFromPlaylistAndMaybeDelete(
                 trackId = track.id,
@@ -478,7 +508,7 @@ class PlaylistDetailViewModel @Inject constructor(
      */
     fun playSelectedNext(tracks: List<Track>) {
         viewModelScope.launch {
-            tracks.forEach {
+            playbackPolicy.eligible(tracks).forEach {
                 runCatching { playerRepository.addNext(it) }
                     .onFailure { e -> if (e is CancellationException) throw e }
             }
@@ -491,7 +521,8 @@ class PlaylistDetailViewModel @Inject constructor(
      */
     fun addSelectedToQueue(tracks: List<Track>) {
         viewModelScope.launch {
-            playerRepository.addToQueue(tracks)
+            val playable = playbackPolicy.eligible(tracks)
+            if (playable.isNotEmpty()) playerRepository.addToQueue(playable)
         }
     }
 
@@ -547,6 +578,14 @@ class PlaylistDetailViewModel @Inject constructor(
      */
     fun deleteSelected(tracks: List<Track>, alsoBlacklist: Boolean) {
         viewModelScope.launch {
+            if (uiState.value.playlist.isEditableLocalPlaylist() && !alsoBlacklist) {
+                var removed = 0
+                for (track in tracks.distinctBy { it.id to it.collectionPosition }) {
+                    if (musicRepository.removeLocalPlaylistOccurrence(playlistId, track.id, track.collectionPosition)) removed++
+                }
+                _userMessages.tryEmit(if (removed > 0) "Removed $removed from this playlist." else "Playlist changed. Please try again.")
+                return@launch
+            }
             val isDownloadsMix = uiState.value.playlist?.type == PlaylistType.DOWNLOADS_MIX
             var removed = 0
             var deleted = 0
@@ -632,6 +671,19 @@ class PlaylistDetailViewModel @Inject constructor(
     }
 
     /** Create a new playlist and immediately add the track to it. */
+    fun saveImportedCopy(name: String) {
+        viewModelScope.launch {
+            try {
+                musicRepository.copyPlaylist(playlistId, name)
+                _userMessages.tryEmit("Playlist copy saved.")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _userMessages.tryEmit("Couldn't save playlist copy.")
+            }
+        }
+    }
+
     fun createPlaylistAndAddTrack(name: String, trackId: Long) {
         viewModelScope.launch {
             val playlistId = musicRepository.createPlaylist(name)
@@ -678,6 +730,6 @@ class PlaylistDetailViewModel @Inject constructor(
 
     private companion object {
         /** Playlist types whose page has a Download button (#474). */
-        val DOWNLOAD_BUTTON_TYPES = setOf(PlaylistType.DAILY_MIX, PlaylistType.CUSTOM)
+        val DOWNLOAD_BUTTON_TYPES = setOf(PlaylistType.DAILY_MIX, PlaylistType.CUSTOM, PlaylistType.LIKED_SONGS, PlaylistType.STASH_LIKED)
     }
 }
