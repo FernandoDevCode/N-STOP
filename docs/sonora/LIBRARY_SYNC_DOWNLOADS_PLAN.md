@@ -227,3 +227,14 @@ Até `87cc26c874af938f696f4da6304d606c7d50a9d7` no PR #117:
 - Testes adicionados/ajustados para zero confirmado vs erro, proteção de áudio órfão e pausa de importação independente de keepOffline. Não executados nesta sessão.
 
 CI consultado: em `9be9903105edf28c0ddb4e5a5675ccb27d7bca14`, identidade aprovada, testes ainda enfileirados (run 45726244532). Em `7b011d978c0925b121ba031d80d6c464dec1428b`, workflows ainda não apareciam. Sem validação do HEAD atual, sem merge e sem APK publicado. Permanecem pendentes propriedade offline durável/migração, isolamento por conta e reconciliação completa de remoções/recurtidas, ordem/ocorrências, simplificação integral da interface, homologação. Não liberar antes dos gates.
+
+
+## 12. Checkpoint — propriedade persistente dos downloads
+
+Até `aff972e2140a9d574ccfaca1fc6f14a71e9bdbeb` no PR #117:
+- Room v56 e migração aditiva v55→56: `tracks.offline_requested`. Arquivos legados são protegidos como propriedade individual conservadora; pedidos explícitos não cancelados são preservados. Nenhuma exclusão física ou novo download na migração.
+- Download manual concluído persiste propriedade antes da limpeza de histórico; a fila também continua protegendo pedidos em curso. Busca, mapeadores e importação de backups foram adaptados. Remover download individual libera sua intenção, mantendo o arquivo quando uma coleção ainda o exige.
+- Desativar download de coleção pessoal Spotify/local libera arquivos novos sem outro proprietário, preservando importações locais, pedidos individuais, coleções offline e arquivos legados protegidos. Não esquece registro se a exclusão física falhar. Job já em execução pode terminar e deixar arquivo preservado; não há cancelamento destrutivo de transferência ativa nesta etapa.
+- Testes adicionados para migração, persistência após limpeza de histórico e preservação/liberação de arquivos compartilhados. Smoke test SQL isolado em SQLite aprovado para backfill de propriedade e limpeza de histórico (fixture mínimo, não valida Room/Android).
+- Falta exportar e versionar o schema Room gerado `56.json`, rodar migração e testes completos no CI. A consulta anterior ao checkpoint ainda mostrava testes enfileirados. Sem merge/release.
+- Pendências reais: isolamento de contas Spotify, reconciliação completa/removals e recurtição, ocorrências/ordenação, revisão de corridas e ações de UI (incluindo mensagens quando um arquivo fica por outra coleção), downloads de origens legadas e simplificação integral de modos. Não marcar F1/F3/F5 como concluídas nem liberar APK antes dos gates.
