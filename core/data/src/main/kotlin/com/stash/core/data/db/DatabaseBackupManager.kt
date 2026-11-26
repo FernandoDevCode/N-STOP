@@ -894,6 +894,7 @@ class DatabaseBackupManager @Inject constructor(
                         } else null
                     if (existing != null) {
                         trackIdMap[track.id] = existing
+                        if (track.offlineRequested) trackDao.setOfflineRequested(existing, true)
                         // A like is the one thing worth carrying onto a song
                         // the library already has: "restore my likes" onto a
                         // library that already synced those tracks would
