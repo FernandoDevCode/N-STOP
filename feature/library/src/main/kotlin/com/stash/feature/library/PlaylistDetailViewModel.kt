@@ -171,7 +171,7 @@ class PlaylistDetailViewModel @Inject constructor(
             playlist == null -> null
             followed -> playlist.syncEnabled
             playlist.type in DOWNLOAD_BUTTON_TYPES -> playlist.keepOffline ||
-                (playlist.source != com.stash.core.model.MusicSource.SPOTIFY && !streamOnly && playlist.syncEnabled) ||
+                (playlist.source == com.stash.core.model.MusicSource.YOUTUBE && !streamOnly && playlist.syncEnabled) ||
                 (playlist.type == PlaylistType.DAILY_MIX && !streamOnly && playlist.syncEnabled)
             else -> null
         }
