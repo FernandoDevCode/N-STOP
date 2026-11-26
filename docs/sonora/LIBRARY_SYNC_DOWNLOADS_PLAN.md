@@ -278,3 +278,8 @@ Posições adicionais no vínculo único (position é a última ocorrência, rep
 ## 15. Checkpoint — fidelidade da identidade remota
 
 Coleções pessoais Spotify com namespace deixam de criar uma segunda membership por correspondência canônica de um arquivo baixado. A identidade original e todas as posições remotas são mantidas; o arquivo alternativo não é apagado nem a fila marcada como concluída por aproximação. O comportamento legado de outras coleções permanece. Teste de regressão acrescentado para duas ocorrências da mesma URI e um arquivo de outra URI. Não executado localmente. Schema 56.json, edição individual de ocorrências, CI integral, teste de conta real e release continuam pendentes. Não integrar antes dos gates.
+
+
+## 16. Checkpoint — edição local sem exclusão de áudio
+
+Remoção individual de ocorrência em playlist local é transacional, recalcula contagem por posição e preserva TrackEntity, arquivo e intenção offline. Interface diferencia remoção de composição de exclusão global e bloqueio. Seleção múltipla existente continua por identidade (seleciona todas as ocorrências visíveis da mesma faixa); a remoção individual por pressão longa usa a posição específica. Chamadas antigas de edição sem bloqueio em playlist local também não fazem cascade destrutivo; playlist Spotify importada rejeita essa edição. Teste Room acrescentado. Não executado; gates, schema exportado e validação de aparelho continuam pendentes.

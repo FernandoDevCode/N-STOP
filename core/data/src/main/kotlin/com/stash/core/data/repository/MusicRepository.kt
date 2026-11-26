@@ -386,6 +386,9 @@ interface MusicRepository {
     /** Remove a track from a playlist (soft delete). */
     suspend fun removeTrackFromPlaylist(trackId: Long, playlistId: Long)
 
+    /** Remove a local playlist occurrence, preserving the track and audio. Null removes all occurrences of the ID. */
+    suspend fun removeLocalPlaylistOccurrence(playlistId: Long, trackId: Long, position: Int?): Boolean = false
+
     /** Get all user-created custom playlists. */
     fun getUserCreatedPlaylists(): Flow<List<Playlist>>
 

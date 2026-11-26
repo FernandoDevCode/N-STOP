@@ -1310,17 +1310,38 @@ class MusicRepositoryImpl @Inject constructor(
 
     // ── Blacklist + cascade deletion ────────────────────────────────────
 
+    override suspend fun removeLocalPlaylistOccurrence(playlistId: Long, trackId: Long, position: Int?): Boolean {
+        if (sharedMixDao.forPlaylist(playlistId)?.let {
+                it.role == com.stash.core.data.db.entity.SharedMixEntity.ROLE_FOLLOWER &&
+                    it.status == com.stash.core.data.db.entity.SharedMixEntity.STATUS_ACTIVE
+            } == true) return false
+        val removed = playlistDao.removeLocalPlaylistOccurrence(playlistId, trackId, position)
+        if (removed && sharedMixDao.forPlaylist(playlistId)?.role == com.stash.core.data.db.entity.SharedMixEntity.ROLE_OWNER) {
+            com.stash.core.data.share.SharedMixPublishWorker.enqueue(context, delaySeconds = 30)
+        }
+        return removed
+    }
+
     override suspend fun removeTrackFromPlaylistAndMaybeDelete(
         trackId: Long,
         fromPlaylistId: Long,
         alsoBlacklist: Boolean,
-    ): MusicRepository.CascadeRemovalSummary =
-        removeAndMaybeDelete(trackId, fromPlaylistId, alsoBlacklist).also {
+    ): MusicRepository.CascadeRemovalSummary {
+        val playlist = playlistDao.getById(fromPlaylistId)
+        if (playlist?.type == com.stash.core.model.PlaylistType.CUSTOM) {
+            if (playlist.source == com.stash.core.model.MusicSource.SPOTIFY) return MusicRepository.CascadeRemovalSummary(0, 0, 0, 0)
+            if (!alsoBlacklist && playlist.source in setOf(com.stash.core.model.MusicSource.BOTH, com.stash.core.model.MusicSource.LOCAL)) {
+                removeLocalPlaylistOccurrence(fromPlaylistId, trackId, null)
+                return MusicRepository.CascadeRemovalSummary(0, 0, 0, 0)
+            }
+        }
+        return removeAndMaybeDelete(trackId, fromPlaylistId, alsoBlacklist).also {
             // Every path detaches the track, so the Library card's count must follow.
             // A block also recounts every other playlist that held it (BlocklistGuard.block).
             val count = trackDao.getByPlaylist(fromPlaylistId, includeStreamable = true).first().size
             playlistDao.updateTrackCount(fromPlaylistId, count)
         }
+    }
 
     private suspend fun removeAndMaybeDelete(
         trackId: Long,

@@ -667,6 +667,23 @@ interface PlaylistDao {
     @Query("DELETE FROM playlist_tracks WHERE playlist_id = :playlistId AND track_id = :trackId")
     suspend fun removeTrackFromPlaylist(playlistId: Long, trackId: Long)
 
+    /** Local composition edit only: never delete the track row or its audio. Null position removes all occurrences. */
+    @Transaction
+    suspend fun removeLocalPlaylistOccurrence(playlistId: Long, trackId: Long, position: Int?): Boolean {
+        val playlist = getById(playlistId) ?: return false
+        if (playlist.type != PlaylistType.CUSTOM || playlist.source !in setOf(MusicSource.BOTH, MusicSource.LOCAL)) return false
+        val ref = getCrossRef(playlistId, trackId)?.takeIf { it.removedAt == null } ?: return false
+        val positions = ref.positions()
+        if (position != null && position !in positions) return false
+        val remaining = if (position == null) emptyList() else positions.filterNot { it == position }
+        if (remaining.isEmpty()) removeTrackFromPlaylist(playlistId, trackId)
+        else insertCrossRef(ref.copy(position = remaining.last(),
+            repeatPositions = com.stash.core.data.db.entity.encodeEarlierPlaylistPositions(remaining)))
+        updateTrackCount(playlistId, getCrossRefsForPlaylist(playlistId)
+            .filter { it.removedAt == null }.sumOf { it.positions().size })
+        return true
+    }
+
     /**
      * v0.9.15: Hard-delete every cross-ref for [trackId] across all
      * playlists. Used by [com.stash.core.data.blocklist.BlocklistGuard.block]

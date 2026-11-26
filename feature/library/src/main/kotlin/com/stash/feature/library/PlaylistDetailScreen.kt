@@ -132,6 +132,7 @@ fun PlaylistDetailScreen(
     val follow by viewModel.follow.collectAsStateWithLifecycle()
     val imported = state.playlist?.let { it.source == com.stash.core.model.MusicSource.SPOTIFY && it.type == PlaylistType.CUSTOM } == true
     val readOnly = follow?.readOnly == true || imported
+    val localPlaylistEdit = state.playlist.isEditableLocalPlaylist() && !readOnly
     // The page's Download button (#474); null on pages that have none.
     val downloadButton by viewModel.downloadButton.collectAsStateWithLifecycle()
     val extendedColors = StashTheme.extendedColors
@@ -546,20 +547,23 @@ fun PlaylistDetailScreen(
             onDismissRequest = { trackToDelete = null },
             title = {
                 Text(
-                    if (isDownloadsMix) "Delete from library?" else "Delete ${track.title}?"
+                    if (localPlaylistEdit) stringResource(R.string.sonora_playlist_remove_occurrence_title, track.title)
+                    else if (isDownloadsMix) "Delete from library?" else "Delete ${track.title}?"
                 )
             },
             text = {
                 Column {
                     Text(
-                        text = if (isDownloadsMix) {
+                        text = if (localPlaylistEdit) {
+                            stringResource(R.string.sonora_playlist_remove_occurrence_message)
+                        } else if (isDownloadsMix) {
                             "This track will be deleted from your library and the audio file removed from disk."
                         } else {
                             "Removes the song from this playlist. If it's also in Liked Songs or an in-app playlist, the file stays so those lists keep playing."
                         },
                         style = MaterialTheme.typography.bodyMedium,
                     )
-                    if (!isDownloadsMix) {
+                    if (!isDownloadsMix && !localPlaylistEdit) {
                         Spacer(modifier = Modifier.height(12.dp))
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -588,12 +592,13 @@ fun PlaylistDetailScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.deleteTrackFromPlaylist(track, alsoBlacklist)
+                        viewModel.deleteTrackFromPlaylist(track, alsoBlacklist && !localPlaylistEdit)
                         trackToDelete = null
                     },
                 ) {
                     Text(
-                        text = if (isDownloadsMix) "Delete" else if (alsoBlacklist) "Delete & Block" else "Delete",
+                        text = if (localPlaylistEdit) stringResource(R.string.sonora_playlist_remove_occurrence_action)
+                        else if (isDownloadsMix) "Delete" else if (alsoBlacklist) "Delete & Block" else "Delete",
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
@@ -623,14 +628,16 @@ fun PlaylistDetailScreen(
             text = {
                 Column {
                     Text(
-                        text = if (isDownloadsMix) {
+                        text = if (localPlaylistEdit) {
+                            stringResource(R.string.sonora_playlist_remove_selection_message)
+                        } else if (isDownloadsMix) {
                             "These tracks will be deleted from your library and their audio files removed from disk."
                         } else {
                             "Removes the songs from this playlist. If any are also in Liked Songs or an in-app playlist, the file stays so those lists keep playing."
                         },
                         style = MaterialTheme.typography.bodyMedium,
                     )
-                    if (!isDownloadsMix) {
+                    if (!isDownloadsMix && !localPlaylistEdit) {
                         Spacer(modifier = Modifier.height(12.dp))
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -659,13 +666,14 @@ fun PlaylistDetailScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.deleteSelected(batchTracks, alsoBlacklist)
+                        viewModel.deleteSelected(batchTracks, alsoBlacklist && !localPlaylistEdit)
                         showBatchDelete = false
                         selection.clear()
                     },
                 ) {
                     Text(
-                        text = if (isDownloadsMix) "Delete" else if (alsoBlacklist) "Delete & Block" else "Delete",
+                        text = if (localPlaylistEdit) stringResource(R.string.sonora_playlist_remove_occurrence_action)
+                        else if (isDownloadsMix) "Delete" else if (alsoBlacklist) "Delete & Block" else "Delete",
                         color = MaterialTheme.colorScheme.error,
                     )
                 }

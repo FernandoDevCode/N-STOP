@@ -44,6 +44,9 @@ import javax.inject.Inject
  * @property currentlyPlayingTrackId The ID of the track currently playing, used
  *                                   to highlight the active row in the list.
  */
+internal fun Playlist?.isEditableLocalPlaylist(): Boolean =
+    this != null && type == PlaylistType.CUSTOM && source in setOf(com.stash.core.model.MusicSource.BOTH, com.stash.core.model.MusicSource.LOCAL)
+
 data class PlaylistDetailUiState(
     val playlist: Playlist? = null,
     val tracks: List<Track> = emptyList(),
@@ -458,6 +461,11 @@ class PlaylistDetailViewModel @Inject constructor(
 
     fun deleteTrackFromPlaylist(track: Track, alsoBlacklist: Boolean) {
         viewModelScope.launch {
+            if (uiState.value.playlist.isEditableLocalPlaylist() && !alsoBlacklist) {
+                val removed = musicRepository.removeLocalPlaylistOccurrence(playlistId, track.id, track.collectionPosition)
+                _userMessages.tryEmit(if (removed) "Removed from this playlist." else "Playlist changed. Please try again.")
+                return@launch
+            }
             val isDownloadsMix = uiState.value.playlist?.type == PlaylistType.DOWNLOADS_MIX
             val summary = musicRepository.removeTrackFromPlaylistAndMaybeDelete(
                 trackId = track.id,
@@ -570,6 +578,14 @@ class PlaylistDetailViewModel @Inject constructor(
      */
     fun deleteSelected(tracks: List<Track>, alsoBlacklist: Boolean) {
         viewModelScope.launch {
+            if (uiState.value.playlist.isEditableLocalPlaylist() && !alsoBlacklist) {
+                var removed = 0
+                for (track in tracks.distinctBy { it.id to it.collectionPosition }) {
+                    if (musicRepository.removeLocalPlaylistOccurrence(playlistId, track.id, track.collectionPosition)) removed++
+                }
+                _userMessages.tryEmit(if (removed > 0) "Removed $removed from this playlist." else "Playlist changed. Please try again.")
+                return@launch
+            }
             val isDownloadsMix = uiState.value.playlist?.type == PlaylistType.DOWNLOADS_MIX
             var removed = 0
             var deleted = 0

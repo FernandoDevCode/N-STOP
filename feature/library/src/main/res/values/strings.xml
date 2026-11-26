@@ -71,4 +71,8 @@
     <string name="sonora_likes_remove_action">Remove like</string>
     <string name="sonora_likes_aggregate_controls">Managed by All liked songs</string>
     <string name="sonora_playlist_copy_name">%1$s (copy)</string>
+    <string name="sonora_playlist_remove_occurrence_title">Remove %1$s from this playlist?</string>
+    <string name="sonora_playlist_remove_occurrence_message">Only this occurrence will be removed. Your library and downloads will stay unchanged.</string>
+    <string name="sonora_playlist_remove_selection_message">Only the selected playlist entries will be removed. Your library and downloads will stay unchanged.</string>
+    <string name="sonora_playlist_remove_occurrence_action">Remove</string>
 </resources>

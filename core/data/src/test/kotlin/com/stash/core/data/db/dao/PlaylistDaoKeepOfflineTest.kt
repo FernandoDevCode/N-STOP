@@ -95,6 +95,28 @@ class PlaylistDaoKeepOfflineTest {
         assertThat(dao.getById(id)!!.trackCount).isEqualTo(3)
     }
 
+    @Test fun `local occurrence removal preserves other positions and independent downloads`() = runTest {
+        val a = db.trackDao().insert(com.stash.core.data.db.entity.TrackEntity(title = "A", artist = "Artist",
+            offlineRequested = true, isDownloaded = true, filePath = "/music/a.flac"))
+        val b = db.trackDao().insert(com.stash.core.data.db.entity.TrackEntity(title = "B", artist = "Artist"))
+        val id = dao.createPlaylistCopy(PlaylistEntity(name = "Copy", source = MusicSource.BOTH,
+            sourceId = "custom_copy", type = PlaylistType.CUSTOM), listOf(a, b, a))
+        assertThat(dao.removeLocalPlaylistOccurrence(id, a, 0)).isTrue()
+        assertThat(dao.getCrossRef(id, a)!!.positions()).containsExactly(2)
+        assertThat(dao.getById(id)!!.trackCount).isEqualTo(2)
+        assertThat(dao.removeLocalPlaylistOccurrence(id, a, 0)).isFalse()
+        assertThat(dao.removeLocalPlaylistOccurrence(id, a, 2)).isTrue()
+        assertThat(dao.getCrossRef(id, a)).isNull()
+        assertThat(dao.getById(id)!!.trackCount).isEqualTo(1)
+        assertThat(db.trackDao().getById(a)!!.offlineRequested).isTrue()
+        assertThat(db.trackDao().getById(a)!!.filePath).isEqualTo("/music/a.flac")
+        val remote = dao.insert(PlaylistEntity(name = "Remote", source = MusicSource.SPOTIFY,
+            sourceId = "remote", type = PlaylistType.CUSTOM))
+        dao.insertCrossRef(com.stash.core.data.db.entity.PlaylistTrackCrossRef(playlistId = remote, trackId = a))
+        assertThat(dao.removeLocalPlaylistOccurrence(remote, a, 0)).isFalse()
+        assertThat(dao.getCrossRef(remote, a)).isNotNull()
+    }
+
     private suspend fun insert(name: String, syncEnabled: Boolean = false, isActive: Boolean = true): Long =
         dao.insert(
             PlaylistEntity(
