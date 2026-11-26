@@ -222,7 +222,7 @@ class PlaylistDetailViewModelTest {
         val allThere = listOf(track(1L, downloaded = true))
         // Off: on, with the number of songs still to come. On: off, keeping what's downloaded.
         assertEquals(true to "Downloading 2 songs", tapPlaylist(playlist(), someMissing))
-        assertEquals(false to "Stopped. Downloaded songs stay on your phone.", tapPlaylist(playlist(keepOffline = true), someMissing))
+        assertEquals(false to "Automatic downloads stopped.", tapPlaylist(playlist(keepOffline = true), someMissing))
         assertEquals(true to "Every song is already on your phone.", tapPlaylist(playlist(), allThere))
     }
 
