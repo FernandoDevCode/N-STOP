@@ -334,7 +334,11 @@ class PlaylistDetailViewModel @Inject constructor(
             try {
                 val playable = playableTracks()
                 if (playable.isEmpty()) return@launch
-                val index = playable.indexOfFirst { it.id == trackId }.coerceAtLeast(0)
+                val index = playable.indexOfFirst { it.id == trackId }
+                if (index < 0) {
+                    _userMessages.tryEmit("This song is unavailable for playback right now.")
+                    return@launch
+                }
                 playerRepository.setQueue(playable, index)
             } finally {
                 _tappedTrackId.value = null
@@ -348,7 +352,8 @@ class PlaylistDetailViewModel @Inject constructor(
      * `stash-resolve://` placeholder inside [PlayerRepository.setQueue]).
      * Until 2026-09-17 Offline mode narrowed this to downloaded rows.
      */
-    private suspend fun playableTracks(): List<Track> = uiState.value.tracks
+    private suspend fun playableTracks(): List<Track> =
+        LibraryPlaybackPolicy(connectivityMonitor, streamingPreference).eligible(uiState.value.tracks)
 
     /** Shuffles the whole playlist and begins playback. */
     fun shuffleAll() {
