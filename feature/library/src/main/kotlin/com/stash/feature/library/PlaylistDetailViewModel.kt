@@ -204,7 +204,7 @@ class PlaylistDetailViewModel @Inject constructor(
             _userMessages.tryEmit(
                 when {
                     !changed -> "Couldn't change that. Try again."
-                    !on -> "Stopped. Downloaded songs stay on your phone."
+                    !on -> "Automatic downloads stopped."
                     missing > 0 -> "Downloading $missing ${songs(missing)}"
                     else -> "Every song is already on your phone."
                 },
