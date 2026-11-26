@@ -2327,9 +2327,18 @@ interface TrackDao {
         SELECT EXISTS (
             SELECT 1 FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
             WHERE pt.track_id = :trackId AND pt.removed_at IS NULL AND p.is_active = 1
-              AND (p.keep_offline = 1 OR (p.sync_enabled = 1 AND p.id IN (
-                  SELECT playlist_id FROM shared_mixes WHERE role = 'FOLLOWER' AND status = 'ACTIVE'
-              )))
+              AND (
+                  p.keep_offline = 1
+                  OR p.type = 'DOWNLOADS_MIX'
+                  OR (p.sync_enabled = 1 AND p.id IN (
+                      SELECT playlist_id FROM shared_mixes WHERE role = 'FOLLOWER' AND status = 'ACTIVE'
+                  ))
+                  -- Legacy sync-driven collections retain their existing files.
+                  OR (p.sync_enabled = 1 AND (
+                      (p.source IN ('SPOTIFY', 'YOUTUBE') AND p.type = 'DAILY_MIX')
+                      OR (p.source = 'YOUTUBE' AND p.type IN ('CUSTOM', 'LIKED_SONGS'))
+                  ))
+              )
         )
     """)
     suspend fun hasOfflineCollectionClaim(trackId: Long): Boolean
