@@ -116,4 +116,6 @@ data class Track(
      * fetches the picked video.
      */
     val matchPickedAt: Long? = null,
+    /** Derived from active saved-collection membership for the library feed, not persisted as a track flag. */
+    val savedInCollection: Boolean = false,
 )
