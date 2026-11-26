@@ -91,14 +91,14 @@ class DiffWorkerKeepOfflineTest {
      * download path stays shut (sync_enabled is off), so nothing lands twice.
      */
     @Test
-    fun `download mode links a kept playlist whose sync is off, and queues it`() = runBlocking {
+    fun `a kept Spotify playlist whose import is off does not acquire remote tracks`() = runBlocking {
         coEvery { streamingPreference.current() } returns false
         val id = insert("Road Trip", "spotify:playlist:mine", PlaylistType.CUSTOM, keepOffline = true)
         snapshotOf3Tracks("spotify:playlist:mine", "Road Trip", PlaylistType.CUSTOM)
 
         buildWorker().doWork()
 
-        assertEquals(3, db.playlistDao().getTracksForPlaylist(id).size)
+        assertEquals(0, db.playlistDao().getTracksForPlaylist(id).size)
         coVerify(exactly = 0) { downloadQueueDao.insertAll(any()) }
         coVerify(exactly = 1) { musicRepository.queueKeptPlaylists(false) }
     }
