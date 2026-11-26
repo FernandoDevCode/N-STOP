@@ -173,14 +173,22 @@ class ArtistDetailViewModel @Inject constructor(
     /** Inserts [track] immediately after the currently-playing track in the queue. */
     fun playNext(track: Track) {
         viewModelScope.launch {
-            playerRepository.addNext(track)
+            if (playbackPolicy.eligible(listOf(track)).isNotEmpty()) {
+                playerRepository.addNext(track)
+            } else {
+                _userMessages.tryEmit("This song is unavailable for playback right now.")
+            }
         }
     }
 
     /** Appends [track] to the end of the current playback queue. */
     fun addToQueue(track: Track) {
         viewModelScope.launch {
-            playerRepository.addToQueue(track)
+            if (playbackPolicy.eligible(listOf(track)).isNotEmpty()) {
+                playerRepository.addToQueue(track)
+            } else {
+                _userMessages.tryEmit("This song is unavailable for playback right now.")
+            }
         }
     }
 
@@ -228,7 +236,7 @@ class ArtistDetailViewModel @Inject constructor(
      */
     fun playSelectedNext(tracks: List<Track>) {
         viewModelScope.launch {
-            tracks.forEach {
+            playbackPolicy.eligible(tracks).forEach {
                 runCatching { playerRepository.addNext(it) }
                     .onFailure { e -> if (e is CancellationException) throw e }
             }
@@ -241,7 +249,8 @@ class ArtistDetailViewModel @Inject constructor(
      */
     fun addSelectedToQueue(tracks: List<Track>) {
         viewModelScope.launch {
-            playerRepository.addToQueue(tracks)
+            val playable = playbackPolicy.eligible(tracks)
+            if (playable.isNotEmpty()) playerRepository.addToQueue(playable)
         }
     }
 
