@@ -860,6 +860,8 @@ class DiffWorker @AssistedInject constructor(
         val crossRefsToInsert = linkedMapOf<Long, PlaylistTrackCrossRef>()
         val downloadEntries = mutableListOf<DownloadQueueEntity>()
         val mergeOnly = snapshotUnreliable(playlistSnapshot, trackSnapshots)
+        val preserveOccurrences = localPlaylist.source == MusicSource.SPOTIFY &&
+            localPlaylist.type == PlaylistType.CUSTOM && SpotifyAccountScope.isScoped(localPlaylist.sourceId)
         var nextAppendPosition = (existingCrossRefs.values.maxOfOrNull { it.position } ?: -1) + 1
 
         // An incomplete response is evidence of presence, not order or absence.
@@ -872,8 +874,18 @@ class DiffWorker @AssistedInject constructor(
                 addCrossRefIfNotSoftDeleted(localPlaylist.id, trackId, nextAppendPosition++,
                     existingCrossRefs, crossRefsToInsert, remoteAddedAt)
             } else {
+                val prior = crossRefsToInsert[trackId]
                 addCrossRefIfNotSoftDeleted(localPlaylist.id, trackId, position,
                     existingCrossRefs, crossRefsToInsert, remoteAddedAt)
+                if (preserveOccurrences) {
+                    crossRefsToInsert[trackId]?.let { current ->
+                        val positions = (prior?.positions().orEmpty() + position).distinct().sorted()
+                        crossRefsToInsert[trackId] = current.copy(
+                            position = positions.last(),
+                            repeatPositions = com.stash.core.data.db.entity.encodeEarlierPlaylistPositions(positions),
+                        )
+                    }
+                }
             }
         }
 
@@ -1063,7 +1075,7 @@ class DiffWorker @AssistedInject constructor(
             // lastSynced denotes the last complete read, not this attempt.
             if (isSpotifyPersonalCollection(localPlaylist.source, localPlaylist.type)) {
                 playlistDao.updateTrackCount(localPlaylist.id,
-                    playlistDao.getCrossRefsForPlaylist(localPlaylist.id).count { it.removedAt == null })
+                    playlistDao.getCrossRefsForPlaylist(localPlaylist.id).filter { it.removedAt == null }.sumOf { it.positions().size })
             }
             return
         }
@@ -1071,7 +1083,7 @@ class DiffWorker @AssistedInject constructor(
         // Personal collections count live memberships, not raw remote
         // rows: local additions, suppression and duplicate IDs may differ.
         val count = if (isSpotifyPersonalCollection(localPlaylist.source, localPlaylist.type)) {
-            playlistDao.getCrossRefsForPlaylist(localPlaylist.id).count { it.removedAt == null }
+            playlistDao.getCrossRefsForPlaylist(localPlaylist.id).filter { it.removedAt == null }.sumOf { it.positions().size }
         } else trackSnapshots.size
         playlistDao.updateTrackCount(localPlaylist.id, count)
         // After the count: the stamp's digest covers it.

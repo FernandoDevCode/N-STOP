@@ -181,9 +181,9 @@ class PlaylistDetailViewModel @Inject constructor(
         on?.let {
             DownloadButtonState(
                 on = it,
-                downloaded = tracks.count { t -> t.isDownloaded },
+                downloaded = tracks.distinctBy { it.id }.count { t -> t.isDownloaded },
                 total = tracks.distinctBy { t -> t.id }.size,
-                incomplete = tracks.count { t -> !t.isDownloaded && t.id in givenUp },
+                incomplete = tracks.distinctBy { it.id }.count { t -> !t.isDownloaded && t.id in givenUp },
                 followed = followed,
             )
         }
@@ -315,7 +315,7 @@ class PlaylistDetailViewModel @Inject constructor(
      * track matching [trackId]. Keyed by id rather than position so the
      * caller never depends on the queue and the list being the same shape.
      */
-    fun playTrack(trackId: Long) {
+    fun playTrack(trackId: Long, collectionPosition: Int? = null) {
         // ── Stream-only tap guard ──
         // A track with no local audio needs a live connection; without one the
         // player would fail it silently, so bail out early with a Snackbar so
@@ -335,7 +335,8 @@ class PlaylistDetailViewModel @Inject constructor(
             try {
                 val playable = playableTracks()
                 if (playable.isEmpty()) return@launch
-                val index = playable.indexOfFirst { it.id == trackId }
+                val index = playable.indexOfFirst { it.id == trackId &&
+                    (collectionPosition == null || it.collectionPosition == collectionPosition) }
                 if (index < 0) {
                     _userMessages.tryEmit("This song is unavailable for playback right now.")
                     return@launch
@@ -654,6 +655,19 @@ class PlaylistDetailViewModel @Inject constructor(
     }
 
     /** Create a new playlist and immediately add the track to it. */
+    fun saveImportedCopy(name: String) {
+        viewModelScope.launch {
+            try {
+                musicRepository.copyPlaylist(playlistId, name)
+                _userMessages.tryEmit("Playlist copy saved.")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _userMessages.tryEmit("Couldn't save playlist copy.")
+            }
+        }
+    }
+
     fun createPlaylistAndAddTrack(name: String, trackId: Long) {
         viewModelScope.launch {
             val playlistId = musicRepository.createPlaylist(name)

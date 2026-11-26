@@ -62,4 +62,18 @@ data class PlaylistTrackCrossRef(
     /** Null for legacy/unknown timestamps; never substitute download time. */
     @ColumnInfo(name = "remote_added_at")
     val remoteAddedAt: Long? = null,
-)
+
+    /** Earlier positions of repeated appearances; position is the final appearance. */
+    @ColumnInfo(name = "repeat_positions")
+    val repeatPositions: String? = null,
+) {
+    fun positions(): List<Int> = decodePlaylistPositions(position, repeatPositions)
+}
+
+/** Compact ordered value on a unique membership, not additional track identities. */
+fun decodePlaylistPositions(position: Int, earlier: String?): List<Int> =
+    (earlier.orEmpty().split(',').mapNotNull { it.toIntOrNull()?.takeIf { p -> p >= 0 && p < position } } + position)
+        .distinct().sorted()
+
+fun encodeEarlierPlaylistPositions(positions: List<Int>): String? =
+    positions.distinct().sorted().dropLast(1).takeIf { it.isNotEmpty() }?.joinToString(",")

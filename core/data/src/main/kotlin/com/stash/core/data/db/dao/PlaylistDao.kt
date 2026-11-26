@@ -143,6 +143,19 @@ interface PlaylistDao {
         return playlistId
     }
 
+    /** Copy ordered occurrences atomically while sharing original track rows. */
+    @Transaction
+    suspend fun createPlaylistCopy(playlist: PlaylistEntity, orderedTrackIds: List<Long>): Long {
+        val id = insert(playlist)
+        val refs = orderedTrackIds.withIndex().groupBy({ it.value }, { it.index }).map { (trackId, positions) ->
+            PlaylistTrackCrossRef(playlistId = id, trackId = trackId, position = positions.last(),
+                locallyAdded = true, repeatPositions = com.stash.core.data.db.entity.encodeEarlierPlaylistPositions(positions))
+        }
+        if (refs.isNotEmpty()) insertAllCrossRefs(refs)
+        updateTrackCount(id, orderedTrackIds.size)
+        return id
+    }
+
     /**
      * Returns the existing cross-reference for (playlistId, trackId) if any,
      * so the caller can preserve `addedAt` when re-inserting (otherwise
@@ -566,6 +579,7 @@ interface PlaylistDao {
         """
         SELECT pt.playlist_id AS playlistId, pt.track_id AS trackId, pt.position AS position,
                (pt.removed_at IS NOT NULL) AS removed, pt.locally_added AS locallyAdded,
+               pt.repeat_positions AS repeatPositions, pt.remote_added_at AS remoteAddedAt,
                EXISTS(SELECT 1 FROM download_queue dq WHERE dq.track_id = pt.track_id AND dq.status = 'FAILED') AS failed
         FROM playlist_tracks pt WHERE pt.playlist_id = :playlistId
         """

@@ -130,7 +130,8 @@ fun PlaylistDetailScreen(
     val bulkPlayInFlight by viewModel.bulkPlayInFlight.collectAsStateWithLifecycle()
     // An active follow (spec §6) is read-only: no delete, no batch delete, no cover change.
     val follow by viewModel.follow.collectAsStateWithLifecycle()
-    val readOnly = follow?.readOnly == true
+    val imported = state.playlist?.let { it.source == com.stash.core.model.MusicSource.SPOTIFY && it.type == PlaylistType.CUSTOM } == true
+    val readOnly = follow?.readOnly == true || imported
     // The page's Download button (#474); null on pages that have none.
     val downloadButton by viewModel.downloadButton.collectAsStateWithLifecycle()
     val extendedColors = StashTheme.extendedColors
@@ -204,6 +205,9 @@ fun PlaylistDetailScreen(
                         onToggleSearch = { viewModel.toggleSearch() },
                         onShare = { showShareSheet = true },
                         readOnly = readOnly,
+                        onCopy = if (imported) {
+                            { viewModel.saveImportedCopy(state.playlist!!.name + " (copy)") }
+                        } else null,
                         onSetImage = {
                             imagePickerLauncher.launch(
                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
@@ -331,7 +335,7 @@ fun PlaylistDetailScreen(
                 // ── Track list ──────────────────────────────────────────
                 itemsIndexed(
                     items = state.tracks,
-                    key = { _, track -> track.id },
+                    key = { index, track -> "${track.id}:${track.collectionPosition ?: index}" },
                 ) { index, track ->
                     DetailTrackRow(
                         track = track,
@@ -339,7 +343,7 @@ fun PlaylistDetailScreen(
                         isPlaying = track.id == state.currentlyPlayingTrackId,
                         onClick = {
                             if (selection.isActive) selection.toggle(track.id)
-                            else viewModel.playTrack(track.id)
+                            else viewModel.playTrack(track.id, track.collectionPosition)
                         },
                         onLongPress = { if (!selection.isActive) selectedTrack = track else selection.toggle(track.id) },
                         isResolving = track.id == tappedTrackId,
@@ -698,6 +702,7 @@ private fun PlaylistHeader(
     onToggleSearch: () -> Unit,
     onShare: () -> Unit,
     readOnly: Boolean,
+    onCopy: (() -> Unit)? = null,
     onSetImage: () -> Unit,
 ) {
     val playlist = state.playlist ?: return
@@ -806,6 +811,10 @@ private fun PlaylistHeader(
                             leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
                             onClick = { actionsExpanded = false; onShare() },
                         )
+                        if (onCopy != null) {
+                            DropdownMenuItem(text = { Text(stringResource(R.string.shared_mix_save_copy)) },
+                                onClick = { actionsExpanded = false; onCopy() })
+                        }
                         if (mayEditCover) {
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.nonstop_collection_cover)) },

@@ -97,4 +97,6 @@ data class SyncUndoMembershipEntity(
     val locallyAdded: Boolean,
     @ColumnInfo(name = "remote_added_at")
     val remoteAddedAt: Long? = null,
+    @ColumnInfo(name = "repeat_positions")
+    val repeatPositions: String? = null,
 )

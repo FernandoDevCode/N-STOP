@@ -320,7 +320,15 @@ class MusicRepositoryImpl @Inject constructor(
     @OptIn(ExperimentalCoroutinesApi::class)
     override fun getTracksByPlaylist(playlistId: Long): Flow<List<Track>> =
         trackDao.getByPlaylistWithMembershipDate(playlistId, includeStreamable = true)
-            .map { rows -> rows.map { it.track.toDomain().copy(remoteMembershipAddedAt = it.remoteAddedAt) } }
+            .map { rows ->
+                val expanded = rows.flatMap { row ->
+                    val track = row.track.toDomain().copy(remoteMembershipAddedAt = row.remoteAddedAt)
+                    com.stash.core.data.db.entity.decodePlaylistPositions(row.position, row.repeatPositions)
+                        .map { track.copy(collectionPosition = it) }
+                }
+                if (rows.any { !it.repeatPositions.isNullOrBlank() }) expanded.sortedBy { it.collectionPosition }
+                else expanded
+            }
             // Off Main, as getAllTracks: a 5K-song Liked playlist converted per tracks write.
             .flowOn(Dispatchers.Default)
 
@@ -1048,6 +1056,19 @@ class MusicRepositoryImpl @Inject constructor(
     }
 
     // ── Custom playlist management ──────────────────────────────────────
+
+    override suspend fun copyPlaylist(playlistId: Long, name: String): Long {
+        val original = playlistDao.getById(playlistId) ?: error("Playlist unavailable")
+        val ids = getTracksByPlaylist(playlistId).first().map { it.id }
+        return playlistDao.createPlaylistCopy(
+            com.stash.core.data.db.entity.PlaylistEntity(
+                name = name, source = com.stash.core.model.MusicSource.BOTH,
+                sourceId = "custom_${java.util.UUID.randomUUID()}",
+                type = com.stash.core.model.PlaylistType.CUSTOM,
+                artUrl = original.artUrl, syncEnabled = true,
+            ), ids,
+        )
+    }
 
     override suspend fun createPlaylist(name: String): Long {
         val entity = com.stash.core.data.db.entity.PlaylistEntity(

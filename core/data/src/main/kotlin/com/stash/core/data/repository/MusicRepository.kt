@@ -356,6 +356,9 @@ interface MusicRepository {
     /** Create a new empty custom playlist. Returns the playlist ID. */
     suspend fun createPlaylist(name: String): Long
 
+    /** Save an independent local copy in the same occurrence order. */
+    suspend fun copyPlaylist(playlistId: Long, name: String): Long
+
     /**
      * #304: the custom playlist keyed by [sourceId], created on first use with
      * [name] and [artUrl]. Every later call returns the existing one, so a

@@ -124,6 +124,8 @@ data class Track(
     val importedLiked: Boolean = false,
     /** Date from the current remote collection membership, not a global like flag. */
     val remoteMembershipAddedAt: Long? = null,
+    /** Position in a collection; does not change persistent track identity. */
+    val collectionPosition: Int? = null,
 ) {
     val isLikedInSonora: Boolean get() = stashLikedAt != null || importedLiked
 }

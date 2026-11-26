@@ -963,6 +963,7 @@ class DatabaseBackupManager @Inject constructor(
 
                 /** Backup playlist id → live playlist id. */
                 val playlistIdMap = HashMap<Long, Long>(backupPlaylists.size)
+                val newlyCreatedPlaylistIds = hashSetOf<Long>()
                 for (playlist in backupPlaylists.sortedBy { it.id }) {
                     val existingId = liveBySourceId[playlist.sourceId]
                     if (existingId != null) {
@@ -995,6 +996,7 @@ class DatabaseBackupManager @Inject constructor(
                     )
                     liveBySourceId.putIfAbsent(playlist.sourceId, newId)
                     playlistIdMap[playlist.id] = newId
+                    newlyCreatedPlaylistIds.add(newId)
                     addedPlaylists++
                 }
 
@@ -1033,6 +1035,8 @@ class DatabaseBackupManager @Inject constructor(
                 for ((backupPlaylistId, refs) in backupRefs.groupBy { it.playlistId }) {
                     val livePlaylistId = playlistIdMap[backupPlaylistId] ?: continue
                     val syncOwnsMembership = livePlaylistId in syncMirrored
+                    val offset = if (livePlaylistId in newlyCreatedPlaylistIds) 0
+                        else nextPosition.getOrDefault(livePlaylistId, 0)
                     for (ref in refs.sortedBy { it.position }) {
                         // A membership the user REMOVED in the backup carries
                         // removedAt — restoring it would ADD a track the
@@ -1048,14 +1052,17 @@ class DatabaseBackupManager @Inject constructor(
 
                         // Append (or reactivate) at the end of the live
                         // ordering, preserving the backup's addedAt stamp.
-                        val position = nextPosition.getOrDefault(livePlaylistId, 0)
-                            .also { nextPosition[livePlaylistId] = it + 1 }
+                        val positions = ref.positions().map { it + offset }
+                        val position = positions.last()
+                        nextPosition.merge(livePlaylistId, position + 1, ::maxOf)
+                        val repeats = com.stash.core.data.db.entity.encodeEarlierPlaylistPositions(positions)
                         playlistDao.insertCrossRef(
                             existing?.copy(
                                 removedAt = null,
                                 position = position,
                                 addedAt = ref.addedAt,
                                 remoteAddedAt = ref.remoteAddedAt,
+                                repeatPositions = repeats,
                                 // Reactivation overwrites a LIVE row: OR so the
                                 // user's own provenance is never downgraded.
                                 locallyAdded = existing.locallyAdded ||
@@ -1066,6 +1073,7 @@ class DatabaseBackupManager @Inject constructor(
                                 position = position,
                                 addedAt = ref.addedAt,
                                 remoteAddedAt = ref.remoteAddedAt,
+                                repeatPositions = repeats,
                                 locallyAdded = ref.locallyAdded || !syncOwnsMembership,
                             )
                         )
@@ -1079,7 +1087,7 @@ class DatabaseBackupManager @Inject constructor(
                 for (playlistId in touchedPlaylists) {
                     playlistDao.updateTrackCount(
                         playlistId,
-                        playlistDao.getOrderedTrackIdsForPlaylist(playlistId).size,
+                        playlistDao.getCrossRefsForPlaylist(playlistId).filter { it.removedAt == null }.sumOf { it.positions().size },
                     )
                 }
             }

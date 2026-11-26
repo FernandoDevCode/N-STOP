@@ -61,6 +61,8 @@ data class TrackLikeState(
 data class TrackWithMembershipDate(
     @androidx.room.Embedded val track: TrackEntity,
     @androidx.room.ColumnInfo(name = "membership_remote_added_at") val remoteAddedAt: Long?,
+    @androidx.room.ColumnInfo(name = "membership_position") val position: Int,
+    @androidx.room.ColumnInfo(name = "membership_repeat_positions") val repeatPositions: String?,
 )
 
 data class TrackWithImportedLikes(
@@ -700,7 +702,8 @@ interface TrackDao {
     @Transaction
     @Query(
         """
-        SELECT t.*, pt.remote_added_at AS membership_remote_added_at FROM tracks t
+        SELECT t.*, pt.remote_added_at AS membership_remote_added_at,
+               pt.position AS membership_position, pt.repeat_positions AS membership_repeat_positions FROM tracks t
         INNER JOIN playlist_tracks pt ON t.id = pt.track_id
         INNER JOIN playlists p ON pt.playlist_id = p.id
         LEFT JOIN track_blocklist bl
@@ -737,7 +740,8 @@ interface TrackDao {
      */
     @Query(
         """
-        SELECT COUNT(*) FROM tracks t
+        SELECT COALESCE(SUM(1 + CASE WHEN pt.repeat_positions IS NULL OR pt.repeat_positions = '' THEN 0
+            ELSE 1 + LENGTH(pt.repeat_positions) - LENGTH(REPLACE(pt.repeat_positions, ',', '')) END), 0) FROM tracks t
         INNER JOIN playlist_tracks pt ON t.id = pt.track_id
         INNER JOIN playlists p ON pt.playlist_id = p.id
         LEFT JOIN track_blocklist bl

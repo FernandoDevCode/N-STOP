@@ -82,6 +82,19 @@ class PlaylistDaoKeepOfflineTest {
         assertThat(db.downloadQueueDao().pendingDiscoveryDownloads()).isEmpty()
     }
 
+    @Test fun `copy preserves repeated occurrences but owns one track membership`() = runTest {
+        val a = db.trackDao().insert(com.stash.core.data.db.entity.TrackEntity(title = "A", artist = "Artist"))
+        val b = db.trackDao().insert(com.stash.core.data.db.entity.TrackEntity(title = "B", artist = "Artist"))
+        val id = dao.createPlaylistCopy(PlaylistEntity(name = "Copy", source = MusicSource.BOTH,
+            sourceId = "custom_copy", type = PlaylistType.CUSTOM), listOf(a, b, a))
+        val refs = dao.getCrossRefsForPlaylist(id)
+        assertThat(refs).hasSize(2)
+        assertThat(refs.single { it.trackId == a }.positions()).containsExactly(0, 2).inOrder()
+        assertThat(db.trackDao().countByPlaylist(id, true)).isEqualTo(3)
+        assertThat(dao.getNextPosition(id)).isEqualTo(3)
+        assertThat(dao.getById(id)!!.trackCount).isEqualTo(3)
+    }
+
     private suspend fun insert(name: String, syncEnabled: Boolean = false, isActive: Boolean = true): Long =
         dao.insert(
             PlaylistEntity(

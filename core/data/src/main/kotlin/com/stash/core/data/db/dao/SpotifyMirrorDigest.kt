@@ -26,6 +26,8 @@ data class MirrorRow(
     val locallyAdded: Boolean,
     /** The song has a FAILED download, which the full diff may close. */
     val failed: Boolean,
+    val repeatPositions: String? = null,
+    val remoteAddedAt: Long? = null,
 )
 
 /**
@@ -71,6 +73,7 @@ fun mirrorDigestOf(trackCount: Int, rows: List<MirrorRow>, copies: List<MirrorCo
         rows.sortedBy { it.trackId }.forEach { r ->
             append(';').append(r.trackId).append(',').append(r.position)
             flag(r.removed); flag(r.locallyAdded); flag(r.failed)
+            text(r.repeatPositions); append(',').append(r.remoteAddedAt ?: -1L)
         }
         append('|')
         copies.distinctBy { it.id }.sortedBy { it.id }.forEach { c ->
