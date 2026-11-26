@@ -879,13 +879,39 @@ class MusicRepositoryImpl @Inject constructor(
      * later waits for the lock, then deletes what this queued.
      */
     private suspend fun insertKeptPlaylist(playlistId: Long): Int = KEEP_OFFLINE_LOCK.withLock {
-        val kept: suspend () -> Boolean = { playlistDao.getById(playlistId)?.keepOffline == true }
+        val kept: suspend () -> Boolean = { playlistDao.getById(playlistId)?.keepOffline == true ||
+            playlistDao.isAggregateLikesClaimed(playlistId) }
         if (kept()) insertDownloadsForPlaylist(playlistId, stillWanted = kept) else 0
     }
 
     /** A kept playlist's missing songs, queued and started like a tap. */
     internal suspend fun queueKeptPlaylist(playlistId: Long) {
-        if (insertKeptPlaylist(playlistId) > 0) startDiscoveryDrain(background = false)
+        if (insertKeptPlaylist(playlistId) > 0) startDiscoveryDrain(background = true)
+    }
+
+    override suspend fun setAllLikedOffline(on: Boolean) {
+        if (on) {
+            playlistDao.ensurePlaylist(com.stash.core.data.db.entity.PlaylistEntity(
+                name = "Liked Songs",
+                source = com.stash.core.model.MusicSource.BOTH,
+                sourceId = "stash_liked_songs",
+                type = com.stash.core.model.PlaylistType.STASH_LIKED,
+                syncEnabled = true,
+            ))
+        }
+        playlistDao.setAggregateLikesOffline(on)
+        if (on) {
+            queueKeptPlaylists()
+            return
+        }
+        KEEP_OFFLINE_LOCK.withLock {
+            for (id in playlistDao.getActiveLikedCollectionIds()) {
+                if (playlistDao.isAggregateLikesClaimed(id) ||
+                    playlistDao.getById(id)?.keepOffline == true) continue
+                downloadQueueDao.cancelWaitingForPlaylist(id)
+                removeDownloadsForPlaylist(id)
+            }
+        }
     }
 
     override suspend fun setPlaylistDownload(playlistId: Long, on: Boolean) {
@@ -900,6 +926,7 @@ class MusicRepositoryImpl @Inject constructor(
         KEEP_OFFLINE_LOCK.withLock {
             // Cancel requests that have not started. Personal collections also
             // release completed downloads that no individual or collection owns.
+            if (playlistDao.isAggregateLikesClaimed(playlistId)) return@withLock
             downloadQueueDao.cancelWaitingForPlaylist(playlistId)
             val playlist = playlistDao.getById(playlistId)
             val personalSpotify = playlist?.source == com.stash.core.model.MusicSource.SPOTIFY &&
@@ -924,7 +951,7 @@ class MusicRepositoryImpl @Inject constructor(
     /** A playlist kept on the phone (#474) downloads what the user adds to it. Never fails the add. */
     private suspend fun queueIfKeptOffline(playlistId: Long) {
         try {
-            if (playlistDao.getById(playlistId)?.keepOffline == true) queueKeptPlaylist(playlistId)
+            if (playlistDao.getById(playlistId)?.keepOffline == true || playlistDao.isAggregateLikesClaimed(playlistId)) queueKeptPlaylist(playlistId)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -989,7 +1016,8 @@ class MusicRepositoryImpl @Inject constructor(
      */
     private suspend fun downloadsItsSongs(playlistId: Long): Boolean {
         val playlist = playlistDao.getById(playlistId) ?: return false
-        return playlist.keepOffline || (playlist.syncEnabled && playlist.sourceId.startsWith("share:"))
+        return playlist.keepOffline || playlistDao.isAggregateLikesClaimed(playlistId) ||
+            (playlist.syncEnabled && playlist.sourceId.startsWith("share:"))
     }
 
     /**

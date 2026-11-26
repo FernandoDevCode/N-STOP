@@ -1453,6 +1453,7 @@ abstract class StashDatabase : RoomDatabase() {
         val MIGRATION_55_56 = object : Migration(55, 56) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE tracks ADD COLUMN offline_requested INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE playlists ADD COLUMN aggregate_likes_offline INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("""
                     UPDATE tracks SET offline_requested = 1
                     WHERE is_downloaded = 1 OR EXISTS (

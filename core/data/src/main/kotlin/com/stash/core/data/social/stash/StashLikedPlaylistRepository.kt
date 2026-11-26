@@ -150,7 +150,7 @@ class StashLikedPlaylistRepository @Inject constructor(
             artUrl = trackArt?.takeUnless { it.isBlank() },
             syncEnabled = true,
         )
-        return playlistDao.insert(entity)
+        return playlistDao.ensurePlaylist(entity)
     }
 
     companion object {

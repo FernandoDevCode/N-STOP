@@ -982,6 +982,7 @@ class DatabaseBackupManager @Inject constructor(
                             // would start downloading it unasked.
                             syncEnabled = false,
                             keepOffline = false,
+                            aggregateLikesOffline = false,
                             dateAdded = if (playlist.dateAdded.toEpochMilli() > 0) {
                                 playlist.dateAdded
                             } else Instant.now(),

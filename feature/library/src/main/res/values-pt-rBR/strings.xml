@@ -69,4 +69,5 @@
     <string name="sonora_likes_remove_title">Remover das músicas curtidas?</string>
     <string name="sonora_likes_remove_message">A curtida será removida apenas no Sonora. Seus downloads e curtidas no Spotify serão preservados.</string>
     <string name="sonora_likes_remove_action">Remover curtida</string>
+    <string name="sonora_likes_aggregate_controls">Controlado por Todas as curtidas</string>
 </resources>

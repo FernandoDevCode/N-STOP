@@ -69,4 +69,5 @@
     <string name="sonora_likes_remove_title">Remove from liked songs?</string>
     <string name="sonora_likes_remove_message">This removes the like in Sonora only. Your downloads and Spotify likes stay unchanged.</string>
     <string name="sonora_likes_remove_action">Remove like</string>
+    <string name="sonora_likes_aggregate_controls">Managed by All liked songs</string>
 </resources>

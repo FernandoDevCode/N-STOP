@@ -143,7 +143,7 @@ fun LikedSongsDetailScreen(
             }
 
             // -- Empty state: no liked songs yet (and not actively searching) --
-            state.tracks.isEmpty() && state.searchQuery.isEmpty() -> {
+            state.tracks.isEmpty() && state.searchQuery.isEmpty() && collectionDownload == null -> {
                 LikedSongsEmptyState(
                     modifier = Modifier.align(Alignment.Center),
                     onBack = onBack,
@@ -635,7 +635,7 @@ private fun LikedSongsHeader(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    IconButton(onClick = onToggleDownload, enabled = button.total > 0 || button.on) {
+                    IconButton(onClick = onToggleDownload, enabled = !button.lockedByAggregate) {
                         Icon(
                             imageVector = if (button.complete) Icons.Default.DownloadDone else Icons.Default.Download,
                             contentDescription = stringResource(
@@ -645,7 +645,8 @@ private fun LikedSongsHeader(
                         )
                     }
                     Text(
-                        text = if (button.on) stringResource(R.string.sonora_likes_download_progress, button.downloaded, button.total)
+                        text = if (button.lockedByAggregate) stringResource(R.string.sonora_likes_aggregate_controls)
+                        else if (button.on) stringResource(R.string.sonora_likes_download_progress, button.downloaded, button.total)
                         else stringResource(R.string.sonora_likes_keep_offline),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

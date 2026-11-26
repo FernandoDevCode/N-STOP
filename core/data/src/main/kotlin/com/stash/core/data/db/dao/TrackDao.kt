@@ -2371,6 +2371,10 @@ interface TrackDao {
             WHERE pt.track_id = :trackId AND pt.removed_at IS NULL AND p.is_active = 1
               AND (
                   p.keep_offline = 1
+                  OR (p.type IN ('LIKED_SONGS', 'STASH_LIKED') AND EXISTS (
+                      SELECT 1 FROM playlists likes_pref WHERE likes_pref.source_id = 'stash_liked_songs'
+                        AND likes_pref.aggregate_likes_offline = 1
+                  ))
                   OR (p.sync_enabled = 1 AND p.id IN (
                       SELECT playlist_id FROM shared_mixes WHERE role = 'FOLLOWER' AND status = 'ACTIVE'
                   ))

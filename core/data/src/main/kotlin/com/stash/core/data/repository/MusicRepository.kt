@@ -286,6 +286,9 @@ interface MusicRepository {
      */
     suspend fun setPlaylistDownload(playlistId: Long, on: Boolean)
 
+    /** Persistent union of current and future liked memberships, independent of per-source switches. */
+    suspend fun setAllLikedOffline(on: Boolean)
+
     /**
      * Bulk removeDownload for every downloaded track in [playlistId].
      * Returns the number of tracks whose downloads were removed.

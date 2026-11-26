@@ -875,8 +875,29 @@ interface PlaylistDao {
     suspend fun setKeepOffline(playlistId: Long, on: Boolean)
 
     /** Active playlists with the Download switch on: the post-sync sweep queues each one (#474). */
-    @Query("SELECT id FROM playlists WHERE keep_offline = 1 AND is_active = 1")
+    @Query("""
+        SELECT p.id FROM playlists p WHERE p.is_active = 1
+          AND (p.keep_offline = 1 OR (p.type IN ('LIKED_SONGS', 'STASH_LIKED') AND EXISTS (
+                      SELECT 1 FROM playlists likes_pref WHERE likes_pref.source_id = 'stash_liked_songs'
+                        AND likes_pref.aggregate_likes_offline = 1
+                  )))
+    """)
     suspend fun getKeepOfflinePlaylistIds(): List<Long>
+
+    @Query("""
+        SELECT EXISTS (SELECT 1 FROM playlists p WHERE p.id = :playlistId
+            AND p.is_active = 1 AND (p.type IN ('LIKED_SONGS', 'STASH_LIKED') AND EXISTS (
+                      SELECT 1 FROM playlists likes_pref WHERE likes_pref.source_id = 'stash_liked_songs'
+                        AND likes_pref.aggregate_likes_offline = 1
+                  )))
+    """)
+    suspend fun isAggregateLikesClaimed(playlistId: Long): Boolean
+
+    @Query("UPDATE playlists SET aggregate_likes_offline = :on WHERE source_id = 'stash_liked_songs'")
+    suspend fun setAggregateLikesOffline(on: Boolean)
+
+    @Query("SELECT id FROM playlists WHERE is_active = 1 AND type IN ('LIKED_SONGS', 'STASH_LIKED')")
+    suspend fun getActiveLikedCollectionIds(): List<Long>
 
     /**
      * One-shot data migration: hide every YouTube playlist that currently

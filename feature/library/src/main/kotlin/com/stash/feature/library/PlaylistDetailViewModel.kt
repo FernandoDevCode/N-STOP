@@ -64,6 +64,7 @@ data class DownloadButtonState(
     val total: Int,
     val followed: Boolean = false,
     val incomplete: Int = 0,
+    val lockedByAggregate: Boolean = false,
 ) {
     /** On, and every song is on the phone. */
     val complete: Boolean get() = on && total > 0 && downloaded == total

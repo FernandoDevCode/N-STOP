@@ -29,7 +29,7 @@ class StashLikedPlaylistRepositoryTest {
         )
         coEvery { playlistDao.findBySourceId("stash_liked_songs") } returns null
         val inserted = slot<PlaylistEntity>()
-        coEvery { playlistDao.insert(capture(inserted)) } returns 7L
+        coEvery { playlistDao.ensurePlaylist(capture(inserted)) } returns 7L
         coEvery { playlistDao.getCrossRef(7L, 11L) } returns null
 
         StashLikedPlaylistRepository(playlistDao, trackDao, musicRepository).add(11L)

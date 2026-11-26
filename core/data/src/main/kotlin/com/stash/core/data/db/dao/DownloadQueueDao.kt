@@ -51,7 +51,10 @@ data class DownloadManagementRow(
  */
 private const val DOWNLOADS_ITS_SONGS = """
     p.is_active = 1
-    AND (p.keep_offline = 1 OR (p.sync_enabled = 1 AND p.id IN (
+    AND (p.keep_offline = 1 OR (p.type IN ('LIKED_SONGS', 'STASH_LIKED') AND EXISTS (
+                      SELECT 1 FROM playlists likes_pref WHERE likes_pref.source_id = 'stash_liked_songs'
+                        AND likes_pref.aggregate_likes_offline = 1
+                  )) OR (p.sync_enabled = 1 AND p.id IN (
         SELECT sm.playlist_id FROM shared_mixes sm WHERE sm.role = 'FOLLOWER' AND sm.status = 'ACTIVE'
     )))
 """
@@ -810,7 +813,10 @@ interface DownloadQueueDao {
             SELECT DISTINCT pt.track_id
             FROM playlist_tracks pt
             INNER JOIN playlists p ON p.id = pt.playlist_id
-            WHERE (p.keep_offline = 1 OR (p.sync_enabled = 1 AND NOT (p.source = 'SPOTIFY' AND p.type IN ('CUSTOM', 'LIKED_SONGS'))))
+            WHERE (p.keep_offline = 1 OR (p.type IN ('LIKED_SONGS', 'STASH_LIKED') AND EXISTS (
+                      SELECT 1 FROM playlists likes_pref WHERE likes_pref.source_id = 'stash_liked_songs'
+                        AND likes_pref.aggregate_likes_offline = 1
+                  )) OR (p.sync_enabled = 1 AND NOT (p.source = 'SPOTIFY' AND p.type IN ('CUSTOM', 'LIKED_SONGS'))))
               AND p.is_active = 1
               AND pt.removed_at IS NULL
               -- A switched-on mix spares its rows like any playlist (the WHERE
@@ -1166,7 +1172,10 @@ interface DownloadQueueDao {
               SELECT pt.track_id FROM playlist_tracks pt
               INNER JOIN playlists p ON p.id = pt.playlist_id
               WHERE pt.removed_at IS NULL
-                AND (p.keep_offline = 1 OR (p.sync_enabled = 1 AND NOT (p.source = 'SPOTIFY' AND p.type IN ('CUSTOM', 'LIKED_SONGS'))))
+                AND (p.keep_offline = 1 OR (p.type IN ('LIKED_SONGS', 'STASH_LIKED') AND EXISTS (
+                      SELECT 1 FROM playlists likes_pref WHERE likes_pref.source_id = 'stash_liked_songs'
+                        AND likes_pref.aggregate_likes_offline = 1
+                  )) OR (p.sync_enabled = 1 AND NOT (p.source = 'SPOTIFY' AND p.type IN ('CUSTOM', 'LIKED_SONGS'))))
                 -- Only an ACTIVE parent spares a row. A hidden (is_active=0)
                 -- but sync_enabled=1 playlist — e.g. a rotated-out YouTube
                 -- daily mix — does NOT spare its tracks, so this sweep drains

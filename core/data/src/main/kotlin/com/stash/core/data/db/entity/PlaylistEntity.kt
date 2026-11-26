@@ -112,4 +112,8 @@ data class PlaylistEntity(
      */
     @ColumnInfo(name = "keep_offline", defaultValue = "0")
     val keepOffline: Boolean = false,
+
+    /** Only the local Liked Songs row owns the aggregate offline switch. */
+    @ColumnInfo(name = "aggregate_likes_offline", defaultValue = "0")
+    val aggregateLikesOffline: Boolean = false,
 )
