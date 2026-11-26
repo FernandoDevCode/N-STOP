@@ -14,6 +14,7 @@ import com.stash.core.auth.model.AuthService
 import com.stash.core.data.db.dao.PlaylistDao
 import com.stash.core.data.db.dao.RemoteSnapshotDao
 import com.stash.core.data.db.dao.SyncHistoryDao
+import com.stash.core.data.db.entity.PlaylistEntity
 import com.stash.core.data.db.entity.RemotePlaylistSnapshotEntity
 import com.stash.core.data.db.entity.RemoteTrackSnapshotEntity
 import com.stash.core.data.db.entity.SyncHistoryEntity
@@ -633,8 +634,19 @@ class PlaylistFetchWorker @AssistedInject constructor(
         }
 
         // Fetch Liked Songs with pagination (sp_dc dependent).
-        // Spotify returns max 50 per page; we loop until we get all tracks.
-        try {
+        // Seed the choice before any liked-tracks request, even if the API fails.
+        // Existing selections are never overwritten.
+        val likedId = playlistDao.ensurePlaylist(
+            PlaylistEntity(
+                name = "Liked Songs", source = MusicSource.SPOTIFY,
+                sourceId = "spotify_liked_songs", type = PlaylistType.LIKED_SONGS,
+                syncEnabled = true,
+            )
+        )
+        val likedSelection = playlistDao.getById(likedId)
+        if (likedSelection?.syncEnabled == false && !likedSelection.keepOffline) {
+            diagnostics.add(SyncStepResult("SPOTIFY", "getLikedSongs", StepStatus.SKIPPED))
+        } else try {
             val allLikedSongs = mutableListOf<com.stash.data.spotify.model.SpotifyTrackItem>()
             var likedOffset = 0
             val likedPageSize = 50
@@ -884,8 +896,22 @@ class PlaylistFetchWorker @AssistedInject constructor(
             val skipCheckedAtMs = System.currentTimeMillis()
             var skippedUnchanged = 0
 
+            var catalogOnly = 0
             for (playlist in customPlaylists) {
                 try {
+                    val selected = playlistDao.findBySourceId(playlist.id)
+                    if (selected == null || (!selected.syncEnabled && !selected.keepOffline)) {
+                        // Discovery is inventory, not a request to read or download all tracks.
+                        remoteSnapshotDao.insertPlaylistSnapshot(
+                            spotifyLibraryPlaylistSnapshot(
+                                playlist = playlist, syncId = syncId, partial = true, snapshotId = null,
+                            )
+                        )
+                        catalogOnly++
+                        userPlaylistCount++
+                        reportPlaylistFetched()
+                        continue
+                    }
                     val trustedStamp = mirrorStamps[playlist.id]
                         ?.takeIf { isStampable(playlist.id, PlaylistType.CUSTOM) }
                         ?.takeIf { skipCandidate(playlist.revisionId, it.stamp, spotifySyncMode, skipCheckedAtMs, appVersion) != null }
@@ -1045,7 +1071,11 @@ class PlaylistFetchWorker @AssistedInject constructor(
                     userPlaylistCount,
                     errorMessage = if (inventoryComplete) null else "inventory incomplete — a page/folder/track fetch failed mid-walk",
                     // A shared diagnostics bundle shows how many weren't re-read.
-                    note = if (skippedUnchanged > 0) "$skippedUnchanged unchanged since the last sync, not re-read" else null,
+                    note = when {
+                        catalogOnly > 0 -> "$skippedUnchanged unchanged; $catalogOnly catalog-only"
+                        skippedUnchanged > 0 -> "$skippedUnchanged unchanged since the last sync, not re-read"
+                        else -> null
+                    },
                 )
             )
         } catch (e: SpotifyApiException) {
