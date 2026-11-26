@@ -280,9 +280,9 @@ class LibraryViewModel @Inject constructor(
      * Songs and [LibraryUiState.librarySongCount] the moment Remove download is tapped, not
      * when the file goes.
      */
-    private val downloadedTracks: Flow<List<Track>> =
+    private val savedTracks: Flow<List<Track>> =
         combine(musicRepository.getAllTracks(), downloadRemoval.hiddenIds) { tracks, hidden ->
-            if (hidden.isEmpty()) tracks else tracks.filterNot { it.id in hidden }
+            if (hidden.isEmpty()) tracks else tracks.filterNot { it.id in hidden && !it.savedInCollection }
         }
 
     /**
@@ -336,7 +336,7 @@ class LibraryViewModel @Inject constructor(
      */
     val uiState: StateFlow<LibraryUiState> = combine(
         pipelineControls,
-        downloadedTracks,
+        savedTracks,
         libraryDataFlow,
         musicRepository.getAllArtists(),
         musicRepository.getAllAlbums(),
@@ -1067,7 +1067,6 @@ class LibraryViewModel @Inject constructor(
             val downloaded = allTracks.filter {
                 it.album.equals(albumName, ignoreCase = true)
                     && matchesArtistCredits(it.artist, it.albumArtist, artist)
-                    && it.filePath != null
             }
             if (downloaded.isNotEmpty()) {
                 playerRepository.setQueue(
@@ -1089,7 +1088,6 @@ class LibraryViewModel @Inject constructor(
             val downloaded = allTracks.filter {
                 it.album.equals(albumName, ignoreCase = true)
                     && matchesArtistCredits(it.artist, it.albumArtist, artist)
-                    && it.filePath != null
             }
             downloaded.forEach { playerRepository.addToQueue(it) }
         }
