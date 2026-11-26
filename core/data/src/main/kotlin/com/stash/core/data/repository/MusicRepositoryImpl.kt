@@ -590,6 +590,10 @@ class MusicRepositoryImpl @Inject constructor(
         if (trustIsrc) incoming.isrc?.takeIf { it.isNotBlank() }?.let { trackDao.backfillIsrcIfMissing(existing.id, it) }
     }
 
+    override suspend fun removeLikedTrack(trackId: Long, source: com.stash.core.model.MusicSource?) {
+        playlistDao.removeLikedTrackLocally(trackId, source, System.currentTimeMillis())
+    }
+
     override suspend fun deleteTrack(track: Track): Boolean {
         // Best-effort file deletion -- the file may already be gone.
         track.filePath?.let { deleteTrackAudio(track.id, it) }
