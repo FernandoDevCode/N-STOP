@@ -112,6 +112,7 @@ data class LibraryTrackRow(
     @androidx.room.ColumnInfo(name = "metadata_embedded_at") val metadataEmbeddedAt: Long?,
     @androidx.room.ColumnInfo(name = "lyrics_fetched_at") val lyricsFetchedAt: Long?,
     @androidx.room.ColumnInfo(name = "saved_in_collection") val savedInCollection: Boolean = false,
+    @androidx.room.ColumnInfo(name = "offline_requested") val offlineRequested: Boolean = false,
 )
 
 /**
@@ -571,7 +572,7 @@ interface TrackDao {
                t.explicit, t.bits_per_sample, t.sample_rate_hz,
                t.spotify_saved_at, t.ytmusic_saved_at, t.lastfm_loved_at,
                t.stash_liked_at, t.is_streamable, t.is_streamable_checked_at,
-               t.metadata_embedded_at, t.lyrics_fetched_at,
+               t.metadata_embedded_at, t.lyrics_fetched_at, t.offline_requested,
                (t.stash_liked_at IS NOT NULL OR EXISTS (
             SELECT 1 FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
             WHERE pt.track_id = t.id AND pt.removed_at IS NULL AND p.is_active = 1
@@ -1806,6 +1807,7 @@ interface TrackDao {
           AND t.source NOT IN ('BOTH', 'LOCAL', 'SPOTIFY')
           AND (t.spotify_uri IS NULL OR t.spotify_uri = '')
           AND t.stash_liked_at IS NULL
+          AND t.offline_requested = 0
           AND NOT EXISTS (
               SELECT 1 FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
               WHERE pt.track_id = t.id AND p.type IN ('LIKED_SONGS', 'STASH_LIKED')
@@ -2316,6 +2318,20 @@ interface TrackDao {
         """
     )
     suspend fun clearDownloadState(trackId: Long)
+
+    @Query("UPDATE tracks SET offline_requested = :requested WHERE id = :trackId")
+    suspend fun setOfflineRequested(trackId: Long, requested: Boolean)
+
+    @Query("""
+        SELECT EXISTS (
+            SELECT 1 FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
+            WHERE pt.track_id = :trackId AND pt.removed_at IS NULL AND p.is_active = 1
+              AND (p.keep_offline = 1 OR (p.sync_enabled = 1 AND p.id IN (
+                  SELECT playlist_id FROM shared_mixes WHERE role = 'FOLLOWER' AND status = 'ACTIVE'
+              )))
+        )
+    """)
+    suspend fun hasOfflineCollectionClaim(trackId: Long): Boolean
 
     /**
      * Duration-only sibling of [fillMissingMetadata]. Used by the primary
