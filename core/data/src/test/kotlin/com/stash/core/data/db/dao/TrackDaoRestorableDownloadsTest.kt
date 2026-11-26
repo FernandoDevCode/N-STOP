@@ -127,14 +127,13 @@ class TrackDaoRestorableDownloadsTest {
         queue.insert(DownloadQueueEntity(trackId = orphan))
         assertEquals(emptyList<Long>(), queue.getAllPendingBySources(listOf("SPOTIFY", "BOTH")).map { it.trackId })
 
-        // The untouched path: a sync run queued it AND it sits in a synced,
-        // non-mix playlist. Both halves are still required together.
+        // The legacy YouTube path still requires an authorised sync membership.
         val inPlaylist = downloadedTrack("member")
         resetMissing(inPlaylist, now = 1L)
         val pl = playlists.insert(
             PlaylistEntity(
                 name = "Road trip",
-                source = MusicSource.SPOTIFY,
+                source = MusicSource.YOUTUBE,
                 sourceId = "road",
                 type = PlaylistType.CUSTOM,
                 isActive = true,
@@ -150,6 +149,30 @@ class TrackDaoRestorableDownloadsTest {
         val queuedOrphan = downloadedTrack("queued-orphan")
         queue.insert(DownloadQueueEntity(trackId = queuedOrphan, syncId = run))
         assertEquals(listOf(inPlaylist), queue.getAllPendingBySources(listOf("SPOTIFY", "BOTH")).map { it.trackId })
+    }
+
+    @Test fun `legacy Spotify sync rows are recovered only with explicit offline intent`() = runTest {
+        val manual = downloadedTrack("manual")
+        val kept = downloadedTrack("kept")
+        val importOnly = downloadedTrack("import-only")
+        val inFlight = downloadedTrack("running")
+        val syncId = syncs.insert(SyncHistoryEntity())
+        val selected = playlists.insert(PlaylistEntity(name = "Import", source = MusicSource.SPOTIFY,
+            sourceId = "import", type = PlaylistType.CUSTOM, syncEnabled = true))
+        val offline = playlists.insert(PlaylistEntity(name = "Offline", source = MusicSource.SPOTIFY,
+            sourceId = "kept", type = PlaylistType.CUSTOM, keepOffline = true, syncEnabled = false))
+        playlists.insertCrossRef(PlaylistTrackCrossRef(playlistId = selected, trackId = importOnly))
+        playlists.insertCrossRef(PlaylistTrackCrossRef(playlistId = offline, trackId = kept))
+        resetMissing(manual, kept, importOnly, inFlight, now = 1L)
+        queue.insert(DownloadQueueEntity(trackId = manual, syncId = syncId, userRequested = true))
+        queue.insert(DownloadQueueEntity(trackId = kept, syncId = syncId))
+        queue.insert(DownloadQueueEntity(trackId = importOnly, syncId = syncId))
+        queue.insert(DownloadQueueEntity(trackId = inFlight, syncId = syncId, status = DownloadStatus.IN_PROGRESS))
+        assertEquals(2, queue.recoverAuthorisedLegacyRequests())
+        assertEquals(1, queue.cancelDownloadsWithNoEnabledPlaylist())
+        assertEquals(setOf(manual, kept), queue.pendingDiscoveryDownloads().map { it.trackId }.toSet())
+        assertEquals(null, queue.getByTrackId(importOnly))
+        assertEquals(syncId, queue.getByTrackId(inFlight)?.syncId)
     }
 
     /**
