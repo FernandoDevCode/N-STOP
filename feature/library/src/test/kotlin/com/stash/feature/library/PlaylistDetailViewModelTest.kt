@@ -603,7 +603,7 @@ class PlaylistDetailViewModelTest {
             onBlocking { current() } doReturn true
             on { enabled } doReturn flowOf(true)
         },
-        connectivityMonitor: ConnectivityMonitor = mock(),
+        connectivityMonitor: ConnectivityMonitor = mock { on { isConnected() } doReturn true },
         recipeDao: StashMixRecipeDao = mock {
             on { observeAll() } doReturn flowOf(emptyList())
         },
