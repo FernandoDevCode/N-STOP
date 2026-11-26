@@ -214,6 +214,9 @@ interface MusicRepository {
      */
     suspend fun deleteTrack(track: Track): Boolean
 
+    /** Remove liked memberships locally without deleting audio, history or the track. */
+    suspend fun removeLikedTrack(trackId: Long, source: com.stash.core.model.MusicSource? = null)
+
     /**
      * Queue [trackId] for a user-initiated download. Inserts a row into
      * `download_queue` with `sync_id = null` (distinguishing it from
