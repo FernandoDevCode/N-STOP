@@ -1890,6 +1890,7 @@ interface TrackDao {
         WHERE id IN (:ids)
           AND is_downloaded = 0
           AND stash_liked_at IS NULL AND spotify_saved_at IS NULL AND ytmusic_saved_at IS NULL
+          AND offline_requested = 0
           AND id NOT IN (SELECT track_id FROM playlist_tracks WHERE removed_at IS NULL)
           AND id NOT IN (SELECT track_id FROM listening_events)
           AND id NOT IN (SELECT track_id FROM track_skip_events)
