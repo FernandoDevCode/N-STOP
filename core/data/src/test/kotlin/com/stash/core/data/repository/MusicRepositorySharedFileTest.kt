@@ -147,6 +147,38 @@ class MusicRepositorySharedFileTest {
         assertThat(paths[2L]).isNull()
     }
 
+    @Test
+    fun `bulk release preserves a new download claimed by another offline collection`() = runTest {
+        paths[2L] = file.absolutePath
+        every { trackDao.getByPlaylist(PLAYLIST, true) } returns flowOf(listOf(entity(2L, file.absolutePath)))
+        coEvery { trackDao.hasOfflineCollectionClaim(2L) } returns true
+
+        assertThat(repo().removeDownloadsForPlaylist(PLAYLIST)).isEqualTo(0)
+        assertThat(file.exists()).isTrue()
+        coVerify(exactly = 0) { trackDao.clearDownloadState(2L) }
+    }
+
+    @Test
+    fun `bulk release preserves a migrated or manually owned download`() = runTest {
+        paths[2L] = file.absolutePath
+        val protected = entity(2L, file.absolutePath).copy(offlineRequested = true)
+        every { trackDao.getByPlaylist(PLAYLIST, true) } returns flowOf(listOf(protected))
+        coEvery { trackDao.getById(2L) } returns protected
+
+        assertThat(repo().removeDownloadsForPlaylist(PLAYLIST)).isEqualTo(0)
+        assertThat(file.exists()).isTrue()
+    }
+
+    @Test
+    fun `bulk release deletes a new collection-only file without other claims`() = runTest {
+        paths[2L] = file.absolutePath
+        every { trackDao.getByPlaylist(PLAYLIST, true) } returns flowOf(listOf(entity(2L, file.absolutePath)))
+
+        assertThat(repo().removeDownloadsForPlaylist(PLAYLIST)).isEqualTo(1)
+        assertThat(file.exists()).isFalse()
+        assertThat(paths[2L]).isNull()
+    }
+
     // ── removeTrackFromPlaylistAndMaybeDelete ───────────────────────────
 
     @Test
