@@ -49,6 +49,11 @@ class TokenManagerImpl @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     override fun close() { scope.coroutineContext[kotlinx.coroutines.Job]?.cancel() }
 
+    /** Await observer shutdown before disposing a host's main dispatcher. */
+    internal suspend fun awaitClosed() {
+        scope.coroutineContext[kotlinx.coroutines.Job]?.join()
+    }
+
     // -- Spotify state --------------------------------------------------------
 
     private val _spotifyAuthState = MutableStateFlow<AuthState>(AuthState.NotConnected)
