@@ -46,7 +46,16 @@ interface ArtistImageDao {
      * on the Artists tab today; if the Library is widened to them, widen both
      * queries together.)
      */
-    @Query("SELECT DISTINCT artist FROM tracks WHERE artist != '' AND is_downloaded = 1")
+    @Query("""
+        SELECT DISTINCT t.artist FROM tracks t
+        WHERE t.artist != '' AND (
+            t.is_downloaded = 1 OR t.stash_liked_at IS NOT NULL OR EXISTS (
+                SELECT 1 FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
+                WHERE pt.track_id = t.id AND pt.removed_at IS NULL AND p.is_active = 1
+                  AND p.type IN ('CUSTOM', 'LIKED_SONGS', 'STASH_LIKED')
+            )
+        )
+    """)
     suspend fun distinctArtistNames(): List<String>
 
     /**
