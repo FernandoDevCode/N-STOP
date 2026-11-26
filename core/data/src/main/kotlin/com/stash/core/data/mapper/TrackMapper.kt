@@ -44,6 +44,7 @@ fun LibraryTrackRow.toDomain(): Track = Track(
     isStreamableCheckedAt = isStreamableCheckedAt,
     metadataEmbeddedAt = metadataEmbeddedAt,
     lyricsFetchedAt = lyricsFetchedAt,
+    savedInCollection = savedInCollection,
 )
 
 /**
