@@ -105,6 +105,19 @@ class MusicRepositorySharedFileTest {
         assertThat(paths[1L]).isNull()
     }
 
+    @Test
+    fun `removing an individual download preserves audio requested by another collection`() = runTest {
+        paths[2L] = file.absolutePath
+        coEvery { trackDao.hasOfflineCollectionClaim(2L) } returns true
+
+        repo().removeDownload(2L)
+
+        assertThat(file.exists()).isTrue()
+        assertThat(paths[2L]).isEqualTo(file.absolutePath)
+        coVerify { trackDao.setOfflineRequested(2L, false) }
+        coVerify(exactly = 0) { trackDao.clearDownloadState(2L) }
+    }
+
     // ── removeDownloadsForPlaylist ──────────────────────────────────────
 
     @Test
