@@ -277,6 +277,7 @@ class LikedSongsDetailViewModelTest {
         },
         savedStateHandle: SavedStateHandle = SavedStateHandle(),
     ): LikedSongsDetailViewModel = LikedSongsDetailViewModel(
+        playbackPolicy = testPlaybackPolicy(),
         savedStateHandle = savedStateHandle,
         musicRepository = musicRepository,
         playerRepository = playerRepository,
