@@ -246,6 +246,8 @@ class MainActivity : ComponentActivity() {
             intent?.action == Intent.ACTION_MAIN &&
             intent?.hasCategory(Intent.CATEGORY_LAUNCHER) == true &&
             (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0
+        val startupGate = (application as StashApplication).introStartupGate
+        if (!cinematicLaunch) startupGate.markReady()
         if (cinematicLaunch) {
             WindowCompat.getInsetsController(window, window.decorView)
                 .hide(WindowInsetsCompat.Type.systemBars())
@@ -325,6 +327,7 @@ class MainActivity : ComponentActivity() {
                                 onSettled = { showMainContent = true },
                                 onFinished = {
                                     showCinematicIntro = false
+                                    startupGate.markReady()
                                     WindowCompat.getInsetsController(window, window.decorView)
                                         .show(WindowInsetsCompat.Type.systemBars())
                                 },
@@ -345,6 +348,12 @@ class MainActivity : ComponentActivity() {
             handleShareIntent(intent)
             handleDeepLinkIntent(intent)
         }
+    }
+
+    override fun onDestroy() {
+        // A rotation, Back or interrupted launcher cannot strand speculative work.
+        (application as StashApplication).introStartupGate.markReady()
+        super.onDestroy()
     }
 
     override fun onNewIntent(intent: Intent) {

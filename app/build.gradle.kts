@@ -107,8 +107,8 @@ android {
         applicationId = "com.stash.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 226
-        versionName = "0.9.190-sonora-intro-pacing"
+        versionCode = 227
+        versionName = "0.9.191-sonora-intro-startup"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // AppAuth redirect scheme removed -- Spotify now uses sp_dc cookie auth
         buildConfigField("String", "FANART_API_KEY", "\"$fanartApiKey\"")
@@ -206,6 +206,8 @@ kotlin {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
     implementation(project(":core:ui"))
     implementation(project(":core:model"))
     implementation(project(":core:common"))
