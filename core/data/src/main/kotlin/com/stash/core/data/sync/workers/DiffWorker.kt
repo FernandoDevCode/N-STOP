@@ -296,9 +296,8 @@ class DiffWorker @AssistedInject constructor(
                 // Download switch needs what the playlist gained linked here, or the
                 // sweep below has nothing new to queue.
                 if (!localPlaylist.syncEnabled &&
-                    !localPlaylist.keepOffline &&
-                    localPlaylist.type != PlaylistType.DAILY_MIX &&
-                    (isSpotifyPersonalCollection(localPlaylist.source, localPlaylist.type) || !streamingMode)
+                    (isSpotifyPersonalCollection(localPlaylist.source, localPlaylist.type) ||
+                        (!localPlaylist.keepOffline && localPlaylist.type != PlaylistType.DAILY_MIX && !streamingMode))
                 ) {
                     Log.d(TAG, "Playlist '${playlistSnapshot.playlistName}' sync disabled, skipping")
                     skippedSwitchedOff++
