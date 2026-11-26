@@ -1055,6 +1055,7 @@ class DatabaseBackupManager @Inject constructor(
                                 removedAt = null,
                                 position = position,
                                 addedAt = ref.addedAt,
+                                remoteAddedAt = ref.remoteAddedAt,
                                 // Reactivation overwrites a LIVE row: OR so the
                                 // user's own provenance is never downgraded.
                                 locallyAdded = existing.locallyAdded ||
@@ -1064,6 +1065,7 @@ class DatabaseBackupManager @Inject constructor(
                                 trackId = liveTrackId,
                                 position = position,
                                 addedAt = ref.addedAt,
+                                remoteAddedAt = ref.remoteAddedAt,
                                 locallyAdded = ref.locallyAdded || !syncOwnsMembership,
                             )
                         )

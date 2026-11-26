@@ -1454,6 +1454,9 @@ abstract class StashDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE tracks ADD COLUMN offline_requested INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE playlists ADD COLUMN aggregate_likes_offline INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE playlist_tracks ADD COLUMN remote_added_at INTEGER")
+                db.execSQL("ALTER TABLE remote_track_snapshots ADD COLUMN remote_added_at INTEGER")
+                db.execSQL("ALTER TABLE sync_undo_memberships ADD COLUMN remote_added_at INTEGER")
                 db.execSQL("""
                     UPDATE tracks SET offline_requested = 1
                     WHERE is_downloaded = 1 OR EXISTS (

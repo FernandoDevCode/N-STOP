@@ -95,4 +95,6 @@ data class SyncUndoMembershipEntity(
 
     @ColumnInfo(name = "locally_added")
     val locallyAdded: Boolean,
+    @ColumnInfo(name = "remote_added_at")
+    val remoteAddedAt: Long? = null,
 )

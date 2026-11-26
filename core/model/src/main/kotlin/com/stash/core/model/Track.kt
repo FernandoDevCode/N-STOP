@@ -122,6 +122,8 @@ data class Track(
     val offlineRequested: Boolean = false,
     /** Derived active imported membership, never an outbound Spotify save timestamp. */
     val importedLiked: Boolean = false,
+    /** Date from the current remote collection membership, not a global like flag. */
+    val remoteMembershipAddedAt: Long? = null,
 ) {
     val isLikedInSonora: Boolean get() = stashLikedAt != null || importedLiked
 }

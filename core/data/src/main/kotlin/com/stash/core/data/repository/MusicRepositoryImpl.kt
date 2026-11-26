@@ -319,8 +319,8 @@ class MusicRepositoryImpl @Inject constructor(
     // Tap-time playability is governed by live connectivity, not a preference.
     @OptIn(ExperimentalCoroutinesApi::class)
     override fun getTracksByPlaylist(playlistId: Long): Flow<List<Track>> =
-        trackDao.getByPlaylist(playlistId, includeStreamable = true)
-            .map { entities -> entities.map { it.toDomain() } }
+        trackDao.getByPlaylistWithMembershipDate(playlistId, includeStreamable = true)
+            .map { rows -> rows.map { it.track.toDomain().copy(remoteMembershipAddedAt = it.remoteAddedAt) } }
             // Off Main, as getAllTracks: a 5K-song Liked playlist converted per tracks write.
             .flowOn(Dispatchers.Default)
 

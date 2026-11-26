@@ -81,7 +81,7 @@ class LikedSongsDetailViewModel @Inject constructor(
             flowOf(emptyList())
         } else {
             combine(playlists.map { musicRepository.getTracksByPlaylist(it.id) }) { arrays ->
-                arrays.flatMap { it.toList() }.distinctBy { it.id }
+                sortLikedTracks(mergeLikedMemberships(arrays.flatMap { it.toList() }), SortOrder.RECENT)
             }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())

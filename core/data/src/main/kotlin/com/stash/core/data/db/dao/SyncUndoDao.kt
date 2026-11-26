@@ -38,8 +38,8 @@ interface SyncUndoDao {
     @Query(
         """
         INSERT OR REPLACE INTO sync_undo_memberships
-            (sync_id, playlist_id, track_id, position, added_at, removed_at, locally_added)
-        SELECT :syncId, playlist_id, track_id, position, added_at, removed_at, locally_added
+            (sync_id, playlist_id, track_id, position, added_at, removed_at, locally_added, remote_added_at)
+        SELECT :syncId, playlist_id, track_id, position, added_at, removed_at, locally_added, remote_added_at
         FROM playlist_tracks
         """
     )
@@ -212,8 +212,8 @@ interface SyncUndoDao {
     @Query(
         """
         INSERT OR IGNORE INTO playlist_tracks
-            (playlist_id, track_id, position, added_at, removed_at, locally_added)
-        SELECT playlist_id, track_id, position, added_at, removed_at, locally_added
+            (playlist_id, track_id, position, added_at, removed_at, locally_added, remote_added_at)
+        SELECT playlist_id, track_id, position, added_at, removed_at, locally_added, remote_added_at
         FROM sync_undo_memberships
         WHERE sync_id = :syncId
           AND playlist_id IN (SELECT id FROM playlists WHERE source IN $SYNCED_SOURCES)

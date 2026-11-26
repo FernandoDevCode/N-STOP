@@ -799,6 +799,9 @@ class PlaylistFetchWorker @AssistedInject constructor(
                         position = index,
                         isrc = track.isrc,
                         explicit = track.explicit,
+                        remoteAddedAt = item.addedAt?.let { raw ->
+                            runCatching { java.time.Instant.parse(raw).toEpochMilli() }.getOrNull()
+                        },
                     )
                 }
                 if (trackSnapshots.isNotEmpty()) {
@@ -1061,6 +1064,9 @@ class PlaylistFetchWorker @AssistedInject constructor(
                             position = index,
                             isrc = track.isrc,
                             explicit = track.explicit,
+                            remoteAddedAt = item.addedAt?.let { raw ->
+                                runCatching { java.time.Instant.parse(raw).toEpochMilli() }.getOrNull()
+                            },
                         )
                     }
                     if (trackSnapshots.isNotEmpty()) {

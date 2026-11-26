@@ -58,4 +58,8 @@ data class PlaylistTrackCrossRef(
      */
     @ColumnInfo(name = "locally_added", defaultValue = "0")
     val locallyAdded: Boolean = false,
+
+    /** Null for legacy/unknown timestamps; never substitute download time. */
+    @ColumnInfo(name = "remote_added_at")
+    val remoteAddedAt: Long? = null,
 )

@@ -77,4 +77,8 @@ data class RemoteTrackSnapshotEntity(
      * to [TrackEntity.explicit].
      */
     val explicit: Boolean? = null,
+
+    /** Original remote membership timestamp, when the provider reports it. */
+    @ColumnInfo(name = "remote_added_at")
+    val remoteAddedAt: Long? = null,
 )

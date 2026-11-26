@@ -58,6 +58,11 @@ data class TrackLikeState(
     val isLikedInSonora: Boolean get() = stashLikedAt != null || importedLiked
 }
 
+data class TrackWithMembershipDate(
+    @androidx.room.Embedded val track: TrackEntity,
+    @androidx.room.ColumnInfo(name = "membership_remote_added_at") val remoteAddedAt: Long?,
+)
+
 data class TrackWithImportedLikes(
     @androidx.room.Embedded val track: TrackEntity,
     @androidx.room.ColumnInfo(name = "imported_liked") val importedLiked: Boolean,
@@ -691,6 +696,33 @@ interface TrackDao {
         """
     )
     fun getByPlaylist(playlistId: Long, includeStreamable: Boolean): Flow<List<TrackEntity>>
+
+    @Transaction
+    @Query(
+        """
+        SELECT t.*, pt.remote_added_at AS membership_remote_added_at FROM tracks t
+        INNER JOIN playlist_tracks pt ON t.id = pt.track_id
+        INNER JOIN playlists p ON pt.playlist_id = p.id
+        LEFT JOIN track_blocklist bl
+            ON bl.canonical_key = (t.canonical_artist || '|' || t.canonical_title)
+            OR (bl.spotify_uri IS NOT NULL AND bl.spotify_uri = t.spotify_uri)
+            OR (bl.youtube_id  IS NOT NULL AND bl.youtube_id  = t.youtube_id)
+        WHERE pt.playlist_id = :playlistId
+          AND pt.removed_at IS NULL
+          AND bl.canonical_key IS NULL
+          AND (
+              t.is_downloaded = 1
+              OR :includeStreamable
+              OR (p.type = 'STASH_MIX' AND t.is_streamable = 1)
+          )
+        ORDER BY
+            CASE WHEN p.type = 'DAILY_MIX' THEN pt.added_at END DESC,
+            pt.position ASC,
+            pt.added_at ASC,
+            t.id ASC
+        """
+    )
+    fun getByPlaylistWithMembershipDate(playlistId: Long, includeStreamable: Boolean): Flow<List<TrackWithMembershipDate>>
 
     /**
      * How many rows [getByPlaylist] would emit — same joins, same filters —

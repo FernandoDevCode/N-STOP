@@ -865,21 +865,21 @@ class DiffWorker @AssistedInject constructor(
         // An incomplete response is evidence of presence, not order or absence.
         // Preserve every existing membership (including suppression markers).
         // Add new identities after the previous tail, exactly once.
-        fun link(trackId: Long, position: Int) {
+        fun link(trackId: Long, position: Int, remoteAddedAt: Long?) {
             remoteMemberIds.add(trackId)
             if (mergeOnly) {
                 if (trackId in existingCrossRefs || trackId in crossRefsToInsert) return
                 addCrossRefIfNotSoftDeleted(localPlaylist.id, trackId, nextAppendPosition++,
-                    existingCrossRefs, crossRefsToInsert)
+                    existingCrossRefs, crossRefsToInsert, remoteAddedAt)
             } else {
                 addCrossRefIfNotSoftDeleted(localPlaylist.id, trackId, position,
-                    existingCrossRefs, crossRefsToInsert)
+                    existingCrossRefs, crossRefsToInsert, remoteAddedAt)
             }
         }
 
         for ((batchTrack, snapshot) in newOccurrences) {
             val trackId = checkNotNull(batchTrack.persistedId)
-            link(trackId, snapshot.position)
+            link(trackId, snapshot.position, snapshot.remoteAddedAt)
         }
 
         // Downloads follow the playlist's own switch, mixes included: in Download
@@ -956,13 +956,13 @@ class DiffWorker @AssistedInject constructor(
         }
         for ((batchTrack, snapshot) in existingPairs) {
             val existingTrack = batchTrack.entity
-            link(existingTrack.id, snapshot.position)
+            link(existingTrack.id, snapshot.position, snapshot.remoteAddedAt)
 
             if (!existingTrack.isDownloaded && !existingTrack.matchDismissed) {
                 val downloadedMatch = downloadedByKey[reconcileKey(existingTrack)]
                     ?.firstOrNull { TrackCanonical.sameVersion(it.title, existingTrack.title) }
                 if (downloadedMatch != null && downloadedMatch.id != existingTrack.id) {
-                    link(downloadedMatch.id, snapshot.position)
+                    link(downloadedMatch.id, snapshot.position, snapshot.remoteAddedAt)
                     val failedEntry = downloadQueueDao.getFailedByTrackId(existingTrack.id)
                     if (failedEntry != null) {
                         downloadQueueDao.updateStatus(id = failedEntry.id, status = DownloadStatus.COMPLETED)
@@ -1010,6 +1010,7 @@ class DiffWorker @AssistedInject constructor(
         position: Int,
         existingByTrackId: Map<Long, PlaylistTrackCrossRef>,
         out: MutableMap<Long, PlaylistTrackCrossRef>,
+        remoteAddedAt: Long? = null,
     ) {
         val storedPrior = existingByTrackId[trackId]
         if (storedPrior != null && storedPrior.removedAt != null) {
@@ -1023,6 +1024,7 @@ class DiffWorker @AssistedInject constructor(
             position = position,
             addedAt = batchPrior?.addedAt ?: storedPrior?.addedAt ?: java.time.Instant.now(),
             locallyAdded = storedPrior?.locallyAdded ?: false,
+            remoteAddedAt = remoteAddedAt ?: batchPrior?.remoteAddedAt ?: storedPrior?.remoteAddedAt,
         )
     }
 

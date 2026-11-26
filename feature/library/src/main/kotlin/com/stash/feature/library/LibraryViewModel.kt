@@ -544,7 +544,7 @@ class LibraryViewModel @Inject constructor(
                 flowOf(emptyList())
             } else {
                 combine(playlists.map { musicRepository.getTracksByPlaylist(it.id) }) { arrays ->
-                    arrays.flatMap { it.toList() }.distinctBy { it.id }
+                    mergeLikedMemberships(arrays.flatMap { it.toList() })
                 }
             }
         }.let { likedFlow ->
@@ -1207,7 +1207,15 @@ internal fun sortLikedTracks(tracks: List<Track>, order: SortOrder): List<Track>
 }
 
 private fun Track.likedAtOrNull(): Long? =
-    listOfNotNull(stashLikedAt, spotifySavedAt, ytMusicSavedAt, lastFmLovedAt).maxOrNull()
+    listOfNotNull(stashLikedAt, remoteMembershipAddedAt).maxOrNull()
+
+/** Preserve first-seen order when dates are unavailable; combine only like metadata. */
+internal fun mergeLikedMemberships(tracks: List<Track>): List<Track> =
+    tracks.groupBy { it.id }.values.map { copies ->
+        copies.first().copy(
+            remoteMembershipAddedAt = copies.mapNotNull { it.remoteMembershipAddedAt }.maxOrNull(),
+        )
+    }
 
 /** How long a typed Library query must sit still before the list pipeline re-runs on it. */
 private const val SEARCH_SETTLE_MS = 150L

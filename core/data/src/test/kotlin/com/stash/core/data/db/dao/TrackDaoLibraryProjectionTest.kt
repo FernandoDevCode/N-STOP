@@ -128,6 +128,25 @@ class TrackDaoLibraryProjectionTest {
         assertEquals(null, dao.getById(trackId)!!.stashLikedAt)
     }
 
+    @Test fun `remote dates are membership specific and survive undo capture`() = runTest {
+        val tid = dao.insert(track(1))
+        val pid = db.playlistDao().insert(com.stash.core.data.db.entity.PlaylistEntity(
+            name = "Likes", source = MusicSource.SPOTIFY, sourceId = "date-test",
+            type = com.stash.core.model.PlaylistType.LIKED_SONGS))
+        val other = db.playlistDao().insert(com.stash.core.data.db.entity.PlaylistEntity(
+            name = "Other", source = MusicSource.SPOTIFY, sourceId = "other-date-test"))
+        db.playlistDao().insertCrossRef(com.stash.core.data.db.entity.PlaylistTrackCrossRef(
+            playlistId = pid, trackId = tid, remoteAddedAt = 1234L))
+        db.playlistDao().insertCrossRef(com.stash.core.data.db.entity.PlaylistTrackCrossRef(
+            playlistId = other, trackId = tid))
+        assertEquals(1234L, dao.getByPlaylistWithMembershipDate(pid, true).first().single().remoteAddedAt)
+        assertEquals(null, dao.getByPlaylistWithMembershipDate(other, true).first().single().remoteAddedAt)
+        db.syncUndoDao().captureMemberships(99L)
+        db.playlistDao().clearSyncedPlaylistTracks(pid)
+        db.syncUndoDao().restoreMemberships(99L)
+        assertEquals(1234L, db.playlistDao().getCrossRef(pid, tid)?.remoteAddedAt)
+    }
+
     @Test fun `orders by date added descending`() = runTest {
         dao.insert(track(1, dateAdded = Instant.ofEpochMilli(100)))
         dao.insert(track(2, dateAdded = Instant.ofEpochMilli(300)))
