@@ -121,7 +121,7 @@ class MusicRepositorySharedFileTest {
 
     /** Both owners are in the playlist: the file goes with the second. */
     @Test
-    fun `removing a playlist's downloads deletes a shared file with its last owner`() = runTest {
+    fun `removing a playlist download preserves its locally imported owner`() = runTest {
         paths[1L] = file.absolutePath
         paths[2L] = file.absolutePath
         every { trackDao.getByPlaylist(PLAYLIST, true) } returns
@@ -129,8 +129,9 @@ class MusicRepositorySharedFileTest {
 
         repo().removeDownloadsForPlaylist(PLAYLIST)
 
-        assertThat(file.exists()).isFalse()
-        assertThat(paths.values.filterNotNull()).isEmpty()
+        assertThat(file.exists()).isTrue()
+        assertThat(paths[1L]).isEqualTo(file.absolutePath)
+        assertThat(paths[2L]).isNull()
     }
 
     // ── removeTrackFromPlaylistAndMaybeDelete ───────────────────────────
