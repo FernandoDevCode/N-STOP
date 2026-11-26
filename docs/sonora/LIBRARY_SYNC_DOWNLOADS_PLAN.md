@@ -215,3 +215,15 @@ PR [#117](https://github.com/FernandoDevCode/N-STOP/pull/117), branch de trabalh
 - CI do checkpoint anterior (272205ed466f409160b989fda4b98b1260ce86d3): gate de identidade, build Debug e demais shards reportados aprovados; features falhou na obtenção de artefato Robolectric (MavenArtifactFetcher). Gate de identidade também passou em 4251bbf745255f061be48af265427ae980aaf0a4; testes desse SHA ainda enfileirados na consulta. Nenhum desses resultados valida os commits posteriores.
 
 Pendências de aceite: migração/persistência de propriedade offline individual e agregada, isolamento de conta Spotify, reconciliação remota segura (incluindo vazio confirmado, remoção/recurtida), ocorrências e ordem de playlist, toda a simplificação da UI de sincronização e estados, testes de integração/upgrade e execução completa do CI. A escolha provisória conservadora ao desativar download é cancelar pedidos ainda não iniciados e manter arquivos existentes; remoção física só explícita e protegida. A coleção agregada ainda depende das origens já existentes ao ligar o botão. Não declarar paridade com Spotify nem liberar APK antes dos gates. Nenhuma alteração de schema ou operação em dados de aparelho nesta etapa.
+
+
+## 11. Checkpoint — segurança de reconciliação e seleção
+
+Até `87cc26c874af938f696f4da6304d606c7d50a9d7` no PR #117:
+- Importação desativada pausa novas leituras e vínculos Spotify mesmo se keepOffline estiver ligado; downloads da cópia existente continuam independentes.
+- Resposta de curtidas confirmadamente vazia produz snapshot vazio; erro não produz snapshot vazio. O modo de reconciliação existente continua respeitado; não há remoção automática em modo Accumulate.
+- Contagem de coleções pessoais Spotify em snapshots completos usa vínculos ativos. Limpeza de órfãos preserva faixas de origem Spotify, URI Spotify conhecida, marcas de curtida e pedidos de download explícitos ainda registrados. Não equivale a propriedade offline durável: metadados de origem e filas antigas podem ser incompletos.
+- Textos PT-BR/EN esclarecem seleção de importação, download na coleção e leitura sem escrita remota. Controles legados de modo permanecem enquanto sua semântica ainda afeta outras coleções.
+- Testes adicionados/ajustados para zero confirmado vs erro, proteção de áudio órfão e pausa de importação independente de keepOffline. Não executados nesta sessão.
+
+CI consultado: em `9be9903105edf28c0ddb4e5a5675ccb27d7bca14`, identidade aprovada, testes ainda enfileirados (run 45726244532). Em `7b011d978c0925b121ba031d80d6c464dec1428b`, workflows ainda não apareciam. Sem validação do HEAD atual, sem merge e sem APK publicado. Permanecem pendentes propriedade offline durável/migração, isolamento por conta e reconciliação completa de remoções/recurtidas, ordem/ocorrências, simplificação integral da interface, homologação. Não liberar antes dos gates.
