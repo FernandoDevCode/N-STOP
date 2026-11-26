@@ -110,6 +110,7 @@ internal fun mergeDuplicateAlbums(albums: List<AlbumInfo>): List<AlbumInfo> =
 class LibraryViewModel @Inject constructor(
     private val musicRepository: MusicRepository,
     private val playerRepository: PlayerRepository,
+    private val playbackPolicy: LibraryPlaybackPolicy,
     private val tokenManager: TokenManager,
     private val playlistImageHelper: PlaylistImageHelper,
     private val localImportCoordinator: LocalImportCoordinator,
@@ -565,9 +566,12 @@ class LibraryViewModel @Inject constructor(
     fun playLiked(track: Track) {
         viewModelScope.launch {
             val all = likedTracks.value
-            val playable = all
-            if (playable.isEmpty()) return@launch
-            val index = playable.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+            val playable = playbackPolicy.eligible(all)
+            val index = playable.indexOfFirst { it.id == track.id }
+            if (index < 0) {
+                _userMessages.tryEmit("This song is unavailable for playback right now.")
+                return@launch
+            }
             playerRepository.setQueue(
                 playable,
                 index,
@@ -588,7 +592,7 @@ class LibraryViewModel @Inject constructor(
     fun shuffleLiked() {
         viewModelScope.launch {
             val all = likedTracks.value
-            val playable = all
+            val playable = playbackPolicy.eligible(all)
             if (playable.isEmpty()) return@launch
             playerRepository.setQueue(
                 playable.shuffled(),
@@ -646,7 +650,7 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch {
             // Streaming is always allowed: every track is playable, and a
             // not-downloaded one streams when it is reached.
-            val playable = allTracks
+            val playable = playbackPolicy.eligible(allTracks)
             val index = playable.indexOfFirst { it.id == track.id }
             if (index >= 0) {
                 playerRepository.setQueue(playable, index, source = com.stash.core.model.PlaybackSource.Library)
@@ -655,7 +659,9 @@ class LibraryViewModel @Inject constructor(
                 // Added rail is its own query, so a streamable track can be absent
                 // from the Songs list). Play it on its own rather than no-op — a
                 // tap that does nothing is the bug being fixed here.
-                playerRepository.setQueue(listOf(track), 0, source = com.stash.core.model.PlaybackSource.Library)
+                val single = playbackPolicy.eligible(listOf(track))
+                if (single.isNotEmpty()) playerRepository.setQueue(single, 0, source = com.stash.core.model.PlaybackSource.Library)
+                else _userMessages.tryEmit("This song is unavailable for playback right now.")
             }
         }
     }
@@ -875,7 +881,7 @@ class LibraryViewModel @Inject constructor(
     fun playPlaylist(playlist: Playlist) {
         viewModelScope.launch {
             val tracks = musicRepository.getTracksByPlaylist(playlist.id).first()
-            val downloaded = tracks.filter { it.filePath != null }
+            val downloaded = playbackPolicy.eligible(tracks)
             if (downloaded.isNotEmpty()) {
                 playerRepository.setQueue(
                     downloaded,
@@ -892,7 +898,7 @@ class LibraryViewModel @Inject constructor(
     fun addPlaylistToQueue(playlist: Playlist) {
         viewModelScope.launch {
             val tracks = musicRepository.getTracksByPlaylist(playlist.id).first()
-            val downloaded = tracks.filter { it.filePath != null }
+            val downloaded = playbackPolicy.eligible(tracks)
             downloaded.forEach { playerRepository.addToQueue(it) }
         }
     }
@@ -1024,7 +1030,7 @@ class LibraryViewModel @Inject constructor(
     fun playArtist(artistName: String) {
         viewModelScope.launch {
             val tracks = musicRepository.getTracksByArtist(artistName).first()
-            val downloaded = tracks.filter { it.filePath != null }
+            val downloaded = playbackPolicy.eligible(tracks)
             if (downloaded.isNotEmpty()) {
                 playerRepository.setQueue(
                     downloaded,
@@ -1041,7 +1047,7 @@ class LibraryViewModel @Inject constructor(
     fun addArtistToQueue(artistName: String) {
         viewModelScope.launch {
             val tracks = musicRepository.getTracksByArtist(artistName).first()
-            val downloaded = tracks.filter { it.filePath != null }
+            val downloaded = playbackPolicy.eligible(tracks)
             downloaded.forEach { playerRepository.addToQueue(it) }
         }
     }
@@ -1082,10 +1088,10 @@ class LibraryViewModel @Inject constructor(
     fun playAlbum(albumName: String, artist: String) {
         viewModelScope.launch {
             val allTracks = musicRepository.getAllTracks().first()
-            val downloaded = allTracks.filter {
+            val downloaded = playbackPolicy.eligible(allTracks.filter {
                 it.album.equals(albumName, ignoreCase = true)
                     && matchesArtistCredits(it.artist, it.albumArtist, artist)
-            }
+            })
             if (downloaded.isNotEmpty()) {
                 playerRepository.setQueue(
                     downloaded,
@@ -1103,10 +1109,10 @@ class LibraryViewModel @Inject constructor(
     fun addAlbumToQueue(albumName: String, artist: String) {
         viewModelScope.launch {
             val allTracks = musicRepository.getAllTracks().first()
-            val downloaded = allTracks.filter {
+            val downloaded = playbackPolicy.eligible(allTracks.filter {
                 it.album.equals(albumName, ignoreCase = true)
                     && matchesArtistCredits(it.artist, it.albumArtist, artist)
-            }
+            })
             downloaded.forEach { playerRepository.addToQueue(it) }
         }
     }
