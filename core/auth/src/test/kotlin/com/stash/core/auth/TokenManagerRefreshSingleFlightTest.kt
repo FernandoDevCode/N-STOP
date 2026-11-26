@@ -71,6 +71,82 @@ class TokenManagerRefreshSingleFlightTest {
         manager.awaitClosed()
     }
 
+    private fun identityStore(stored: MutableStateFlow<ServiceToken?>) =
+        mockk<EncryptedTokenStore>(relaxed = true) {
+            every { spotifyToken } returns stored
+            every { spotifyUser } returns MutableStateFlow(UserInfo("manual", "Manual"))
+            every { spotifySearchToken } returns MutableStateFlow(null)
+            every { spotifySearchUser } returns MutableStateFlow(null)
+            every { youTubeToken } returns MutableStateFlow(null)
+            every { youTubeUser } returns MutableStateFlow(null)
+            every { discordToken } returns MutableStateFlow(null)
+            every { discordUser } returns MutableStateFlow(null)
+            coEvery { saveSpotifyToken(any(), any()) } answers { stored.value = firstArg() }
+        }
+
+    @Test fun `legacy opaque token refreshes once and uses authenticated response identity`() = runTest {
+        val expiry = Instant.now().epochSecond + 3_600
+        val stored = MutableStateFlow<ServiceToken?>(ServiceToken("legacy", "cookie-A", expiry, "manual|client"))
+        val store = identityStore(stored)
+        val auth = mockk<SpotifyAuthManager> {
+            every { extractUsernameFromJwt(any()) } returns null
+            coEvery { refreshAccessToken("cookie-A") } returns
+                ServiceToken("opaque", "cookie-A", expiry, "verifiedA|client|identity-v1:verifiedA")
+        }
+        val manager = TokenManagerImpl(store, auth, mockk(relaxed = true))
+        try {
+            assertEquals("verifiedA", manager.getSpotifyLibraryAccountId())
+            assertEquals("verifiedA", manager.getSpotifyLibraryAccountId())
+            coVerify(exactly = 1) { auth.refreshAccessToken("cookie-A") }
+            // A newly connected account cannot inherit the preceding identity.
+            stored.value = ServiceToken("other", "cookie-B", expiry, "verifiedB|client|identity-v1:verifiedB")
+            assertEquals("verifiedB", manager.getSpotifyLibraryAccountId())
+        } finally {
+            manager.close()
+            manager.awaitClosed()
+        }
+    }
+
+    @Test fun `unverified manual username is never used as account proof`() = runTest {
+        val expiry = Instant.now().epochSecond + 3_600
+        val stored = MutableStateFlow<ServiceToken?>(ServiceToken("legacy", "cookie-A", expiry, "manual|client"))
+        val store = identityStore(stored)
+        val auth = mockk<SpotifyAuthManager> {
+            every { extractUsernameFromJwt(any()) } returns null
+            coEvery { refreshAccessToken("cookie-A") } returns
+                ServiceToken("opaque", "cookie-A", expiry, "|client|identity-v1:")
+        }
+        val manager = TokenManagerImpl(store, auth, mockk(relaxed = true))
+        try {
+            assertEquals(null, manager.getSpotifyLibraryAccountId())
+            assertEquals(null, manager.getSpotifyLibraryAccountId())
+            coVerify(exactly = 1) { auth.refreshAccessToken("cookie-A") }
+        } finally {
+            manager.close()
+            manager.awaitClosed()
+        }
+    }
+
+    @Test fun `a manually entered username cannot override fresh response identity`() = runTest {
+        val expiry = Instant.now().epochSecond + 3_600
+        val stored = MutableStateFlow<ServiceToken?>(null)
+        val store = identityStore(stored)
+        val auth = mockk<SpotifyAuthManager> {
+            every { extractUsernameFromJwt(any()) } returns null
+            coEvery { getAccessToken("cookie-A") } returns
+                ServiceToken("opaque", "cookie-A", expiry, "verifiedA|client|identity-v1:verifiedA")
+        }
+        val manager = TokenManagerImpl(store, auth, mockk(relaxed = true))
+        try {
+            assertEquals(true, manager.connectSpotifyWithCookie("cookie-A", "manual"))
+            assertEquals("verifiedA", manager.getSpotifyLibraryAccountId())
+            assertEquals("verifiedA|client|identity-v1:verifiedA", stored.value?.scope)
+        } finally {
+            manager.close()
+            manager.awaitClosed()
+        }
+    }
+
     @Test fun `catalog credentials and disconnect cannot touch the sync token`() = runTest {
         val now = Instant.now().epochSecond
         val personal = MutableStateFlow<ServiceToken?>(ServiceToken("personal", "cookie-A", now + 3_600))
