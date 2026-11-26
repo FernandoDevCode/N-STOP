@@ -1801,7 +1801,14 @@ interface TrackDao {
         """
         SELECT t.* FROM tracks t
         WHERE t.is_downloaded = 1
-          AND t.source NOT IN ('BOTH', 'LOCAL')
+          -- Spotify catalog membership is no longer proof of audio ownership.
+          -- Until durable ownership exists, never sweep its downloaded files.
+          AND t.source NOT IN ('BOTH', 'LOCAL', 'SPOTIFY')
+          AND t.stash_liked_at IS NULL
+          AND NOT EXISTS (
+              SELECT 1 FROM download_queue dq
+              WHERE dq.track_id = t.id AND dq.user_requested = 1
+          )
           AND t.id NOT IN (
               SELECT pt.track_id FROM playlist_tracks pt
               WHERE pt.removed_at IS NULL
