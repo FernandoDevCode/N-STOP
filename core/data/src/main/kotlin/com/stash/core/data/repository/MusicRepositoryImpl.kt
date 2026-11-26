@@ -918,15 +918,29 @@ class MusicRepositoryImpl @Inject constructor(
     override suspend fun removeDownloadsForPlaylist(playlistId: Long): Int {
         val tracks = trackDao.getByPlaylist(playlistId, includeStreamable = true)
             .first()
-        val downloaded = tracks.filter { it.isDownloaded }
-        for (entity in downloaded) {
-            // Two of the playlist's songs on one file: it goes with the second,
-            // once the first's row no longer records it.
-            entity.filePath?.let { deleteTrackAudio(entity.id, it) }
-            downloadQueueDao.deleteByTrackId(entity.id)
-            trackDao.clearDownloadState(entity.id)
+        var removed = 0
+        for (entity in tracks.filter { it.isDownloaded }) {
+            // Conservative until durable individual download ownership is migrated:
+            // never remove a user's imported file or a track claimed by another collection.
+            if (entity.source == com.stash.core.model.MusicSource.LOCAL ||
+                downloadQueueDao.hasUserRequest(entity.id) ||
+                trackDao.countOtherPlaylistsClaimingTrack(entity.id, playlistId) > 0
+            ) continue
+            downloadJobs.withClaimsHeld {
+                val current = trackDao.getById(entity.id) ?: return@withClaimsHeld
+                val queue = downloadQueueDao.getByTrackId(entity.id)
+                if (queue != null && downloadJobs.isLive(queue.id)) return@withClaimsHeld
+                if (!current.isDownloaded || current.filePath != entity.filePath ||
+                    downloadQueueDao.hasUserRequest(entity.id) ||
+                    trackDao.countOtherPlaylistsClaimingTrack(entity.id, playlistId) > 0
+                ) return@withClaimsHeld
+                current.filePath?.let { deleteTrackAudio(current.id, it) }
+                downloadQueueDao.deleteByTrackId(current.id)
+                trackDao.clearDownloadState(current.id)
+                removed++
+            }
         }
-        return downloaded.size
+        return removed
     }
 
     override suspend fun removePlaylist(playlist: Playlist) {
