@@ -950,7 +950,13 @@ class DiffWorker @AssistedInject constructor(
         // design, usually a different video than the stub's.
         fun reconcileKey(track: TrackEntity) =
             CanonicalKey(track.canonicalTitle.lowercase(), track.canonicalArtist.lowercase())
+        // Scoped personal collections mirror remote identity and occurrence order.
+        // A second membership based only on canonical words would fabricate a
+        // remote like or playlist position, and could bypass local suppression.
+        val allowLegacyTwinLink = !SpotifyAccountScope.isScoped(localPlaylist.sourceId) ||
+            !isSpotifyPersonalCollection(localPlaylist.source, localPlaylist.type)
         val reconcileKeys = existingPairs
+            .filter { allowLegacyTwinLink }
             .map { it.first.entity }
             .filter { !it.isDownloaded && !it.matchDismissed }
             .map { reconcileKey(it) }
@@ -970,7 +976,7 @@ class DiffWorker @AssistedInject constructor(
             val existingTrack = batchTrack.entity
             link(existingTrack.id, snapshot.position, snapshot.remoteAddedAt)
 
-            if (!existingTrack.isDownloaded && !existingTrack.matchDismissed) {
+            if (allowLegacyTwinLink && !existingTrack.isDownloaded && !existingTrack.matchDismissed) {
                 val downloadedMatch = downloadedByKey[reconcileKey(existingTrack)]
                     ?.firstOrNull { TrackCanonical.sameVersion(it.title, existingTrack.title) }
                 if (downloadedMatch != null && downloadedMatch.id != existingTrack.id) {

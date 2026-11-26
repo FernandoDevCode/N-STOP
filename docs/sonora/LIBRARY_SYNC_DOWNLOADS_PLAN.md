@@ -273,3 +273,8 @@ Data remota agora via snapshot e vínculo (nullable), independente de download e
 
 ## 16. Repetições em playlists
 Posições adicionais no vínculo único (position é a última ocorrência, repeat_positions as anteriores); propriedade de áudio por faixa sem duplicar arquivos. Snapshot completo de playlist pessoal Spotify acumula posições; parcial preserva vínculos. Projeção expande posições para lista/fila, chave e toque por posição, contagem de download por faixa única. Cópia local atômica preserva ordem/ocorrências, sem iniciar download; detalhe importado sem edição de capa/exclusão. Migração aditiva ainda não publicada, backup/undo carregam posições, digest inclui posições/datas. Teste de cópia adicionado. Limitações: reconciliação de cópias de áudio canonicamente semelhantes pode produzir vínculos adicionais; edição/multisseleção local ainda opera por faixa, não por ocorrência. CI Android sem execução; não publicar sem validação.
+
+
+## 15. Checkpoint — fidelidade da identidade remota
+
+Coleções pessoais Spotify com namespace deixam de criar uma segunda membership por correspondência canônica de um arquivo baixado. A identidade original e todas as posições remotas são mantidas; o arquivo alternativo não é apagado nem a fila marcada como concluída por aproximação. O comportamento legado de outras coleções permanece. Teste de regressão acrescentado para duas ocorrências da mesma URI e um arquivo de outra URI. Não executado localmente. Schema 56.json, edição individual de ocorrências, CI integral, teste de conta real e release continuam pendentes. Não integrar antes dos gates.

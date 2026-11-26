@@ -336,6 +336,38 @@ class DiffWorkerTest {
     }
 
     @Test
+    fun `scoped Spotify playlist preserves repeated positions without linking a different downloaded URI`() = runBlocking {
+        coEvery { streamingPreference.current() } returns true
+        every { syncPreferencesManager.spotifySyncMode } returns flowOf(SyncMode.ACCUMULATE)
+        val sourceId = SpotifyAccountScope.scoped(SpotifyAccountScope.prefix("account"), "playlist")
+        val playlistId = db.playlistDao().insert(
+            PlaylistEntity(name = "Personal", source = MusicSource.SPOTIFY,
+                sourceId = sourceId, type = PlaylistType.CUSTOM, syncEnabled = true),
+        )
+        val original = db.trackDao().insert(
+            TrackEntity(title = "Track A", artist = "Artist",
+                canonicalTitle = "track a", canonicalArtist = "artist",
+                spotifyUri = "spotify:track:a-stream"),
+        )
+        val twin = db.trackDao().insert(downloadedTrack("Track A", "spotify:track:a-file", "/music/a.flac"))
+        coEvery { remoteSnapshotDao.getPlaylistSnapshotsBySyncId(1L) } returns listOf(
+            RemotePlaylistSnapshotEntity(id = 21L, syncId = 1L, source = MusicSource.SPOTIFY,
+                sourcePlaylistId = sourceId, playlistName = "Personal",
+                playlistType = PlaylistType.CUSTOM, trackCount = 2, expectedCount = 2),
+        )
+        coEvery { remoteSnapshotDao.getTrackSnapshotsByPlaylistId(21L) } returns listOf(
+            remoteTrack("Track A", "spotify:track:a-stream", 0).copy(id = 51L),
+            remoteTrack("Track A", "spotify:track:a-stream", 2).copy(id = 52L),
+        )
+        assertTrue(buildWorker().doWork() is androidx.work.ListenableWorker.Result.Success)
+        val refs = db.playlistDao().getCrossRefsForPlaylist(playlistId)
+        assertEquals(original, refs.single().trackId)
+        assertEquals(listOf(0, 2), refs.single().positions())
+        assertEquals("/music/a.flac", db.trackDao().getById(twin)?.filePath)
+        assertEquals(2, db.playlistDao().getById(playlistId)?.trackCount)
+    }
+
+    @Test
     fun `a pipe in the canonical key does not link an unrelated downloaded track`() = runBlocking {
         val playlistId = seedAccumulatePlaylist()
         val streamOnly = db.trackDao().insert(
