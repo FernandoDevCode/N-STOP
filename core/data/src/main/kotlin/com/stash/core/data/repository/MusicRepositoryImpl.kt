@@ -615,8 +615,10 @@ class MusicRepositoryImpl @Inject constructor(
 
     override suspend fun queueDownload(trackId: Long): Boolean {
         val entity = trackDao.getById(trackId) ?: return false
-        trackDao.setOfflineRequested(trackId, true)
-        if (entity.isDownloaded) return false
+        if (entity.isDownloaded) {
+            downloadJobs.withClaimsHeld { trackDao.setOfflineRequested(trackId, true) }
+            return false
+        }
 
         // Reuse an existing queue row if there is one; otherwise insert a fresh
         // manual (discovery-partition) row. A manual tap is an explicit
@@ -935,7 +937,7 @@ class MusicRepositoryImpl @Inject constructor(
                 val current = trackDao.getById(entity.id) ?: return@withClaimsHeld
                 val queue = downloadQueueDao.getByTrackId(entity.id)
                 if (queue != null && downloadJobs.isLive(queue.id)) return@withClaimsHeld
-                if (!current.isDownloaded || current.filePath != entity.filePath ||
+                if (!current.isDownloaded || current.offlineRequested || current.filePath != entity.filePath ||
                     downloadQueueDao.hasUserRequest(entity.id) ||
                     trackDao.countOtherPlaylistsClaimingTrack(entity.id, playlistId) > 0
                 ) return@withClaimsHeld
