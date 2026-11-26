@@ -100,7 +100,7 @@ class TrackDaoLibraryProjectionTest {
         db.playlistDao().insertCrossRef(com.stash.core.data.db.entity.PlaylistTrackCrossRef(
             playlistId = playlistId, trackId = 1,
         ))
-        db.playlistDao().removeLikedTrackLocally(1, MusicSource.SPOTIFY)
+        db.playlistDao().removeLikedTrackLocally(1, MusicSource.SPOTIFY, 456L)
         val row = dao.getById(1)!!
         assertEquals(123L, row.stashLikedAt)
         assertEquals("/music/saved.flac", row.filePath)
