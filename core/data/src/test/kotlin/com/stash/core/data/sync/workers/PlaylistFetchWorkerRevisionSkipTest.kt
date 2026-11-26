@@ -175,6 +175,17 @@ class PlaylistFetchWorkerRevisionSkipTest {
             .map { it.trackId to it.position }
             .sortedBy { it.second }
 
+    @Test fun `confirmed empty Spotify likes are distinct from fetch failure`() = runBlocking {
+        val empty = snapshotOf("spotify_liked_songs", runFetch())
+        assertEquals(0, empty.expectedCount)
+        assertFalse(empty.partial)
+
+        coEvery { spotify.getLikedSongs(any(), any()) } returns SyncResult.Error("unavailable")
+        val failed = runFetch()
+        assertTrue(db.remoteSnapshotDao().getPlaylistSnapshotsBySyncId(failed)
+            .none { it.sourcePlaylistId == "spotify_liked_songs" })
+    }
+
     // ── Skip ─────────────────────────────────────────────────────────────
 
     @Test fun `an unchanged playlist is not read, and stays in the run as checked`() = runBlocking {
