@@ -434,7 +434,7 @@ class PlaylistFetchWorkerRevisionSkipTest {
         return copy to failedId
     }
 
-    @Test fun `a song downloaded elsewhere makes the next sync read the playlist and link it in`() = runBlocking {
+    @Test fun `a downloaded approximation triggers a read but cannot fabricate a playlist occurrence`() = runBlocking {
         val playlistId = seedMirroredPlaylist()
         val (copy, failedId) = downloadCopyOfA(playlistId)
 
@@ -442,10 +442,12 @@ class PlaylistFetchWorkerRevisionSkipTest {
         runDiff(syncId)
 
         coVerify(exactly = 1) { spotify.getPlaylistTracks("pl1") }
-        // Exactly what a full sync always did: the copy joins at the stub's position
-        // and the stub's failed download is closed.
-        assertEquals(0, db.playlistDao().getCrossRefsForPlaylist(playlistId).single { it.trackId == copy }.position)
-        assertEquals(DownloadStatus.COMPLETED, db.downloadQueueDao().getStatusById(failedId))
+        // Canonical title/artist is not proof of remote membership or a completed download.
+        val refs = db.playlistDao().getCrossRefsForPlaylist(playlistId)
+        assertEquals(listOf(0, 1), refs.map { it.position }.sorted())
+        assertTrue(refs.none { it.trackId == copy })
+        assertEquals("/music/a.flac", db.trackDao().getById(copy)?.filePath)
+        assertEquals(DownloadStatus.FAILED, db.downloadQueueDao().getStatusById(failedId))
         // The new stamp vouches for the new state: the sync after skips again.
         runFetch()
         coVerify(exactly = 1) { spotify.getPlaylistTracks("pl1") }

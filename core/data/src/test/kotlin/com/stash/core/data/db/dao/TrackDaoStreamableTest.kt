@@ -352,17 +352,15 @@ class TrackDaoStreamableTest {
 
     // ── PlaylistDao.getAllVisible ───────────────────────────────────────
 
-    @Test fun `getAllVisible escape-hatch excludes streamable by default`() = runTest {
-        // Playlist with sync_enabled = 0 — only visible if it has a downloaded
-        // track. A streamable-only track must NOT keep it visible when the
-        // streaming flag is off.
+    @Test fun `getAllVisible keeps saved Spotify playlists when streamable playback is disabled`() = runTest {
+        // Sync selection and playback availability do not erase saved library metadata.
         val streamableTrack = insertStreamableOnly(id = 1L, album = "A", artist = "Drake")
         val playlistId = playlistDao.insert(syncDisabledPlaylist())
         playlistDao.insertCrossRef(crossRef(playlistId, streamableTrack, position = 0))
 
         val visible = playlistDao.getAllVisible(includeStreamable = false).first()
 
-        assertTrue("sync_enabled=0 with only streamable tracks must be hidden", visible.isEmpty())
+        assertEquals(listOf(playlistId), visible.map { it.id })
     }
 
     @Test fun `getAllVisible escape-hatch includes streamable when flagged`() = runTest {

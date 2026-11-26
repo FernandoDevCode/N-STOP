@@ -28,7 +28,7 @@ import java.time.Instant
  *
  * Online, a never-checked track must count as playable, as AutoBrowse and
  * next-track prefetch already read it. Only a confirmed check is a negative.
- * Offline is unchanged: downloaded content, or nothing.
+ * Saved personal collections remain visible offline; discovery mixes still filter by availability.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [33])
@@ -56,15 +56,23 @@ class PlaylistDaoNeverCheckedVisibilityTest {
         assertEquals(listOf(id), dao.getAllVisible(includeStreamable = true).first().map { it.id })
     }
 
-    /** Offline is the downloads-only surface; nothing here is downloaded. */
-    @Test fun `the same playlist stays hidden offline`() = runTest {
-        playlistWith(PlaylistType.CUSTOM, checkedAt = null)
+    @Test fun `a saved personal playlist stays visible offline without downloads`() = runTest {
+        val id = playlistWith(PlaylistType.CUSTOM, checkedAt = null)
+        assertEquals(listOf(id), dao.getAllVisible(includeStreamable = false).first().map { it.id })
+    }
+
+    @Test fun `a confirmed unavailable song does not hide its saved personal playlist`() = runTest {
+        val id = playlistWith(PlaylistType.CUSTOM, checkedAt = 1_000L)
+        assertEquals(listOf(id), dao.getAllVisible(includeStreamable = true).first().map { it.id })
+    }
+
+    @Test fun `an unselected discovery mix stays hidden offline`() = runTest {
+        playlistWith(PlaylistType.DAILY_MIX, checkedAt = null)
         assertEquals(emptyList<Long>(), dao.getAllVisible(includeStreamable = false).first().map { it.id })
     }
 
-    /** A check that came back negative is still a negative — the arm is not "everything". */
-    @Test fun `a confirmed-unstreamable track does not surface the playlist`() = runTest {
-        playlistWith(PlaylistType.CUSTOM, checkedAt = 1_000L)
+    @Test fun `a negative check still hides an unselected discovery mix`() = runTest {
+        playlistWith(PlaylistType.DAILY_MIX, checkedAt = 1_000L)
         assertEquals(emptyList<Long>(), dao.getAllVisible(includeStreamable = true).first().map { it.id })
     }
 

@@ -56,14 +56,14 @@ class MigrationV55V56Test {
                 assertEquals(0, c.getInt(0))
             }
             db.query("SELECT id, offline_requested, is_downloaded, file_path FROM tracks ORDER BY id").use { c ->
-                val rows = buildList {
-                    while (c.moveToNext()) add(listOf(c.getLong(0), c.getInt(1), c.getInt(2), c.getString(3)))
+                val rows = buildList<List<Any?>> {
+                    while (c.moveToNext()) add(listOf<Any?>(c.getLong(0), c.getInt(1), c.getInt(2), c.getString(3)))
                 }
                 assertEquals(listOf(
-                    listOf(1L, 1, 1, "/music/legacy.flac"),
-                    listOf(2L, 1, 0, null),
-                    listOf(3L, 0, 0, null),
-                    listOf(4L, 0, 0, null),
+                    listOf<Any?>(1L, 1, 1, "/music/legacy.flac"),
+                    listOf<Any?>(2L, 1, 0, null),
+                    listOf<Any?>(3L, 0, 0, null),
+                    listOf<Any?>(4L, 0, 0, null),
                 ), rows)
             }
             db.query("SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = 9").use { c ->
