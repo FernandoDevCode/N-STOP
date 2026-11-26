@@ -192,7 +192,7 @@ class LikedSongsDetailViewModelTest {
         vm.deleteSelected(tracks)
         runCurrent()
 
-        tracks.forEach { t -> verify(musicRepo).deleteTrack(t) }
+        tracks.forEach { t -> verify(musicRepo).removeLikedTrack(t.id, null) }
         assertEquals(listOf("Removed 3 songs from Liked Songs."), messages)
     }
 
