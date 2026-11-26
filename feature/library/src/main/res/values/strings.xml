@@ -66,4 +66,7 @@
     <string name="sonora_likes_keep_offline">Keep liked songs offline</string>
     <string name="sonora_likes_stop_offline">Stop automatic downloads for liked songs</string>
     <string name="sonora_likes_download_progress">%1$d of %2$d downloaded</string>
+    <string name="sonora_likes_remove_title">Remove from liked songs?</string>
+    <string name="sonora_likes_remove_message">This removes the like in Sonora only. Your downloads and Spotify likes stay unchanged.</string>
+    <string name="sonora_likes_remove_action">Remove like</string>
 </resources>
