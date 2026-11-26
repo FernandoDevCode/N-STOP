@@ -686,9 +686,20 @@ class LibraryViewModel @Inject constructor(
      * the next sync if a playlist still references its identity. Matches
      * the Home/Playlist-detail UX — "Delete" vs. "Delete & Block".
      */
+    private fun likedSourceForRemoval(): MusicSource? = when (_likedFilter.value) {
+        LikedFilter.STASH -> MusicSource.BOTH
+        LikedFilter.SPOTIFY -> MusicSource.SPOTIFY
+        LikedFilter.YOUTUBE -> MusicSource.YOUTUBE
+        LikedFilter.ALL -> null
+    }
+
     fun deleteTrack(track: Track, alsoBlacklist: Boolean = false) {
+        val fromLikes = _controls.value.activeTab == LibraryTab.LIKED
+        val source = likedSourceForRemoval()
         viewModelScope.launch {
-            if (alsoBlacklist) {
+            if (fromLikes) {
+                musicRepository.removeLikedTrack(track.id, source)
+            } else if (alsoBlacklist) {
                 musicRepository.blacklistTrack(track.id)
             } else {
                 musicRepository.deleteTrack(track)
@@ -782,11 +793,15 @@ class LibraryViewModel @Inject constructor(
      * otherwise). Per-item failures are isolated; emits one roll-up Snackbar.
      */
     fun deleteSelected(tracks: List<Track>, alsoBlacklist: Boolean = false) {
+        val fromLikes = _controls.value.activeTab == LibraryTab.LIKED
+        val source = likedSourceForRemoval()
         viewModelScope.launch {
             var deleted = 0
             tracks.forEach { track ->
                 runCatching {
-                    if (alsoBlacklist) {
+                    if (fromLikes) {
+                        musicRepository.removeLikedTrack(track.id, source)
+                    } else if (alsoBlacklist) {
                         musicRepository.blacklistTrack(track.id)
                     } else {
                         musicRepository.deleteTrack(track)
@@ -795,7 +810,10 @@ class LibraryViewModel @Inject constructor(
                     .onFailure { e -> if (e is CancellationException) throw e }
             }
             if (deleted > 0) {
-                _userMessages.tryEmit("Deleted $deleted ${songs(deleted)}.")
+                _userMessages.tryEmit(
+                    if (fromLikes) "Removed $deleted ${songs(deleted)} from Liked Songs."
+                    else "Deleted $deleted ${songs(deleted)}."
+                )
             }
         }
     }
