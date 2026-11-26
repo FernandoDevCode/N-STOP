@@ -840,10 +840,26 @@ class DiffWorker @AssistedInject constructor(
 
         val crossRefsToInsert = linkedMapOf<Long, PlaylistTrackCrossRef>()
         val downloadEntries = mutableListOf<DownloadQueueEntity>()
+        val mergeOnly = snapshotUnreliable(playlistSnapshot, trackSnapshots)
+        var nextAppendPosition = (existingCrossRefs.values.maxOfOrNull { it.position } ?: -1) + 1
+
+        // An incomplete response is evidence of presence, not order or absence.
+        // Preserve every existing membership (including suppression markers).
+        // Add new identities after the previous tail, exactly once.
+        fun link(trackId: Long, position: Int) {
+            if (mergeOnly) {
+                if (trackId in existingCrossRefs || trackId in crossRefsToInsert) return
+                addCrossRefIfNotSoftDeleted(localPlaylist.id, trackId, nextAppendPosition++,
+                    existingCrossRefs, crossRefsToInsert)
+            } else {
+                addCrossRefIfNotSoftDeleted(localPlaylist.id, trackId, position,
+                    existingCrossRefs, crossRefsToInsert)
+            }
+        }
 
         for ((batchTrack, snapshot) in newOccurrences) {
             val trackId = checkNotNull(batchTrack.persistedId)
-            addCrossRefIfNotSoftDeleted(localPlaylist.id, trackId, snapshot.position, existingCrossRefs, crossRefsToInsert)
+            link(trackId, snapshot.position)
         }
 
         // Downloads follow the playlist's own switch, mixes included: in Download
@@ -920,13 +936,13 @@ class DiffWorker @AssistedInject constructor(
         }
         for ((batchTrack, snapshot) in existingPairs) {
             val existingTrack = batchTrack.entity
-            addCrossRefIfNotSoftDeleted(localPlaylist.id, existingTrack.id, snapshot.position, existingCrossRefs, crossRefsToInsert)
+            link(existingTrack.id, snapshot.position)
 
             if (!existingTrack.isDownloaded && !existingTrack.matchDismissed) {
                 val downloadedMatch = downloadedByKey[reconcileKey(existingTrack)]
                     ?.firstOrNull { TrackCanonical.sameVersion(it.title, existingTrack.title) }
                 if (downloadedMatch != null && downloadedMatch.id != existingTrack.id) {
-                    addCrossRefIfNotSoftDeleted(localPlaylist.id, downloadedMatch.id, snapshot.position, existingCrossRefs, crossRefsToInsert)
+                    link(downloadedMatch.id, snapshot.position)
                     val failedEntry = downloadQueueDao.getFailedByTrackId(existingTrack.id)
                     if (failedEntry != null) {
                         downloadQueueDao.updateStatus(id = failedEntry.id, status = DownloadStatus.COMPLETED)
@@ -1010,7 +1026,6 @@ class DiffWorker @AssistedInject constructor(
         trackSnapshots: List<RemoteTrackSnapshotEntity>,
         syncMode: SyncMode,
     ) {
-        playlistDao.updateLastSynced(localPlaylist.id, System.currentTimeMillis())
         if (snapshotUnreliable(playlistSnapshot, trackSnapshots)) {
             // #343: an unreliable fetch was NOT mirrored (see processPlaylist).
             // Stamping it would make the next sync skip this playlist as
@@ -1019,8 +1034,14 @@ class DiffWorker @AssistedInject constructor(
             // content. Leave the count as it was, and an older stamp too: it no
             // longer matches this pass's merged rows unless nothing was merged,
             // and then the mirror it vouches for still stands.
+            // lastSynced denotes the last complete read, not this attempt.
+            if (isSpotifyPersonalCollection(localPlaylist.source, localPlaylist.type)) {
+                playlistDao.updateTrackCount(localPlaylist.id,
+                    playlistDao.getCrossRefsForPlaylist(localPlaylist.id).count { it.removedAt == null })
+            }
             return
         }
+        playlistDao.updateLastSynced(localPlaylist.id, System.currentTimeMillis())
         // Personal collections count live memberships, not raw remote
         // rows: local additions, suppression and duplicate IDs may differ.
         val count = if (isSpotifyPersonalCollection(localPlaylist.source, localPlaylist.type)) {
