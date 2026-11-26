@@ -32,6 +32,10 @@ object SpotifyAuthConfig {
     /** Base endpoint for all GraphQL persisted queries (Spotify web player backend). */
     const val GRAPHQL_ENDPOINT = "https://api-partner.spotify.com/pathfinder/v1/query"
 
+    // Read-only identity lookup used by the Spotify web player (upstream Stash).
+    const val OP_PROFILE_ATTRIBUTES = "profileAttributes"
+    const val HASH_PROFILE_ATTRIBUTES = "08ffb4730af3746e04a8301396f20875dbbce10c75243803091a9274eacc8ac0"
+
     /**
      * Fallback web player client version. Used only if scraping the live version
      * from open.spotify.com fails. Updated manually as a last resort.
