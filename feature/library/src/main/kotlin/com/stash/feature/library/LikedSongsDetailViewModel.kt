@@ -42,6 +42,7 @@ class LikedSongsDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val musicRepository: MusicRepository,
     private val playerRepository: PlayerRepository,
+    private val playbackPolicy: LibraryPlaybackPolicy,
     private val streamingPreference: com.stash.core.data.prefs.StreamingPreference,
 ) : ViewModel() {
 
@@ -140,9 +141,13 @@ class LikedSongsDetailViewModel @Inject constructor(
             try {
                 // Streaming is always allowed: the whole list is playable, and
                 // streamable tracks resolve inside setQueue when reached.
-                val playable = uiState.value.tracks
+                val playable = playbackPolicy.eligible(uiState.value.tracks)
                 if (playable.isEmpty()) return@launch
-                val index = playable.indexOfFirst { it.id == trackId }.coerceAtLeast(0)
+                val index = playable.indexOfFirst { it.id == trackId }
+                if (index < 0) {
+                    _userMessages.tryEmit("This song is unavailable for playback right now.")
+                    return@launch
+                }
                 playerRepository.setQueue(playable, index)
             } finally {
                 _tappedTrackId.value = null
@@ -152,7 +157,7 @@ class LikedSongsDetailViewModel @Inject constructor(
 
     fun shuffleAll() {
         viewModelScope.launch {
-            val playable = uiState.value.tracks
+            val playable = playbackPolicy.eligible(uiState.value.tracks)
             if (playable.isEmpty()) return@launch
             val shuffled = playable.shuffled()
             _tappedTrackId.value = shuffled[0].id
@@ -168,7 +173,7 @@ class LikedSongsDetailViewModel @Inject constructor(
 
     fun playAll() {
         viewModelScope.launch {
-            val playable = uiState.value.tracks
+            val playable = playbackPolicy.eligible(uiState.value.tracks)
             if (playable.isEmpty()) return@launch
             _tappedTrackId.value = playable[0].id
             _bulkPlayInFlight.value = BulkPlayAction.PLAY_ALL
