@@ -9,6 +9,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -77,6 +78,14 @@ class SpotifyAuthManager @Inject constructor(
          * [ServiceToken.scope] field. Format: "username|clientId".
          */
         const val SCOPE_DELIMITER = "|"
+
+        // Third scope segment is written only by the authenticated token exchange.
+        // Empty proof records that Spotify did not return an account identifier.
+        internal const val ACCOUNT_PROOF_PREFIX = "identity-v1:"
+        internal fun validAccountId(value: String?): String? = value?.takeIf {
+            it.isNotBlank() && it == it.trim() && it.none { c -> c == '|' || c.isWhitespace() } &&
+                it !in setOf("spotify_user", "spotify_search_user", "null", "anonymous", "undefined")
+        }
 
         /**
          * SpotDL's well-known Spotify OAuth client credentials.
@@ -393,15 +402,15 @@ class SpotifyAuthManager @Inject constructor(
                 // 1. Decode the JWT access token payload (no network call needed)
                 // 2. Fall back to the username field in the token response
                 val jwtUsername = extractUsernameFromJwt(tokenResponse.accessToken)
-                val resolvedUsername = jwtUsername
-                    ?: tokenResponse.username.takeIf { it.isNotEmpty() }
+                val resolvedUsername = validAccountId(jwtUsername)
+                    ?: validAccountId(tokenResponse.username)
                     ?: ""
                 Log.d(TAG, "Resolved username: present=${resolvedUsername.isNotEmpty()} " +
                     "(fromJwt=${jwtUsername != null}, fromResponse=${tokenResponse.username.isNotEmpty()})")
 
                 // Pack both username and clientId into the scope field so we can
                 // recover the clientId later for client token acquisition.
-                val scopeValue = "$resolvedUsername$SCOPE_DELIMITER${tokenResponse.clientId}"
+                val scopeValue = "$resolvedUsername$SCOPE_DELIMITER${tokenResponse.clientId}$SCOPE_DELIMITER$ACCOUNT_PROOF_PREFIX$resolvedUsername"
                 Log.d(TAG, "Packed scope: ${scopeValue.length} chars")
 
                 ServiceToken(
@@ -539,10 +548,10 @@ class SpotifyAuthManager @Inject constructor(
             Log.d(TAG, "JWT payload decoded, extracting username")
             val jsonObj = json.parseToJsonElement(payload).jsonObject
 
-            val username = jsonObj["sub"]?.jsonPrimitive?.content
-                ?: jsonObj["username"]?.jsonPrimitive?.content
-            Log.d(TAG, "JWT username extraction: found=${username?.isNotEmpty() == true}")
-            username?.takeIf { it.isNotEmpty() }
+            val username = validAccountId(jsonObj["sub"]?.jsonPrimitive?.contentOrNull)
+                ?: validAccountId(jsonObj["username"]?.jsonPrimitive?.contentOrNull)
+            Log.d(TAG, "JWT username extraction: found=${username != null}")
+            username
         } catch (e: Exception) {
             Log.w(TAG, "JWT username extraction failed", e)
             null

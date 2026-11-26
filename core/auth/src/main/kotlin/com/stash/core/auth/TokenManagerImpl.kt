@@ -191,17 +191,37 @@ class TokenManagerImpl @Inject constructor(
     private val spotifyRefreshLock = Mutex()
 
     /**
-     * Returns the stored Spotify username/user ID.
-     *
-     * Checks the stored user profile first (populated during initial connection),
-     * then falls back to the token's scope field which contains "username|clientId".
+     * Resolve the personal session's identity, not a username typed by the user.
+     * Old installations stored a two-part scope whose username could be manual;
+     * re-exchange that credential once to obtain a fresh, authenticated proof.
      */
-    override suspend fun getSpotifyLibraryAccountId(): String? {
-        val token = getSpotifyAccessToken() ?: return null
-        return spotifyAuthManager.extractUsernameFromJwt(token)
-            ?.takeIf { it.isNotBlank() && it != "spotify_user" }
+    override suspend fun getSpotifyLibraryAccountId(): String? = spotifyRefreshLock.withLock {
+        val current = tokenStore.spotifyToken.first() ?: return@withLock null
+        if (!current.isExpired && !current.isExpiringSoon) {
+            verifiedSpotifyIdentity(current)?.let { return@withLock it }
+            // A fresh token already exchanged by the new code had no proof.
+            // Do not hammer the token endpoint on every sync in that case.
+            if (spotifyIdentityProof(current) != null) return@withLock null
+        }
+        val cookie = current.refreshToken.takeIf { it.isNotBlank() } ?: return@withLock null
+        val refreshed = spotifyAuthManager.refreshAccessToken(cookie) ?: return@withLock null
+        val identity = verifiedSpotifyIdentity(refreshed)
+        val existingUser = tokenStore.spotifyUser.first()
+        tokenStore.saveSpotifyToken(refreshed, identity?.let { UserInfo(it, it) } ?: existingUser)
+        identity
     }
 
+    private fun spotifyIdentityProof(token: ServiceToken): String? =
+        token.scope.split(SpotifyAuthManager.SCOPE_DELIMITER).getOrNull(2)
+            ?.takeIf { it.startsWith(SpotifyAuthManager.ACCOUNT_PROOF_PREFIX) }
+
+    private fun verifiedSpotifyIdentity(token: ServiceToken): String? =
+        SpotifyAuthManager.validAccountId(spotifyAuthManager.extractUsernameFromJwt(token.accessToken))
+            ?: SpotifyAuthManager.validAccountId(
+                spotifyIdentityProof(token)?.removePrefix(SpotifyAuthManager.ACCOUNT_PROOF_PREFIX),
+            )
+
+    /** Legacy display/profile lookup, never used as proof of ownership. */
     override suspend fun getSpotifyUsername(): String? {
         // Try the stored user profile (set during connectSpotifyWithCookie).
         val user = tokenStore.spotifyUser.first()
@@ -397,11 +417,12 @@ class TokenManagerImpl @Inject constructor(
     override suspend fun connectSpotifyWithCookie(spDcCookie: String, username: String): Boolean {
         val token = spotifyAuthManager.getAccessToken(spDcCookie) ?: return false
 
-        // Use the user-provided username first, then try token/JWT extraction as fallback
+        // Verified identity takes priority; manual input is display-only.
         val scopeParts = token.scope.split(SpotifyAuthManager.SCOPE_DELIMITER)
-        val resolvedUsername = username.takeIf { it.isNotEmpty() }
+        val verifiedIdentity = verifiedSpotifyIdentity(token)
+        val resolvedUsername = verifiedIdentity
+            ?: username.takeIf { it.isNotEmpty() }
             ?: scopeParts.firstOrNull()?.takeIf { it.isNotEmpty() }
-            ?: spotifyAuthManager.extractUsernameFromJwt(token.accessToken)
             ?: ""
 
         Log.d("StashSync", "connectSpotifyWithCookie: hasResolvedUsername=${resolvedUsername.isNotEmpty()}, " +
@@ -410,7 +431,11 @@ class TokenManagerImpl @Inject constructor(
         // Re-pack the scope with the resolved username + clientId
         val clientId = scopeParts.getOrNull(1) ?: ""
         val updatedToken = token.copy(
-            scope = "$resolvedUsername${SpotifyAuthManager.SCOPE_DELIMITER}$clientId"
+            scope = listOf(
+                resolvedUsername,
+                clientId,
+                SpotifyAuthManager.ACCOUNT_PROOF_PREFIX + verifiedIdentity.orEmpty(),
+            ).joinToString(SpotifyAuthManager.SCOPE_DELIMITER)
         )
 
         val user = if (resolvedUsername.isNotEmpty()) {

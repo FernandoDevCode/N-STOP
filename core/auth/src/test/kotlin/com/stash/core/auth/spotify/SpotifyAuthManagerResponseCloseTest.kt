@@ -6,6 +6,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody
+import okhttp3.ResponseBody.Companion.toResponseBody
 import okio.Buffer
 import okio.BufferedSource
 import org.junit.Assert.assertEquals
@@ -29,6 +30,23 @@ class SpotifyAuthManagerResponseCloseTest {
         override fun close() {
             closed = true
         }
+    }
+
+    @Test fun `opaque access token preserves identity from authenticated response`() {
+        val client = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                val payload = if (chain.request().method == "HEAD") "" else
+                    """{"accessToken":"opaque","accessTokenExpirationTimestampMs":4102444800000,"isAnonymous":false,"clientId":"client","username":"verifiedA"}"""
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("test")
+                    .body(payload.toResponseBody())
+                    .build()
+            }.build()
+        val token = runBlocking { SpotifyAuthManager(client).getAccessToken("cookie") }
+        assertEquals("verifiedA|client|identity-v1:verifiedA", token?.scope)
     }
 
     @Test fun `a rejected token request closes every response it opened`() {
