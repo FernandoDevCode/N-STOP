@@ -99,7 +99,7 @@ class LikedSongsDetailViewModel @Inject constructor(
                 for (playlist in selected) {
                     musicRepository.setPlaylistDownload(playlist.id, on)
                 }
-                if (!on) _userMessages.tryEmit("Stopped. Downloaded songs stay on your phone.")
+                if (!on) _userMessages.tryEmit("Automatic downloads stopped.")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
