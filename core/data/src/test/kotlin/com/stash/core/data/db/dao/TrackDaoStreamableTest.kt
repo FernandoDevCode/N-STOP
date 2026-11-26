@@ -64,13 +64,18 @@ class TrackDaoStreamableTest {
         assertEquals(listOf("Album A"), albums.map { it.album })
     }
 
-    @Test fun `getAllAlbums includes streamable when flagged`() = runTest {
+    @Test fun `getAllAlbums includes saved members and excludes unsaved catalog stubs`() = runTest {
         insertDownloaded(id = 1L, album = "Album A", artist = "Drake")
-        insertStreamableOnly(id = 2L, album = "Album B", artist = "Drake")
+        val saved = insertStreamableOnly(id = 2L, album = "Album B", artist = "Drake")
+        val unavailable = insertUnavailable(id = 3L, album = "Album C", artist = "Drake")
+        insertStreamableOnly(id = 4L, album = "Transient", artist = "Drake")
+        val playlist = playlistDao.insert(customPlaylist())
+        playlistDao.insertCrossRef(crossRef(playlist, saved, position = 0))
+        playlistDao.insertCrossRef(crossRef(playlist, unavailable, position = 1))
 
         val albums = dao.getAllAlbums(includeStreamable = true).first()
 
-        assertEquals(setOf("Album A", "Album B"), albums.map { it.album }.toSet())
+        assertEquals(setOf("Album A", "Album B", "Album C"), albums.map { it.album }.toSet())
     }
 
     @Test fun `getAllAlbums excludes unavailable even when streamable true`() = runTest {
@@ -102,13 +107,18 @@ class TrackDaoStreamableTest {
         assertEquals(listOf("Drake"), artists.map { it.artist })
     }
 
-    @Test fun `getAllArtists includes streamable when flagged`() = runTest {
+    @Test fun `getAllArtists includes saved members and excludes unsaved catalog stubs`() = runTest {
         insertDownloaded(id = 1L, album = "Album A", artist = "Drake")
-        insertStreamableOnly(id = 2L, album = "Album B", artist = "Future")
+        val saved = insertStreamableOnly(id = 2L, album = "Album B", artist = "Future")
+        val unavailable = insertUnavailable(id = 3L, album = "Album C", artist = "Travis")
+        insertStreamableOnly(id = 4L, album = "Transient", artist = "Unknown")
+        val playlist = playlistDao.insert(customPlaylist())
+        playlistDao.insertCrossRef(crossRef(playlist, saved, position = 0))
+        playlistDao.insertCrossRef(crossRef(playlist, unavailable, position = 1))
 
         val artists = dao.getAllArtists(includeStreamable = true).first()
 
-        assertEquals(setOf("Drake", "Future"), artists.map { it.artist }.toSet())
+        assertEquals(setOf("Drake", "Future", "Travis"), artists.map { it.artist }.toSet())
     }
 
     @Test fun `getAllArtists excludes unavailable even when streamable true`() = runTest {
