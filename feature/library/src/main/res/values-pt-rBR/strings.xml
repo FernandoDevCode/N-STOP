@@ -66,4 +66,7 @@
     <string name="sonora_likes_keep_offline">Baixar músicas curtidas</string>
     <string name="sonora_likes_stop_offline">Parar downloads automáticos das curtidas</string>
     <string name="sonora_likes_download_progress">%1$d de %2$d baixadas</string>
+    <string name="sonora_likes_remove_title">Remover das músicas curtidas?</string>
+    <string name="sonora_likes_remove_message">A curtida será removida apenas no Sonora. Seus downloads e curtidas no Spotify serão preservados.</string>
+    <string name="sonora_likes_remove_action">Remover curtida</string>
 </resources>
