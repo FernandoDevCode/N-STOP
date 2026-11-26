@@ -129,6 +129,7 @@ class LibraryViewModelShuffleLikedTest {
             on { getTracksByPlaylist(eq(42L)) } doReturn flowOf(liked)
         }
         return LibraryViewModel(
+            playbackPolicy = testPlaybackPolicy(),
             musicRepository = musicRepository,
             playerRepository = playerRepository,
             tokenManager = mock {
