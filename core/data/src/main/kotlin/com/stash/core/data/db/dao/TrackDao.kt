@@ -2329,7 +2329,6 @@ interface TrackDao {
             WHERE pt.track_id = :trackId AND pt.removed_at IS NULL AND p.is_active = 1
               AND (
                   p.keep_offline = 1
-                  OR p.type = 'DOWNLOADS_MIX'
                   OR (p.sync_enabled = 1 AND p.id IN (
                       SELECT playlist_id FROM shared_mixes WHERE role = 'FOLLOWER' AND status = 'ACTIVE'
                   ))
