@@ -615,6 +615,7 @@ class MusicRepositoryImpl @Inject constructor(
 
     override suspend fun queueDownload(trackId: Long): Boolean {
         val entity = trackDao.getById(trackId) ?: return false
+        trackDao.setOfflineRequested(trackId, true)
         if (entity.isDownloaded) return false
 
         // Reuse an existing queue row if there is one; otherwise insert a fresh
@@ -680,6 +681,10 @@ class MusicRepositoryImpl @Inject constructor(
 
     override suspend fun removeDownload(trackId: Long) {
         val entity = trackDao.getById(trackId) ?: return
+        // Release only the individual claim. A kept collection still owns the audio.
+        trackDao.setOfflineRequested(trackId, false)
+        downloadQueueDao.clearIndividualQueueClaim(trackId)
+        if (trackDao.hasOfflineCollectionClaim(trackId)) return
         entity.filePath?.let { deleteTrackAudio(trackId, it) }
         // Drop pending/in-flight queue entries so a fresh download can't
         // immediately repopulate the file we just removed.
@@ -1164,6 +1169,7 @@ class MusicRepositoryImpl @Inject constructor(
     }
 
     override suspend fun linkTrackToDownloadsMix(trackId: Long) {
+        trackDao.setOfflineRequested(trackId, true)
         val playlistId = playlistDao.ensurePlaylistAndActiveCrossRef(
             playlist = downloadsMixEntity(),
             trackId = trackId,
