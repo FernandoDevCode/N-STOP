@@ -111,6 +111,7 @@ data class LibraryTrackRow(
     @androidx.room.ColumnInfo(name = "is_streamable_checked_at") val isStreamableCheckedAt: Long?,
     @androidx.room.ColumnInfo(name = "metadata_embedded_at") val metadataEmbeddedAt: Long?,
     @androidx.room.ColumnInfo(name = "lyrics_fetched_at") val lyricsFetchedAt: Long?,
+    @androidx.room.ColumnInfo(name = "saved_in_collection") val savedInCollection: Boolean = false,
 )
 
 /**
@@ -570,15 +571,24 @@ interface TrackDao {
                t.explicit, t.bits_per_sample, t.sample_rate_hz,
                t.spotify_saved_at, t.ytmusic_saved_at, t.lastfm_loved_at,
                t.stash_liked_at, t.is_streamable, t.is_streamable_checked_at,
-               t.metadata_embedded_at, t.lyrics_fetched_at
+               t.metadata_embedded_at, t.lyrics_fetched_at,
+               (t.stash_liked_at IS NOT NULL OR EXISTS (
+            SELECT 1 FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
+            WHERE pt.track_id = t.id AND pt.removed_at IS NULL AND p.is_active = 1
+              AND p.type IN ('CUSTOM', 'LIKED_SONGS', 'STASH_LIKED')
+        )) AS saved_in_collection
         FROM tracks t
         LEFT JOIN track_blocklist bl
             ON bl.canonical_key = (t.canonical_artist || '|' || t.canonical_title)
             OR (bl.spotify_uri IS NOT NULL AND bl.spotify_uri = t.spotify_uri)
             OR (bl.youtube_id  IS NOT NULL AND bl.youtube_id  = t.youtube_id)
         WHERE bl.canonical_key IS NULL
-          AND t.is_downloaded = 1
-        ORDER BY t.date_added DESC
+          AND (t.is_downloaded = 1 OR (t.stash_liked_at IS NOT NULL OR EXISTS (
+            SELECT 1 FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
+            WHERE pt.track_id = t.id AND pt.removed_at IS NULL AND p.is_active = 1
+              AND p.type IN ('CUSTOM', 'LIKED_SONGS', 'STASH_LIKED')
+        )))
+        ORDER BY t.date_added DESC, t.id ASC
         """
     )
     fun getLibraryByDateAdded(): Flow<List<LibraryTrackRow>>
@@ -599,12 +609,17 @@ interface TrackDao {
      */
     @Query(
         """
-        SELECT * FROM tracks
-        WHERE artist = :artist
-           OR album_artist = :artist
-           OR artist LIKE '%' || :artist || '%'
-           OR album_artist LIKE '%' || :artist || '%'
-        ORDER BY album ASC, title ASC
+        SELECT t.* FROM tracks t
+        WHERE (t.artist = :artist
+           OR t.album_artist = :artist
+           OR t.artist LIKE '%' || :artist || '%'
+           OR t.album_artist LIKE '%' || :artist || '%')
+          AND (t.is_downloaded = 1 OR (t.stash_liked_at IS NOT NULL OR EXISTS (
+            SELECT 1 FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
+            WHERE pt.track_id = t.id AND pt.removed_at IS NULL AND p.is_active = 1
+              AND p.type IN ('CUSTOM', 'LIKED_SONGS', 'STASH_LIKED')
+        )))
+        ORDER BY t.album ASC, t.title ASC
         """,
     )
     fun getByArtist(artist: String): Flow<List<TrackEntity>>
@@ -2019,8 +2034,12 @@ interface TrackDao {
                COUNT(*) AS trackCount,
                SUM(duration_ms) AS totalDurationMs,
                MAX(album_art_url) AS artUrl
-        FROM tracks
-        WHERE is_downloaded = 1 OR (:includeStreamable AND is_streamable = 1)
+        FROM tracks t
+        WHERE t.is_downloaded = 1 OR (:includeStreamable AND (t.stash_liked_at IS NOT NULL OR EXISTS (
+            SELECT 1 FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
+            WHERE pt.track_id = t.id AND pt.removed_at IS NULL AND p.is_active = 1
+              AND p.type IN ('CUSTOM', 'LIKED_SONGS', 'STASH_LIKED')
+        )))
         GROUP BY artist
         ORDER BY COUNT(*) DESC, artist ASC
         """
@@ -2071,7 +2090,11 @@ interface TrackDao {
                MAX(t.album_art_url) AS artUrl
         FROM tracks t
         WHERE t.album != ''
-          AND (t.is_downloaded = 1 OR (:includeStreamable AND t.is_streamable = 1))
+          AND (t.is_downloaded = 1 OR (:includeStreamable AND (t.stash_liked_at IS NOT NULL OR EXISTS (
+            SELECT 1 FROM playlist_tracks pt JOIN playlists p ON p.id = pt.playlist_id
+            WHERE pt.track_id = t.id AND pt.removed_at IS NULL AND p.is_active = 1
+              AND p.type IN ('CUSTOM', 'LIKED_SONGS', 'STASH_LIKED')
+        ))))
         GROUP BY t.album, t.album_artist
         ORDER BY COUNT(*) DESC, t.album ASC
         """
