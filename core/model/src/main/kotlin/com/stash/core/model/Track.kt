@@ -118,4 +118,6 @@ data class Track(
     val matchPickedAt: Long? = null,
     /** Derived from active saved-collection membership for the library feed, not persisted as a track flag. */
     val savedInCollection: Boolean = false,
+    /** Explicit individual offline ownership, including protected legacy files. */
+    val offlineRequested: Boolean = false,
 )
