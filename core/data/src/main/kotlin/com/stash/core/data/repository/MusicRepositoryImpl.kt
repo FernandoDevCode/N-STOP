@@ -334,10 +334,10 @@ class MusicRepositoryImpl @Inject constructor(
      * for exactly the artists the tab lists.
      */
     override fun getAllArtists(): Flow<List<ArtistSummary>> =
-        trackDao.getAllArtists(includeStreamable = false)
+        trackDao.getAllArtists(includeStreamable = true)
 
     override fun getAllAlbums(): Flow<List<AlbumSummary>> =
-        trackDao.getAllAlbums(includeStreamable = false)
+        trackDao.getAllAlbums(includeStreamable = true)
 
     override fun getRecentlyAdded(limit: Int): Flow<List<Track>> =
         trackDao.getRecentlyAdded(limit).map { entities -> entities.map { it.toDomain() } }
