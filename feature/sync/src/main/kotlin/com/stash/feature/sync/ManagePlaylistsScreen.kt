@@ -35,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -176,10 +177,10 @@ fun ManagePlaylistsScreen(
             ) {
                 // -- Liked ------------------------------------------------------
                 if (visibleLiked != null) {
-                    item(key = "liked-label") { ManageSectionLabel("Liked") }
+                    item(key = "liked-label") { ManageSectionLabel(stringResource(R.string.sonora_sync_liked_title)) }
                     item(key = "liked-row") {
                         SpotifySyncToggleRow(
-                            name = visibleLiked.name,
+                            name = stringResource(R.string.sonora_sync_liked_title),
                             trackCount = visibleLiked.trackCount,
                             enabled = visibleLiked.syncEnabled,
                             onToggle = { viewModel.onTogglePlaylistSync(visibleLiked.id, it) },
@@ -232,16 +233,26 @@ fun ManagePlaylistsScreen(
 
                 // -- Your playlists --------------------------------------------
                 item(key = "custom-label") {
-                    ManageSectionLabel("Your playlists · $customEnabled/${customAll.size}")
+                    ManageSectionLabel(stringResource(R.string.sonora_sync_selected_playlists, customEnabled, customAll.size))
+                }
+                if (source == SyncSource.SPOTIFY) {
+                    item(key = "import-explanation") {
+                        Text(
+                            text = stringResource(R.string.sonora_sync_import_explanation),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 8.dp),
+                        )
+                    }
                 }
                 item(key = "custom-actions") {
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         TextButton(onClick = {
                             visibleCustom.forEach { viewModel.onTogglePlaylistSync(it.id, true) }
-                        }) { Text("Enable all") }
+                        }) { Text(stringResource(R.string.sonora_sync_select_all)) }
                         TextButton(onClick = {
                             visibleCustom.forEach { viewModel.onTogglePlaylistSync(it.id, false) }
-                        }) { Text("Enable none") }
+                        }) { Text(stringResource(R.string.sonora_sync_select_none)) }
                     }
                 }
                 if (visibleCustom.isEmpty()) {
