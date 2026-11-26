@@ -238,3 +238,17 @@ Até `aff972e2140a9d574ccfaca1fc6f14a71e9bdbeb` no PR #117:
 - Testes adicionados para migração, persistência após limpeza de histórico e preservação/liberação de arquivos compartilhados. Smoke test SQL isolado em SQLite aprovado para backfill de propriedade e limpeza de histórico (fixture mínimo, não valida Room/Android).
 - Falta exportar e versionar o schema Room gerado `56.json`, rodar migração e testes completos no CI. A consulta anterior ao checkpoint ainda mostrava testes enfileirados. Sem merge/release.
 - Pendências reais: isolamento de contas Spotify, reconciliação completa/removals e recurtição, ocorrências/ordenação, revisão de corridas e ações de UI (incluindo mensagens quando um arquivo fica por outra coleção), downloads de origens legadas e simplificação integral de modos. Não marcar F1/F3/F5 como concluídas nem liberar APK antes dos gates.
+
+
+## 13. Checkpoint — correções das falhas reais do CI
+
+Run 45731963047 em `f503251e1c45caa5944bbb8beab0673442daeeb3`: build debug, compilação dos testes e gate de identidade aprovados; 10 testes falharam (7 engine, 2 features, 1 foundations). Diagnóstico confirmado por logs e relatório XML de autenticação.
+
+Alterações até `e3b7321b145102a8c4553c8a99c0f348b2bc9809`:
+- Política compartilhada `LibraryPlaybackPolicy` aplicada às telas de músicas, curtidas, playlists, álbuns e artistas e ações manuais de fila. Conectividade validada e preferência de dados móveis determinam elegibilidade; não alteram vínculos salvos. Faixas locais usam metadados de download e o player valida o arquivo quando o abre. Uma faixa tocada que não é elegível não substitui silenciosamente por outra. Testes online/offline/celular e reprodução de álbum salvos sem áudio.
+- Recuperação de filas legadas: reencaminha pedidos explícitos ou de coleções mantidas offline para discovery, sem tocar em IN_PROGRESS; cancela pendentes sem autorização. Sincronização manual não força rede móvel para o download automático das coleções. Teste real de DAO adicionado.
+- Testes de artistas, álbuns e importação agora distinguem pertencimento à biblioteca de disponibilidade de áudio; cobrem stubs não salvos, membros indisponíveis, playlist não selecionada e curtidas selecionadas.
+- Migração v55→56: teste abre arquivo v55 com implementação Room gerada, valida versão, dados e vínculos. CI passa a exportar o schema gerado em artefato `generated-room-schema-v56`; ainda é necessário baixar, versionar `56.json` e verificar CI/migração reais. Nenhum hash de schema inventado.
+- Auth: XML de TokenManagerRefreshSingleFlightTest confirma CompletionHandlerException durante cancelamento de ProducerCoroutine no Default após resetMain do teste anterior. Adicionado awaitClosed para aguardar shutdown dos observadores; sem mudança de token, refresh ou cookie.
+- Todas as alterações permanecem no PR #117. Não validadas pelo CI ainda. Não declarar a release pronta. Pendências anteriores de isolamento de conta, reconciliação remota completa, intenção offline agregada, ordem/ocorrências e UI permanecem.
+
