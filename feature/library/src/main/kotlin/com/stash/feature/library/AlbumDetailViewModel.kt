@@ -60,6 +60,7 @@ class AlbumDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val musicRepository: MusicRepository,
     private val playerRepository: PlayerRepository,
+    private val playbackPolicy: LibraryPlaybackPolicy,
 ) : ViewModel() {
 
     /** The album name extracted from the navigation route arguments. */
@@ -139,9 +140,10 @@ class AlbumDetailViewModel @Inject constructor(
         viewModelScope.launch {
             _tappedTrackId.value = trackId
             try {
-                val downloaded = uiState.value.tracks.filter { it.filePath != null }
+                val downloaded = playbackPolicy.eligible(uiState.value.tracks)
                 if (downloaded.isEmpty()) return@launch
-                val index = downloaded.indexOfFirst { it.id == trackId }.coerceAtLeast(0)
+                val index = downloaded.indexOfFirst { it.id == trackId }
+                if (index < 0) return@launch
                 playerRepository.setQueue(downloaded, index)
             } finally {
                 _tappedTrackId.value = null
@@ -158,7 +160,7 @@ class AlbumDetailViewModel @Inject constructor(
      */
     fun shuffleAll() {
         viewModelScope.launch {
-            val downloaded = uiState.value.tracks.filter { it.filePath != null }
+            val downloaded = playbackPolicy.eligible(uiState.value.tracks)
             if (downloaded.isEmpty()) return@launch
             val shuffled = downloaded.shuffled()
             _tappedTrackId.value = shuffled[0].id
