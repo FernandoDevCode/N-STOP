@@ -1,5 +1,7 @@
 package com.stash.core.data.db
 
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
 import androidx.room.testing.MigrationTestHelper
 import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import androidx.test.platform.app.InstrumentationRegistry
@@ -39,7 +41,15 @@ class MigrationV55V56Test {
             db.execSQL("INSERT INTO download_queue (id, track_id, status, search_query, retry_count, failure_type, user_requested, created_at) VALUES (10, 2, 'PENDING', '', 0, 'NONE', 1, 0), (11, 4, 'SKIPPED', '', 0, 'NONE', 1, 0)")
         }
 
-        helper.runMigrationsAndValidate(name, 56, true, StashDatabase.MIGRATION_55_56).use { db ->
+        // Open the old file with the actual generated Room implementation.
+        // Room itself validates every table and index on migration, even when
+        // the new exported JSON has not yet been copied into test assets.
+        Room.databaseBuilder(
+            ApplicationProvider.getApplicationContext<android.content.Context>(),
+            StashDatabase::class.java, name,
+        ).addMigrations(StashDatabase.MIGRATION_55_56).allowMainThreadQueries().build().use { room ->
+            val db = room.openHelper.writableDatabase
+            assertEquals(56, db.version)
             db.query("SELECT id, offline_requested, is_downloaded, file_path FROM tracks ORDER BY id").use { c ->
                 val rows = buildList {
                     while (c.moveToNext()) add(listOf(c.getLong(0), c.getInt(1), c.getInt(2), c.getString(3)))
