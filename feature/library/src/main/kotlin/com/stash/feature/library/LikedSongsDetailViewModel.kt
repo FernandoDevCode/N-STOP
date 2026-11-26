@@ -64,20 +64,49 @@ class LikedSongsDetailViewModel @Inject constructor(
         if (!_showSearch.value) _searchQuery.value = ""
     }
 
-    private val tracksFlow = musicRepository.getPlaylistsByType(PlaylistType.LIKED_SONGS)
-        .map { playlists ->
-            if (sourceFilter != null) playlists.filter { it.source == sourceFilter }
-            else playlists
-        }
-        .flatMapLatest { playlists ->
-            if (playlists.isEmpty()) {
-                flowOf(emptyList())
-            } else {
-                combine(playlists.map { musicRepository.getTracksByPlaylist(it.id) }) { arrays ->
-                    arrays.flatMap { it.toList() }.distinctBy { it.id }
-                }
+    private val collections = combine(
+        musicRepository.getPlaylistsByType(PlaylistType.LIKED_SONGS),
+        musicRepository.getPlaylistsByType(PlaylistType.STASH_LIKED),
+    ) { imported, local ->
+        (imported + local).distinctBy { it.id }.filter { sourceFilter == null || it.source == sourceFilter }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val tracksFlow = collections.flatMapLatest { playlists ->
+        if (playlists.isEmpty()) {
+            flowOf(emptyList())
+        } else {
+            combine(playlists.map { musicRepository.getTracksByPlaylist(it.id) }) { arrays ->
+                arrays.flatMap { it.toList() }.distinctBy { it.id }
             }
         }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val downloadButton: StateFlow<DownloadButtonState?> = combine(collections, tracksFlow) { playlists, tracks ->
+        if (playlists.isEmpty()) null else DownloadButtonState(
+            on = playlists.all { it.keepOffline },
+            downloaded = tracks.count { it.isDownloaded },
+            total = tracks.size,
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** Use the existing persistent per-collection switch; no direct duplicate download path. */
+    fun toggleCollectionDownload() {
+        val selected = collections.value
+        if (selected.isEmpty()) return
+        val on = !selected.all { it.keepOffline }
+        viewModelScope.launch {
+            try {
+                for (playlist in selected) {
+                    musicRepository.setPlaylistDownload(playlist.id, on)
+                }
+                if (!on) _userMessages.tryEmit("Stopped. Downloaded songs stay on your phone.")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _userMessages.tryEmit("Couldn't change all downloads. Try again.")
+            }
+        }
+    }
 
     val uiState: StateFlow<LikedSongsDetailUiState> = combine(
         tracksFlow.withSearchFilter(_searchQuery),
@@ -161,7 +190,7 @@ class LikedSongsDetailViewModel @Inject constructor(
     }
 
     fun deleteTrack(track: Track) {
-        viewModelScope.launch { musicRepository.deleteTrack(track) }
+        viewModelScope.launch { musicRepository.removeLikedTrack(track.id, sourceFilter) }
     }
 
     fun queueDownload(trackId: Long) {
@@ -263,7 +292,7 @@ class LikedSongsDetailViewModel @Inject constructor(
         viewModelScope.launch {
             var removed = 0
             tracks.forEach { track ->
-                runCatching { musicRepository.deleteTrack(track) }
+                runCatching { musicRepository.removeLikedTrack(track.id, sourceFilter) }
                     .onSuccess { removed++ }
                     .onFailure { e -> if (e is CancellationException) throw e }
             }
